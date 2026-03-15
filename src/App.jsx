@@ -9,7 +9,7 @@ import {
   Search, BookOpen, Filter, ChevronRight, ChevronLeft, ChevronDown,
   User, Map, Hexagon, Settings, Edit3, Network, Plus, Trash2, Edit2,
   X, Save, Check, Library, Sparkles, Cloud, History, LayoutGrid, Clock,
-  AlignLeft, Shield, Link2, Download, Eye, TrendingUp, BarChart2, BookMarked, Users, Layers, Activity
+  AlignLeft, Shield, Link2, FolderOpen, Download, Eye, TrendingUp, BarChart2, BookMarked, Users, Layers, Activity
 } from 'lucide-react';
 import {
   apiKey, FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
@@ -86,6 +86,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   
   const [dirHandle, setDirHandle] = useState(null);
+  const [lastDirName, setLastDirName] = useState(() => localStorage.getItem('tangthu_last_dir') || '');
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const [activeNovelDirHandle, setActiveNovelDirHandle] = useState(null);
   
   const [toastMessage, setToastMessage] = useState(null);
@@ -517,6 +519,27 @@ export default function App() {
     });
   };
 
+  const handleReconnect = async () => {
+    setIsReconnecting(true);
+    try {
+      const h = await window.showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
+      try {
+        const fileHandle = await h.getFileHandle('index.json');
+        const file = await fileHandle.getFile();
+        const parsed = JSON.parse(await file.text());
+        if (parsed.metadata) setNovelsMetadata(parsed.metadata);
+        if (parsed.config) setGlobalTabsConfig(parsed.config);
+      } catch(e) {}
+      setDirHandle(h);
+      localStorage.setItem('tangthu_last_dir', h.name);
+      setLastDirName(h.name);
+      showToast('Đã kết nối lại thành công!');
+    } catch(e) {
+      if (e.name !== 'AbortError') showToast('Không thể kết nối lại!', 'error');
+    }
+    setIsReconnecting(false);
+  };
+
   const handleConnectFolder = async () => {
     if (window.self !== window.top) {
        setDirHandle("LOCAL_STORAGE"); showToast("Preview: Đã chuyển sang Local Storage.");
@@ -544,12 +567,12 @@ export default function App() {
                  const ih = await h.getFileHandle('index.json', { create: true }); const iw = await ih.createWritable();
                  await iw.write(JSON.stringify({ metadata: newMeta, config: parsedOld.config || globalTabsConfig }, null, 2)); await iw.close();
                  setNovelsMetadata(newMeta); if (parsedOld.config) setGlobalTabsConfig(parsedOld.config);
-                 setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Độ kiếp thành công! Cấu trúc mới đã sẵn sàng."); return;
+                 setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); localStorage.setItem('tangthu_last_dir', h.name); setLastDirName(h.name); showToast("Độ kiếp thành công! Cấu trúc mới đã sẵn sàng."); return;
              }
-         } catch(e) { setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Thư mục trống. Đã kết nối Mệnh Bàn!"); return; }
+         } catch(e) { setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); localStorage.setItem('tangthu_last_dir', h.name); setLastDirName(h.name); showToast("Thư mục trống. Đã kết nối Mệnh Bàn!"); return; }
       }
       if (content) {
-        try { const parsed = JSON.parse(content); if (parsed.metadata) setNovelsMetadata(parsed.metadata); if (parsed.config) setGlobalTabsConfig(parsed.config); setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Đã tải Mệnh Bàn (Index) thành công!"); } 
+        try { const parsed = JSON.parse(content); if (parsed.metadata) setNovelsMetadata(parsed.metadata); if (parsed.config) setGlobalTabsConfig(parsed.config); setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); localStorage.setItem('tangthu_last_dir', h.name); setLastDirName(h.name); showToast("Đã tải Mệnh Bàn (Index) thành công!"); } 
         catch (parseErr) { showToast("LỖI CHÍ MẠNG: File index.json bị hỏng cấu trúc.", "error"); }
       }
     } catch (e) {}
@@ -2206,6 +2229,34 @@ export default function App() {
                 onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }}
               />
             )}
+          </div>
+        </div>
+      )}
+
+      {/* RECONNECT BANNER - hiện khi F5 mà có thư mục cũ */}
+      {!dirHandle && lastDirName && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[600] animate-fade-in">
+          <div className="bg-slate-900 border border-amber-600/60 rounded-2xl shadow-2xl px-6 py-4 flex items-center gap-4 max-w-md">
+            <div className="w-10 h-10 rounded-xl bg-amber-900/30 border border-amber-700/40 flex items-center justify-center flex-shrink-0">
+              <FolderOpen size={20} className="text-amber-400"/>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-slate-200 font-serif">Kết nối lại thư mục</p>
+              <p className="text-xs text-slate-500 font-serif truncate">📁 {lastDirName}</p>
+            </div>
+            <button
+              onClick={handleReconnect}
+              disabled={isReconnecting}
+              className="px-4 py-2 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-colors flex-shrink-0"
+            >
+              {isReconnecting
+                ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"/> Đang kết nối...</>
+                : <><Link2 size={13}/> Kết nối lại</>
+              }
+            </button>
+            <button onClick={() => { setLastDirName(''); localStorage.removeItem('tangthu_last_dir'); }} className="p-1.5 text-slate-600 hover:text-slate-400 transition-colors" title="Bỏ qua">
+              <X size={14}/>
+            </button>
           </div>
         </div>
       )}
