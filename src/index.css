@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Lora', serif;
+  --font-heading: 'Playfair Display', serif;
+}
+
+/* Các tu vi tùy chỉnh của Tàng Thư Các */
+@layer utilities {
+  .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.3); border-radius: 10px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.6); }
+  
+  /* Các hiệu ứng Animation */
+  .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+  .animate-fade-fast { animation: fadeFast 0.15s ease-out forwards; }
+  .animate-spin-slow { animation: spinSlow 40s linear infinite; }
+}
+
+@keyframes fadeIn { 
+  from { opacity: 0; transform: translateY(10px); } 
+  to { opacity: 1; transform: translateY(0); } 
+}
+@keyframes fadeFast { 
+  from { opacity: 0; } 
+  to { opacity: 1; } 
+}
+@keyframes spinSlow { 
+  from { transform: rotate(0deg); } 
+  to { transform: rotate(360deg); } 
+}
