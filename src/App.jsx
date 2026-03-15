@@ -514,8 +514,15 @@ export default function App() {
     updateActiveNovelData(nov => {
        if (!nov.tabsConfig) nov.tabsConfig = [];
        const lon = nov.tabsConfig.find(t => t.id === activeTabLon);
-       const nho = lon?.subTabs?.find(s => s.id === activeTabNho);
-       if (nho) nho.fieldsTemplate = newFields;
+       if (!lon) return;
+       if (activeTabNho) {
+         // Tab có subTabs → update subTab
+         const nho = lon.subTabs?.find(s => s.id === activeTabNho);
+         if (nho) nho.fieldsTemplate = newFields;
+       } else {
+         // Tab không có subTabs → update trực tiếp trên lon
+         lon.fieldsTemplate = newFields;
+       }
     });
   };
 
@@ -754,7 +761,7 @@ export default function App() {
     setIsEditingMode(false); setIsSplitPreview(false); showToast("Khắc ấn đại đạo thành công!");
   };
 
-  const handleOpenCreateEntity = () => { setEditingEntityData(null); setIsEntityModalOpen(true); };
+  const handleOpenCreateEntity = () => { setEditingEntityData(null); setCollectionSubTab('list'); setIsEntityModalOpen(true); };
   const handleOpenEditEntity = () => { if(selectedEntity) { setEditingEntityData({...selectedEntity}); setIsEntityModalOpen(true); } };
 
   const handleSaveEntity = (formData, dynamicData) => {

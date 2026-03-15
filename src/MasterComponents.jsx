@@ -12,7 +12,7 @@ import {
   FolderOpen, Cloud, Upload, HardDrive, Clock, Shield, Download, UploadCloud,
   Image as ImageIcon, History, LayoutGrid, Link2, ScrollText, User,
   TrendingUp, BarChart2, BookMarked, Users, Layers, Activity, Eye,
-  GitBranch, ZoomIn, ZoomOut, Maximize2, RefreshCw, SlidersHorizontal, Atom
+  GitBranch, ZoomIn, ZoomOut, Maximize2, RefreshCw, SlidersHorizontal, Atom, Edit2
 } from 'lucide-react';
 import {
   FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES
