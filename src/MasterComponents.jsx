@@ -267,6 +267,8 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
 
 export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, geminiApiKey }) => {
   const fieldsTemplate = tabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS;
+  const [editingFieldId, setEditingFieldId] = useState(null);
+  const [editingFieldLabel, setEditingFieldLabel] = useState('');
   const terms = getTerms(parentTabId);
   const [formData, setFormData] = useState({ id: null, name: '', avatar: '', rawText: '' });
   const [dynamicData, setDynamicData] = useState({});
@@ -368,19 +370,56 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
                    <input autoFocus value={safeString(formData.name)} onChange={e=>setFormData({...formData, name: e.target.value})} className="w-full bg-slate-950 border border-amber-600/50 rounded-xl p-3 text-amber-100 font-serif focus:border-amber-500 outline-none shadow-inner" placeholder="Bắt buộc nhập..." />
                 </div>
 
-                <div className="grid grid-cols-2 gap-5">
+                <div className="grid grid-cols-2 gap-4">
                    {fieldsTemplate.map(field => (
-                      <div key={field.id}>
-                         <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-widest">{safeString(field.label)}</label>
+                      <div key={field.id} className="group/field">
+                         {/* Label row: tên + nút sửa/xóa */}
+                         <div className="flex items-center gap-1 mb-1">
+                           {editingFieldId === field.id ? (
+                             <div className="flex items-center gap-1 flex-1">
+                               <input
+                                 autoFocus
+                                 value={editingFieldLabel}
+                                 onChange={e => setEditingFieldLabel(e.target.value)}
+                                 onKeyDown={e => {
+                                   if (e.key === 'Enter' && editingFieldLabel.trim()) {
+                                     onUpdateTemplate(fieldsTemplate.map(f => f.id === field.id ? {...f, label: editingFieldLabel.trim()} : f));
+                                     setEditingFieldId(null);
+                                   }
+                                   if (e.key === 'Escape') setEditingFieldId(null);
+                                 }}
+                                 className="flex-1 bg-slate-950 border border-amber-600/60 rounded px-2 py-0.5 text-[10px] font-bold text-amber-300 uppercase outline-none"
+                               />
+                               <button onClick={() => { if(editingFieldLabel.trim()) { onUpdateTemplate(fieldsTemplate.map(f => f.id === field.id ? {...f, label: editingFieldLabel.trim()} : f)); setEditingFieldId(null); }}} className="p-0.5 text-emerald-400 hover:text-emerald-300"><Check size={12}/></button>
+                               <button onClick={() => setEditingFieldId(null)} className="p-0.5 text-slate-500 hover:text-slate-300"><X size={12}/></button>
+                             </div>
+                           ) : (
+                             <>
+                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex-1">{safeString(field.label)}</label>
+                               <button
+                                 onClick={() => { setEditingFieldId(field.id); setEditingFieldLabel(field.label); }}
+                                 className="opacity-0 group-hover/field:opacity-100 p-0.5 text-slate-600 hover:text-amber-400 transition-all"
+                                 title="Đổi tên trường"
+                               ><Edit2 size={10}/></button>
+                               {!['f_status','f_title','f_desc'].includes(field.id) && (
+                                 <button
+                                   onClick={() => onUpdateTemplate(fieldsTemplate.filter(f => f.id !== field.id))}
+                                   className="opacity-0 group-hover/field:opacity-100 p-0.5 text-slate-600 hover:text-rose-400 transition-all"
+                                   title="Xóa trường này"
+                                 ><Trash2 size={10}/></button>
+                               )}
+                             </>
+                           )}
+                         </div>
                          <input value={safeString(dynamicData[field.id])} onChange={e=>setDynamicData({...dynamicData, [field.id]: e.target.value})} className="w-full bg-slate-950/80 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 font-serif focus:border-amber-500 outline-none" placeholder="..." />
                       </div>
                    ))}
                 </div>
 
                 <div className="pt-4 mt-2 border-t border-slate-800/80">
-                   <label className="block text-[10px] font-bold text-emerald-500 mb-2 uppercase tracking-widest flex items-center gap-1"><Plus size={12}/> Thêm Trường Lưu Trữ Mới</label>
+                   <label className="block text-[10px] font-bold text-emerald-500 mb-2 uppercase tracking-widest flex items-center gap-1"><Plus size={12}/> Thêm Trường Mới</label>
                    <div className="flex gap-2">
-                      <input value={safeString(newFieldLabel)} onChange={e=>setNewFieldLabel(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') handleAddField()}} className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 outline-none focus:border-emerald-500" placeholder="VD: Công pháp, Nơi ở..." />
+                      <input value={safeString(newFieldLabel)} onChange={e=>setNewFieldLabel(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') handleAddField()}} className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 outline-none focus:border-emerald-500" placeholder="VD: Công pháp, Nơi ở, Sức mạnh..." />
                       <button onClick={handleAddField} className="px-4 py-2 bg-slate-800 text-emerald-400 border border-emerald-900/50 rounded-lg text-sm font-bold">Tạo</button>
                    </div>
                 </div>
@@ -502,19 +541,24 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, tabConfig
                       </div>
                    </div>
                 </div>
-                <div className="grid grid-cols-2 gap-5 pt-2">
+                <div className="grid grid-cols-2 gap-4 pt-2">
                    {fieldsTemplate.map(field => (
-                      <div key={field.id}>
-                         <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-widest truncate">{safeString(field.label)}</label>
+                      <div key={field.id} className="group/msfield">
+                         <div className="flex items-center gap-1 mb-1">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex-1 truncate">{safeString(field.label)}</label>
+                           {!['f_status','f_title','f_desc'].includes(field.id) && (
+                             <button onClick={() => onUpdateTemplate(fieldsTemplate.filter(f => f.id !== field.id))} className="opacity-0 group-hover/msfield:opacity-100 p-0.5 text-slate-600 hover:text-rose-400 transition-all" title="Xóa trường"><Trash2 size={10}/></button>
+                           )}
+                         </div>
                          <input value={safeString(snapshotData.dynamicData[field.id])} onChange={e=>setSnapshotData(prev => ({...prev, dynamicData: {...prev.dynamicData, [field.id]: e.target.value}}))} className="w-full bg-slate-950/80 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 font-serif focus:border-amber-500 outline-none" placeholder="..." />
                       </div>
                    ))}
                 </div>
 
                 <div className="pt-4 mt-2 border-t border-slate-800/80">
-                   <label className="block text-[10px] font-bold text-emerald-500 mb-2 uppercase tracking-widest flex items-center gap-1"><Plus size={12}/> Thêm Trường Lưu Trữ Mới</label>
+                   <label className="block text-[10px] font-bold text-emerald-500 mb-2 uppercase tracking-widest flex items-center gap-1"><Plus size={12}/> Thêm Trường Mới</label>
                    <div className="flex gap-2">
-                      <input value={safeString(newFieldLabel)} onChange={e=>setNewFieldLabel(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') handleAddField()}} className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 outline-none focus:border-emerald-500" placeholder="VD: Công pháp, Nơi ở..." />
+                      <input value={safeString(newFieldLabel)} onChange={e=>setNewFieldLabel(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') handleAddField()}} className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 outline-none focus:border-emerald-500" placeholder="VD: Cấp độ, Hiệu năng..." />
                       <button onClick={handleAddField} className="px-4 py-2 bg-slate-800 text-emerald-400 border border-emerald-900/50 rounded-lg text-sm font-bold">Tạo</button>
                    </div>
                 </div>
