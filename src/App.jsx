@@ -1082,10 +1082,22 @@ export default function App() {
     syncIndex(newMetaList, globalTabsConfig, dirHandle);
     if (dirHandle === 'LOCAL_STORAGE') {
       localStorage.removeItem(`tangthu_novel_${id}`);
+    } else if (dirHandle && dirHandle !== 'LOCAL_STORAGE') {
+      // Xóa file JSON của truyện khỏi thư mục
+      try {
+        const novelsDir = await dirHandle.getDirectoryHandle('novels', { create: false });
+        await novelsDir.removeEntry(`${id}.json`);
+      } catch(e) {} // Bỏ qua nếu file không tồn tại
     }
+    // Xóa khỏi cache
+    setAllNovelsCache(prev => { const n = {...prev}; delete n[id]; return n; });
     setActiveNovelData(null);
     setActiveNovelDirHandle(null);
-    setConfirmDialog({ ...confirmDialog, isOpen: false });
+    setActiveTabLon(null);
+    setActiveTabNho(null);
+    setSelectedEntityId(null);
+    setNavHistory([]);
+    setConfirmDialog(prev => ({ ...prev, isOpen: false }));
     showToast('Đã hủy diệt thư tịch!');
   };
 
@@ -1164,7 +1176,7 @@ export default function App() {
       if (nho) nho.tabCon = (nho.tabCon || []).filter(c => c.id !== path[2]);
       setTabsConfig(current);
     }
-    setConfirmDialog({ ...confirmDialog, isOpen: false });
+    setConfirmDialog(prev => ({ ...prev, isOpen: false }));
   };
 
   const handleSaveEditLabel = (path, label) => {
