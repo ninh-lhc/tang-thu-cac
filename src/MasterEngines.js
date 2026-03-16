@@ -65,7 +65,32 @@ export const INITIAL_TABS_CONFIG = [
     label: 'Tu Luyện', 
     iconName: 'Flame', 
     subTabs: [
-      { id: 'he-thong-tu-luyen', label: 'Hệ thống tu luyện' },
+      { 
+        id: 'he-thong-tu-luyen', 
+        label: 'Hệ thống tu luyện', 
+        viewType: 'collection-track',
+        tabCon: [],
+        fieldsTemplate: [
+          { id: 'f_status', label: 'Số cấp bậc' },
+          { id: 'f_title', label: 'Loại hệ thống' },
+          { id: 'f_nguon_goc', label: 'Nguồn gốc' },
+          { id: 'f_dac_trung', label: 'Đặc trưng nổi bật' },
+          { id: 'f_desc', label: 'Điều kiện tu luyện' }
+        ]
+      },
+      { 
+        id: 'canh-gioi', 
+        label: 'Cảnh Giới', 
+        viewType: 'collection-track',
+        tabCon: [],
+        fieldsTemplate: [
+          { id: 'f_status', label: 'Thuộc hệ thống' },
+          { id: 'f_title', label: 'Thứ tự / Cấp số' },
+          { id: 'f_dieu_kien', label: 'Điều kiện đột phá' },
+          { id: 'f_dac_quyen', label: 'Đặc quyền / Năng lực' },
+          { id: 'f_desc', label: 'Đặc điểm nhận dạng' }
+        ]
+      },
       { 
         id: 'cong-phap', 
         label: 'Công pháp / Bí thuật', 

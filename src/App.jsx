@@ -9,7 +9,7 @@ import {
   Search, BookOpen, Filter, ChevronRight, ChevronLeft, ChevronDown,
   User, Map, Hexagon, Settings, Edit3, Network, Plus, Trash2, Edit2,
   X, Save, Check, Library, Sparkles, Cloud, History, LayoutGrid, Clock,
-  AlignLeft, Shield, Link2, FolderOpen, Download, Eye, TrendingUp, BarChart2, BookMarked, Users, Layers, Activity
+  AlignLeft, Shield, Link2, Download, Eye, TrendingUp, BarChart2, BookMarked, Users, Layers, Activity
 } from 'lucide-react';
 import {
   apiKey, FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
@@ -19,7 +19,7 @@ import {
   generateId, safeString, getTerms, sortTabsAlphabetically,
   AsyncLocalImage, processPlainTextWithLinks, renderMarkdown,
   getIconComponent, handleToolbarClick, processInline,
-  extractEntityAttributesWithAI, generateReviewWithAI
+  extractEntityAttributesWithAI, analyzeTextWithAI, generateReviewWithAI
 } from './MasterUtils.jsx';
 import {
   MarkdownToolbar, AppHeader, LandingScreen, DashboardScreen, EntityCard,
@@ -32,17 +32,6 @@ export default function App() {
   const [activeNovelData, setActiveNovelData] = useState(null); 
 
   const [globalTabsConfig, setGlobalTabsConfig] = useState(INITIAL_TABS_CONFIG);
-
-  // Merge config từ file với INITIAL_TABS_CONFIG mới nhất
-  // Giữ tab tự tạo từ saved config, nhưng dùng INITIAL làm base
-  const mergeTabsConfig = (savedConfig) => {
-    if (!savedConfig || !Array.isArray(savedConfig)) return INITIAL_TABS_CONFIG;
-    const initialIds = new Set(INITIAL_TABS_CONFIG.map(t => t.id));
-    // Lấy tab tự tạo (không có trong INITIAL)
-    const customTabs = savedConfig.filter(t => !initialIds.has(t.id));
-    // Base là INITIAL đầy đủ + tab tự tạo
-    return [...INITIAL_TABS_CONFIG, ...customTabs];
-  };
   
   const [menu1Visible, setMenu1Visible] = useState(false);
   const [hoveredNovelId, setHoveredNovelId] = useState(null);
@@ -97,8 +86,6 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   
   const [dirHandle, setDirHandle] = useState(null);
-  const [lastDirName, setLastDirName] = useState(() => localStorage.getItem('tangthu_last_dir') || '');
-  const [isReconnecting, setIsReconnecting] = useState(false);
   const [activeNovelDirHandle, setActiveNovelDirHandle] = useState(null);
   
   const [toastMessage, setToastMessage] = useState(null);
@@ -119,7 +106,6 @@ export default function App() {
   // Cache toàn bộ novel data cho DeepSearch + Dashboard
   const [allNovelsCache, setAllNovelsCache] = useState({});
   const [isCacheLoading, setIsCacheLoading] = useState(false);
-
 
   const dashboardStats = useMemo(() => {
     const total = novelsMetadata.length;
@@ -349,7 +335,7 @@ export default function App() {
           try {
              const parsed = JSON.parse(localIndex);
              if (parsed.metadata && parsed.metadata.length > 0) setNovelsMetadata(parsed.metadata);
-             if (parsed.config) setGlobalTabsConfig(mergeTabsConfig(parsed.config));
+             if (parsed.config) setGlobalTabsConfig(parsed.config);
              setDirHandle("LOCAL_STORAGE");
           } catch(e) {}
        }
@@ -526,35 +512,9 @@ export default function App() {
     updateActiveNovelData(nov => {
        if (!nov.tabsConfig) nov.tabsConfig = [];
        const lon = nov.tabsConfig.find(t => t.id === activeTabLon);
-       if (!lon) return;
-       if (activeTabNho) {
-         const nho = lon.subTabs?.find(s => s.id === activeTabNho);
-         if (nho) nho.fieldsTemplate = newFields;
-       } else {
-         lon.fieldsTemplate = newFields;
-       }
+       const nho = lon?.subTabs?.find(s => s.id === activeTabNho);
+       if (nho) nho.fieldsTemplate = newFields;
     });
-  };
-
-  const handleReconnect = async () => {
-    setIsReconnecting(true);
-    try {
-      const h = await window.showDirectoryPicker({ mode: 'readwrite' });
-      try {
-        const fh = await h.getFileHandle('index.json');
-        const f = await fh.getFile();
-        const parsed = JSON.parse(await f.text());
-        if (parsed.metadata) setNovelsMetadata(parsed.metadata);
-        if (parsed.config) setGlobalTabsConfig(mergeTabsConfig(parsed.config));
-      } catch(e) {}
-      setDirHandle(h);
-      localStorage.setItem('tangthu_last_dir', h.name);
-      setLastDirName(h.name);
-      showToast('Đã kết nối lại thành công!');
-    } catch(e) {
-      if (e.name !== 'AbortError') showToast('Không thể kết nối lại!', 'error');
-    }
-    setIsReconnecting(false);
   };
 
   const handleConnectFolder = async () => {
@@ -584,12 +544,12 @@ export default function App() {
                  const ih = await h.getFileHandle('index.json', { create: true }); const iw = await ih.createWritable();
                  await iw.write(JSON.stringify({ metadata: newMeta, config: parsedOld.config || globalTabsConfig }, null, 2)); await iw.close();
                  setNovelsMetadata(newMeta); if (parsedOld.config) setGlobalTabsConfig(parsedOld.config);
-                 setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); localStorage.setItem('tangthu_last_dir', h.name); setLastDirName(h.name); showToast("Độ kiếp thành công! Cấu trúc mới đã sẵn sàng."); return;
+                 setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Độ kiếp thành công! Cấu trúc mới đã sẵn sàng."); return;
              }
-         } catch(e) { setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); localStorage.setItem('tangthu_last_dir', h.name); setLastDirName(h.name); showToast("Thư mục trống. Đã kết nối Mệnh Bàn!"); return; }
+         } catch(e) { setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Thư mục trống. Đã kết nối Mệnh Bàn!"); return; }
       }
       if (content) {
-        try { const parsed = JSON.parse(content); if (parsed.metadata) setNovelsMetadata(parsed.metadata); if (parsed.config) setGlobalTabsConfig(mergeTabsConfig(parsed.config)); setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); localStorage.setItem('tangthu_last_dir', h.name); setLastDirName(h.name); showToast("Đã tải Mệnh Bàn (Index) thành công!"); } 
+        try { const parsed = JSON.parse(content); if (parsed.metadata) setNovelsMetadata(parsed.metadata); if (parsed.config) setGlobalTabsConfig(parsed.config); setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Đã tải Mệnh Bàn (Index) thành công!"); } 
         catch (parseErr) { showToast("LỖI CHÍ MẠNG: File index.json bị hỏng cấu trúc.", "error"); }
       }
     } catch (e) {}
@@ -614,7 +574,7 @@ export default function App() {
         try {
             const parsed = JSON.parse(event.target.result);
             if (parsed.metadata && parsed.config) {
-                setGlobalTabsConfig(mergeTabsConfig(parsed.config)); setNovelsMetadata(parsed.metadata);
+                setGlobalTabsConfig(parsed.config); setNovelsMetadata(parsed.metadata);
                 await syncIndex(parsed.metadata, parsed.config, dirHandle);
                 if (parsed.novels) { for (const [id, data] of Object.entries(parsed.novels)) { await syncNovel(data, dirHandle); } }
                 showToast("Khôi phục Mệnh Bàn thành công! Đang tái lập không gian...");
@@ -723,6 +683,38 @@ export default function App() {
     }
   };
 
+  // Ảnh bìa luôn lưu vào ROOT/images/ vì cần hiển thị ngoài context truyện (sidebar, dashboard)
+  const handlePickCoverImage = async (setAvatarCallback, novelTitle) => {
+    try {
+      const [fileHandle] = await window.showOpenFilePicker({
+        types: [{ description: 'Images', accept: { 'image/*': ['.png', '.gif', '.jpeg', '.jpg', '.webp'] } }],
+        multiple: false
+      });
+      const file = await fileHandle.getFile();
+      setIsUploading(true);
+
+      if (!dirHandle || dirHandle === 'LOCAL_STORAGE') {
+        const reader = new FileReader();
+        reader.onload = (e) => { setAvatarCallback(e.target.result); setIsUploading(false); };
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      // Lưu vào root/images/ để luôn accessible
+      const imagesDir = await dirHandle.getDirectoryHandle('images', { create: true });
+      const ext = file.name.split('.').pop().replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
+      const fileName = `cover-${Date.now()}.${ext}`;
+      const newFileHandle = await imagesDir.getFileHandle(fileName, { create: true });
+      const writable = await newFileHandle.createWritable();
+      await writable.write(file);
+      await writable.close();
+      setAvatarCallback(`local_image:${fileName}`);
+      showToast('Ảnh bìa đã được lưu!');
+    } catch(err) {
+      if (err.name !== 'AbortError') showToast('Hủy chọn ảnh.', 'warning');
+    } finally { setIsUploading(false); }
+  };
+
   const handlePickLocalImage = async (setAvatarCallback, editorId = null, filePrefix = 'img') => {
     try {
         const [fileHandle] = await window.showOpenFilePicker({ types: [{ description: 'Images', accept: { 'image/*': ['.png', '.gif', '.jpeg', '.jpg', '.webp'] } }], multiple: false });
@@ -771,7 +763,7 @@ export default function App() {
     setIsEditingMode(false); setIsSplitPreview(false); showToast("Khắc ấn đại đạo thành công!");
   };
 
-  const handleOpenCreateEntity = () => { setEditingEntityData(null); setCollectionSubTab('list'); setIsEntityModalOpen(true); };
+  const handleOpenCreateEntity = () => { setEditingEntityData(null); setIsEntityModalOpen(true); };
   const handleOpenEditEntity = () => { if(selectedEntity) { setEditingEntityData({...selectedEntity}); setIsEntityModalOpen(true); } };
 
   const handleSaveEntity = (formData, dynamicData) => {
@@ -1055,17 +1047,10 @@ export default function App() {
 
     const data = await loadNovelData(meta, dirHandle);
     if (data) {
-      if (!data.tabsConfig) {
-        data.tabsConfig = structuredClone(INITIAL_TABS_CONFIG);
-      } else {
-        // Merge: giữ tab tự tạo, thêm tab mới từ INITIAL nếu thiếu
-        const existingIds = new Set(data.tabsConfig.map(t => t.id));
-        const missingTabs = INITIAL_TABS_CONFIG.filter(t => !existingIds.has(t.id));
-        if (missingTabs.length > 0) data.tabsConfig = [...data.tabsConfig, ...missingTabs];
-      }
+      if (!data.tabsConfig) data.tabsConfig = structuredClone(globalTabsConfig);
       setActiveNovelData(data);
     } else {
-      const newData = { ...meta, data: {}, tabsConfig: structuredClone(INITIAL_TABS_CONFIG) };
+      const newData = { ...meta, data: {}, tabsConfig: structuredClone(globalTabsConfig) };
       setActiveNovelData(newData);
     }
     setIsUploading(false);
@@ -1855,6 +1840,7 @@ export default function App() {
                                                   </div>
                                                   <div className="flex items-center gap-3">
                                                      {isEntityEditing && (
+                                                        <>
                                                         <button 
                                                            disabled={isExtractingAI}
                                                            onClick={async () => {
@@ -1871,6 +1857,34 @@ export default function App() {
                                                            {isExtractingAI ? <div className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" /> : <Sparkles size={16}/>}
                                                            {isExtractingAI ? 'Đang trích xuất...' : 'AI Lọc Thuộc Tính'}
                                                         </button>
+                                                        {/* AI Tạo Link [[...]] cho tên riêng */}
+                                                        <button
+                                                           disabled={isExtractingAI}
+                                                           onClick={async () => {
+                                                              if (!geminiApiKey) { showToast("Vui lòng thiết lập API Key để dùng AI."); return; }
+                                                              const ta = document.getElementById('entity-info-editor');
+                                                              const text = ta?.value;
+                                                              if (!text?.trim()) return;
+                                                              setIsExtractingAI(true);
+                                                              try {
+                                                                const res = await analyzeTextWithAI(text, currentTabConfig?.fieldsTemplate || [], geminiApiKey);
+                                                                if (res?.processedText) {
+                                                                  // Cập nhật textarea với text đã có [[link]]
+                                                                  ta.value = res.processedText;
+                                                                  // Cập nhật preview nếu đang mở
+                                                                  if (isSplitPreview) setLivePreviewText(res.processedText);
+                                                                  showToast('AI đã tạo liên kết cho các tên riêng!');
+                                                                }
+                                                              } catch(e) { showToast('AI gặp lỗi, thử lại sau!', 'error'); }
+                                                              setIsExtractingAI(false);
+                                                           }}
+                                                           className="px-4 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 bg-indigo-700 hover:bg-indigo-600 text-white disabled:opacity-50"
+                                                           title="AI tự động bọc tên người, thế lực, công pháp... vào [[liên kết]]"
+                                                        >
+                                                           {isExtractingAI ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Link2 size={14}/>}
+                                                           {isExtractingAI ? 'Đang xử lý...' : 'AI Tạo Link'}
+                                                        </button>
+                                                        </>
                                                      )}
                                                      <button id="save-entity-btn" onClick={() => { if(isEntityEditing) { handleUpdateEntityInfo(document.getElementById('entity-info-editor').value); setIsSplitPreview(false); } else { setLivePreviewText(safeString(selectedEntity?.info || '')); } setIsEntityEditing(!isEntityEditing); }} className={`px-5 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 ${isEntityEditing ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'}`}>
                                                         {isEntityEditing ? <><Save size={16}/> Lưu (Ctrl+S)</> : <><Edit3 size={16}/> Viết Ghi Chép</>}
@@ -1883,12 +1897,12 @@ export default function App() {
                                                      <div className="flex flex-col flex-1 animate-fade-in min-h-[400px]">
                                                         <div className="flex items-center justify-between mb-1">
                                                           <MarkdownToolbar editorId="entity-info-editor" onInsertImage={(eid) => { setImageForm({ url: '', alt: '', editorId: eid }); setIsInsertImageModalOpen(true); }} onPickLocalImage={handlePickLocalImage} />
-                                                          <button onClick={() => setIsSplitPreview(p => !p)} className={`ml-2 px-3 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 transition-colors flex items-center gap-1.5 ${isSplitPreview ? 'bg-amber-700/30 text-amber-400 border border-amber-700/40' : 'bg-slate-800 text-slate-500 border border-slate-700 hover:text-slate-300'}`}>
+                                                          <button onClick={() => { const cur = document.getElementById('entity-info-editor')?.value; if(cur !== undefined) setLivePreviewText(cur); setIsSplitPreview(p => !p); }} className={`ml-2 px-3 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 transition-colors flex items-center gap-1.5 ${isSplitPreview ? 'bg-amber-700/30 text-amber-400 border border-amber-700/40' : 'bg-slate-800 text-slate-500 border border-slate-700 hover:text-slate-300'}`}>
                                                             <Eye size={12}/> Preview
                                                           </button>
                                                         </div>
                                                         <div className={`flex flex-1 gap-4 min-h-[300px] ${isSplitPreview ? 'flex-row' : 'flex-col'}`}>
-                                                          <textarea id="entity-info-editor" className={`bg-transparent text-slate-200 font-serif text-lg leading-loose outline-none resize-none custom-scrollbar ${isSplitPreview ? 'w-1/2 flex-shrink-0' : 'flex-1 min-h-[300px]'}`} defaultValue={safeString(selectedEntity.info)} placeholder="Hạ bút khắc ấn..." onChange={isSplitPreview ? (e) => setLivePreviewText(e.target.value) : undefined} />
+                                                          <textarea id="entity-info-editor" className={`bg-transparent text-slate-200 font-serif text-lg leading-loose outline-none resize-none custom-scrollbar ${isSplitPreview ? 'w-1/2 flex-shrink-0' : 'flex-1 min-h-[300px]'}`} defaultValue={safeString(selectedEntity.info)} placeholder="Hạ bút khắc ấn..." onChange={(e) => { if(isSplitPreview) setLivePreviewText(e.target.value); }} onPaste={(e) => { if(isSplitPreview) { setTimeout(() => setLivePreviewText(e.target.value), 0); } }} />
                                                           {isSplitPreview && (
                                                             <div className="w-1/2 overflow-y-auto custom-scrollbar border-l border-slate-700 pl-4 font-serif min-h-[300px]">
                                                               {renderMarkdown(livePreviewText, currentContextDirHandle, entityMap, globalLinkRegex, handleNavigate)}
@@ -2088,12 +2102,12 @@ export default function App() {
                                       <div className="flex flex-col flex-1 animate-fade-in">
                                          <div className="flex items-center justify-between mb-1">
                                            <MarkdownToolbar editorId="standard-editor" onInsertImage={(eid) => { setImageForm({ url: '', alt: '', editorId: eid }); setIsInsertImageModalOpen(true); }} onPickLocalImage={handlePickLocalImage} />
-                                           <button onClick={() => setIsSplitPreview(p => !p)} className={`ml-2 px-3 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 transition-colors flex items-center gap-1.5 ${isSplitPreview ? 'bg-amber-700/30 text-amber-400 border border-amber-700/40' : 'bg-slate-800 text-slate-500 border border-slate-700 hover:text-slate-300'}`}>
+                                           <button onClick={() => { const cur = document.getElementById('standard-editor')?.value; if(cur !== undefined) setLivePreviewText(cur); setIsSplitPreview(p => !p); }} className={`ml-2 px-3 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 transition-colors flex items-center gap-1.5 ${isSplitPreview ? 'bg-amber-700/30 text-amber-400 border border-amber-700/40' : 'bg-slate-800 text-slate-500 border border-slate-700 hover:text-slate-300'}`}>
                                              <Eye size={12}/> Preview
                                            </button>
                                          </div>
                                          <div className={`flex flex-1 gap-4 min-h-0 ${isSplitPreview ? 'flex-row' : 'flex-col'}`}>
-                                           <textarea key={`${activeTabLon}-${activeTabNho}-${activeTabCon}`} id="standard-editor" className={`bg-transparent text-slate-200 font-serif text-lg leading-loose outline-none resize-none custom-scrollbar ${isSplitPreview ? 'w-1/2 flex-shrink-0' : 'flex-1'}`} defaultValue={safeString(currentStandardData)} placeholder="Hạ bút tại đây..." onChange={isSplitPreview ? (e) => setLivePreviewText(e.target.value) : undefined} />
+                                           <textarea key={`${activeTabLon}-${activeTabNho}-${activeTabCon}`} id="standard-editor" className={`bg-transparent text-slate-200 font-serif text-lg leading-loose outline-none resize-none custom-scrollbar ${isSplitPreview ? 'w-1/2 flex-shrink-0' : 'flex-1'}`} defaultValue={safeString(currentStandardData)} placeholder="Hạ bút tại đây..." onChange={(e) => { if(isSplitPreview) setLivePreviewText(e.target.value); }} onPaste={(e) => { if(isSplitPreview) { setTimeout(() => setLivePreviewText(e.target.value), 0); } }} />
                                            {isSplitPreview && (
                                              <div className="w-1/2 overflow-y-auto custom-scrollbar border-l border-slate-700 pl-4 font-serif">
                                                {renderMarkdown(livePreviewText, currentContextDirHandle, entityMap, globalLinkRegex, handleNavigate)}
@@ -2123,7 +2137,7 @@ export default function App() {
       <ModalSettings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} handleConnectFolder={handleConnectFolder} dirHandle={dirHandle} dirName={dirName} onExportBackup={handleExportBackup} onImportBackup={handleImportBackup} geminiApiKey={geminiApiKey} setGeminiApiKey={handleSaveApiKey} />
       <ModalConfirm isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onClose={() => setConfirmDialog({...confirmDialog, isOpen: false})} onConfirm={confirmDialog.onConfirm} />
       <ModalInsertImage isOpen={isInsertImageModalOpen} onClose={() => setIsInsertImageModalOpen(false)} imageForm={imageForm} setImageForm={setImageForm} handleConfirmInsertImage={handleConfirmInsertImage} />
-      <ModalAddNovel isOpen={isAddNovelOpen} onClose={() => setIsAddNovelOpen(false)} formData={novelForm} setFormData={setNovelForm} onSave={handleSaveNovelModal} mode={novelModalMode} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} />
+      <ModalAddNovel isOpen={isAddNovelOpen} onClose={() => setIsAddNovelOpen(false)} formData={novelForm} setFormData={setNovelForm} onSave={handleSaveNovelModal} mode={novelModalMode} handlePickLocalImage={(cb) => handlePickCoverImage(cb, novelForm.title)} dirHandle={currentContextDirHandle} />
       <ModalDeepSearch isOpen={isDeepSearchOpen} onClose={() => setIsDeepSearchOpen(false)} novelsMetadata={novelsMetadata} activeNovelData={activeNovelData} allNovelsCache={allNovelsCache} isCacheLoading={isCacheLoading} onSelectResult={handleDeepSearchResultSelect} />
       <ModalQuickCreate isOpen={!!quickCreateData} onClose={() => setQuickCreateData(null)} quickCreateName={quickCreateData} onConfirm={handleConfirmQuickCreate} activeTabs={activeTabs} />
 
@@ -2283,25 +2297,6 @@ export default function App() {
               <div className="h-full bg-amber-500 rounded-full transition-all" style={{width:`${Math.min(100, Math.round((parseInt(hoveredNovelData.chaptersRead||0)/parseInt(hoveredNovelData.chaptersTotal))*100))}%`}}></div>
             </div>
           )}
-        </div>
-      )}
-
-      {!dirHandle && lastDirName && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[600] animate-fade-in">
-          <div className="bg-slate-900 border border-amber-600/60 rounded-2xl shadow-2xl px-6 py-4 flex items-center gap-4 max-w-md">
-            <div className="w-10 h-10 rounded-xl bg-amber-900/30 border border-amber-700/40 flex items-center justify-center flex-shrink-0">
-              <FolderOpen size={20} className="text-amber-400"/>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-slate-200 font-serif">Kết nối lại thư mục</p>
-              <p className="text-xs text-slate-500 font-serif truncate">📁 {lastDirName}</p>
-            </div>
-            <button onClick={handleReconnect} disabled={isReconnecting}
-              className="px-4 py-2 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-colors flex-shrink-0">
-              {isReconnecting ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"/> Đang kết nối...</> : <><Link2 size={13}/> Kết nối lại</>}
-            </button>
-            <button onClick={() => { setLastDirName(''); localStorage.removeItem('tangthu_last_dir'); }} className="p-1.5 text-slate-600 hover:text-slate-400 transition-colors"><X size={14}/></button>
-          </div>
         </div>
       )}
 
