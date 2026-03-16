@@ -32,6 +32,17 @@ export default function App() {
   const [activeNovelData, setActiveNovelData] = useState(null); 
 
   const [globalTabsConfig, setGlobalTabsConfig] = useState(INITIAL_TABS_CONFIG);
+
+  // Merge config từ file với INITIAL_TABS_CONFIG mới nhất
+  // Giữ tab tự tạo từ saved config, nhưng dùng INITIAL làm base
+  const mergeTabsConfig = (savedConfig) => {
+    if (!savedConfig || !Array.isArray(savedConfig)) return INITIAL_TABS_CONFIG;
+    const initialIds = new Set(INITIAL_TABS_CONFIG.map(t => t.id));
+    // Lấy tab tự tạo (không có trong INITIAL)
+    const customTabs = savedConfig.filter(t => !initialIds.has(t.id));
+    // Base là INITIAL đầy đủ + tab tự tạo
+    return [...INITIAL_TABS_CONFIG, ...customTabs];
+  };
   
   const [menu1Visible, setMenu1Visible] = useState(false);
   const [hoveredNovelId, setHoveredNovelId] = useState(null);
@@ -108,6 +119,7 @@ export default function App() {
   // Cache toàn bộ novel data cho DeepSearch + Dashboard
   const [allNovelsCache, setAllNovelsCache] = useState({});
   const [isCacheLoading, setIsCacheLoading] = useState(false);
+
 
   const dashboardStats = useMemo(() => {
     const total = novelsMetadata.length;
@@ -337,7 +349,7 @@ export default function App() {
           try {
              const parsed = JSON.parse(localIndex);
              if (parsed.metadata && parsed.metadata.length > 0) setNovelsMetadata(parsed.metadata);
-             if (parsed.config) setGlobalTabsConfig(parsed.config);
+             if (parsed.config) setGlobalTabsConfig(mergeTabsConfig(parsed.config));
              setDirHandle("LOCAL_STORAGE");
           } catch(e) {}
        }
@@ -516,11 +528,9 @@ export default function App() {
        const lon = nov.tabsConfig.find(t => t.id === activeTabLon);
        if (!lon) return;
        if (activeTabNho) {
-         // Tab có subTabs → update subTab
          const nho = lon.subTabs?.find(s => s.id === activeTabNho);
          if (nho) nho.fieldsTemplate = newFields;
        } else {
-         // Tab không có subTabs → update trực tiếp trên lon
          lon.fieldsTemplate = newFields;
        }
     });
@@ -529,13 +539,13 @@ export default function App() {
   const handleReconnect = async () => {
     setIsReconnecting(true);
     try {
-      const h = await window.showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
+      const h = await window.showDirectoryPicker({ mode: 'readwrite' });
       try {
-        const fileHandle = await h.getFileHandle('index.json');
-        const file = await fileHandle.getFile();
-        const parsed = JSON.parse(await file.text());
+        const fh = await h.getFileHandle('index.json');
+        const f = await fh.getFile();
+        const parsed = JSON.parse(await f.text());
         if (parsed.metadata) setNovelsMetadata(parsed.metadata);
-        if (parsed.config) setGlobalTabsConfig(parsed.config);
+        if (parsed.config) setGlobalTabsConfig(mergeTabsConfig(parsed.config));
       } catch(e) {}
       setDirHandle(h);
       localStorage.setItem('tangthu_last_dir', h.name);
@@ -579,7 +589,7 @@ export default function App() {
          } catch(e) { setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); localStorage.setItem('tangthu_last_dir', h.name); setLastDirName(h.name); showToast("Thư mục trống. Đã kết nối Mệnh Bàn!"); return; }
       }
       if (content) {
-        try { const parsed = JSON.parse(content); if (parsed.metadata) setNovelsMetadata(parsed.metadata); if (parsed.config) setGlobalTabsConfig(parsed.config); setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); localStorage.setItem('tangthu_last_dir', h.name); setLastDirName(h.name); showToast("Đã tải Mệnh Bàn (Index) thành công!"); } 
+        try { const parsed = JSON.parse(content); if (parsed.metadata) setNovelsMetadata(parsed.metadata); if (parsed.config) setGlobalTabsConfig(mergeTabsConfig(parsed.config)); setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); localStorage.setItem('tangthu_last_dir', h.name); setLastDirName(h.name); showToast("Đã tải Mệnh Bàn (Index) thành công!"); } 
         catch (parseErr) { showToast("LỖI CHÍ MẠNG: File index.json bị hỏng cấu trúc.", "error"); }
       }
     } catch (e) {}
@@ -604,7 +614,7 @@ export default function App() {
         try {
             const parsed = JSON.parse(event.target.result);
             if (parsed.metadata && parsed.config) {
-                setGlobalTabsConfig(parsed.config); setNovelsMetadata(parsed.metadata);
+                setGlobalTabsConfig(mergeTabsConfig(parsed.config)); setNovelsMetadata(parsed.metadata);
                 await syncIndex(parsed.metadata, parsed.config, dirHandle);
                 if (parsed.novels) { for (const [id, data] of Object.entries(parsed.novels)) { await syncNovel(data, dirHandle); } }
                 showToast("Khôi phục Mệnh Bàn thành công! Đang tái lập không gian...");
@@ -649,7 +659,7 @@ export default function App() {
         rating: 0, review: '', cover: novelForm.cover, folderName: folderName 
       };
       
-      const newFullData = { ...newMeta, data: {}, tabsConfig: structuredClone(globalTabsConfig) };
+      const newFullData = { ...newMeta, data: {}, tabsConfig: structuredClone(INITIAL_TABS_CONFIG) };
       const newMetaList = [newMeta, ...novelsMetadata];
       setNovelsMetadata(newMetaList); setActiveNovelData(newFullData); 
       setIsAddNovelOpen(false); setMenu1Visible(false); setActiveTabLon('tong-quan'); setActiveTabNho(null); setActiveTabCon(null);
@@ -1045,10 +1055,17 @@ export default function App() {
 
     const data = await loadNovelData(meta, dirHandle);
     if (data) {
-      if (!data.tabsConfig) data.tabsConfig = structuredClone(globalTabsConfig);
+      if (!data.tabsConfig) {
+        data.tabsConfig = structuredClone(INITIAL_TABS_CONFIG);
+      } else {
+        // Merge: giữ tab tự tạo, thêm tab mới từ INITIAL nếu thiếu
+        const existingIds = new Set(data.tabsConfig.map(t => t.id));
+        const missingTabs = INITIAL_TABS_CONFIG.filter(t => !existingIds.has(t.id));
+        if (missingTabs.length > 0) data.tabsConfig = [...data.tabsConfig, ...missingTabs];
+      }
       setActiveNovelData(data);
     } else {
-      const newData = { ...meta, data: {}, tabsConfig: structuredClone(globalTabsConfig) };
+      const newData = { ...meta, data: {}, tabsConfig: structuredClone(INITIAL_TABS_CONFIG) };
       setActiveNovelData(newData);
     }
     setIsUploading(false);
@@ -2240,34 +2257,6 @@ export default function App() {
         </div>
       )}
 
-      {/* RECONNECT BANNER - hiện khi F5 mà có thư mục cũ */}
-      {!dirHandle && lastDirName && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[600] animate-fade-in">
-          <div className="bg-slate-900 border border-amber-600/60 rounded-2xl shadow-2xl px-6 py-4 flex items-center gap-4 max-w-md">
-            <div className="w-10 h-10 rounded-xl bg-amber-900/30 border border-amber-700/40 flex items-center justify-center flex-shrink-0">
-              <FolderOpen size={20} className="text-amber-400"/>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-slate-200 font-serif">Kết nối lại thư mục</p>
-              <p className="text-xs text-slate-500 font-serif truncate">📁 {lastDirName}</p>
-            </div>
-            <button
-              onClick={handleReconnect}
-              disabled={isReconnecting}
-              className="px-4 py-2 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-colors flex-shrink-0"
-            >
-              {isReconnecting
-                ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"/> Đang kết nối...</>
-                : <><Link2 size={13}/> Kết nối lại</>
-              }
-            </button>
-            <button onClick={() => { setLastDirName(''); localStorage.removeItem('tangthu_last_dir'); }} className="p-1.5 text-slate-600 hover:text-slate-400 transition-colors" title="Bỏ qua">
-              <X size={14}/>
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* HOVER NOVEL TOOLTIP - render ở root level tránh bị clip */}
       {hoveredNovelData && (
         <div
@@ -2294,6 +2283,25 @@ export default function App() {
               <div className="h-full bg-amber-500 rounded-full transition-all" style={{width:`${Math.min(100, Math.round((parseInt(hoveredNovelData.chaptersRead||0)/parseInt(hoveredNovelData.chaptersTotal))*100))}%`}}></div>
             </div>
           )}
+        </div>
+      )}
+
+      {!dirHandle && lastDirName && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[600] animate-fade-in">
+          <div className="bg-slate-900 border border-amber-600/60 rounded-2xl shadow-2xl px-6 py-4 flex items-center gap-4 max-w-md">
+            <div className="w-10 h-10 rounded-xl bg-amber-900/30 border border-amber-700/40 flex items-center justify-center flex-shrink-0">
+              <FolderOpen size={20} className="text-amber-400"/>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-slate-200 font-serif">Kết nối lại thư mục</p>
+              <p className="text-xs text-slate-500 font-serif truncate">📁 {lastDirName}</p>
+            </div>
+            <button onClick={handleReconnect} disabled={isReconnecting}
+              className="px-4 py-2 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-colors flex-shrink-0">
+              {isReconnecting ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"/> Đang kết nối...</> : <><Link2 size={13}/> Kết nối lại</>}
+            </button>
+            <button onClick={() => { setLastDirName(''); localStorage.removeItem('tangthu_last_dir'); }} className="p-1.5 text-slate-600 hover:text-slate-400 transition-colors"><X size={14}/></button>
+          </div>
         </div>
       )}
 
