@@ -27,24 +27,47 @@ export const safeString = (val) => {
   return String(val);
 };
 
-export const callGeminiAPI = async (payload, key) => {
-  const delays = [1000, 2000, 4000, 8000, 16000];
-  for (let i = 0; i < 5; i++) {
+const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+
+const normalizeKeys = (keysInput) =>
+  (Array.isArray(keysInput) ? keysInput : [keysInput]).map(k => (k || '').trim()).filter(Boolean);
+
+// Gọi Gemini và trả về text thô (không parse JSON)
+export const callGeminiAPIText = async (payload, keysInput) => {
+  const keys = normalizeKeys(keysInput);
+  if (keys.length === 0) throw new Error('Chưa thiết lập API Key');
+  const maxAttempts = Math.max(6, keys.length * 2);
+  let lastError = null;
+  for (let i = 0; i < maxAttempts; i++) {
+    const key = keys[i % keys.length];
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+      const res = await fetch(`${GEMINI_BASE_URL}?key=${key}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      if (res.status === 429 || res.status === 503) {
+        lastError = new Error(`rate_limit:${res.status}`);
+        if (i % keys.length < keys.length - 1) continue;
+        if (i < maxAttempts - 1) await new Promise(r => setTimeout(r, Math.min(3000 * (Math.floor(i / keys.length) + 1), 20000)));
+        continue;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      let jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!jsonText) return null;
-      jsonText = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
-      return JSON.parse(jsonText);
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
     } catch (e) {
-      if (i === 4) throw e;
-      await new Promise(r => setTimeout(r, delays[i]));
+      lastError = e;
+      if (i >= maxAttempts - 1) break;
+      if (!e.message?.startsWith('rate_limit')) await new Promise(r => setTimeout(r, Math.min(1500 * (i + 1), 10000)));
     }
   }
+  throw lastError || new Error('Tất cả API Key đều thất bại');
+};
+
+// Gọi Gemini và trả về JSON đã parse (dùng cho structured output)
+export const callGeminiAPI = async (payload, keysInput) => {
+  const rawText = await callGeminiAPIText(payload, keysInput);
+  if (!rawText) return null;
+  const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+  return JSON.parse(cleaned);
 };
 
 export const analyzeTextWithAI = async (text, fieldsTemplate, key) => {
@@ -78,19 +101,12 @@ export const extractEntityAttributesWithAI = async (text, currentFieldsTemplate,
   return callGeminiAPI(payload, key);
 };
 
-export const generateReviewWithAI = async (novelInfo, key) => {
+export const generateReviewWithAI = async (novelInfo, keysInput) => {
   const payload = {
     contents: [{ parts: [{ text: `Truyện: ${novelInfo.title}, Tác giả: ${novelInfo.author}, Thể loại: ${novelInfo.genre}, Tags: ${(novelInfo.tags || []).join(', ')}. Hãy viết một bài Review cảm ngộ mang đậm phong cách đọc truyện tiên hiệp/huyền huyễn, tóm tắt điểm sáng, bối cảnh và tại sao nên đọc truyện này. Viết một đoạn văn dài khoảng 150-200 chữ.` }] }],
     systemInstruction: { parts: [{ text: "Bạn là một đạo hữu uyên bác đang review ngọc giản. Hành văn có khí chất." }] }
   };
-  try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error("API Error");
-      const data = await res.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text;
-  } catch(e) { return null; }
+  try { return await callGeminiAPIText(payload, keysInput); } catch(e) { return null; }
 };
 
 export const sortTabsAlphabetically = (tabs) => {
@@ -222,7 +238,15 @@ export const handleToolbarClick = (before, after = '', editorId) => {
   const end = textarea.selectionEnd;
   const text = textarea.value;
   const selectedText = text.substring(start, end);
-  textarea.value = text.substring(0, start) + before + selectedText + after + text.substring(end);
+  const newValue = text.substring(0, start) + before + selectedText + after + text.substring(end);
+  // Dùng native setter để React 19 nhận diện thay đổi và kích hoạt onChange
+  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+  if (nativeSetter) {
+    nativeSetter.call(textarea, newValue);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  } else {
+    textarea.value = newValue;
+  }
   textarea.focus();
   textarea.setSelectionRange(start + before.length, end + before.length);
 };

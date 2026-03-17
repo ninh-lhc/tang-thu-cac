@@ -17,6 +17,7 @@
   .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
   .animate-fade-fast { animation: fadeFast 0.15s ease-out forwards; }
   .animate-spin-slow { animation: spinSlow 40s linear infinite; }
+  .animate-slide-down { animation: slideDown 0.2s ease-out forwards; }
 }
 
 @keyframes fadeIn { 
@@ -30,4 +31,67 @@
 @keyframes spinSlow { 
   from { transform: rotate(0deg); } 
   to { transform: rotate(360deg); } 
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================
+ * Theme System — CSS Variables per theme
+ * Áp dụng khi .theme-wrapper có class theme-*
+ * ========================================== */
+.theme-wrapper {
+  --color-accent: #d97706;
+  --color-accent-hover: #b45309;
+  --color-accent-muted: rgba(217,119,6,0.15);
+}
+
+/* Tiên Hiệp — vàng/hổ phách (mặc định) */
+.theme-tien-hiep {
+  --color-accent: #d97706;
+  --color-accent-hover: #b45309;
+  --color-accent-muted: rgba(217,119,6,0.15);
+}
+
+/* Huyền Huyễn — tím thần bí */
+.theme-huyen-huyen {
+  --color-accent: #8b5cf6;
+  --color-accent-hover: #7c3aed;
+  --color-accent-muted: rgba(139,92,246,0.15);
+}
+
+/* Đô Thị — xanh lam hiện đại */
+.theme-do-thi {
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2563eb;
+  --color-accent-muted: rgba(59,130,246,0.15);
+}
+
+/* Kiếm Hiệp — xanh ngọc */
+.theme-kiem-hiep {
+  --color-accent: #14b8a6;
+  --color-accent-hover: #0d9488;
+  --color-accent-muted: rgba(20,184,166,0.15);
+}
+
+/* Dị Giới — hồng đỏ */
+.theme-di-gioi {
+  --color-accent: #f43f5e;
+  --color-accent-hover: #e11d48;
+  --color-accent-muted: rgba(244,63,94,0.15);
+}
+
+/* Mạt Thế — xám xanh tối */
+.theme-mat-the {
+  --color-accent: #64748b;
+  --color-accent-hover: #475569;
+  --color-accent-muted: rgba(100,116,139,0.15);
+}
+
+/* Game — xanh lá neon */
+.theme-game {
+  --color-accent: #22c55e;
+  --color-accent-hover: #16a34a;
+  --color-accent-muted: rgba(34,197,94,0.15);
 }

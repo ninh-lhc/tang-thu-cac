@@ -15,12 +15,27 @@ import {
   GitBranch, ZoomIn, ZoomOut, Maximize2, RefreshCw, SlidersHorizontal, Atom, Edit2
 } from 'lucide-react';
 import {
-  FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES
+  FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
+  DEFAULT_FIELDS_MAP, DEFAULT_FIELDS_BY_PARENT, guessFieldsByLabel
 } from './MasterEngines.js';
 import {
   generateId, safeString, getTerms, AsyncLocalImage,
   handleToolbarClick, processPlainTextWithLinks, renderMarkdown, analyzeTextWithAI
 } from './MasterUtils.jsx';
+
+// Lấy fieldsTemplate đúng cho tab — ưu tiên template đã lưu, fallback theo ID rồi label
+const resolveFieldsTemplate = (tabConfig, parentTabId, parentLabel = '') => {
+  const t = tabConfig?.fieldsTemplate;
+  const target =
+    DEFAULT_FIELDS_MAP[tabConfig?.id] ||
+    DEFAULT_FIELDS_BY_PARENT[parentTabId] ||
+    guessFieldsByLabel(tabConfig?.label || '') ||
+    guessFieldsByLabel(parentLabel);
+  if (!t || t.length === 0) return target || DEFAULT_ENTITY_FIELDS;
+  // Nâng cấp nếu toàn bộ là stock field (f_xxx) và ngắn hơn (hoặc bằng) template chuẩn
+  if (target && t.every(f => /^f_/.test(f.id)) && t.length <= target.length) return target;
+  return t;
+};
 
 export const MarkdownToolbar = ({ editorId, onInsertImage, onPickLocalImage }) => (
   <div className="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-slate-800">
@@ -213,8 +228,8 @@ export const LandingScreen = ({ setIsAddNovelOpen, setIsManageTabsOpen }) => (
   </div>
 );
 
-export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, tabConfig, dirHandle, parentTabId }) => {
-  const fields = tabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS;
+export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, tabConfig, dirHandle, parentTabId, parentLabel }) => {
+  const fields = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const terms = getTerms(parentTabId);
   const getFieldValue = (fieldId, ent) => {
      if (ent.dynamicData && ent.dynamicData[fieldId]) return ent.dynamicData[fieldId];
@@ -265,8 +280,8 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
   );
 });
 
-export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, geminiApiKey }) => {
-  const fieldsTemplate = tabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS;
+export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, parentLabel, geminiApiKey }) => {
+  const fieldsTemplate = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const [editingFieldId, setEditingFieldId] = useState(null);
   const [editingFieldLabel, setEditingFieldLabel] = useState('');
   const [linkSuggestField, setLinkSuggestField] = useState(null); // fieldId đang gợi ý link
@@ -458,8 +473,8 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   );
 };
 
-export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, geminiApiKey }) => {
-  const fieldsTemplate = tabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS;
+export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, parentLabel, geminiApiKey }) => {
+  const fieldsTemplate = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const [editingFieldId, setEditingFieldId] = useState(null);
   const [editingFieldLabel, setEditingFieldLabel] = useState('');
   const terms = getTerms(parentTabId);
@@ -647,11 +662,46 @@ export const ModalQuickCreate = ({ isOpen, onClose, quickCreateName, onConfirm, 
     );
 };
 
-export const ModalSettings = ({ isOpen, onClose, handleConnectFolder, dirHandle, dirName, onExportBackup, onImportBackup, geminiApiKey, setGeminiApiKey }) => {
+export const ModalSettings = ({ isOpen, onClose, handleConnectFolder, dirHandle, dirName, onExportBackup, onImportBackup, geminiApiKeys, setGeminiApiKeys }) => {
+  const [newKey, setNewKey] = useState('');
+  const [testStatus, setTestStatus] = useState({}); // idx -> 'testing'|'ok'|'fail'
+  const [showKeys, setShowKeys] = useState({});     // idx -> bool (hiện plain text)
+
   if (!isOpen) return null;
+
+  const keys = Array.isArray(geminiApiKeys) ? geminiApiKeys : (geminiApiKeys ? [geminiApiKeys] : []);
+
+  const handleAdd = () => {
+    const trimmed = newKey.trim();
+    if (!trimmed) return;
+    setGeminiApiKeys([...keys, trimmed]);
+    setNewKey('');
+  };
+
+  const handleRemove = (idx) => {
+    setGeminiApiKeys(keys.filter((_, i) => i !== idx));
+    setTestStatus(prev => { const n = {...prev}; delete n[idx]; return n; });
+  };
+
+  const handleTest = async (key, idx) => {
+    setTestStatus(prev => ({ ...prev, [idx]: 'testing' }));
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: 'test' }] }] }) }
+      );
+      setTestStatus(prev => ({ ...prev, [idx]: res.ok ? 'ok' : 'fail' }));
+    } catch(e) {
+      setTestStatus(prev => ({ ...prev, [idx]: 'fail' }));
+    }
+  };
+
+  const maskKey = (k) => k.length > 12 ? k.slice(0, 8) + '••••••••' + k.slice(-4) : '••••••••••••';
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in">
-       <div className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+       <div className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
           <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900">
              <div className="flex items-center gap-3">
                 <HardDrive size={24} className="text-amber-500" />
@@ -659,15 +709,64 @@ export const ModalSettings = ({ isOpen, onClose, handleConnectFolder, dirHandle,
              </div>
              <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors"><X size={24}/></button>
           </div>
-          <div className="p-8 pb-6 overflow-y-auto max-h-[70vh] custom-scrollbar space-y-8">
+          <div className="p-6 pb-6 overflow-y-auto max-h-[80vh] custom-scrollbar space-y-7">
 
+             {/* ===== MULTI API KEY ===== */}
              <div>
-               <h3 className="text-sm font-bold text-indigo-400 mb-3 uppercase tracking-widest flex items-center gap-2"><Sparkles size={16}/> Khí Linh AI (Gemini Key)</h3>
-               <p className="text-slate-400 font-serif text-xs leading-relaxed mb-4">Nhập API Key để sử dụng AI. Key được mã hóa và lưu an toàn trên trình duyệt của bạn.</p>
-               <input type="password" value={geminiApiKey} onChange={(e) => setGeminiApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 text-sm focus:border-indigo-500 outline-none font-mono shadow-inner" />
+               <h3 className="text-sm font-bold text-indigo-400 mb-1 uppercase tracking-widest flex items-center gap-2"><Sparkles size={16}/> Khí Linh AI — Gemini API Keys</h3>
+               <p className="text-slate-500 font-serif text-xs leading-relaxed mb-4">
+                 Thêm nhiều key để tự động xoay vòng khi vượt giới hạn (429). Keys lưu cục bộ trong trình duyệt, không mất khi F5.
+               </p>
+
+               {/* Danh sách keys hiện có */}
+               <div className="space-y-2 mb-4">
+                 {keys.length === 0 && (
+                   <div className="text-center py-4 text-slate-600 font-serif text-sm italic border border-dashed border-slate-800 rounded-xl">Chưa có key nào. Thêm key bên dưới.</div>
+                 )}
+                 {keys.map((k, idx) => {
+                   const st = testStatus[idx];
+                   return (
+                     <div key={idx} className="flex items-center gap-2 bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2.5">
+                       <div className={`w-2 h-2 rounded-full flex-shrink-0 ${st === 'ok' ? 'bg-emerald-400' : st === 'fail' ? 'bg-rose-500' : 'bg-slate-600'}`}/>
+                       <span className="flex-1 font-mono text-xs text-slate-300 truncate select-none">
+                         {showKeys[idx] ? k : maskKey(k)}
+                       </span>
+                       <span className="text-[10px] text-slate-600 flex-shrink-0">#{idx + 1}</span>
+                       <button onClick={() => setShowKeys(prev => ({ ...prev, [idx]: !prev[idx] }))} className="p-1 text-slate-600 hover:text-slate-300 transition-colors flex-shrink-0" title={showKeys[idx] ? 'Ẩn' : 'Hiện'}>
+                         <Eye size={13}/>
+                       </button>
+                       <button onClick={() => handleTest(k, idx)} disabled={st === 'testing'} className={`px-2 py-1 rounded-lg text-[10px] font-bold flex-shrink-0 transition-colors border ${st === 'ok' ? 'border-emerald-700/50 text-emerald-400 bg-emerald-950/30' : st === 'fail' ? 'border-rose-700/50 text-rose-400 bg-rose-950/30' : 'border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-700/50 bg-slate-900'}`}>
+                         {st === 'testing' ? '...' : st === 'ok' ? '✓ OK' : st === 'fail' ? '✗ Lỗi' : 'Thử'}
+                       </button>
+                       <button onClick={() => handleRemove(idx)} className="p-1 text-slate-600 hover:text-rose-400 transition-colors flex-shrink-0"><Trash2 size={14}/></button>
+                     </div>
+                   );
+                 })}
+               </div>
+
+               {/* Thêm key mới */}
+               <div className="flex gap-2">
+                 <input
+                   type="password"
+                   value={newKey}
+                   onChange={e => setNewKey(e.target.value)}
+                   onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                   placeholder="AIzaSy... (dán key mới vào đây)"
+                   className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-200 text-sm focus:border-indigo-500 outline-none font-mono shadow-inner"
+                 />
+                 <button onClick={handleAdd} disabled={!newKey.trim()} className="px-4 py-2.5 bg-indigo-700 hover:bg-indigo-600 disabled:opacity-40 text-white rounded-xl font-bold flex items-center gap-2 text-sm transition-colors flex-shrink-0">
+                   <Plus size={16}/> Thêm
+                 </button>
+               </div>
+               {keys.length > 1 && (
+                 <p className="mt-2 text-[11px] text-indigo-400/70 font-serif italic">
+                   ✦ Có {keys.length} key — tự động xoay vòng khi gặp giới hạn tốc độ.
+                 </p>
+               )}
              </div>
+
              <div className="h-px bg-slate-800 w-full"></div>
-             
+
              <div>
                <h3 className="text-sm font-bold text-amber-500 mb-3 uppercase tracking-widest flex items-center gap-2"><FolderOpen size={16}/> Đồng Bộ Thư Mục</h3>
                <p className="text-slate-400 font-serif text-xs leading-relaxed mb-4">Sử dụng File System Access API để kết nối trực tiếp với 1 Thư mục trên máy.</p>
@@ -676,7 +775,9 @@ export const ModalSettings = ({ isOpen, onClose, handleConnectFolder, dirHandle,
                </button>
                {dirHandle && <div className="mt-3 text-center text-xs text-emerald-500 font-serif italic flex items-center justify-center gap-1.5"><Check size={14}/> Đang đồng bộ: {safeString(dirName)}</div>}
              </div>
+
              <div className="h-px bg-slate-800 w-full"></div>
+
              <div>
                <h3 className="text-sm font-bold text-blue-400 mb-3 uppercase tracking-widest flex items-center gap-2"><UploadCloud size={16}/> Mệnh Bàn Thủ Công</h3>
                <p className="text-slate-400 font-serif text-xs leading-relaxed mb-4">Xuất và Nhập dữ liệu dưới dạng file JSON.</p>
@@ -703,7 +804,7 @@ export const ModalConfirm = ({ isOpen, onClose, title, message, onConfirm }) => 
        <div className="bg-slate-900 border border-rose-900/50 rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center">
          <div className="w-16 h-16 bg-rose-950 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-rose-900/50"><Trash2 size={32} /></div>
          <h2 className="text-xl font-heading font-bold text-rose-500 mb-2">{safeString(title)}</h2>
-         <p className="text-sm text-slate-400 font-serif mb-8" dangerouslySetInnerHTML={{ __html: safeString(message).replace(/<(?!\/?b>)[^>]*>/g, '') }}></p>
+         <p className="text-sm text-slate-400 font-serif mb-8" dangerouslySetInnerHTML={{ __html: safeString(message).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/&lt;b&gt;/g,'<b>').replace(/&lt;\/b&gt;/g,'</b>') }}></p>
          <div className="flex justify-center gap-3">
             <button onClick={onClose} className="px-5 py-2.5 text-slate-400 font-serif hover:text-slate-200">Hủy</button>
             <button onClick={() => { onConfirm(); onClose(); }} className="px-6 py-2.5 bg-rose-700 hover:bg-rose-600 text-white rounded-lg font-bold font-serif shadow-lg">Xác nhận</button>
