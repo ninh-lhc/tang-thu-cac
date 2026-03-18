@@ -1009,7 +1009,8 @@ export default function App() {
       });
       const name = safeString(result?.name).trim() || 'Chưa đặt tên';
       const proc = safeString(result?.processedText);
-      const rawText = proc || raw;
+      // "Một cửa" chỉ ghi nhanh: không lưu cú pháp [[wiki]] (link/ảnh làm trong đúng thẻ)
+      const rawText = stripWikiBracketSyntax(proc || raw);
       const ents = activeNovelData.data?.[lonId]?.[nhoId]?.entities || [];
       if (ents.some((e) => safeString(e.name).trim().toLowerCase() === name.toLowerCase())) {
         showToast(`Đã có thẻ «${name}» — chuyển sang tab Cập nhật.`, 'warning');
@@ -1050,7 +1051,7 @@ export default function App() {
         id: generateId('ent'),
         name,
         avatar: '',
-        rawText: safeString(hubCreatePreview.rawText),
+        rawText: stripWikiBracketSyntax(safeString(hubCreatePreview.rawText)),
         dynamicData: { ...hubCreatePreview.dynamicData },
         info: '',
         milestones: [],
@@ -2620,6 +2621,18 @@ export default function App() {
                                                    <div className="min-w-[3.5rem] text-center">
                                                      <span className="font-heading text-4xl sm:text-5xl text-amber-400 tabular-nums leading-none">{anchor}</span>
                                                      <div className="font-serif text-[10px] text-slate-600 mt-0.5">chương neo</div>
+                                                    <input
+                                                      type="number"
+                                                      min="0"
+                                                      value={anchor}
+                                                      onChange={(e) => {
+                                                        const v = Math.max(0, parseInt(e.target.value, 10) || 0);
+                                                        updateActiveNovelData((n) => { n.readingAnchorChapter = v; });
+                                                      }}
+                                                      className="mt-2 w-20 mx-auto bg-slate-950/70 border border-slate-700 rounded-lg px-2 py-1 text-xs text-amber-200/90 font-serif text-center focus:outline-none focus:border-amber-600/50"
+                                                      aria-label="Nhập chương neo"
+                                                      title="Nhập số chương neo"
+                                                    />
                                                    </div>
                                                    <button type="button" aria-label="Tăng chương" onClick={() => updateActiveNovelData((n) => { const b = parseInt(n.readingAnchorChapter ?? n.chaptersRead ?? 0, 10) || 0; n.readingAnchorChapter = b + 1; })} className="min-h-10 min-w-10 rounded-xl bg-slate-800/90 border border-slate-600/60 text-amber-400 text-lg font-medium hover:bg-slate-700 transition-all active:scale-95">+</button>
                                                  </div>
@@ -3493,8 +3506,8 @@ export default function App() {
               {overviewHubTab === 'create' && (
                 <div className="space-y-4">
                   <p className="text-xs text-slate-500 font-serif leading-relaxed">
-                    Chọn mục → dán hoặc gõ mô tả. AI điền tên, bản thảo có <span className="text-violet-400">[[liên kết wiki]]</span> và các trường.{' '}
-                    <b className="text-slate-400">Không thêm ảnh ở đây</b> — sau khi lưu, vào đúng mục để gắn avatar / minh họa.
+                    Chọn mục → dán hoặc gõ mô tả. AI điền tên và các trường để tạo thẻ nhanh.{' '}
+                    <b className="text-slate-400">Không tạo liên kết wiki hay ảnh</b> — muốn link/avatar thì vào đúng mục → thẻ.
                   </p>
                   <div>
                     <label className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Mục sưu tập</label>
@@ -3530,7 +3543,7 @@ export default function App() {
                     className="w-full py-2.5 rounded-xl bg-violet-800 hover:bg-violet-700 disabled:opacity-50 text-white font-heading text-sm flex items-center justify-center gap-2"
                   >
                     {hubCreateBusy ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Sparkles size={16} />}
-                    Phân tích AI (chữ + [[link]])
+                    Phân tích AI (tạo thẻ nhanh)
                   </button>
                   {hubCreatePreview && (() => {
                     const [hlon, hnho] = hubCreatePath.split('|');
@@ -3551,7 +3564,7 @@ export default function App() {
                           />
                         </div>
                         <div>
-                          <label className="text-[10px] uppercase text-slate-500">Bản thảo (wiki [[ ]])</label>
+                          <label className="text-[10px] uppercase text-slate-500">Bản thảo (text)</label>
                           <textarea
                             className="mt-1 w-full min-h-[72px] bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300 font-serif"
                             value={hubCreatePreview.rawText}
