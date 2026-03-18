@@ -7,7 +7,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   Search, BookOpen, Filter, ChevronRight, ChevronLeft, ChevronDown,
-  User, Map, Hexagon, Settings, Edit3, Network, Plus, Trash2, Edit2,
+  User, Hexagon, Settings, Edit3, Network, Plus, Trash2, Edit2,
   X, Save, Check, Library, Sparkles, Cloud, History, LayoutGrid, Clock,
   AlignLeft, Shield, Link2, Download, Eye, TrendingUp, BarChart2, BookMarked, Users, Layers, Activity,
   Images, GitBranch
