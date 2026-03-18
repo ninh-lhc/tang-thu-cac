@@ -3,7 +3,7 @@
 // File: MasterEngines.js
 // ==========================================
 
-export const APP_VERSION = "5.1.0 (Hợp Nhất Toàn Diện)";
+export const APP_VERSION = "5.4.0 (Neo chương · Tra trong truyện · Thư viện ảnh)";
 export const apiKey = ""; // Được ghi đè bằng LocalStorage qua Giao diện
 
 export const FALLBACK_IMG = "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100%25' height='100%25' fill='%230f172a'/%3E%3Cpath d='M50 35a15 15 0 100-30 15 15 0 000 30zm0 10c-20 0-35 15-35 35h70c0-20-15-35-35-35z' fill='%23334155'/%3E%3C/svg%3E";

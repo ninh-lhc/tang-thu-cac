@@ -4,12 +4,13 @@
 // Vai trò: State toàn cục, điều phối, layout chính, Quản lý Thư mục Truyện
 // ==========================================
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   Search, BookOpen, Filter, ChevronRight, ChevronLeft, ChevronDown,
   User, Map, Hexagon, Settings, Edit3, Network, Plus, Trash2, Edit2,
   X, Save, Check, Library, Sparkles, Cloud, History, LayoutGrid, Clock,
-  AlignLeft, Shield, Link2, Download, Eye, TrendingUp, BarChart2, BookMarked, Users, Layers, Activity
+  AlignLeft, Shield, Link2, Download, Eye, TrendingUp, BarChart2, BookMarked, Users, Layers, Activity,
+  Images, GitBranch
 } from 'lucide-react';
 import {
   apiKey, FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
@@ -21,18 +22,225 @@ import {
   generateId, safeString, getTerms, sortTabsAlphabetically,
   AsyncLocalImage, processPlainTextWithLinks, renderMarkdown,
   getIconComponent, handleToolbarClick, processInline,
-  extractEntityAttributesWithAI, analyzeTextWithAI, generateReviewWithAI
+  extractEntityAttributesWithAI, analyzeTextWithAI, generateReviewWithAI,
+  analyzeCrossRefNoteWithAI, analyzeReadingJournalWithAI, truncateForAI, mapGeminiErrorToUserMessage
 } from './MasterUtils.jsx';
 import {
   MarkdownToolbar, AppHeader, LandingScreen, DashboardScreen, EntityCard,
   ModalEntity, ModalMilestone, ModalQuickCreate, ModalSettings,
-  ModalConfirm, ModalInsertImage, ModalAddNovel, ModalDeepSearch
+  ModalConfirm, ModalInsertImage, ModalAddNovel, ModalDeepSearch, ModalInNovelSearch
 } from './MasterComponents.jsx';
+import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
+import {
+  searchNovelData,
+  dedupeDeepSearchResults,
+  countEntitiesInNovel,
+  metadataSearchHits,
+} from './deepSearchCore.js';
 
 // Kiểm tra template có phải 3 trường generic mặc định không (hoặc rỗng/undefined)
 const isGenericDefault = (t) =>
   !t || t.length === 0 ||
   (t.length === 3 && t[0]?.id === 'f_status' && t[1]?.id === 'f_title' && t[2]?.id === 'f_desc');
+
+/** Tìm thẻ trong toàn bộ novel (dùng khi áp nhật ký batch). */
+function findEntitiesByHintInNovel(novelData, hint) {
+  const h = safeString(hint).toLowerCase().trim();
+  if (!h || !novelData?.tabsConfig) return [];
+  const scored = [];
+  (novelData.tabsConfig || []).forEach((lon) => {
+    if (lon.id === 'tong-quan') return;
+    (lon.subTabs || []).forEach((sub) => {
+      if (sub.viewType !== 'collection-track') return;
+      const ents = novelData.data?.[lon.id]?.[sub.id]?.entities || [];
+      ents.forEach((ent) => {
+        const n = safeString(ent.name).toLowerCase();
+        if (!n) return;
+        let score = 0;
+        if (n === h) score = 100;
+        else if (n.includes(h) || h.includes(n)) score = 60;
+        else {
+          const ws = h.split(/\s+/).filter((w) => w.length > 1);
+          if (ws.some((w) => n.includes(w))) score = 30;
+        }
+        if (score) scored.push({ score, lonId: lon.id, nhoId: sub.id, ent });
+      });
+    });
+  });
+  return scored.sort((a, b) => b.score - a.score);
+}
+
+/** Hub cập nhật nhanh: không lưu [[wiki]] — chỉ văn bản thường (liên kết làm trên thẻ). */
+function stripWikiBracketSyntax(s) {
+  if (s == null || typeof s !== 'string') return s;
+  let out = s;
+  let prev;
+  do {
+    prev = out;
+    out = out.replace(/\[\[([^\]]+)\]\]/g, '$1');
+  } while (out !== prev);
+  return out;
+}
+
+/** Áp các gợi ý nhật ký đã chọn vào novel (mutate nov). */
+function mutateNovelJournalSelections(nov, panel) {
+  const fails = [];
+  let ok = 0;
+  const chapterCtx = Math.max(0, parseInt(panel.chapter, 10) || 0);
+  const sk = panel.selectedKeys;
+  const suggestions = panel.suggestions || [];
+  const indices = suggestions.map((_, i) => i).filter((i) => sk && sk.has(`j-${i}`));
+  if (!indices.length) return { ok: 0, fails, chapterCtx, didWork: false };
+
+  const resolvePath = (tabLonId, tabNhoId) => {
+    const cfg = nov.tabsConfig || [];
+    const lon = cfg.find((t) => t.id === tabLonId);
+    const nho = lon?.subTabs?.find((s) => s.id === tabNhoId && s.viewType === 'collection-track');
+    if (lon && nho) return { lonId: lon.id, nhoId: nho.id };
+    const nv = cfg.find((t) => t.id === 'nhan-vat');
+    const nvSub = nv?.subTabs?.find((s) => s.viewType === 'collection-track');
+    if (nv && nvSub) return { lonId: nv.id, nhoId: nvSub.id };
+    for (const L of cfg) {
+      if (L.id === 'tong-quan') continue;
+      const st = L.subTabs?.find((s) => s.viewType === 'collection-track');
+      if (st) return { lonId: L.id, nhoId: st.id };
+    }
+    return null;
+  };
+  const ensureTab = (lonId, nhoId) => {
+    if (!nov.data) nov.data = {};
+    if (!nov.data[lonId]) nov.data[lonId] = {};
+    let td = nov.data[lonId][nhoId];
+    if (!td || typeof td === 'string') td = { overview: typeof td === 'string' ? td : '', entities: [] };
+    if (!td.entities) td.entities = [];
+    nov.data[lonId][nhoId] = td;
+    return td;
+  };
+
+  indices.forEach((idx) => {
+    const s = suggestions[idx];
+    const kind = safeString(s.kind).toLowerCase().replace(/\s/g, '_');
+    const tag = `#${idx + 1}`;
+
+    if (kind === 'new_entity') {
+      const path = resolvePath(s.tabLonId, s.tabNhoId);
+      if (!path) {
+        fails.push(`${tag} thẻ mới: mục không hợp lệ`);
+        return;
+      }
+      const name = safeString(s.suggestedName).trim();
+      if (!name) {
+        fails.push(`${tag} thiếu tên thẻ`);
+        return;
+      }
+      const tabData = ensureTab(path.lonId, path.nhoId);
+      if (tabData.entities.some((e) => safeString(e.name).trim().toLowerCase() === name.toLowerCase())) {
+        fails.push(`«${name}» đã có`);
+        return;
+      }
+      tabData.entities.push({
+        id: generateId('ent'),
+        name,
+        avatar: '',
+        rawText: stripWikiBracketSyntax(safeString(s.draftRawText)),
+        dynamicData: {},
+        info: '',
+        milestones: [],
+      });
+      ok++;
+      return;
+    }
+
+    if (kind === 'milestone') {
+      const hint = safeString(s.entityHint).trim();
+      if (!hint) {
+        fails.push(`${tag} mốc: thiếu tên thẻ`);
+        return;
+      }
+      const matches = findEntitiesByHintInNovel(nov, hint);
+      if (!matches.length) {
+        fails.push(`${tag} không tìm «${hint}»`);
+        return;
+      }
+      const m = matches[0];
+      const tabData = ensureTab(m.lonId, m.nhoId);
+      const ent = tabData.entities.find((e) => e.id === m.ent.id);
+      if (!ent) {
+        fails.push(`${tag} lỗi dữ liệu thẻ`);
+        return;
+      }
+      if (!ent.milestones) ent.milestones = [];
+      const ch = parseInt(s.chapter, 10);
+      const chFinal = !isNaN(ch) && ch >= 0 ? ch : chapterCtx;
+      const ev = stripWikiBracketSyntax(safeString(s.eventText).trim() || safeString(s.why));
+      if (!ev) {
+        fails.push(`${tag} thiếu mô tả sự kiện`);
+        return;
+      }
+      ent.milestones.push({ id: generateId('ms'), chapter: chFinal, event: ev, snapshot: {} });
+      ent.milestones.sort((a, b) => (a.chapter || 0) - (b.chapter || 0));
+      ok++;
+      return;
+    }
+
+    if (kind === 'update_profile') {
+      const hint = safeString(s.entityHint).trim();
+      if (!hint) {
+        fails.push(`${tag} hồ sơ: thiếu tên thẻ`);
+        return;
+      }
+      const matches = findEntitiesByHintInNovel(nov, hint);
+      if (!matches.length) {
+        fails.push(`${tag} không tìm «${hint}»`);
+        return;
+      }
+      const m = matches[0];
+      const lon = (nov.tabsConfig || []).find((t) => t.id === m.lonId);
+      const nho = lon?.subTabs?.find((st) => st.id === m.nhoId);
+      const template = nho?.fieldsTemplate || [];
+      const tabData = ensureTab(m.lonId, m.nhoId);
+      const ent = tabData.entities.find((e) => e.id === m.ent.id);
+      if (!ent) {
+        fails.push(`${tag} lỗi thẻ`);
+        return;
+      }
+      if (!ent.dynamicData) ent.dynamicData = {};
+      const patches = Array.isArray(s.fieldPatches) ? s.fieldPatches : [];
+      let patched = 0;
+      patches.forEach((patch) => {
+        const label = safeString(patch.fieldLabel).trim();
+        const val = stripWikiBracketSyntax(safeString(patch.value));
+        if (!label || !val) return;
+        const low = label.toLowerCase();
+        const f =
+          template.find((t) => safeString(t.label).toLowerCase().trim() === low) ||
+          template.find(
+            (t) =>
+              low.includes(safeString(t.label).toLowerCase()) ||
+              safeString(t.label).toLowerCase().includes(low)
+          );
+        if (f) {
+          ent.dynamicData[f.id] = val;
+          patched++;
+        }
+      });
+      const note = stripWikiBracketSyntax(safeString(s.profileNote).trim());
+      if (note) {
+        ent.rawText =
+          safeString(ent.rawText) + (ent.rawText ? '\n\n' : '') + `[ch.${chapterCtx}] ${note}`;
+      }
+      if (!patched && !note) {
+        fails.push(`${tag} hồ sơ: không có trường/ghi chú`);
+        return;
+      }
+      ok++;
+      return;
+    }
+    fails.push(`${tag} loại «${kind}» không xử lý`);
+  });
+
+  return { ok, fails, chapterCtx, didWork: true };
+}
 
 export default function App() {
   const [novelsMetadata, setNovelsMetadata] = useState(MOCK_METADATA);
@@ -67,6 +275,7 @@ export default function App() {
   const [isSplitPreview, setIsSplitPreview] = useState(false);
   const [recentlyMergedFields, setRecentlyMergedFields] = useState(new Set()); // track field vừa merge
   const [livePreviewText, setLivePreviewText] = useState('');
+  const [debouncedMarkdownPreview, setDebouncedMarkdownPreview] = useState('');
   const [isExtractingAI, setIsExtractingAI] = useState(false);
   const [isGeneratingReview, setIsGeneratingReview] = useState(false);
 
@@ -74,6 +283,22 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isManageTabsOpen, setIsManageTabsOpen] = useState(false);
   const [isDeepSearchOpen, setIsDeepSearchOpen] = useState(false);
+  const [isInNovelSearchOpen, setIsInNovelSearchOpen] = useState(false);
+  const [xrefDraft, setXrefDraft] = useState({ from: '', to: '', note: '' });
+  const [neoXrefSectionOpen, setNeoXrefSectionOpen] = useState(false);
+  const [overviewNeoOpen, setOverviewNeoOpen] = useState(false);
+  /** { xref, suggestions, loading, error } | null */
+  const [xrefAiPanel, setXrefAiPanel] = useState(null);
+
+  const [overviewHubOpen, setOverviewHubOpen] = useState(false);
+  const [overviewHubTab, setOverviewHubTab] = useState('create');
+  const [hubCreatePath, setHubCreatePath] = useState('');
+  const [hubCreateInput, setHubCreateInput] = useState('');
+  const [hubCreatePreview, setHubCreatePreview] = useState(null);
+  const [hubCreateBusy, setHubCreateBusy] = useState(false);
+  const [hubUpdateChapter, setHubUpdateChapter] = useState('');
+  const [hubUpdateText, setHubUpdateText] = useState('');
+  const [hubUpdatePanel, setHubUpdatePanel] = useState(null);
   
   const [isAddNovelOpen, setIsAddNovelOpen] = useState(false);
   const [novelModalMode, setNovelModalMode] = useState("create");
@@ -123,9 +348,27 @@ export default function App() {
     if (filtered.length > 0) localStorage.setItem('tangthu_apikey', filtered[0]);
   };
 
-  // Cache toàn bộ novel data cho DeepSearch + Dashboard
-  const [allNovelsCache, setAllNovelsCache] = useState({});
-  const [isCacheLoading, setIsCacheLoading] = useState(false);
+  /** Tổng thực thể / mốc — lưu trong index.json, không preload toàn bộ novel */
+  const [novelStatsById, setNovelStatsById] = useState({});
+  const [isStatsBackfilling, setIsStatsBackfilling] = useState(false);
+  const novelStatsByIdRef = useRef({});
+  const novelsMetadataRef = useRef(novelsMetadata);
+  const globalTabsConfigRef = useRef(globalTabsConfig);
+  const dirHandleRef = useRef(dirHandle);
+  const persistIndexStatsTimerRef = useRef(null);
+
+  useEffect(() => {
+    novelsMetadataRef.current = novelsMetadata;
+    globalTabsConfigRef.current = globalTabsConfig;
+    dirHandleRef.current = dirHandle;
+  }, [novelsMetadata, globalTabsConfig, dirHandle]);
+
+  useEffect(() => {
+    novelStatsByIdRef.current = novelStatsById;
+  }, [novelStatsById]);
+  useEffect(() => () => {
+    if (persistIndexStatsTimerRef.current) clearTimeout(persistIndexStatsTimerRef.current);
+  }, []);
 
   const dashboardStats = useMemo(() => {
     const total = novelsMetadata.length;
@@ -141,22 +384,17 @@ export default function App() {
       if (n.chaptersTotal && n.chaptersTotal !== '???') totalChaptersAll += parseInt(n.chaptersTotal || 0);
     });
     let totalEntities = 0, totalMilestones = 0;
-    Object.values(allNovelsCache).forEach(nd => {
-      if (!nd?.data) return;
-      Object.values(nd.data).forEach(lonData => {
-        if (typeof lonData !== 'object') return;
-        Object.values(lonData).forEach(nhoData => {
-          if (nhoData?.entities) {
-            totalEntities += nhoData.entities.length;
-            nhoData.entities.forEach(e => { totalMilestones += (e.milestones?.length || 0); });
-          }
-        });
-      });
+    novelsMetadata.forEach((n) => {
+      const st = novelStatsById[n.id];
+      if (st) {
+        totalEntities += st.entities || 0;
+        totalMilestones += st.milestones || 0;
+      }
     });
     const topGenre = Object.entries(byGenre).sort((a,b)=>b[1]-a[1])[0];
     const recentNovels = [...novelsMetadata].slice(0, 5);
     return { total, byStatus, byGenre, totalChaptersRead, totalChaptersAll, totalEntities, totalMilestones, recentNovels, topGenre };
-  }, [novelsMetadata, allNovelsCache]);
+  }, [novelsMetadata, novelStatsById]);
 
   const activeThemeClass = useMemo(() => {
       if (!activeNovelData) return 'theme-tien-hiep';
@@ -257,6 +495,71 @@ export default function App() {
     return list;
   }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig, entitySearch, entitySortMode]);
 
+  const galleryPortraitEntries = useMemo(() => {
+    if (!activeNovelData) return [];
+    const cfg = activeNovelData.tabsConfig || globalTabsConfig;
+    const out = [];
+    (cfg || []).forEach((lon) => {
+      (lon.subTabs || []).forEach((nho) => {
+        if (nho.viewType !== 'collection-track') return;
+        const tabData = activeNovelData.data?.[lon.id]?.[nho.id];
+        (tabData?.entities || []).forEach((ent) => {
+          if (ent.avatar && String(ent.avatar).trim()) {
+            out.push({ ent, lonId: lon.id, nhoId: nho.id, sectionLabel: nho.label });
+          }
+        });
+      });
+    });
+    return out;
+  }, [activeNovelData, globalTabsConfig]);
+
+  /** Thực thể có kỷ nguyên trong [neo−12, neo+30] — mọi mục sưu tập */
+  const nearChapterEntitiesGlobal = useMemo(() => {
+    if (!activeNovelData) return [];
+    const anchor = Math.max(0, parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) || 0);
+    const lo = anchor - 12;
+    const hi = anchor + 30;
+    const cfg = activeNovelData.tabsConfig || globalTabsConfig;
+    const seen = new Set();
+    const out = [];
+    (cfg || []).forEach((lon) => {
+      (lon.subTabs || []).forEach((nho) => {
+        if (nho.viewType !== 'collection-track') return;
+        const tabData = activeNovelData.data?.[lon.id]?.[nho.id];
+        (tabData?.entities || []).forEach((ent) => {
+          const hit = (ent.milestones || []).some((ms) => {
+            const c = parseInt(ms.chapter, 10);
+            return !isNaN(c) && c >= lo && c <= hi;
+          });
+          if (!hit) return;
+          const k = `${lon.id}|${nho.id}|${ent.id}`;
+          if (seen.has(k)) return;
+          seen.add(k);
+          out.push({ ent, lonId: lon.id, nhoId: nho.id, sectionLabel: nho.label });
+        });
+      });
+    });
+    return out;
+  }, [activeNovelData, globalTabsConfig]);
+
+  const handleOpenEntityFromGallery = useCallback(
+    (entry) => {
+      const cfg = activeNovelData?.tabsConfig || globalTabsConfig;
+      const lon = cfg.find((t) => t.id === entry.lonId);
+      const sub = lon?.subTabs?.find((s) => s.id === entry.nhoId);
+      if (!lon || !sub || !activeNovelData) return;
+      setActiveTabLon(entry.lonId);
+      setActiveTabNho(entry.nhoId);
+      setActiveTabCon(null);
+      setSelectedEntityId(entry.ent.id);
+      setCollectionSubTab('detail');
+      setIsEditingMode(false);
+      setIsEntityEditing(false);
+      setEntitySearch('');
+    },
+    [activeNovelData, globalTabsConfig]
+  );
+
   // Reset page khi filter thay đổi
   useEffect(() => { setEntityPage(1); }, [entitySearch, entitySortMode, entityGroupBy, activeTabLon, activeTabNho]);
 
@@ -306,61 +609,124 @@ export default function App() {
   const [isCalculatingNetwork, setIsCalculatingNetwork] = useState(false);
 
   useEffect(() => {
-    if (!activeNovelData || !selectedEntity) { setRelatedEntities([]); return; }
+    if (!activeNovelData || !selectedEntity) {
+      setRelatedEntities([]);
+      return;
+    }
     setIsCalculatingNetwork(true);
     const timerId = setTimeout(() => {
-        const namesToMatch = new Set();
-        const extractNames = (str) => {
-            if(!str) return;
-            str.split(/[,/|()]/).forEach(n => {
-                const clean = n.trim();
-                if (clean.length >= 2) namesToMatch.add(clean.toLowerCase());
-            });
-        };
-        extractNames(selectedEntity.name);
-        if (selectedEntity.dynamicData?.f_alias) extractNames(selectedEntity.dynamicData.f_alias);
+      const relMap = new Map();
+      const addRel = (entity, lonId, nhoId, tabLabel, ctx) => {
+        if (!entity || entity.id === selectedEntity.id) return;
+        const k = `${lonId}|${nhoId}|${entity.id}`;
+        if (!relMap.has(k)) relMap.set(k, { entity, lonId, nhoId, tabLabel, parts: new Set([ctx]) });
+        else relMap.get(k).parts.add(ctx);
+      };
 
-        if (namesToMatch.size === 0) { setRelatedEntities([]); setIsCalculatingNetwork(false); return; }
+      const namesToMatch = new Set();
+      const extractNames = (str) => {
+        if (!str) return;
+        str.split(/[,/|()]/).forEach((n) => {
+          const clean = n.trim();
+          if (clean.length >= 2) namesToMatch.add(clean.toLowerCase());
+        });
+      };
+      extractNames(selectedEntity.name);
+      if (selectedEntity.dynamicData?.f_alias) extractNames(selectedEntity.dynamicData.f_alias);
 
+      if (namesToMatch.size > 0) {
         const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const regexStr = Array.from(namesToMatch).map(escapeRegExp).join('|');
         const combinedRegex = new RegExp(`(${regexStr})`, 'i');
-        const relations = [];
 
         Object.entries(activeNovelData.data || {}).forEach(([lonId, lonData]) => {
-            const tL = activeTabs.find(t => t.id === lonId);
-            Object.entries(lonData || {}).forEach(([nhoId, nhoData]) => {
-                const tN = tL?.subTabs?.find(s => s.id === nhoId);
-                if (nhoData && nhoData.entities) {
-                    nhoData.entities.forEach(otherEnt => {
-                        if (otherEnt.id === selectedEntity.id) return; 
-                        let mentioned = false; let contextInfo = '';
-                        if (otherEnt.dynamicData) {
-                            Object.entries(otherEnt.dynamicData).forEach(([fId, fVal]) => {
-                                if (typeof fVal === 'string' && combinedRegex.test(fVal)) {
-                                    mentioned = true;
-                                    const f = tN?.fieldsTemplate?.find(field => field.id === fId);
-                                    contextInfo = f ? f.label : 'Thuộc tính';
-                                }
-                            });
-                        }
-                        if (!mentioned && typeof otherEnt.info === 'string') {
-                            if (combinedRegex.test(otherEnt.info)) { mentioned = true; contextInfo = 'Trong ghi chép'; }
-                        }
-                        if (mentioned) relations.push({ entity: otherEnt, lonId, nhoId, tabLabel: tN ? tN.label : lonId, context: contextInfo });
-                    });
+          const tL = activeTabs.find((t) => t.id === lonId);
+          Object.entries(lonData || {}).forEach(([nhoId, nhoData]) => {
+            const tN = tL?.subTabs?.find((s) => s.id === nhoId);
+            if (nhoData && nhoData.entities) {
+              nhoData.entities.forEach((otherEnt) => {
+                if (otherEnt.id === selectedEntity.id) return;
+                let mentioned = false;
+                let contextInfo = '';
+                if (otherEnt.dynamicData) {
+                  Object.entries(otherEnt.dynamicData).forEach(([fId, fVal]) => {
+                    if (typeof fVal === 'string' && combinedRegex.test(fVal)) {
+                      mentioned = true;
+                      const f = tN?.fieldsTemplate?.find((field) => field.id === fId);
+                      contextInfo = f ? f.label : 'Thuộc tính';
+                    }
+                  });
                 }
-            });
+                if (!mentioned && typeof otherEnt.info === 'string') {
+                  if (combinedRegex.test(otherEnt.info)) {
+                    mentioned = true;
+                    contextInfo = 'Trong ghi chép';
+                  }
+                }
+                if (mentioned) addRel(otherEnt, lonId, nhoId, tN ? tN.label : lonId, contextInfo);
+              });
+            }
+          });
         });
-        setRelatedEntities(relations); setIsCalculatingNetwork(false);
-    }, 10); 
+      }
+
+      const resolveWikiDest = (linkInner) => {
+        const label = safeString(linkInner).trim();
+        if (!label) return null;
+        const low = label.toLowerCase();
+        const exact = entityMap.find((e) => e.name.toLowerCase() === low);
+        if (exact) return { dest: exact.dest, matched: exact.name };
+        for (const e of entityMap) {
+          const en = e.name.toLowerCase();
+          if (en.length < 2) continue;
+          if (low.includes(en) || en.includes(low)) return { dest: e.dest, matched: e.name };
+        }
+        return null;
+      };
+
+      const wikiRe = /\[\[([^\]]+)\]\]/g;
+      const absorbWikiText = (text, ctxLead) => {
+        if (!text || typeof text !== 'string') return;
+        let m;
+        wikiRe.lastIndex = 0;
+        while ((m = wikiRe.exec(text)) !== null) {
+          const resolved = resolveWikiDest(m[1]);
+          if (!resolved) continue;
+          const { dest, matched } = resolved;
+          if (dest.entityId === selectedEntity.id) continue;
+          const td = activeNovelData.data?.[dest.lonId]?.[dest.nhoId];
+          const ent = td?.entities?.find((e) => e.id === dest.entityId);
+          if (!ent) continue;
+          const tN = activeTabs.find((t) => t.id === dest.lonId)?.subTabs?.find((s) => s.id === dest.nhoId);
+          addRel(ent, dest.lonId, dest.nhoId, tN ? tN.label : dest.lonId, `${ctxLead}[[${matched}]]`);
+        }
+      };
+
+      absorbWikiText(selectedEntity.rawText, 'Bản thảo · ');
+      (selectedEntity.milestones || []).forEach((ms) => {
+        absorbWikiText(ms.event, `Mốc ch.${safeString(ms.chapter)} · `);
+      });
+
+      const relations = Array.from(relMap.values()).map((v) => ({
+        entity: v.entity,
+        lonId: v.lonId,
+        nhoId: v.nhoId,
+        tabLabel: v.tabLabel,
+        context: [...v.parts].join(' · '),
+      }));
+      setRelatedEntities(relations);
+      setIsCalculatingNetwork(false);
+    }, 10);
     return () => clearTimeout(timerId);
-  }, [activeNovelData, selectedEntity, activeTabs]);
+  }, [activeNovelData, selectedEntity, activeTabs, entityMap]);
 
   // BẢO VỆ CHỐNG CRASH KHI LỌC THỂ LOẠI
   const filteredNovelsList = useMemo(() => {
+    const q = searchQuery.toLowerCase();
     return novelsMetadata.filter(n => {
-      const matchSearch = n.title.toLowerCase().includes(searchQuery.toLowerCase()) || (n.author && n.author.toLowerCase().includes(searchQuery.toLowerCase()));
+      const t = safeString(n.title).toLowerCase();
+      const au = safeString(n.author).toLowerCase();
+      const matchSearch = !q || t.includes(q) || au.includes(q);
       
       let nGenres = [];
       if (Array.isArray(n.genres)) nGenres = n.genres;
@@ -380,6 +746,10 @@ export default function App() {
              const parsed = JSON.parse(localIndex);
              if (parsed.metadata && parsed.metadata.length > 0) setNovelsMetadata(parsed.metadata);
              if (parsed.config) setGlobalTabsConfig(parsed.config);
+             if (parsed.novelStats && typeof parsed.novelStats === 'object') {
+               novelStatsByIdRef.current = parsed.novelStats;
+               setNovelStatsById(parsed.novelStats);
+             }
              setDirHandle("LOCAL_STORAGE");
           } catch(e) {}
        }
@@ -392,59 +762,514 @@ export default function App() {
   }, [searchInput]);
 
   useEffect(() => {
-    if (novelsMetadata.length === 0) return;
-    let cancelled = false;
-    setIsCacheLoading(true);
-    const loadAll = async () => {
-      const cache = {};
-      for (const meta of novelsMetadata) {
-        if (cancelled) return;
-        try { const d = await loadNovelData(meta, dirHandle); if (d) cache[meta.id] = d; } catch(e) {}
-      }
-      if (!cancelled) { setAllNovelsCache(cache); setIsCacheLoading(false); }
-    };
-    loadAll();
-    return () => { cancelled = true; };
-  }, [novelsMetadata, dirHandle]);
-
-  useEffect(() => {
     if (activeNovelData) {
       setOverviewForm({ status: activeNovelData.status, chaptersRead: activeNovelData.chaptersRead, chaptersTotal: activeNovelData.chaptersTotal, rating: activeNovelData.rating, review: activeNovelData.review });
       setIsAddingTag(false); setNewTagValue('');
     }
   }, [activeNovelData]); 
 
-  const showToast = (msg, type = 'success') => { setToastMessage({ msg, type }); setTimeout(() => setToastMessage(null), 3500); };
+  const toastTimerRef = useRef(null);
+  const showToast = useCallback((msg, type = 'success') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage({ msg, type });
+    toastTimerRef.current = setTimeout(() => { setToastMessage(null); toastTimerRef.current = null; }, 3500);
+  }, []);
+  useEffect(() => () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); }, []);
 
-  const syncIndex = async (newMetadata, newConfig, dir) => {
+  const buildXrefEntityCatalog = useCallback(() => {
+    if (!activeNovelData?.tabsConfig) return '';
+    const lines = [];
+    (activeNovelData.tabsConfig || []).forEach((lon) => {
+      if (lon.id === 'tong-quan') return;
+      (lon.subTabs || []).forEach((sub) => {
+        if (sub.viewType !== 'collection-track') return;
+        const ents = activeNovelData.data?.[lon.id]?.[sub.id]?.entities || [];
+        const names = ents.map((e) => safeString(e.name)).filter(Boolean).slice(0, 100);
+        lines.push(
+          `${lon.id}|${sub.id} | ${safeString(lon.label)} › ${safeString(sub.label)} | ${names.join(', ') || '(chưa có thẻ)'}`
+        );
+      });
+    });
+    return lines.join('\n');
+  }, [activeNovelData]);
+
+  const findEntitiesByXrefHint = useCallback(
+    (hint) => {
+      const h = safeString(hint).toLowerCase().trim();
+      if (!h || !activeNovelData) return [];
+      const scored = [];
+      (activeNovelData.tabsConfig || []).forEach((lon) => {
+        if (lon.id === 'tong-quan') return;
+        (lon.subTabs || []).forEach((sub) => {
+          if (sub.viewType !== 'collection-track') return;
+          const ents = activeNovelData.data?.[lon.id]?.[sub.id]?.entities || [];
+          ents.forEach((ent) => {
+            const n = safeString(ent.name).toLowerCase();
+            if (!n) return;
+            let score = 0;
+            if (n === h) score = 100;
+            else if (n.includes(h) || h.includes(n)) score = 60;
+            else {
+              const ws = h.split(/\s+/).filter((w) => w.length > 1);
+              if (ws.some((w) => n.includes(w))) score = 30;
+            }
+            if (score) scored.push({ score, lonId: lon.id, nhoId: sub.id, ent });
+          });
+        });
+      });
+      return scored.sort((a, b) => b.score - a.score);
+    },
+    [activeNovelData]
+  );
+
+  const resolveXrefTargetCollectionTab = useCallback(
+    (tabLonId, tabNhoId) => {
+      const cfg = activeNovelData?.tabsConfig || globalTabsConfig || [];
+      const lon = cfg.find((t) => t.id === tabLonId);
+      const nho = lon?.subTabs?.find((s) => s.id === tabNhoId && s.viewType === 'collection-track');
+      if (lon && nho) return { lonId: lon.id, nhoId: nho.id };
+      const nv = cfg.find((t) => t.id === 'nhan-vat');
+      const nvSub = nv?.subTabs?.find((s) => s.viewType === 'collection-track');
+      if (nv && nvSub) return { lonId: nv.id, nhoId: nvSub.id };
+      for (const L of cfg) {
+        if (L.id === 'tong-quan') continue;
+        const st = L.subTabs?.find((s) => s.viewType === 'collection-track');
+        if (st) return { lonId: L.id, nhoId: st.id };
+      }
+      return null;
+    },
+    [activeNovelData, globalTabsConfig]
+  );
+
+  const runXrefAiForRow = useCallback(
+    async (xref) => {
+      if (!activeNovelData || geminiApiKeys.length === 0) {
+        showToast('Cần API Key (Cài đặt) để gợi ý AI.', 'warning');
+        return;
+      }
+      setXrefAiPanel({ xref, suggestions: [], loading: true, error: '' });
+      try {
+        const catalog = buildXrefEntityCatalog();
+        const { suggestions } = await analyzeCrossRefNoteWithAI(geminiApiKeys, {
+          novelTitle: activeNovelData.title,
+          fromCh: xref.fromCh,
+          toCh: xref.toCh,
+          note: xref.note,
+          entityCatalog: catalog,
+        });
+        setXrefAiPanel((p) =>
+          p && p.xref?.id === xref.id ? { ...p, loading: false, suggestions: suggestions || [] } : p
+        );
+      } catch (e) {
+        setXrefAiPanel((p) =>
+          p && p.xref?.id === xref.id
+            ? { ...p, loading: false, error: mapGeminiErrorToUserMessage(e) }
+            : p
+        );
+      }
+    },
+    [activeNovelData, geminiApiKeys, buildXrefEntityCatalog, showToast]
+  );
+
+  const applyXrefSuggestionNewEntity = useCallback(
+    (s, xref) => {
+      const path = resolveXrefTargetCollectionTab(s.tabLonId, s.tabNhoId);
+      if (!path) {
+        showToast('Không tìm thấy mục sưu tập phù hợp.', 'warning');
+        return;
+      }
+      setNavHistory((prev) => [
+        ...prev,
+        { lonId: activeTabLon, nhoId: activeTabNho, conId: activeTabCon, entityId: selectedEntityId, subTab: collectionSubTab },
+      ]);
+      setActiveTabLon(path.lonId);
+      setActiveTabNho(path.nhoId);
+      setActiveTabCon(null);
+      setSelectedEntityId(null);
+      setCollectionSubTab('list');
+      setEntitySearch('');
+      setEditingEntityData({
+        id: null,
+        name: safeString(s.suggestedName) || 'Chưa đặt tên',
+        avatar: '',
+        rawText: safeString(s.draftRawText) || safeString(xref?.note) || '',
+        dynamicData: {},
+      });
+      setIsEntityModalOpen(true);
+      setXrefAiPanel(null);
+      showToast('Đã mở form tạo thẻ — kiểm tra rồi Lưu.');
+    },
+    [
+      resolveXrefTargetCollectionTab,
+      activeTabLon,
+      activeTabNho,
+      activeTabCon,
+      selectedEntityId,
+      collectionSubTab,
+      showToast,
+    ]
+  );
+
+  const applyXrefSuggestionMilestone = useCallback(
+    (matchRow, suggestion, xref) => {
+      const ch = parseInt(suggestion?.chapter, 10);
+      const chFinal = !isNaN(ch) && ch >= 0 ? ch : Math.max(0, parseInt(xref?.fromCh, 10) || 0);
+      const ev = safeString(suggestion?.eventText) || safeString(xref?.note);
+      setNavHistory((prev) => [
+        ...prev,
+        { lonId: activeTabLon, nhoId: activeTabNho, conId: activeTabCon, entityId: selectedEntityId, subTab: collectionSubTab },
+      ]);
+      setActiveTabLon(matchRow.lonId);
+      setActiveTabNho(matchRow.nhoId);
+      setActiveTabCon(null);
+      setSelectedEntityId(matchRow.ent.id);
+      setCollectionSubTab('detail');
+      setEditingMilestoneData({ id: null, chapter: String(chFinal), event: ev });
+      setIsMilestoneModalOpen(true);
+      setXrefAiPanel(null);
+      showToast(`Mốc cho «${safeString(matchRow.ent.name)}» — chỉnh rồi Lưu.`);
+    },
+    [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, showToast]
+  );
+
+  const applyXrefSuggestionProfile = useCallback(
+    (matchRow, suggestion, novelData) => {
+      const tabData = novelData?.data?.[matchRow.lonId]?.[matchRow.nhoId];
+      const ent = tabData?.entities?.find((e) => e.id === matchRow.ent.id);
+      if (!ent) {
+        showToast('Không tìm thấy thẻ.', 'error');
+        return;
+      }
+      const note = safeString(suggestion?.profileNote);
+      setNavHistory((prev) => [
+        ...prev,
+        { lonId: activeTabLon, nhoId: activeTabNho, conId: activeTabCon, entityId: selectedEntityId, subTab: collectionSubTab },
+      ]);
+      setActiveTabLon(matchRow.lonId);
+      setActiveTabNho(matchRow.nhoId);
+      setActiveTabCon(null);
+      setSelectedEntityId(matchRow.ent.id);
+      setCollectionSubTab('detail');
+      setEditingEntityData({
+        ...ent,
+        rawText:
+          safeString(ent.rawText) +
+          (note ? `\n\n— Gợi ý từ nối tra cứu —\n${note}` : ''),
+      });
+      setIsEntityModalOpen(true);
+      setXrefAiPanel(null);
+      showToast('Đã mở sửa thẻ — xem phần bản thảo / AI điền form.');
+    },
+    [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, showToast]
+  );
+
+  const openOverviewHub = useCallback(() => {
+    if (!activeNovelData) return;
+    setOverviewHubOpen(true);
+    setOverviewHubTab('create');
+    setHubCreatePreview(null);
+    setHubUpdatePanel(null);
+    setHubCreateInput('');
+    const a = Math.max(0, parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) || 0);
+    setHubUpdateChapter(String(a));
+    let firstPath = '';
+    (activeTabs || []).forEach((lon) => {
+      if (lon.id === 'tong-quan') return;
+      (lon.subTabs || []).forEach((nho) => {
+        if (nho.viewType === 'collection-track' && !firstPath) firstPath = `${lon.id}|${nho.id}`;
+      });
+    });
+    setHubCreatePath(firstPath);
+  }, [activeNovelData, activeTabs]);
+
+  const hubRunCreateAi = useCallback(async () => {
+    if (!hubCreatePath) {
+      showToast('Chọn mục sưu tập.', 'warning');
+      return;
+    }
+    const raw = hubCreateInput.trim();
+    if (!raw) {
+      showToast('Nhập mô tả hoặc dán văn bản.', 'warning');
+      return;
+    }
+    if (!activeNovelData || geminiApiKeys.length === 0) {
+      showToast('Cần API Key (Cài đặt).', 'warning');
+      return;
+    }
+    const [lonId, nhoId] = hubCreatePath.split('|');
+    const lon = activeTabs.find((t) => t.id === lonId);
+    const nho = lon?.subTabs?.find((s) => s.id === nhoId);
+    const fieldsTemplate = nho?.fieldsTemplate || [];
+    setHubCreateBusy(true);
+    try {
+      const result = await analyzeTextWithAI(raw, fieldsTemplate, geminiApiKeys);
+      const dynamicData = {};
+      (fieldsTemplate || []).forEach((f) => {
+        if (result && result[f.id]) dynamicData[f.id] = safeString(result[f.id]);
+      });
+      const name = safeString(result?.name).trim() || 'Chưa đặt tên';
+      const proc = safeString(result?.processedText);
+      const rawText = proc || raw;
+      const ents = activeNovelData.data?.[lonId]?.[nhoId]?.entities || [];
+      if (ents.some((e) => safeString(e.name).trim().toLowerCase() === name.toLowerCase())) {
+        showToast(`Đã có thẻ «${name}» — chuyển sang tab Cập nhật.`, 'warning');
+        setOverviewHubTab('update');
+        setHubUpdateText(`Cập nhật về «${name}»: ${raw.slice(0, 3500)}`);
+        setHubCreateBusy(false);
+        return;
+      }
+      setHubCreatePreview({ name, rawText, dynamicData });
+    } catch (e) {
+      showToast(mapGeminiErrorToUserMessage(e), 'error');
+    }
+    setHubCreateBusy(false);
+  }, [hubCreatePath, hubCreateInput, activeNovelData, activeTabs, geminiApiKeys, showToast]);
+
+  const hubSaveCreateEntity = useCallback(() => {
+    if (!hubCreatePreview || !hubCreatePath.includes('|')) return;
+    const [lonId, nhoId] = hubCreatePath.split('|');
+    const name = safeString(hubCreatePreview.name).trim();
+    if (!name || name === 'Chưa đặt tên') {
+      showToast('Điền tên thẻ trước khi lưu.', 'warning');
+      return;
+    }
+    const ents = activeNovelData?.data?.[lonId]?.[nhoId]?.entities || [];
+    if (ents.some((e) => safeString(e.name).trim().toLowerCase() === name.toLowerCase())) {
+      showToast('Thẻ đã tồn tại — dùng tab Cập nhật.', 'warning');
+      setOverviewHubTab('update');
+      setHubUpdateText((t) => (safeString(t).trim() ? t : `Cập nhật về «${name}»: `));
+      return;
+    }
+    updateActiveNovelData((nov) => {
+      if (!nov.data) nov.data = {};
+      if (!nov.data[lonId]) nov.data[lonId] = {};
+      let td = nov.data[lonId][nhoId];
+      if (!td || typeof td === 'string') td = { overview: typeof td === 'string' ? td : '', entities: [] };
+      if (!td.entities) td.entities = [];
+      td.entities.push({
+        id: generateId('ent'),
+        name,
+        avatar: '',
+        rawText: safeString(hubCreatePreview.rawText),
+        dynamicData: { ...hubCreatePreview.dynamicData },
+        info: '',
+        milestones: [],
+      });
+      nov.data[lonId][nhoId] = td;
+    });
+    showToast(`Đã tạo «${name}». Ảnh avatar: mở đúng mục → thẻ để thêm.`, 'success');
+    setHubCreatePreview(null);
+    setHubCreateInput('');
+  }, [hubCreatePreview, hubCreatePath, activeNovelData, showToast]);
+
+  const runHubUpdateAi = useCallback(async () => {
+    const text = hubUpdateText.trim();
+    if (!text) {
+      showToast('Nhập nội dung cập nhật.', 'warning');
+      return;
+    }
+    if (!activeNovelData || geminiApiKeys.length === 0) {
+      showToast('Cần API Key (Cài đặt).', 'warning');
+      return;
+    }
+    const ch = Math.max(
+      0,
+      parseInt(hubUpdateChapter, 10) ||
+        parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) ||
+        0
+    );
+    setHubUpdatePanel({
+      chapter: String(ch),
+      sourceText: text,
+      suggestions: [],
+      selectedKeys: new Set(),
+      loading: true,
+      error: '',
+    });
+    try {
+      const lines = [];
+      (activeNovelData.tabsConfig || []).forEach((lon) => {
+        if (lon.id === 'tong-quan') return;
+        (lon.subTabs || []).forEach((sub) => {
+          if (sub.viewType !== 'collection-track') return;
+          const ents = activeNovelData.data?.[lon.id]?.[sub.id]?.entities || [];
+          const names = ents.map((e) => safeString(e.name)).filter(Boolean).slice(0, 80);
+          const fields = (sub.fieldsTemplate || [])
+            .map((f) => safeString(f.label))
+            .filter(Boolean)
+            .join('; ');
+          lines.push(
+            `${lon.id}|${sub.id} | ${safeString(lon.label)} › ${safeString(sub.label)} | Thẻ: ${names.join(', ') || '—'} | Trường: ${fields || '—'}`
+          );
+        });
+      });
+      const { suggestions } = await analyzeReadingJournalWithAI(geminiApiKeys, {
+        novelTitle: activeNovelData.title,
+        chapter: ch,
+        journalText: text,
+        extendedCatalog: lines.join('\n'),
+      });
+      const list = Array.isArray(suggestions) ? suggestions : [];
+      const normalized = list.map((sug) => ({
+        ...sug,
+        draftRawText: stripWikiBracketSyntax(safeString(sug.draftRawText)),
+        eventText: stripWikiBracketSyntax(safeString(sug.eventText)),
+        profileNote: stripWikiBracketSyntax(safeString(sug.profileNote)),
+        why: stripWikiBracketSyntax(safeString(sug.why)),
+        fieldPatches: Array.isArray(sug.fieldPatches)
+          ? sug.fieldPatches.map((p) => ({
+              ...p,
+              value: stripWikiBracketSyntax(safeString(p.value)),
+            }))
+          : sug.fieldPatches,
+      }));
+      setHubUpdatePanel({
+        chapter: String(ch),
+        sourceText: text,
+        suggestions: normalized,
+        selectedKeys: new Set(list.map((_, i) => `j-${i}`)),
+        loading: false,
+        error: '',
+      });
+    } catch (e) {
+      setHubUpdatePanel((p) =>
+        p ? { ...p, loading: false, error: mapGeminiErrorToUserMessage(e) } : p
+      );
+    }
+  }, [hubUpdateText, hubUpdateChapter, activeNovelData, geminiApiKeys, showToast]);
+
+  const applyHubUpdateSelected = useCallback(() => {
+    if (!hubUpdatePanel?.suggestions?.length) return;
+    if (!hubUpdatePanel.selectedKeys?.size) {
+      showToast('Chọn ít nhất một dòng gợi ý.', 'warning');
+      return;
+    }
+    const panel = hubUpdatePanel;
+    let ok = 0;
+    let fails = [];
+    updateActiveNovelData((nov) => {
+      const r = mutateNovelJournalSelections(nov, panel);
+      ok = r.ok;
+      fails = r.fails;
+      if (r.ok > 0 && panel.sourceText) {
+        if (!nov.readingJournal) nov.readingJournal = [];
+        nov.readingJournal.unshift({
+          id: generateId('jr'),
+          chapter: r.chapterCtx,
+          text: `[Hub] ${panel.sourceText.slice(0, 7800)}`,
+          at: Date.now(),
+          appliedCount: ok,
+        });
+        if (nov.readingJournal.length > 50) nov.readingJournal.length = 50;
+      }
+    });
+    setHubUpdatePanel(null);
+    setHubUpdateText('');
+    if (ok > 0) {
+      showToast(`Đã áp dụng ${ok} thao tác (cập nhật).${fails.length ? ` (${fails.length} bỏ qua)` : ''}`, 'success');
+    } else {
+      showToast(fails.length ? fails.slice(0, 4).join('; ') : 'Không áp dụng được.', 'warning');
+    }
+    if (ok > 0 && fails.length) {
+      setTimeout(() => showToast(`Một số dòng lỗi: ${fails.slice(0, 3).join('; ')}`, 'warning'), 400);
+    }
+  }, [hubUpdatePanel, showToast]);
+
+  useEffect(() => {
+    if (!isSplitPreview) return;
+    const delay = (livePreviewText || '').length > 40000 ? 800 : 300;
+    const t = setTimeout(() => setDebouncedMarkdownPreview(livePreviewText), delay);
+    return () => clearTimeout(t);
+  }, [livePreviewText, isSplitPreview]);
+
+  const syncIndex = async (newMetadata, newConfig, dir, novelStatsOverride) => {
+    const novelStats =
+      novelStatsOverride !== undefined && novelStatsOverride !== null
+        ? novelStatsOverride
+        : { ...novelStatsByIdRef.current };
+    const payload = { metadata: newMetadata, config: newConfig, novelStats };
     if (!dir || dir === 'LOCAL_STORAGE') {
-        try { localStorage.setItem('tangthu_index', JSON.stringify({ metadata: newMetadata, config: newConfig })); } 
+        try { localStorage.setItem('tangthu_index', JSON.stringify(payload)); }
         catch (e) { if (e.name === 'QuotaExceededError' || e.message.includes('quota')) setTimeout(() => { showToast("CẢNH BÁO: Bộ nhớ đệm đã đầy!", "warning"); }, 500); }
         return;
     }
     try {
         const f = await dir.getFileHandle('index.json', { create: true });
         const w = await f.createWritable();
-        await w.write(JSON.stringify({ metadata: newMetadata, config: newConfig }, null, 2));
+        await w.write(JSON.stringify(payload, null, 2));
         await w.close();
     } catch (e) { setTimeout(() => { showToast("Lỗi đồng bộ danh mục!", "error"); }, 0); }
   };
 
+  const queuePersistNovelStatsToIndex = () => {
+    if (persistIndexStatsTimerRef.current) clearTimeout(persistIndexStatsTimerRef.current);
+    persistIndexStatsTimerRef.current = setTimeout(() => {
+      persistIndexStatsTimerRef.current = null;
+      const d = dirHandleRef.current;
+      if (!d) return;
+      syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, d, { ...novelStatsByIdRef.current });
+    }, 500);
+  };
+
+  const bumpNovelStatsAfterWrite = (novelData) => {
+    const s = countEntitiesInNovel(novelData);
+    const next = { ...novelStatsByIdRef.current, [novelData.id]: s };
+    novelStatsByIdRef.current = next;
+    setNovelStatsById(next);
+    queuePersistNovelStatsToIndex();
+  };
+
   const syncNovel = async (novelData, rootDir) => {
     if (!rootDir || rootDir === 'LOCAL_STORAGE') {
-        try { localStorage.setItem(`tangthu_novel_${novelData.id}`, JSON.stringify(novelData)); } 
+        try {
+          localStorage.setItem(`tangthu_novel_${novelData.id}`, JSON.stringify(novelData));
+          bumpNovelStatsAfterWrite(novelData);
+        }
         catch (e) { if (e.name === 'QuotaExceededError' || e.message.includes('quota')) setTimeout(() => { showToast("CẢNH BÁO: Tràn bộ nhớ! Hãy dùng Thư Mục Máy Tính!", "warning"); }, 500); }
         return;
     }
+    const folderName = novelData.folderName || novelData.title.replace(/[\\/:*?"<>|]/g, '').trim() || novelData.id;
+    const jsonStr = JSON.stringify(novelData, null, 2);
+    const mainFile = `${folderName}.json`;
+    const tmpFile = `${folderName}.json.tmp`;
+    const tryAtomic = async () => {
+      const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
+      const tw = await novelDir.getFileHandle(tmpFile, { create: true });
+      const w = await tw.createWritable();
+      await w.write(jsonStr);
+      await w.close();
+      try { await novelDir.removeEntry(mainFile); } catch (_) { /* first save */ }
+      const tmpAgain = await novelDir.getFileHandle(tmpFile);
+      if (typeof tmpAgain.move === 'function') {
+        await tmpAgain.move(mainFile);
+      } else {
+        const out = await novelDir.getFileHandle(mainFile, { create: true });
+        const wo = await out.createWritable();
+        await wo.write(jsonStr);
+        await wo.close();
+        try { await novelDir.removeEntry(tmpFile); } catch (_) {}
+      }
+      await novelDir.getDirectoryHandle('images', { create: true });
+    };
+    const tryDirect = async () => {
+      const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
+      const f = await novelDir.getFileHandle(mainFile, { create: true });
+      const w = await f.createWritable();
+      await w.write(jsonStr);
+      await w.close();
+      await novelDir.getDirectoryHandle('images', { create: true });
+    };
     try {
-        const folderName = novelData.folderName || novelData.title.replace(/[\\/:*?"<>|]/g, '').trim() || novelData.id;
-        const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
-        const f = await novelDir.getFileHandle(`${folderName}.json`, { create: true });
-        const w = await f.createWritable();
-        await w.write(JSON.stringify(novelData, null, 2));
-        await w.close();
-        await novelDir.getDirectoryHandle('images', { create: true });
-    } catch (e) { setTimeout(() => { showToast(`Lỗi đồng bộ truyện ${novelData.title}!`, "error"); }, 0); }
+      await tryAtomic();
+      bumpNovelStatsAfterWrite(novelData);
+    } catch (e) {
+      try {
+        await tryDirect();
+        bumpNovelStatsAfterWrite(novelData);
+      } catch (e2) {
+        setTimeout(() => { showToast(`Lỗi đồng bộ truyện ${novelData.title}!`, "error"); }, 0);
+      }
+    }
   };
 
   const loadNovelData = async (meta, rootDir) => {
@@ -471,13 +1296,92 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (!dirHandle || novelsMetadata.length === 0) return;
+    let cancelled = false;
+    const root = dirHandle;
+    const run = async () => {
+      const need = novelsMetadata.filter((m) => !novelStatsByIdRef.current[m.id]);
+      if (need.length === 0 || cancelled) return;
+      setIsStatsBackfilling(true);
+      try {
+        const acc = { ...novelStatsByIdRef.current };
+        const chunk = 2;
+        for (let i = 0; i < need.length; i += chunk) {
+          if (cancelled) return;
+          const batch = need.slice(i, i + chunk);
+          await Promise.all(
+            batch.map(async (meta) => {
+              try {
+                const d = await loadNovelData(meta, root);
+                acc[meta.id] = d ? countEntitiesInNovel(d) : { entities: 0, milestones: 0 };
+              } catch {
+                acc[meta.id] = { entities: 0, milestones: 0 };
+              }
+            })
+          );
+          novelStatsByIdRef.current = { ...acc };
+          setNovelStatsById({ ...acc });
+        }
+        if (!cancelled) {
+          await syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, root, acc);
+        }
+      } finally {
+        setIsStatsBackfilling(false);
+      }
+    };
+    let idleId;
+    if (typeof requestIdleCallback !== 'undefined') {
+      idleId = requestIdleCallback(() => { run(); }, { timeout: 5000 });
+    } else {
+      idleId = setTimeout(() => { run(); }, 400);
+    }
+    return () => {
+      cancelled = true;
+      if (typeof cancelIdleCallback === 'function') try { cancelIdleCallback(idleId); } catch (_) {}
+      clearTimeout(idleId);
+    };
+  }, [novelsMetadata, dirHandle]);
+
+  const performDeepSearch = useCallback(
+    async (query, signal, onProgress) => {
+      const q = String(query || '').trim().toLowerCase();
+      if (!q) return [];
+      const res = [...metadataSearchHits(novelsMetadata, q)];
+      const tick = () => onProgress?.(dedupeDeepSearchResults([...res]));
+      tick();
+      if (!dirHandle) return dedupeDeepSearchResults(res);
+      const chunk = 2;
+      for (let i = 0; i < novelsMetadata.length; i += chunk) {
+        if (signal?.aborted) return dedupeDeepSearchResults(res);
+        const batch = novelsMetadata.slice(i, i + chunk);
+        await Promise.all(
+          batch.map(async (meta) => {
+            if (signal?.aborted) return;
+            let d = null;
+            if (activeNovelData?.id === meta.id) d = activeNovelData;
+            else d = await loadNovelData(meta, dirHandle);
+            if (d && typeof d === 'object') {
+              searchNovelData({ ...d, id: meta.id, title: d.title || meta.title }, q, res);
+            }
+          })
+        );
+        tick();
+      }
+      return dedupeDeepSearchResults(res);
+    },
+    [novelsMetadata, activeNovelData, dirHandle]
+  );
+
   const updateActiveNovelData = (updateFn) => {
     if (!activeNovelData) return;
     const updatedData = structuredClone(activeNovelData);
-    
-    updateFn(updatedData); 
+    updateFn(updatedData);
+    const nextStats = { ...novelStatsByIdRef.current, [updatedData.id]: countEntitiesInNovel(updatedData) };
+    novelStatsByIdRef.current = nextStats;
+    setNovelStatsById(nextStats);
     setActiveNovelData(updatedData);
-    syncNovel(updatedData, dirHandle); 
+    syncNovel(updatedData, dirHandle);
 
     const newMetaStr = JSON.stringify({ title: updatedData.title, cover: updatedData.cover, tags: updatedData.tags, review: updatedData.review, status: updatedData.status, genres: updatedData.genres || [updatedData.genre], theme: updatedData.theme, author: updatedData.author, folderName: updatedData.folderName });
     const oldMetaStr = JSON.stringify({ title: activeNovelData.title, cover: activeNovelData.cover, tags: activeNovelData.tags, review: activeNovelData.review, status: activeNovelData.status, genres: activeNovelData.genres || [activeNovelData.genre], theme: activeNovelData.theme, author: activeNovelData.author, folderName: activeNovelData.folderName });
@@ -490,7 +1394,8 @@ export default function App() {
             author: updatedData.author, chaptersTotal: updatedData.chaptersTotal, folderName: updatedData.folderName || m.folderName
         } : m);
         setNovelsMetadata(newMetaList);
-        syncIndex(newMetaList, globalTabsConfig, dirHandle);
+        novelsMetadataRef.current = newMetaList;
+        syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
     }
   };
 
@@ -550,7 +1455,7 @@ export default function App() {
     if (window.self !== window.top) {
        setDirHandle("LOCAL_STORAGE"); showToast("Preview: Đã chuyển sang Local Storage.");
        const local = localStorage.getItem('tangthu_index');
-       if (local) { try { const p = JSON.parse(local); if (p.metadata) setNovelsMetadata(p.metadata); if (p.config) setGlobalTabsConfig(p.config); } catch(e) {} }
+       if (local) { try { const p = JSON.parse(local); if (p.metadata) setNovelsMetadata(p.metadata); if (p.config) setGlobalTabsConfig(p.config); if (p.novelStats && typeof p.novelStats === 'object') { novelStatsByIdRef.current = p.novelStats; setNovelStatsById(p.novelStats); } } catch(e) {} }
        return;
     }
     try {
@@ -571,14 +1476,14 @@ export default function App() {
                      await wr.write(JSON.stringify(n, null, 2)); await wr.close();
                  }
                  const ih = await h.getFileHandle('index.json', { create: true }); const iw = await ih.createWritable();
-                 await iw.write(JSON.stringify({ metadata: newMeta, config: parsedOld.config || globalTabsConfig }, null, 2)); await iw.close();
+                 await iw.write(JSON.stringify({ metadata: newMeta, config: parsedOld.config || globalTabsConfig, novelStats: {} }, null, 2)); await iw.close();
                  setNovelsMetadata(newMeta); if (parsedOld.config) setGlobalTabsConfig(parsedOld.config);
                  setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Độ kiếp thành công! Cấu trúc mới đã sẵn sàng."); return;
              }
          } catch(e) { setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Thư mục trống. Đã kết nối Mệnh Bàn!"); return; }
       }
       if (content) {
-        try { const parsed = JSON.parse(content); if (parsed.metadata) setNovelsMetadata(parsed.metadata); if (parsed.config) setGlobalTabsConfig(parsed.config); setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Đã tải Mệnh Bàn (Index) thành công!"); } 
+        try { const parsed = JSON.parse(content); if (parsed.metadata) setNovelsMetadata(parsed.metadata); if (parsed.config) setGlobalTabsConfig(parsed.config); if (parsed.novelStats && typeof parsed.novelStats === 'object') { novelStatsByIdRef.current = parsed.novelStats; setNovelStatsById(parsed.novelStats); } else { setNovelStatsById({}); novelStatsByIdRef.current = {}; } setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Đã tải Mệnh Bàn (Index) thành công!"); } 
         catch (parseErr) { showToast("LỖI CHÍ MẠNG: File index.json bị hỏng cấu trúc.", "error"); }
       }
     } catch (e) {}
@@ -648,15 +1553,21 @@ export default function App() {
         rating: 0, review: '', cover: novelForm.cover, folderName: folderName 
       };
       
-      const newFullData = { ...newMeta, data: {}, tabsConfig: structuredClone(INITIAL_TABS_CONFIG) };
+      const newFullData = { ...newMeta, data: {}, tabsConfig: structuredClone(INITIAL_TABS_CONFIG), chapterCrossRefs: [], readingJournal: [] };
       const newMetaList = [newMeta, ...novelsMetadata];
-      setNovelsMetadata(newMetaList); setActiveNovelData(newFullData); 
+      const nextStats = { ...novelStatsByIdRef.current, [newId]: { entities: 0, milestones: 0 } };
+      novelStatsByIdRef.current = nextStats;
+      setNovelStatsById(nextStats);
+      setNovelsMetadata(newMetaList); setActiveNovelData(newFullData);
+      novelsMetadataRef.current = newMetaList;
       setIsAddNovelOpen(false); setMenu1Visible(false); setActiveTabLon('tong-quan'); setActiveTabNho(null); setActiveTabCon(null);
       
       if (dirHandle && dirHandle !== 'LOCAL_STORAGE') {
           try { const nHandle = await dirHandle.getDirectoryHandle(folderName, { create: true }); setActiveNovelDirHandle(nHandle); } catch(e) {}
       }
-      syncIndex(newMetaList, globalTabsConfig, dirHandle); syncNovel(newFullData, dirHandle); showToast("Khai sinh thư tịch mới thành công!");
+      await syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
+      await syncNovel(newFullData, dirHandle);
+      showToast("Khai sinh thư tịch mới thành công!");
     } else {
       updateActiveNovelData(nov => { 
           nov.title = novelForm.title; nov.author = novelForm.author; 
@@ -1156,8 +2067,13 @@ export default function App() {
 
   const handleDeleteNovel = async (id) => {
     const newMetaList = novelsMetadata.filter(m => m.id !== id);
+    const nextStats = { ...novelStatsByIdRef.current };
+    delete nextStats[id];
+    novelStatsByIdRef.current = nextStats;
+    setNovelStatsById(nextStats);
     setNovelsMetadata(newMetaList);
-    syncIndex(newMetaList, globalTabsConfig, dirHandle);
+    novelsMetadataRef.current = newMetaList;
+    syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
     if (dirHandle === 'LOCAL_STORAGE') {
       localStorage.removeItem(`tangthu_novel_${id}`);
     }
@@ -1393,7 +2309,7 @@ export default function App() {
 
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden relative theme-wrapper ${activeThemeClass}`}>
-      <AppHeader menu1Visible={menu1Visible} setMenu1Visible={setMenu1Visible} handleGoHome={handleGoHome} setIsSettingsOpen={() => setIsSettingsOpen(true)} hasDirectory={!!dirHandle} dirName={dirName} setIsDeepSearchOpen={() => setIsDeepSearchOpen(true)} />
+      <AppHeader menu1Visible={menu1Visible} setMenu1Visible={setMenu1Visible} handleGoHome={handleGoHome} setIsSettingsOpen={() => setIsSettingsOpen(true)} hasDirectory={!!dirHandle} dirName={dirName} setIsDeepSearchOpen={() => setIsDeepSearchOpen(true)} showInNovelSearch={!!activeNovelData} onInNovelSearch={() => setIsInNovelSearchOpen(true)} />
 
       <div className="flex-1 flex overflow-hidden">
         <div onMouseLeave={() => setMenu1Visible(false)} className={`absolute inset-y-0 left-0 z-40 bg-slate-900 border-r border-slate-800 shadow-2xl flex flex-col transition-transform duration-300 ease-out w-80 ${menu1Visible ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -1473,7 +2389,7 @@ export default function App() {
               <DashboardScreen
                 novelsMetadata={novelsMetadata}
                 stats={dashboardStats}
-                isLoading={isCacheLoading}
+                isLoading={isStatsBackfilling}
                 onSelectNovel={handleSelectNovel}
                 onAddNovel={handleOpenCreateNovel}
               />
@@ -1639,14 +2555,157 @@ export default function App() {
                                         </div>
                                       </div>
                                    </div>
+
+                                   <div className="mb-8 rounded-2xl border border-amber-900/25 bg-gradient-to-br from-slate-950 via-slate-900/95 to-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] overflow-hidden">
+                                     {(() => {
+                                       const anchor = Math.max(0, parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) || 0);
+                                       const lo = Math.max(0, anchor - 12);
+                                       const hi = anchor + 30;
+                                       const xrefs = Array.isArray(activeNovelData.chapterCrossRefs) ? activeNovelData.chapterCrossRefs : [];
+                                       return (
+                                         <div className="border-l-[5px] border-amber-500/85 pl-4 pr-3 py-4 sm:pl-5 sm:pr-4">
+                                           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                                             <div className="min-w-0">
+                                               <h3 className="font-heading text-lg sm:text-xl text-amber-50 tracking-tight">Theo chương & công cụ</h3>
+                                               <p className="font-serif text-xs text-slate-500 mt-1">
+                                                 Neo <span className="text-amber-400 font-bold tabular-nums">ch.{anchor}</span>
+                                                 {' · '}
+                                                 <span className="text-slate-600">Cập nhật hàng loạt dùng «Một cửa».</span>
+                                               </p>
+                                             </div>
+                                             <div className="flex flex-wrap gap-2">
+                                               <button
+                                                 type="button"
+                                                 onClick={() => setOverviewNeoOpen((o) => !o)}
+                                                 className={`font-serif text-xs sm:text-sm px-3 sm:px-4 py-2 rounded-xl border flex items-center gap-2 transition-colors ${overviewNeoOpen ? 'bg-amber-950/50 border-amber-700/50 text-amber-200' : 'bg-slate-800/80 border-slate-600/50 text-slate-300 hover:border-amber-600/30'}`}
+                                               >
+                                                 <BookOpen size={15} className="opacity-80 flex-shrink-0" />
+                                                 Ghi theo chương
+                                                 <ChevronDown size={16} className={`opacity-60 transition-transform flex-shrink-0 ${overviewNeoOpen ? 'rotate-180' : ''}`} />
+                                               </button>
+                                               <button
+                                                 type="button"
+                                                 onClick={() => setIsInNovelSearchOpen(true)}
+                                                 className="font-serif text-xs sm:text-sm px-3 sm:px-4 py-2 rounded-xl bg-cyan-950/50 border border-cyan-800/45 text-cyan-300 hover:bg-cyan-900/35 flex items-center gap-2 transition-colors"
+                                               >
+                                                 <Search size={15} className="opacity-80" /> Tra trong truyện
+                                               </button>
+                                               <button
+                                                 type="button"
+                                                 onClick={openOverviewHub}
+                                                 className="font-serif text-xs sm:text-sm px-3 sm:px-4 py-2 rounded-xl bg-violet-950/55 border border-violet-700/40 text-violet-200 hover:bg-violet-900/40 flex items-center gap-2 transition-colors"
+                                               >
+                                                 <Layers size={15} className="opacity-90" /> Một cửa cập nhật
+                                               </button>
+                                               <button
+                                                 type="button"
+                                                 onClick={() => setNeoXrefSectionOpen((o) => !o)}
+                                                 className={`font-serif text-xs sm:text-sm px-3 sm:px-4 py-2 rounded-xl border flex items-center gap-2 transition-colors ${neoXrefSectionOpen ? 'bg-amber-950/40 border-amber-800/50 text-amber-200' : 'bg-slate-800/80 border-slate-600/50 text-slate-300 hover:border-amber-600/25'}`}
+                                               >
+                                                 <GitBranch size={15} className="text-amber-500/80 flex-shrink-0" />
+                                                 Nối tra cứu
+                                                 {xrefs.length > 0 && (
+                                                   <span className="font-sans text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-900/50 text-amber-400">{xrefs.length}</span>
+                                                 )}
+                                                 <ChevronDown size={16} className={`opacity-60 transition-transform flex-shrink-0 ${neoXrefSectionOpen ? 'rotate-180' : ''}`} />
+                                               </button>
+                                             </div>
+                                           </div>
+
+                                           {overviewNeoOpen && (
+                                             <div className="mt-4 pt-4 border-t border-slate-800/80 animate-fade-in space-y-6">
+                                               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                                 <div className="flex items-center justify-center sm:justify-start gap-2 sm:gap-4">
+                                                   <button type="button" aria-label="Giảm chương" onClick={() => updateActiveNovelData((n) => { const b = parseInt(n.readingAnchorChapter ?? n.chaptersRead ?? 0, 10) || 0; n.readingAnchorChapter = Math.max(0, b - 1); })} className="min-h-10 min-w-10 rounded-xl bg-slate-800/90 border border-slate-600/60 text-amber-400 text-lg font-medium hover:bg-slate-700 transition-all active:scale-95">−</button>
+                                                   <div className="min-w-[3.5rem] text-center">
+                                                     <span className="font-heading text-4xl sm:text-5xl text-amber-400 tabular-nums leading-none">{anchor}</span>
+                                                     <div className="font-serif text-[10px] text-slate-600 mt-0.5">chương neo</div>
+                                                   </div>
+                                                   <button type="button" aria-label="Tăng chương" onClick={() => updateActiveNovelData((n) => { const b = parseInt(n.readingAnchorChapter ?? n.chaptersRead ?? 0, 10) || 0; n.readingAnchorChapter = b + 1; })} className="min-h-10 min-w-10 rounded-xl bg-slate-800/90 border border-slate-600/60 text-amber-400 text-lg font-medium hover:bg-slate-700 transition-all active:scale-95">+</button>
+                                                 </div>
+                                                 <button type="button" onClick={() => updateActiveNovelData((n) => { n.readingAnchorChapter = parseInt(n.chaptersRead, 10) || 0; })} className="font-serif text-sm px-4 py-2 rounded-full bg-slate-800/80 border border-slate-600/50 text-cyan-300 hover:bg-slate-700/90 w-fit mx-auto sm:mx-0">
+                                                   Đồng bộ theo tiến độ đọc
+                                                 </button>
+                                               </div>
+                                               <div>
+                                                 <h4 className="font-heading text-[10px] font-semibold text-amber-200/70 uppercase tracking-widest flex items-center gap-2 mb-2">
+                                                   <Activity size={14} className="text-amber-500/90" /> Lối tắt ch.{lo}–{hi}
+                                                 </h4>
+                                                 <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar flex-nowrap -mx-1 px-1 snap-x">
+                                                   {nearChapterEntitiesGlobal.map((row) => (
+                                                     <button key={`${row.lonId}-${row.nhoId}-${row.ent.id}`} type="button" onClick={() => handleNavigate({ lonId: row.lonId, nhoId: row.nhoId, entityId: row.ent.id })} className="snap-start flex-shrink-0 text-left px-3 py-2.5 rounded-xl bg-slate-800/50 border border-slate-700/70 hover:border-amber-500/35 max-w-[200px] min-w-[120px]">
+                                                       <span className="font-serif text-sm text-slate-100 line-clamp-2">{safeString(row.ent.name)}</span>
+                                                       <span className="block font-sans text-[9px] uppercase text-slate-500 mt-1 truncate">{safeString(row.sectionLabel)}</span>
+                                                     </button>
+                                                   ))}
+                                                 </div>
+                                                 {nearChapterEntitiesGlobal.length === 0 && (
+                                                   <p className="font-serif text-xs text-slate-600 italic">Chưa có mốc trong vùng này.</p>
+                                                 )}
+                                               </div>
+                                             </div>
+                                           )}
+
+                                           {neoXrefSectionOpen && (
+                                             <div className="mt-4 pt-4 border-t border-slate-800/80 animate-fade-in">
+                                               <p className="font-serif text-xs text-slate-600 mb-3">Ch.X → Ch.Y + ghi chú. <Sparkles size={12} className="inline align-text-bottom text-amber-500/90" /> trên dòng để AI gợi ý.</p>
+                                               <div className="mt-4 space-y-3 animate-fade-in">
+                                                 <div className="flex flex-wrap gap-2 items-end">
+                                                   <div className="flex flex-col gap-1">
+                                                     <label className="font-sans text-[10px] uppercase tracking-wider text-slate-500">Đang đọc</label>
+                                                     <input type="number" placeholder="vd. 200" className="w-20 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 font-serif text-sm text-amber-100/90 focus:outline-none focus:border-amber-600/50" value={xrefDraft.from} onChange={(e) => setXrefDraft((d) => ({ ...d, from: e.target.value }))} />
+                                                   </div>
+                                                   <span className="text-slate-600 pb-2 font-serif">→</span>
+                                                   <div className="flex flex-col gap-1">
+                                                     <label className="font-sans text-[10px] uppercase tracking-wider text-slate-500">Nhắc chương</label>
+                                                     <input type="number" placeholder="vd. 15" className="w-20 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 font-serif text-sm text-cyan-200/90 focus:outline-none focus:border-cyan-700/50" value={xrefDraft.to} onChange={(e) => setXrefDraft((d) => ({ ...d, to: e.target.value }))} />
+                                                   </div>
+                                                   <input type="text" placeholder="Ghi chú (một dòng)" className="flex-1 min-w-[160px] bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 font-serif text-sm text-slate-200 focus:outline-none focus:border-amber-600/40" value={xrefDraft.note} onChange={(e) => setXrefDraft((d) => ({ ...d, note: e.target.value }))} />
+                                                   <button type="button" onClick={() => {
+                                                     const from = parseInt(xrefDraft.from, 10);
+                                                     const to = parseInt(xrefDraft.to, 10);
+                                                     if (isNaN(from) || isNaN(to) || !xrefDraft.note.trim()) { showToast('Nhập đủ hai chương và ghi chú.', 'warning'); return; }
+                                                     updateActiveNovelData((n) => { if (!n.chapterCrossRefs) n.chapterCrossRefs = []; n.chapterCrossRefs.push({ id: generateId('xref'), fromCh: from, toCh: to, note: xrefDraft.note.trim() }); });
+                                                     setXrefDraft({ from: '', to: '', note: '' });
+                                                     showToast('Đã lưu nối tra cứu.');
+                                                   }} className="font-heading text-sm px-5 py-2 rounded-full bg-amber-700 hover:bg-amber-600 text-white border border-amber-600/50 transition-colors">Thêm</button>
+                                                 </div>
+                                                 {xrefs.length > 0 ? (
+                                                   <ul className="space-y-2 max-h-36 overflow-y-auto custom-scrollbar">
+                                                     {xrefs.map((x) => (
+                                                       <li key={x.id} className="flex justify-between gap-2 items-start font-serif text-sm bg-slate-950/70 rounded-xl px-4 py-2.5 border border-slate-800/90">
+                                                         <span className="text-slate-300 leading-relaxed min-w-0"><span className="text-amber-500 font-semibold tabular-nums">Ch.{x.fromCh}</span>
+                                                           <span className="text-slate-600 mx-1">→</span>
+                                                           <span className="text-cyan-400/90 font-semibold tabular-nums">Ch.{x.toCh}</span>
+                                                           <span className="text-slate-500"> — </span>{safeString(x.note)}</span>
+                                                         <div className="flex items-start gap-0.5 flex-shrink-0">
+                                                           <button type="button" onClick={() => runXrefAiForRow(x)} className="text-amber-500/90 hover:text-amber-300 p-1.5 rounded-lg hover:bg-amber-950/40 transition-colors" title="AI: gợi ý thẻ mới / mốc / cập nhật" aria-label="Gợi ý AI"><Sparkles size={16} /></button>
+                                                           <button type="button" onClick={() => updateActiveNovelData((n) => { if (!n.chapterCrossRefs) return; n.chapterCrossRefs = n.chapterCrossRefs.filter((r) => r.id !== x.id); })} className="text-rose-400/90 hover:text-rose-300 text-lg leading-none px-1" aria-label="Xóa">×</button>
+                                                         </div>
+                                                       </li>
+                                                     ))}
+                                                   </ul>
+                                                 ) : (
+                                                   <p className="font-serif text-sm text-slate-600 italic pl-1">Chưa có ghi chú — ví dụ: ch.200 nhắc sự kiện ch.15.</p>
+                                                 )}
+                                               </div>
+                                             </div>
+                                           )}
+                                         </div>
+                                       );
+                                     })()}
+                                   </div>
+
                                    <div className="flex justify-between items-center mb-3">
                                        <label className="text-xs text-slate-500 uppercase font-bold tracking-widest flex items-center gap-2"><BookOpen size={14}/> Cảm ngộ / Review</label>
                                        <button onClick={async () => {
                                            if (geminiApiKeys.length === 0) { showToast("Vui lòng nhập API Key (trong mục Cài Đặt) để dùng AI", "warning"); return; }
                                            setIsGeneratingReview(true);
-                                           const text = await generateReviewWithAI(activeNovelData, geminiApiKeys);
-                                           if (text) { setOverviewForm({...overviewForm, review: text}); updateActiveNovelData(n => n.review = text); showToast("Đã lĩnh ngộ thành công!"); }
-                                           else showToast("Thần thức AI bị nhiễu loạn.", "warning");
+                                           try {
+                                             const text = await generateReviewWithAI(activeNovelData, geminiApiKeys);
+                                             if (text) { setOverviewForm({...overviewForm, review: text}); updateActiveNovelData(n => n.review = text); showToast("Đã lĩnh ngộ thành công!"); }
+                                             else showToast("AI không trả về nội dung.", "warning");
+                                           } catch (e) { showToast(mapGeminiErrorToUserMessage(e), "error"); }
                                            setIsGeneratingReview(false);
                                        }} disabled={isGeneratingReview} className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 font-bold bg-amber-950/30 px-3 py-1.5 rounded-lg border border-amber-900/50 transition-colors disabled:opacity-50">
                                            {isGeneratingReview ? <div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"/> : <Sparkles size={14} />}
@@ -1702,7 +2761,7 @@ export default function App() {
                                          </select>
                                       </div>
                                    ) : (
-                                      <button id="save-standard-btn" onClick={() => { if(isEditingMode) { handleSaveStandardEditor(); } else setIsEditingMode(true); setLivePreviewText(safeString(currentStandardData)); }} className={`px-5 py-2 rounded-xl text-xs font-bold transition-colors shadow-lg flex items-center gap-2 ${isEditingMode ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-800 border border-slate-700 text-slate-300 hover:text-slate-100 hover:bg-slate-700'}`}>
+                                      <button id="save-standard-btn" onClick={() => { if(isEditingMode) { handleSaveStandardEditor(); } else setIsEditingMode(true); const s = safeString(currentStandardData); setLivePreviewText(s); setDebouncedMarkdownPreview(s); }} className={`px-5 py-2 rounded-xl text-xs font-bold transition-colors shadow-lg flex items-center gap-2 ${isEditingMode ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-800 border border-slate-700 text-slate-300 hover:text-slate-100 hover:bg-slate-700'}`}>
                                          {isEditingMode ? <><Save size={16}/> Lưu (Ctrl+S)</> : <><Edit3 size={16}/> Chỉnh Sửa</>}
                                       </button>
                                    )}
@@ -1745,10 +2804,14 @@ export default function App() {
                                 </div>
                              ) : currentTabConfig?.viewType === 'collection-track' ? (
                                 <div className="flex flex-col flex-1 h-full animate-fade-in">
-                                   <div className="flex gap-8 border-b border-slate-800/80 mb-6 pb-3 items-end">
-                                      <button onClick={() => setCollectionSubTab('list')} className={`text-sm font-bold uppercase tracking-widest pb-3 -mb-[13px] transition-colors ${collectionSubTab === 'list' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>Danh Sách</button>
-                                      <button onClick={() => setCollectionSubTab('detail')} className={`text-sm font-bold uppercase tracking-widest pb-3 -mb-[13px] transition-colors ${collectionSubTab === 'detail' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>Hồ Sơ {selectedEntity ? `(${safeString(selectedEntity.name)})` : ''}</button>
-                                      <button onClick={() => setCollectionSubTab('timeline')} className={`text-sm font-bold uppercase tracking-widest pb-3 -mb-[13px] transition-colors flex items-center gap-2 ${collectionSubTab === 'timeline' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>
+                                   <div className="flex flex-wrap gap-6 border-b border-slate-800/80 mb-6 pb-3 items-end">
+                                      <button type="button" onClick={() => setCollectionSubTab('list')} className={`text-sm font-bold uppercase tracking-widest pb-3 -mb-[13px] transition-colors ${collectionSubTab === 'list' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>Danh Sách</button>
+                                      <button type="button" onClick={() => setCollectionSubTab('gallery')} className={`text-sm font-bold uppercase tracking-widest pb-3 -mb-[13px] transition-colors flex items-center gap-2 ${collectionSubTab === 'gallery' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>
+                                        <Images size={14} className="opacity-70" /> Ảnh
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${collectionSubTab === 'gallery' ? 'bg-amber-500 text-slate-900' : 'bg-slate-700 text-slate-300'}`}>{galleryPortraitEntries.length}</span>
+                                      </button>
+                                      <button type="button" onClick={() => setCollectionSubTab('detail')} className={`text-sm font-bold uppercase tracking-widest pb-3 -mb-[13px] transition-colors ${collectionSubTab === 'detail' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>Hồ Sơ {selectedEntity ? `(${safeString(selectedEntity.name)})` : ''}</button>
+                                      <button type="button" onClick={() => setCollectionSubTab('timeline')} className={`text-sm font-bold uppercase tracking-widest pb-3 -mb-[13px] transition-colors flex items-center gap-2 ${collectionSubTab === 'timeline' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>
                                         Dòng Thời Gian
                                         {selectedEntity && selectedEntity.milestones && selectedEntity.milestones.length > 0 && (
                                           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${collectionSubTab === 'timeline' ? 'bg-amber-500 text-slate-900' : 'bg-slate-700 text-slate-300'}`}>{selectedEntity.milestones.length}</span>
@@ -1757,6 +2820,32 @@ export default function App() {
                                    </div>
 
                                    <div id="collection-scroll-container" className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-10">
+                                      {collectionSubTab === 'gallery' && (
+                                        <div className="animate-fade-in pb-8">
+                                          {galleryPortraitEntries.length === 0 ? (
+                                            <div className="flex flex-col items-center justify-center py-16 text-slate-600">
+                                              <Images size={48} className="mb-4 opacity-30" />
+                                              <p className="font-serif italic text-center px-4">Chưa có ảnh đại diện nào trong các mục sưu tập.</p>
+                                            </div>
+                                          ) : (
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                              {galleryPortraitEntries.map((row) => (
+                                                <button type="button" key={`${row.lonId}-${row.nhoId}-${row.ent.id}`} onClick={() => handleOpenEntityFromGallery(row)} className="group flex flex-col items-center rounded-2xl border border-slate-800 bg-slate-900/50 p-3 hover:border-amber-600/40 hover:bg-slate-800/50 transition-all text-center">
+                                                  <div className="w-full aspect-square rounded-xl overflow-hidden border border-slate-700 bg-slate-950 mb-2 shadow-inner">
+                                                    {row.ent.avatar.startsWith('local_image:') ? (
+                                                      <AsyncLocalImage filename={row.ent.avatar.replace('local_image:', '')} alt="" dirHandle={activeNovelDirHandle || dirHandle} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                                    ) : (
+                                                      <img src={row.ent.avatar} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />
+                                                    )}
+                                                  </div>
+                                                  <span className="text-sm font-bold text-slate-200 font-serif truncate w-full">{safeString(row.ent.name)}</span>
+                                                  <span className="text-[10px] text-slate-500 truncate w-full mt-0.5">{safeString(row.sectionLabel)}</span>
+                                                </button>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
                                       {collectionSubTab === 'list' && (() => {
                                          // === GROUP BY + PAGINATION ===
                                          const getFieldVal = (ent, fieldId) => {
@@ -1984,9 +3073,13 @@ export default function App() {
                                                               if (geminiApiKeys.length === 0) { showToast("Vui lòng thiết lập API Key (trong Cài Đặt) để dùng tính năng AI."); return; }
                                                               const text = document.getElementById('entity-info-editor').value;
                                                               if (!text.trim()) return;
+                                                              const { wasTruncated } = truncateForAI(text);
+                                                              if (wasTruncated) showToast("Đoạn quá dài — chỉ gửi ~28.000 ký tự đầu cho AI.", "warning");
                                                               setIsExtractingAI(true);
-                                                              const res = await extractEntityAttributesWithAI(text, currentTabConfig?.fieldsTemplate || [], geminiApiKeys);
-                                                              if (res) handleAIExtractSuccess(res.existingData, res.newFields);
+                                                              try {
+                                                                const res = await extractEntityAttributesWithAI(text, currentTabConfig?.fieldsTemplate || [], geminiApiKeys);
+                                                                if (res) handleAIExtractSuccess(res.existingData, res.newFields);
+                                                              } catch (e) { showToast(mapGeminiErrorToUserMessage(e), "error"); }
                                                               setIsExtractingAI(false);
                                                            }} 
                                                            className="px-4 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 bg-amber-600 hover:bg-amber-500 text-slate-900 disabled:opacity-50"
@@ -2002,17 +3095,20 @@ export default function App() {
                                                               const ta = document.getElementById('entity-info-editor');
                                                               const text = ta?.value;
                                                               if (!text?.trim()) return;
+                                                              const { wasTruncated } = truncateForAI(text);
+                                                              if (wasTruncated) showToast("Đoạn quá dài — chỉ gửi ~28.000 ký tự đầu cho AI.", "warning");
                                                               setIsExtractingAI(true);
                                                               try {
                                                                 const res = await analyzeTextWithAI(text, currentTabConfig?.fieldsTemplate || [], geminiApiKeys);
                                                                 if (res?.processedText) {
-                                                                  // Cập nhật textarea với text đã có [[link]]
                                                                   ta.value = res.processedText;
-                                                                  // Cập nhật preview nếu đang mở
-                                                                  if (isSplitPreview) setLivePreviewText(res.processedText);
+                                                                  if (isSplitPreview) {
+                                                                    setLivePreviewText(res.processedText);
+                                                                    setDebouncedMarkdownPreview(res.processedText);
+                                                                  }
                                                                   showToast('AI đã tạo liên kết cho các tên riêng!');
                                                                 }
-                                                              } catch(e) { showToast('AI gặp lỗi, thử lại sau!', 'error'); }
+                                                              } catch(e) { showToast(mapGeminiErrorToUserMessage(e), 'error'); }
                                                               setIsExtractingAI(false);
                                                            }}
                                                            className="px-4 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 bg-indigo-700 hover:bg-indigo-600 text-white disabled:opacity-50"
@@ -2023,7 +3119,7 @@ export default function App() {
                                                         </button>
                                                         </>
                                                      )}
-                                                     <button id="save-entity-btn" onClick={() => { if(isEntityEditing) { handleUpdateEntityInfo(document.getElementById('entity-info-editor').value); setIsSplitPreview(false); } else { setLivePreviewText(safeString(selectedEntity?.info || '')); } setIsEntityEditing(!isEntityEditing); }} className={`px-5 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 ${isEntityEditing ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'}`}>
+                                                     <button id="save-entity-btn" onClick={() => { if(isEntityEditing) { handleUpdateEntityInfo(document.getElementById('entity-info-editor').value); setIsSplitPreview(false); } else { const s = safeString(selectedEntity?.info || ''); setLivePreviewText(s); setDebouncedMarkdownPreview(s); } setIsEntityEditing(!isEntityEditing); }} className={`px-5 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 ${isEntityEditing ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'}`}>
                                                         {isEntityEditing ? <><Save size={16}/> Lưu (Ctrl+S)</> : <><Edit3 size={16}/> Viết Ghi Chép</>}
                                                      </button>
                                                   </div>
@@ -2034,16 +3130,21 @@ export default function App() {
                                                      <div className="flex flex-col flex-1 animate-fade-in min-h-[400px]">
                                                         <div className="flex items-center justify-between mb-1">
                                                           <MarkdownToolbar editorId="entity-info-editor" onInsertImage={(eid) => { setImageForm({ url: '', alt: '', editorId: eid }); setIsInsertImageModalOpen(true); }} onPickLocalImage={handlePickLocalImage} />
-                                                          <button onClick={() => { const cur = document.getElementById('entity-info-editor')?.value; if(cur !== undefined) setLivePreviewText(cur); setIsSplitPreview(p => !p); }} className={`ml-2 px-3 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 transition-colors flex items-center gap-1.5 ${isSplitPreview ? 'bg-amber-700/30 text-amber-400 border border-amber-700/40' : 'bg-slate-800 text-slate-500 border border-slate-700 hover:text-slate-300'}`}>
+                                                          <button onClick={() => { const cur = document.getElementById('entity-info-editor')?.value; if(cur !== undefined) { setLivePreviewText(cur); setDebouncedMarkdownPreview(cur); } setIsSplitPreview(p => !p); }} className={`ml-2 px-3 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 transition-colors flex items-center gap-1.5 ${isSplitPreview ? 'bg-amber-700/30 text-amber-400 border border-amber-700/40' : 'bg-slate-800 text-slate-500 border border-slate-700 hover:text-slate-300'}`}>
                                                             <Eye size={12}/> Preview
                                                           </button>
                                                         </div>
                                                         <div className={`flex flex-1 gap-4 min-h-[300px] ${isSplitPreview ? 'flex-row' : 'flex-col'}`}>
-                                                          <textarea id="entity-info-editor" className={`bg-transparent text-slate-200 font-serif text-lg leading-loose outline-none resize-none custom-scrollbar ${isSplitPreview ? 'w-1/2 flex-shrink-0' : 'flex-1 min-h-[300px]'}`} defaultValue={safeString(selectedEntity.info)} placeholder="Hạ bút khắc ấn..." onChange={(e) => { if(isSplitPreview) setLivePreviewText(e.target.value); }} onPaste={(e) => { if(isSplitPreview) { setTimeout(() => setLivePreviewText(e.target.value), 0); } }} />
+                                                          <textarea id="entity-info-editor" className={`bg-transparent text-slate-200 font-serif text-lg leading-loose outline-none resize-none custom-scrollbar ${isSplitPreview ? 'w-1/2 flex-shrink-0' : 'flex-1 min-h-[300px]'}`} defaultValue={safeString(selectedEntity.info)} placeholder="Hạ bút khắc ấn..." onChange={(e) => { if(isSplitPreview) setLivePreviewText(e.target.value); }} onPaste={() => { if(isSplitPreview) { setTimeout(() => { const v = document.getElementById('entity-info-editor')?.value; if (v !== undefined) setLivePreviewText(v); }, 0); } }} />
                                                           {isSplitPreview && (
-                                                            <div className="w-1/2 overflow-y-auto custom-scrollbar border-l border-slate-700 pl-4 font-serif min-h-[300px]">
-                                                              {renderMarkdown(livePreviewText, currentContextDirHandle, entityMap, globalLinkRegex, handleNavigate)}
-                                                            </div>
+                                                            <MarkdownPreviewPane
+                                                              text={debouncedMarkdownPreview}
+                                                              dirHandle={currentContextDirHandle}
+                                                              entityMap={entityMap}
+                                                              linkRegex={globalLinkRegex}
+                                                              onNavigate={handleNavigate}
+                                                              className="w-1/2 overflow-y-auto custom-scrollbar border-l border-slate-700 pl-4 font-serif min-h-[300px]"
+                                                            />
                                                           )}
                                                         </div>
                                                      </div>
@@ -2234,16 +3335,21 @@ export default function App() {
                                       <div className="flex flex-col flex-1 animate-fade-in">
                                          <div className="flex items-center justify-between mb-1">
                                            <MarkdownToolbar editorId="standard-editor" onInsertImage={(eid) => { setImageForm({ url: '', alt: '', editorId: eid }); setIsInsertImageModalOpen(true); }} onPickLocalImage={handlePickLocalImage} />
-                                           <button onClick={() => { const cur = document.getElementById('standard-editor')?.value; if(cur !== undefined) setLivePreviewText(cur); setIsSplitPreview(p => !p); }} className={`ml-2 px-3 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 transition-colors flex items-center gap-1.5 ${isSplitPreview ? 'bg-amber-700/30 text-amber-400 border border-amber-700/40' : 'bg-slate-800 text-slate-500 border border-slate-700 hover:text-slate-300'}`}>
+                                           <button onClick={() => { const cur = document.getElementById('standard-editor')?.value; if(cur !== undefined) { setLivePreviewText(cur); setDebouncedMarkdownPreview(cur); } setIsSplitPreview(p => !p); }} className={`ml-2 px-3 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 transition-colors flex items-center gap-1.5 ${isSplitPreview ? 'bg-amber-700/30 text-amber-400 border border-amber-700/40' : 'bg-slate-800 text-slate-500 border border-slate-700 hover:text-slate-300'}`}>
                                              <Eye size={12}/> Preview
                                            </button>
                                          </div>
                                          <div className={`flex flex-1 gap-4 min-h-0 ${isSplitPreview ? 'flex-row' : 'flex-col'}`}>
-                                           <textarea key={`${activeTabLon}-${activeTabNho}-${activeTabCon}`} id="standard-editor" className={`bg-transparent text-slate-200 font-serif text-lg leading-loose outline-none resize-none custom-scrollbar ${isSplitPreview ? 'w-1/2 flex-shrink-0' : 'flex-1'}`} defaultValue={safeString(currentStandardData)} placeholder="Hạ bút tại đây..." onChange={(e) => { if(isSplitPreview) setLivePreviewText(e.target.value); }} onPaste={(e) => { if(isSplitPreview) { setTimeout(() => setLivePreviewText(e.target.value), 0); } }} />
+                                           <textarea key={`${activeTabLon}-${activeTabNho}-${activeTabCon}`} id="standard-editor" className={`bg-transparent text-slate-200 font-serif text-lg leading-loose outline-none resize-none custom-scrollbar ${isSplitPreview ? 'w-1/2 flex-shrink-0' : 'flex-1'}`} defaultValue={safeString(currentStandardData)} placeholder="Hạ bút tại đây..." onChange={(e) => { if(isSplitPreview) setLivePreviewText(e.target.value); }} onPaste={() => { if(isSplitPreview) { setTimeout(() => { const v = document.getElementById('standard-editor')?.value; if (v !== undefined) setLivePreviewText(v); }, 0); } }} />
                                            {isSplitPreview && (
-                                             <div className="w-1/2 overflow-y-auto custom-scrollbar border-l border-slate-700 pl-4 font-serif">
-                                               {renderMarkdown(livePreviewText, currentContextDirHandle, entityMap, globalLinkRegex, handleNavigate)}
-                                             </div>
+                                             <MarkdownPreviewPane
+                                               text={debouncedMarkdownPreview}
+                                               dirHandle={currentContextDirHandle}
+                                               entityMap={entityMap}
+                                               linkRegex={globalLinkRegex}
+                                               onNavigate={handleNavigate}
+                                               className="w-1/2 overflow-y-auto custom-scrollbar border-l border-slate-700 pl-4 font-serif"
+                                             />
                                            )}
                                          </div>
                                       </div>
@@ -2265,12 +3371,381 @@ export default function App() {
       </div>
 
       <ModalEntity isOpen={isEntityModalOpen} onClose={() => setIsEntityModalOpen(false)} onSave={handleSaveEntity} initialData={editingEntityData} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} />
-      <ModalMilestone isOpen={isMilestoneModalOpen} onClose={() => setIsMilestoneModalOpen(false)} onSave={handleSaveMilestone} initialData={editingMilestoneData} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} />
+      <ModalMilestone isOpen={isMilestoneModalOpen} onClose={() => setIsMilestoneModalOpen(false)} onSave={handleSaveMilestone} initialData={editingMilestoneData} defaultChapterWhenNew={editingMilestoneData ? undefined : String(Math.max(0, parseInt(activeNovelData?.readingAnchorChapter ?? activeNovelData?.chaptersRead ?? 0, 10) || 0))} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} />
       <ModalSettings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} handleConnectFolder={handleConnectFolder} dirHandle={dirHandle} dirName={dirName} onExportBackup={handleExportBackup} onImportBackup={handleImportBackup} geminiApiKeys={geminiApiKeys} setGeminiApiKeys={handleSaveApiKeys} />
       <ModalConfirm isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onClose={() => setConfirmDialog({...confirmDialog, isOpen: false})} onConfirm={confirmDialog.onConfirm} />
       <ModalInsertImage isOpen={isInsertImageModalOpen} onClose={() => setIsInsertImageModalOpen(false)} imageForm={imageForm} setImageForm={setImageForm} handleConfirmInsertImage={handleConfirmInsertImage} />
       <ModalAddNovel isOpen={isAddNovelOpen} onClose={() => setIsAddNovelOpen(false)} formData={novelForm} setFormData={setNovelForm} onSave={handleSaveNovelModal} mode={novelModalMode} handlePickLocalImage={(cb) => handlePickCoverImage(cb, novelForm.title)} dirHandle={currentContextDirHandle} />
-      <ModalDeepSearch isOpen={isDeepSearchOpen} onClose={() => setIsDeepSearchOpen(false)} novelsMetadata={novelsMetadata} activeNovelData={activeNovelData} allNovelsCache={allNovelsCache} isCacheLoading={isCacheLoading} onSelectResult={handleDeepSearchResultSelect} />
+      <ModalDeepSearch isOpen={isDeepSearchOpen} onClose={() => setIsDeepSearchOpen(false)} novelsMetadata={novelsMetadata} performDeepSearch={performDeepSearch} onSelectResult={handleDeepSearchResultSelect} />
+      {activeNovelData && <ModalInNovelSearch isOpen={isInNovelSearchOpen} onClose={() => setIsInNovelSearchOpen(false)} novel={activeNovelData} onSelectResult={handleDeepSearchResultSelect} />}
+      {xrefAiPanel && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-950/85 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setXrefAiPanel(null)} role="presentation">
+          <div className="bg-slate-900 border border-amber-700/40 rounded-2xl w-full max-w-lg max-h-[min(85vh,560px)] flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-slate-800 flex justify-between items-start gap-3">
+              <div className="min-w-0">
+                <h3 className="font-heading text-lg text-amber-400 flex items-center gap-2">
+                  <Sparkles size={18} className="flex-shrink-0" /> Gợi ý từ nối tra cứu
+                </h3>
+                <p className="text-xs text-slate-500 font-serif mt-1 tabular-nums">
+                  Ch.{xrefAiPanel.xref.fromCh} → Ch.{xrefAiPanel.xref.toCh}
+                </p>
+              </div>
+              <button type="button" onClick={() => setXrefAiPanel(null)} className="text-slate-500 hover:text-white p-1 rounded-lg hover:bg-slate-800 flex-shrink-0" aria-label="Đóng"><X size={20} /></button>
+            </div>
+            <div className="px-4 py-2 text-sm text-slate-400 font-serif border-b border-slate-800/80 max-h-20 overflow-y-auto custom-scrollbar">
+              {safeString(xrefAiPanel.xref.note)}
+            </div>
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3 min-h-[120px]">
+              {xrefAiPanel.loading && (
+                <div className="flex flex-col items-center gap-3 py-10">
+                  <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-sm text-slate-500">Đang phân tích ghi chú…</p>
+                </div>
+              )}
+              {xrefAiPanel.error && <p className="text-rose-400 text-sm">{xrefAiPanel.error}</p>}
+              {!xrefAiPanel.loading && !xrefAiPanel.error && xrefAiPanel.suggestions.length === 0 && (
+                <p className="text-slate-500 text-sm italic text-center py-8 leading-relaxed">Không có gợi ý thao tác — có thể ghi chú chỉ để tra cứu chéo.</p>
+              )}
+              {!xrefAiPanel.loading && !xrefAiPanel.error && xrefAiPanel.suggestions.map((sug, idx) => {
+                const kind = safeString(sug.kind).toLowerCase().replace(/\s/g, '_');
+                const matches = (kind === 'milestone' || kind === 'update_profile') ? findEntitiesByXrefHint(sug.entityHint) : [];
+                const kindLabel = kind === 'new_entity' ? 'Thẻ mới' : kind === 'milestone' ? 'Mốc timeline' : kind === 'update_profile' ? 'Cập nhật hồ sơ' : safeString(sug.kind);
+                return (
+                  <div key={idx} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-2">
+                    <span className="text-[10px] uppercase font-bold text-amber-600/90 tracking-wider">{kindLabel}</span>
+                    {safeString(sug.why) && <p className="text-sm text-slate-300 leading-snug">{safeString(sug.why)}</p>}
+                    {kind === 'new_entity' && (
+                      <button type="button" onClick={() => applyXrefSuggestionNewEntity(sug, xrefAiPanel.xref)} className="w-full py-2.5 rounded-xl bg-amber-800/80 hover:bg-amber-700 text-white text-sm font-bold font-heading transition-colors">
+                        Mở form tạo: {safeString(sug.suggestedName) || 'Thẻ mới'}
+                      </button>
+                    )}
+                    {(kind === 'milestone' || kind === 'update_profile') && !safeString(sug.entityHint) && (
+                      <p className="text-xs text-amber-700/90">Thiếu tên thẻ gợi ý từ AI.</p>
+                    )}
+                    {(kind === 'milestone' || kind === 'update_profile') && safeString(sug.entityHint) && matches.length === 0 && (
+                      <p className="text-xs text-slate-500 leading-relaxed">Không khớp thẻ «{safeString(sug.entityHint)}» trong danh mục — thử tạo thẻ mới hoặc đổi tên trong ghi chú rồi gợi ý lại.</p>
+                    )}
+                    {kind === 'milestone' && matches.slice(0, 6).map((m, i) => (
+                      <button key={i} type="button" onClick={() => applyXrefSuggestionMilestone(m, sug, xrefAiPanel.xref)} className="w-full text-left py-2 px-3 rounded-xl bg-cyan-950/50 border border-cyan-900/40 hover:border-cyan-600/50 text-sm text-cyan-200/95 transition-colors">
+                        <span className="text-cyan-600/80 text-xs font-sans uppercase">Thêm mốc · ch.{parseInt(sug.chapter, 10) >= 0 ? sug.chapter : xrefAiPanel.xref.fromCh}</span>
+                        <br /><span className="font-medium">{safeString(m.ent.name)}</span>
+                        <span className="text-slate-500 text-xs ml-1">({safeString(sug.eventText).slice(0, 80)}{safeString(sug.eventText).length > 80 ? '…' : ''})</span>
+                      </button>
+                    ))}
+                    {kind === 'update_profile' && matches.slice(0, 6).map((m, i) => (
+                      <button key={i} type="button" onClick={() => applyXrefSuggestionProfile(m, sug, activeNovelData)} className="w-full text-left py-2 px-3 rounded-xl bg-emerald-950/40 border border-emerald-900/40 hover:border-emerald-600/50 text-sm text-emerald-200/95 transition-colors">
+                        Sửa hồ sơ: <span className="font-medium">{safeString(m.ent.name)}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="px-4 py-2.5 text-[10px] text-slate-600 text-center border-t border-slate-800/80 leading-relaxed">Chỉ mở form — không tự lưu. Bạn xác nhận khi bấm Lưu trong modal thẻ / mốc.</p>
+          </div>
+        </div>
+      )}
+      {overviewHubOpen && activeNovelData && (
+        <div
+          className="fixed inset-0 z-[218] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={() => !hubCreateBusy && !hubUpdatePanel?.loading && setOverviewHubOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="bg-slate-900 border border-violet-800/45 rounded-2xl w-full max-w-2xl max-h-[min(92vh,720px)] flex flex-col shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b border-slate-800 flex justify-between items-center gap-3 bg-slate-950/80">
+              <div className="flex items-center gap-2 min-w-0">
+                <Layers size={22} className="text-violet-400 flex-shrink-0" />
+                <div>
+                  <h2 className="font-heading text-lg text-violet-100">Một cửa cập nhật</h2>
+                  <p className="text-[10px] text-slate-500 font-serif truncate">{safeString(activeNovelData.title)}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={hubCreateBusy || hubUpdatePanel?.loading}
+                onClick={() => setOverviewHubOpen(false)}
+                className="text-slate-500 hover:text-white p-2 rounded-lg hover:bg-slate-800 disabled:opacity-40"
+                aria-label="Đóng"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex border-b border-slate-800">
+              <button
+                type="button"
+                onClick={() => setOverviewHubTab('create')}
+                className={`flex-1 py-3 text-sm font-heading font-bold transition-colors ${overviewHubTab === 'create' ? 'text-violet-300 border-b-2 border-violet-500 bg-violet-950/25' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                Tạo mới
+              </button>
+              <button
+                type="button"
+                onClick={() => setOverviewHubTab('update')}
+                className={`flex-1 py-3 text-sm font-heading font-bold transition-colors ${overviewHubTab === 'update' ? 'text-emerald-300 border-b-2 border-emerald-500 bg-emerald-950/20' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                Cập nhật
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 min-h-[200px]">
+              {overviewHubTab === 'create' && (
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-500 font-serif leading-relaxed">
+                    Chọn mục → dán hoặc gõ mô tả. AI điền tên, bản thảo có <span className="text-violet-400">[[liên kết wiki]]</span> và các trường.{' '}
+                    <b className="text-slate-400">Không thêm ảnh ở đây</b> — sau khi lưu, vào đúng mục để gắn avatar / minh họa.
+                  </p>
+                  <div>
+                    <label className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Mục sưu tập</label>
+                    <select
+                      className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm text-slate-200 focus:border-violet-600/50 outline-none font-serif"
+                      value={hubCreatePath}
+                      onChange={(e) => setHubCreatePath(e.target.value)}
+                    >
+                      <option value="">— Chọn —</option>
+                      {activeTabs
+                        .filter((lon) => lon.id !== 'tong-quan')
+                        .flatMap((lon) =>
+                          (lon.subTabs || [])
+                            .filter((n) => n.viewType === 'collection-track')
+                            .map((n) => (
+                              <option key={`${lon.id}|${n.id}`} value={`${lon.id}|${n.id}`}>
+                                {safeString(lon.label)} › {safeString(n.label)}
+                              </option>
+                            ))
+                        )}
+                    </select>
+                  </div>
+                  <textarea
+                    className="w-full min-h-[100px] bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm text-slate-200 font-serif focus:border-violet-600/40 outline-none resize-y"
+                    placeholder="Dán đoạn mô tả nhân vật, pháp bảo, cảnh giới..."
+                    value={hubCreateInput}
+                    onChange={(e) => setHubCreateInput(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    disabled={hubCreateBusy || !hubCreatePath}
+                    onClick={() => hubRunCreateAi()}
+                    className="w-full py-2.5 rounded-xl bg-violet-800 hover:bg-violet-700 disabled:opacity-50 text-white font-heading text-sm flex items-center justify-center gap-2"
+                  >
+                    {hubCreateBusy ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Sparkles size={16} />}
+                    Phân tích AI (chữ + [[link]])
+                  </button>
+                  {hubCreatePreview && (() => {
+                    const [hlon, hnho] = hubCreatePath.split('|');
+                    const hlonObj = activeTabs.find((t) => t.id === hlon);
+                    const hnhoObj = hlonObj?.subTabs?.find((s) => s.id === hnho);
+                    const ft = hnhoObj?.fieldsTemplate || [];
+                    return (
+                      <div className="rounded-xl border border-violet-900/40 bg-slate-950/60 p-4 space-y-3 mt-2">
+                        <p className="text-[10px] text-amber-700/90 font-serif">Duyệt rồi bấm Lưu. Đã bỏ qua avatar từ AI.</p>
+                        <div>
+                          <label className="text-[10px] uppercase text-slate-500">Tên thẻ *</label>
+                          <input
+                            className="mt-1 w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-amber-100 font-serif text-sm"
+                            value={hubCreatePreview.name}
+                            onChange={(e) =>
+                              setHubCreatePreview((p) => (p ? { ...p, name: e.target.value } : p))
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] uppercase text-slate-500">Bản thảo (wiki [[ ]])</label>
+                          <textarea
+                            className="mt-1 w-full min-h-[72px] bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300 font-serif"
+                            value={hubCreatePreview.rawText}
+                            onChange={(e) =>
+                              setHubCreatePreview((p) => (p ? { ...p, rawText: e.target.value } : p))
+                            }
+                          />
+                        </div>
+                        {ft.map((f) => (
+                          <div key={f.id}>
+                            <label className="text-[10px] uppercase text-slate-500">{safeString(f.label)}</label>
+                            <input
+                              className="mt-1 w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 font-serif"
+                              value={safeString(hubCreatePreview.dynamicData[f.id])}
+                              onChange={(e) =>
+                                setHubCreatePreview((p) =>
+                                  p
+                                    ? {
+                                        ...p,
+                                        dynamicData: { ...p.dynamicData, [f.id]: e.target.value },
+                                      }
+                                    : p
+                                )
+                              }
+                            />
+                          </div>
+                        ))}
+                        <div className="flex gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => hubSaveCreateEntity()}
+                            className="flex-1 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-sm"
+                          >
+                            Lưu thẻ
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setHubCreatePreview(null)}
+                            className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-400 text-sm hover:bg-slate-800"
+                          >
+                            Phân tích lại
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+              {overviewHubTab === 'update' && (
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-500 font-serif leading-relaxed">
+                    Giống nhật ký nhanh: AI tách gợi ý (chữ thường).{' '}
+                    <b className="text-slate-400">Không tạo [[liên kết wiki]] hay ảnh</b> — muốn link/avatar thì vào đúng mục → thẻ.
+                  </p>
+                  <div className="flex gap-2 items-end flex-wrap">
+                    <div>
+                      <label className="text-[10px] uppercase text-slate-500">Chương</label>
+                      <input
+                        type="number"
+                        min="0"
+                        className="mt-1 w-24 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-emerald-100"
+                        value={hubUpdateChapter}
+                        onChange={(e) => setHubUpdateChapter(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setHubUpdateChapter(
+                          String(
+                            Math.max(
+                              0,
+                              parseInt(
+                                activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0,
+                                10
+                              ) || 0
+                            )
+                          )
+                        )
+                      }
+                      className="text-xs text-slate-500 hover:text-emerald-400 font-serif mb-1"
+                    >
+                      = neo
+                    </button>
+                  </div>
+                  <textarea
+                    className="w-full min-h-[100px] bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm text-slate-200 font-serif"
+                    placeholder="ch.200: …"
+                    value={hubUpdateText}
+                    onChange={(e) => setHubUpdateText(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    disabled={hubUpdatePanel?.loading}
+                    onClick={() => runHubUpdateAi()}
+                    className="w-full py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 disabled:opacity-50 text-white font-heading text-sm flex items-center justify-center gap-2"
+                  >
+                    {hubUpdatePanel?.loading ? (
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Sparkles size={16} />
+                    )}
+                    Phân tích & hiện gợi ý
+                  </button>
+                  {hubUpdatePanel && !hubUpdatePanel.loading && hubUpdatePanel.error && (
+                    <p className="text-rose-400 text-sm">{hubUpdatePanel.error}</p>
+                  )}
+                  {hubUpdatePanel && !hubUpdatePanel.loading && hubUpdatePanel.suggestions?.length > 0 && (
+                    <div className="space-y-2 max-h-[280px] overflow-y-auto custom-scrollbar border border-slate-800 rounded-xl p-2 bg-slate-950/50">
+                      {hubUpdatePanel.suggestions.map((sug, idx) => {
+                        const key = `j-${idx}`;
+                        const kind = safeString(sug.kind).toLowerCase().replace(/\s/g, '_');
+                        const kindLabel =
+                          kind === 'new_entity'
+                            ? 'Tạo thẻ'
+                            : kind === 'milestone'
+                              ? 'Mốc'
+                              : kind === 'update_profile'
+                                ? 'Hồ sơ'
+                                : kind;
+                        const matches =
+                          kind === 'milestone' || kind === 'update_profile'
+                            ? findEntitiesByXrefHint(sug.entityHint)
+                            : [];
+                        return (
+                          <label
+                            key={key}
+                            className={`flex gap-2 items-start rounded-lg border p-2 cursor-pointer text-xs ${hubUpdatePanel.selectedKeys.has(key) ? 'border-emerald-700/50 bg-emerald-950/15' : 'border-slate-800'}`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 rounded border-slate-600 text-emerald-600"
+                              checked={hubUpdatePanel.selectedKeys.has(key)}
+                              onChange={() =>
+                                setHubUpdatePanel((p) => {
+                                  if (!p) return p;
+                                  const next = new Set(p.selectedKeys);
+                                  if (next.has(key)) next.delete(key);
+                                  else next.add(key);
+                                  return { ...p, selectedKeys: next };
+                                })
+                              }
+                            />
+                            <span>
+                              <span className="font-bold text-emerald-600/90">{kindLabel}</span>{' '}
+                              {kind === 'new_entity' ? safeString(sug.suggestedName) : matches[0] ? safeString(matches[0].ent.name) : safeString(sug.entityHint)}
+                              {safeString(sug.why) && (
+                                <span className="text-slate-500 block mt-0.5">{safeString(sug.why)}</span>
+                              )}
+                              {(kind === 'milestone' || kind === 'update_profile') &&
+                                safeString(sug.entityHint) &&
+                                matches.length === 0 && (
+                                  <span className="text-amber-700 block mt-0.5">Không khớp thẻ — sẽ lỗi khi áp</span>
+                                )}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {hubUpdatePanel && !hubUpdatePanel.loading && hubUpdatePanel.suggestions?.length > 0 && (
+                    <div className="flex flex-wrap gap-2 justify-between items-center pt-2">
+                      <button
+                        type="button"
+                        className="text-xs text-slate-500"
+                        onClick={() =>
+                          setHubUpdatePanel((p) =>
+                            p
+                              ? {
+                                  ...p,
+                                  selectedKeys: new Set(p.suggestions.map((_, i) => `j-${i}`)),
+                                }
+                              : p
+                          )
+                        }
+                      >
+                        Chọn tất cả
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyHubUpdateSelected()}
+                        disabled={!hubUpdatePanel.selectedKeys?.size}
+                        className="px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold text-sm"
+                      >
+                        Áp dụng ({hubUpdatePanel.selectedKeys.size})
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <ModalQuickCreate isOpen={!!quickCreateData} onClose={() => setQuickCreateData(null)} quickCreateName={quickCreateData} onConfirm={handleConfirmQuickCreate} activeTabs={activeTabs} />
 
       {isManageTabsOpen && (

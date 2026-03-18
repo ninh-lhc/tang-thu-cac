@@ -4,7 +4,7 @@
 // Vai trò: UI components tĩnh + tất cả Modal
 // ==========================================
 
-import React, { useState, useMemo, useEffect, memo } from 'react';
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, memo } from 'react';
 import {
   Menu, Search, BookOpen, Filter, ChevronRight, ChevronDown,
   Settings, Network, Plus, Trash2, X, Save,
@@ -20,8 +20,10 @@ import {
 } from './MasterEngines.js';
 import {
   generateId, safeString, getTerms, AsyncLocalImage,
-  handleToolbarClick, processPlainTextWithLinks, renderMarkdown, analyzeTextWithAI
+  handleToolbarClick, applyWikiLinkWrap, renderMarkdown, analyzeTextWithAI,
+  truncateForAI, mapGeminiErrorToUserMessage
 } from './MasterUtils.jsx';
+import { searchNovelData, dedupeDeepSearchResults, metadataSearchHits } from './deepSearchCore.js';
 
 // Lấy fieldsTemplate đúng cho tab — ưu tiên template đã lưu, fallback theo ID rồi label
 const resolveFieldsTemplate = (tabConfig, parentTabId, parentLabel = '') => {
@@ -37,26 +39,28 @@ const resolveFieldsTemplate = (tabConfig, parentTabId, parentLabel = '') => {
   return t;
 };
 
+const preventToolbarFocusSteal = (e) => e.preventDefault();
+
 export const MarkdownToolbar = ({ editorId, onInsertImage, onPickLocalImage }) => (
   <div className="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-slate-800">
-     <button onClick={() => handleToolbarClick('**', '**', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="In đậm"><Bold size={16}/></button>
-     <button onClick={() => handleToolbarClick('*', '*', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="In nghiêng"><Italic size={16}/></button>
+     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('**', '**', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="In đậm"><Bold size={16}/></button>
+     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('*', '*', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="In nghiêng"><Italic size={16}/></button>
      <div className="w-px h-6 bg-slate-800 mx-1"></div>
      
-     <button onClick={() => handleToolbarClick('[[', ']]', editorId)} className="p-2 text-indigo-500 hover:text-indigo-300 bg-indigo-950/50 rounded-lg hover:bg-indigo-900 transition-colors border border-indigo-900/50 shadow-inner" title="Trích dẫn Liên kết Thực thể (Wiki Link)"><Link2 size={16}/></button>
+     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('[[', ']]', editorId)} className="p-2 text-indigo-500 hover:text-indigo-300 bg-indigo-950/50 rounded-lg hover:bg-indigo-900 transition-colors border border-indigo-900/50 shadow-inner" title="Wiki Link: bôi đen chữ để bọc [[...]], hoặc chèn [[]] tại con trỏ"><Link2 size={16}/></button>
      <div className="w-px h-6 bg-slate-800 mx-1"></div>
 
-     <button onClick={() => handleToolbarClick('# ', '', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Tiêu đề 1"><Heading1 size={16}/></button>
-     <button onClick={() => handleToolbarClick('## ', '', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Tiêu đề 2"><Heading2 size={16}/></button>
+     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('# ', '', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Tiêu đề 1"><Heading1 size={16}/></button>
+     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('## ', '', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Tiêu đề 2"><Heading2 size={16}/></button>
      <div className="w-px h-6 bg-slate-800 mx-1"></div>
-     <button onClick={() => handleToolbarClick('- ', '', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Gạch đầu dòng"><ListIcon size={16}/></button>
+     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('- ', '', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Gạch đầu dòng"><ListIcon size={16}/></button>
      <div className="w-px h-6 bg-slate-800 mx-1"></div>
-     <button onClick={() => onInsertImage(editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Chèn Ảnh (URL)"><ImageIcon size={16}/></button>
-     {onPickLocalImage && <button onClick={() => onPickLocalImage(null, editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Chọn Ảnh Từ Máy tính"><FolderOpen size={16}/></button>}
+     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => onInsertImage(editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Chèn Ảnh (URL)"><ImageIcon size={16}/></button>
+     {onPickLocalImage && <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => onPickLocalImage(null, editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Chọn Ảnh Từ Máy tính"><FolderOpen size={16}/></button>}
   </div>
 );
 
-export const AppHeader = ({ menu1Visible, setMenu1Visible, handleGoHome, setIsSettingsOpen, hasDirectory, dirName, setIsDeepSearchOpen }) => (
+export const AppHeader = ({ menu1Visible, setMenu1Visible, handleGoHome, setIsSettingsOpen, hasDirectory, dirName, setIsDeepSearchOpen, onInNovelSearch, showInNovelSearch }) => (
   <header className="h-16 bg-slate-950 border-b border-slate-900 flex items-center justify-between px-5 z-30 relative shadow-md">
     <div className="flex items-center gap-5">
       {!menu1Visible && <button onClick={() => setMenu1Visible(true)} className="p-2 hover:bg-slate-800 rounded-lg text-amber-500 transition-colors"><Menu size={24} /></button>}
@@ -72,7 +76,10 @@ export const AppHeader = ({ menu1Visible, setMenu1Visible, handleGoHome, setIsSe
       <div className={`hidden md:block px-3 py-1 rounded-full border text-[10px] font-serif ${hasDirectory ? 'border-emerald-500/50 text-emerald-400 bg-emerald-950/20' : 'border-slate-800 text-slate-500'}`}>
         {hasDirectory ? safeString(dirName).toUpperCase() : "CHƯA LIÊN KẾT"}
       </div>
-      <button onClick={setIsDeepSearchOpen} className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-full transition-all" title="Tìm Kiếm"><Search size={20} /></button>
+      <button onClick={setIsDeepSearchOpen} className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-full transition-all" title="Tìm toàn thư viện"><Search size={20} /></button>
+      {showInNovelSearch && (
+        <button type="button" onClick={onInNovelSearch} className="p-2 text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-all" title="Tra chỉ trong truyện đang mở"><BookOpen size={20} /></button>
+      )}
       <button onClick={setIsSettingsOpen} className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-full transition-all" title="Cài Đặt"><Settings size={20} /></button>
     </div>
   </header>
@@ -291,6 +298,19 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   const [newFieldLabel, setNewFieldLabel] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const dynamicFieldInputRefs = useRef({});
+  const pendingWikiCaretRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const p = pendingWikiCaretRef.current;
+    if (!p) return;
+    pendingWikiCaretRef.current = null;
+    const el = dynamicFieldInputRefs.current[p.fieldId];
+    if (el) {
+      el.focus();
+      el.setSelectionRange(p.selStart, p.selEnd);
+    }
+  }, [dynamicData]);
 
   useEffect(() => { 
      if(isOpen) {
@@ -310,11 +330,13 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   }, [isOpen, initialData]);
 
   const handleAI = async () => {
-     if (!geminiApiKey) { setErrorMsg("Vui lòng thiết lập API Key trong phần Cài Đặt để dùng tính năng AI."); return; }
+     const keys = Array.isArray(geminiApiKey) ? geminiApiKey : (geminiApiKey ? [geminiApiKey] : []);
+     if (keys.length === 0) { setErrorMsg("Vui lòng thiết lập API Key trong phần Cài Đặt để dùng tính năng AI."); return; }
      if (!formData.rawText.trim()) return;
-     setIsAnalyzing(true); setErrorMsg('');
+     const { wasTruncated } = truncateForAI(formData.rawText);
+     setIsAnalyzing(true); setErrorMsg(wasTruncated ? "Đoạn quá dài — AI chỉ xử lý ~28k ký tự đầu." : '');
      try {
-         const result = await analyzeTextWithAI(formData.rawText, fieldsTemplate, geminiApiKey);
+         const result = await analyzeTextWithAI(formData.rawText, fieldsTemplate, keys);
          if (result) {
              if (result.name) setFormData(prev => ({ ...prev, name: safeString(result.name) }));
              if (result.avatar) setFormData(prev => ({ ...prev, avatar: safeString(result.avatar) }));
@@ -323,7 +345,7 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
              fieldsTemplate.forEach(f => { if (result[f.id]) newDyn[f.id] = safeString(result[f.id]); });
              setDynamicData(newDyn);
          }
-     } catch (e) { setErrorMsg("Thần thức AI đang bận hoặc gián đoạn. Vui lòng thử lại."); } finally { setIsAnalyzing(false); }
+     } catch (e) { setErrorMsg(mapGeminiErrorToUserMessage(e)); } finally { setIsAnalyzing(false); }
   };
 
   const handleAddField = () => {
@@ -429,6 +451,7 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
                          </div>
                          <div className="relative">
                            <input
+                             ref={(el) => { if (el) dynamicFieldInputRefs.current[field.id] = el; else delete dynamicFieldInputRefs.current[field.id]; }}
                              value={safeString(dynamicData[field.id])}
                              onChange={e => setDynamicData({...dynamicData, [field.id]: e.target.value})}
                              onFocus={() => setLinkSuggestField(field.id)}
@@ -436,17 +459,25 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
                              className="w-full bg-slate-950/80 border border-slate-700 rounded-lg p-2.5 pr-8 text-sm text-slate-200 font-serif focus:border-amber-500 outline-none"
                              placeholder="Nhập giá trị hoặc [[Tên]] để liên kết..."
                            />
-                           {/* Nút chèn [[ ]] */}
+                           {/* Nút chèn [[ ]] tại con trỏ / bọc đoạn chọn */}
                            {linkSuggestField === field.id && (
                              <button
-                               onMouseDown={e => {
-                                 e.preventDefault();
+                               type="button"
+                               onMouseDown={(e) => e.preventDefault()}
+                               onClick={() => {
                                  const cur = safeString(dynamicData[field.id]);
-                                 const newVal = cur ? cur + ' [[]]' : '[[]]';
-                                 setDynamicData({...dynamicData, [field.id]: newVal});
+                                 const input = dynamicFieldInputRefs.current[field.id];
+                                 let a = cur.length; let b = cur.length;
+                                 if (input && document.activeElement === input) {
+                                   a = input.selectionStart ?? 0;
+                                   b = input.selectionEnd ?? a;
+                                 }
+                                 const { newText, selStart, selEnd } = applyWikiLinkWrap(cur, a, b);
+                                 pendingWikiCaretRef.current = { fieldId: field.id, selStart, selEnd };
+                                 setDynamicData({ ...dynamicData, [field.id]: newText });
                                }}
                                className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-amber-500 hover:text-amber-300 bg-amber-900/30 px-1.5 py-0.5 rounded border border-amber-700/40"
-                               title="Chèn liên kết [[...]]"
+                               title="Chèn [[ ]] tại con trỏ hoặc bọc đoạn đang chọn"
                              >[[]]</button>
                            )}
                          </div>
@@ -473,7 +504,7 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   );
 };
 
-export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, parentLabel, geminiApiKey }) => {
+export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultChapterWhenNew, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, parentLabel, geminiApiKey }) => {
   const fieldsTemplate = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const [editingFieldId, setEditingFieldId] = useState(null);
   const [editingFieldLabel, setEditingFieldLabel] = useState('');
@@ -492,25 +523,28 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, tabConfig
            setFormData({ id: initialData.id, chapter: initialData.chapter, event: initialData.event });
            setSnapshotData(initialData.snapshot || { avatar: '', dynamicData: {} });
        } else {
-           setFormData({ id: null, chapter: '', event: '' }); 
+           const dc = defaultChapterWhenNew != null && defaultChapterWhenNew !== '' ? String(defaultChapterWhenNew) : '';
+           setFormData({ id: null, chapter: dc, event: '' });
            setSnapshotData({ avatar: '', dynamicData: {} });
        }
     } 
-  }, [isOpen, initialData]);
+  }, [isOpen, initialData, defaultChapterWhenNew]);
 
   const handleAI = async () => {
-     if (!geminiApiKey) { setErrorMsg("Vui lòng thiết lập API Key trong phần Cài Đặt để dùng tính năng AI."); return; }
+     const keys = Array.isArray(geminiApiKey) ? geminiApiKey : (geminiApiKey ? [geminiApiKey] : []);
+     if (keys.length === 0) { setErrorMsg("Vui lòng thiết lập API Key trong phần Cài Đặt để dùng tính năng AI."); return; }
      if (!formData.event.trim()) return;
-     setIsAnalyzing(true); setErrorMsg('');
+     const { wasTruncated } = truncateForAI(formData.event);
+     setIsAnalyzing(true); setErrorMsg(wasTruncated ? "Đoạn quá dài — AI chỉ xử lý ~28k ký tự đầu." : '');
      try {
-         const result = await analyzeTextWithAI(formData.event, fieldsTemplate, geminiApiKey);
+         const result = await analyzeTextWithAI(formData.event, fieldsTemplate, keys);
          if (result) {
              const newDyn = { ...snapshotData.dynamicData };
              fieldsTemplate.forEach(f => { if (result[f.id]) newDyn[f.id] = safeString(result[f.id]); });
              setSnapshotData({ avatar: safeString(result.avatar) || snapshotData.avatar, dynamicData: newDyn });
              if (result.processedText) setFormData(p => ({...p, event: result.processedText}));
          }
-     } catch (e) { setErrorMsg("Thần thức AI đang bận."); } finally { setIsAnalyzing(false); }
+     } catch (e) { setErrorMsg(mapGeminiErrorToUserMessage(e)); } finally { setIsAnalyzing(false); }
   };
 
   const handleAddField = () => {
@@ -956,63 +990,68 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
   );
 };
 
-export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, activeNovelData, allNovelsCache, isCacheLoading, onSelectResult }) => {
+export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, performDeepSearch, onSelectResult }) => {
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [searchPending, setSearchPending] = useState(false);
+  const searchSeqRef = useRef(0);
+  const abortRef = useRef(null);
 
-  const searchNovelData = (novel, q, res) => {
-    if (!novel?.data) return;
-    Object.keys(novel.data).forEach(lonId => {
-      const lonData = novel.data[lonId];
-      if (typeof lonData !== 'object' || !lonData) return;
-      Object.keys(lonData).forEach(nhoId => {
-        const nhoData = lonData[nhoId];
-        if (typeof nhoData === 'string' && nhoData.toLowerCase().includes(q)) {
-          res.push({ novelId: novel.id, tabLonId: lonId, tabNhoId: nhoId, novelTitle: novel.title, location: 'Nội dung', snippet: nhoData });
-        } else if (nhoData && typeof nhoData === 'object') {
-          if (nhoData.overview?.toLowerCase().includes(q))
-            res.push({ novelId: novel.id, tabLonId: lonId, tabNhoId: nhoId, novelTitle: novel.title, location: 'Tổng quan mục', snippet: nhoData.overview });
-          if (nhoData.entities) {
-            nhoData.entities.forEach(ent => {
-              const hit = ent.name?.toLowerCase().includes(q) || ent.info?.toLowerCase().includes(q) ||
-                (ent.dynamicData && Object.values(ent.dynamicData).some(v => typeof v === 'string' && v.toLowerCase().includes(q)));
-              if (hit) res.push({ novelId: novel.id, tabLonId: lonId, tabNhoId: nhoId, entityId: ent.id, novelTitle: novel.title, location: `Hồ sơ: ${ent.name}`, snippet: ent.info || ent.name });
-              ent.milestones?.forEach(ms => {
-                if (ms.event?.toLowerCase().includes(q))
-                  res.push({ novelId: novel.id, tabLonId: lonId, tabNhoId: nhoId, entityId: ent.id, novelTitle: novel.title, location: `Sự kiện Ch.${ms.chapter} — ${ent.name}`, snippet: ms.event });
-              });
-            });
-          }
-          Object.keys(nhoData).forEach(key => {
-            if (key !== 'overview' && key !== 'entities' && typeof nhoData[key] === 'string' && nhoData[key].toLowerCase().includes(q))
-              res.push({ novelId: novel.id, tabLonId: lonId, tabNhoId: nhoId, tabConId: key, novelTitle: novel.title, location: 'Chi tiết mục', snippet: nhoData[key] });
-          });
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQuery(query.trim()), 260);
+    return () => clearTimeout(id);
+  }, [query]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      searchSeqRef.current += 1;
+      if (abortRef.current) {
+        try { abortRef.current.abort(); } catch (_) {}
+        abortRef.current = null;
+      }
+      setResults([]);
+      setSearchPending(false);
+      return;
+    }
+    if (!debouncedQuery) {
+      setResults([]);
+      setSearchPending(false);
+      return;
+    }
+    if (typeof performDeepSearch !== 'function') {
+      setResults([]);
+      setSearchPending(false);
+      return;
+    }
+    const runId = ++searchSeqRef.current;
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch (_) {}
+    }
+    const ac = new AbortController();
+    abortRef.current = ac;
+    setSearchPending(true);
+    let cancelled = false;
+    (async () => {
+      try {
+        const final = await performDeepSearch(debouncedQuery, ac.signal, (partial) => {
+          if (cancelled || runId !== searchSeqRef.current || ac.signal.aborted) return;
+          setResults(Array.isArray(partial) ? partial : []);
+        });
+        if (!cancelled && runId === searchSeqRef.current && !ac.signal.aborted) {
+          setResults(Array.isArray(final) ? final : []);
         }
-      });
-    });
-  };
-
-  const results = useMemo(() => {
-    if (!query.trim()) return [];
-    const q = query.toLowerCase();
-    const res = [];
-    // 1. Metadata tất cả truyện
-    novelsMetadata.forEach(novel => {
-      if (novel.title?.toLowerCase().includes(q) || novel.author?.toLowerCase().includes(q) ||
-          novel.review?.toLowerCase().includes(q) || novel.tags?.some(t => t.toLowerCase().includes(q)))
-        res.push({ novelId: novel.id, novelTitle: novel.title, location: 'Thông tin truyện', snippet: novel.review || novel.title });
-    });
-    // 2. Cache toàn bộ truyện
-    const searchedIds = new Set();
-    Object.values(allNovelsCache || {}).forEach(nd => { searchedIds.add(nd.id); searchNovelData(nd, q, res); });
-    // 3. Truyện đang mở (mới nhất, chưa trong cache)
-    if (activeNovelData && !searchedIds.has(activeNovelData.id)) searchNovelData(activeNovelData, q, res);
-    // Deduplicate
-    const seen = new Set();
-    return res.filter(r => {
-      const key = `${r.novelId}__${r.location}__${(r.snippet||'').substring(0,30)}`;
-      if (seen.has(key)) return false; seen.add(key); return true;
-    }).slice(0, 60);
-  }, [query, novelsMetadata, activeNovelData, allNovelsCache]);
+      } catch (_) {
+        if (!cancelled && runId === searchSeqRef.current) setResults([]);
+      } finally {
+        if (!cancelled && runId === searchSeqRef.current) setSearchPending(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try { ac.abort(); } catch (_) {}
+    };
+  }, [isOpen, debouncedQuery, performDeepSearch, novelsMetadata]);
 
   const grouped = useMemo(() => {
     const map = {};
@@ -1027,17 +1066,16 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, activeNovelDa
         <div className="p-4 border-b border-slate-800 flex items-center gap-3 bg-slate-950">
           <Search size={20} className="text-amber-500 flex-shrink-0" />
           <input autoFocus type="text"
-            placeholder={isCacheLoading ? `Đang tải ${novelsMetadata.length} bộ thư tịch...` : `Tìm trong ${novelsMetadata.length} bộ thư tịch...`}
+            placeholder={`Tìm trong ${novelsMetadata.length} bộ thư tịch (đọc từng file)...`}
             className="flex-1 bg-transparent text-lg font-serif text-slate-100 outline-none"
             value={query} onChange={e => setQuery(e.target.value)} />
-          {isCacheLoading && <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin flex-shrink-0"/>}
+          {searchPending && <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin flex-shrink-0"/>}
           <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-white rounded-lg flex-shrink-0"><X size={18}/></button>
         </div>
-        {query && (
+        {query.trim() && (
           <div className="px-4 py-2 bg-slate-950/50 border-b border-slate-800/50">
             <span className="text-xs text-slate-500 font-serif">
-              {results.length === 0 ? 'Không tìm thấy' : `${results.length} kết quả trong ${grouped.length} bộ truyện`}
-              {isCacheLoading && <span className="text-amber-600 ml-2 italic">· Đang tải thêm...</span>}
+              {query.trim() !== debouncedQuery || searchPending ? 'Đang tìm…' : results.length === 0 ? 'Không tìm thấy' : `${results.length} kết quả trong ${grouped.length} bộ truyện`}
             </span>
           </div>
         )}
@@ -1047,8 +1085,10 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, activeNovelDa
               <Search size={40} className="mb-4 opacity-20"/>
               <p className="font-serif text-sm italic">Nhập từ khóa để tìm toàn bộ thư viện...</p>
             </div>
+          ) : query.trim() !== debouncedQuery || searchPending ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500 font-serif text-sm italic">Đang tìm…</div>
           ) : results.length === 0 ? (
-            <div className="text-center text-slate-500 font-serif py-16 italic">Không tìm thấy "{query}"</div>
+            <div className="text-center text-slate-500 font-serif py-16 italic">Không tìm thấy "{safeString(query)}"</div>
           ) : (
             <div className="p-3 space-y-4">
               {grouped.map((group, gi) => (
@@ -1060,7 +1100,7 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, activeNovelDa
                   </div>
                   <div className="space-y-1.5">
                     {group.items.map((r, i) => (
-                      <div key={i} onClick={() => { onSelectResult(r); onClose(); }}
+                      <div key={`${r.novelId}-${r.tabLonId || ''}-${r.tabNhoId || ''}-${r.entityId || ''}-${r.location}-${i}`} onClick={() => { onSelectResult(r); onClose(); }}
                         className="flex items-start gap-3 p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl hover:border-amber-600/40 hover:bg-slate-800/50 cursor-pointer transition-all">
                         <div className="flex-shrink-0 mt-0.5 w-5 h-5 rounded-md bg-amber-900/30 flex items-center justify-center">
                           <Search size={10} className="text-amber-600"/>
@@ -1068,6 +1108,112 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, activeNovelDa
                         <div className="flex-1 min-w-0">
                           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">{safeString(r.location)}</span>
                           <p className="text-sm text-slate-300 font-serif line-clamp-2 leading-relaxed">{safeString(r.snippet)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/** Tìm kiếm chỉ trong một truyện đang mở (toàn bộ mục & thực thể) */
+export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) => {
+  const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const results = useMemo(() => {
+    const q = String(debouncedQuery || '').trim().toLowerCase();
+    if (!q || !novel) return [];
+    const meta = {
+      id: novel.id,
+      title: novel.title,
+      author: novel.author,
+      review: novel.review,
+      tags: novel.tags,
+    };
+    const res = [...metadataSearchHits([meta], q)];
+    searchNovelData({ ...novel, id: novel.id, title: novel.title || '' }, q, res);
+    return dedupeDeepSearchResults(res);
+  }, [debouncedQuery, novel]);
+
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQuery(query.trim()), 200);
+    return () => clearTimeout(id);
+  }, [query]);
+
+  useEffect(() => {
+    if (!isOpen) setQuery('');
+  }, [isOpen]);
+
+  const grouped = useMemo(() => {
+    const map = {};
+    results.forEach((r) => {
+      if (!map[r.novelId]) map[r.novelId] = { title: r.novelTitle, items: [] };
+      map[r.novelId].items.push(r);
+    });
+    return Object.values(map);
+  }, [results]);
+
+  if (!isOpen || !novel) return null;
+  return (
+    <div className="fixed inset-0 z-[295] flex items-start justify-center bg-slate-950/95 backdrop-blur-md pt-[8vh] px-4 animate-fade-in">
+      <div className="bg-slate-900 border border-cyan-600/30 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: '78vh' }}>
+        <div className="p-4 border-b border-slate-800 flex items-center gap-3 bg-slate-950">
+          <BookOpen size={20} className="text-cyan-500 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <input
+              autoFocus
+              type="text"
+              placeholder={`Tra trong «${safeString(novel.title)}»...`}
+              className="w-full bg-transparent text-lg font-serif text-slate-100 outline-none"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <p className="text-[10px] text-slate-500 font-serif mt-0.5">Chỉ truyện này — gõ tên, sự kiện, ghi chép...</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1.5 text-slate-500 hover:text-white rounded-lg flex-shrink-0">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+          {!query.trim() ? (
+            <div className="flex flex-col items-center justify-center py-14 text-slate-600">
+              <Search size={36} className="mb-3 opacity-25" />
+              <p className="font-serif text-sm italic text-center px-4">Tìm lại chi tiết cũ khi đang đọc (nhân vật, mốc, nội dung mục)...</p>
+            </div>
+          ) : query.trim() !== debouncedQuery ? (
+            <div className="text-center text-slate-500 font-serif py-12 italic">Đang lọc…</div>
+          ) : results.length === 0 ? (
+            <div className="text-center text-slate-500 font-serif py-12 italic">Không thấy «{safeString(query)}»</div>
+          ) : (
+            <div className="space-y-3">
+              {grouped.map((group, gi) => (
+                <div key={gi}>
+                  {grouped.length > 1 && (
+                    <div className="flex items-center gap-2 px-1 mb-2">
+                      <span className="text-[10px] font-bold text-cyan-600 uppercase font-serif">{safeString(group.title)}</span>
+                      <div className="flex-1 h-px bg-slate-800" />
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    {group.items.map((r, i) => (
+                      <div
+                        key={`${r.tabLonId}-${r.tabNhoId}-${r.entityId}-${i}`}
+                        onClick={() => {
+                          onSelectResult(r);
+                          onClose();
+                        }}
+                        className="flex items-start gap-3 p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl hover:border-cyan-600/35 hover:bg-slate-800/40 cursor-pointer transition-all"
+                      >
+                        <Search size={12} className="text-cyan-600 mt-1 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase block mb-0.5">{safeString(r.location)}</span>
+                          <p className="text-sm text-slate-300 font-serif line-clamp-3 leading-relaxed">{safeString(r.snippet)}</p>
                         </div>
                       </div>
                     ))}
