@@ -1,0 +1,12 @@
+---
+description: Ngữ cảnh dự án Tàng Thư Các — stack, lệnh, cấu trúc, cạm bẫy
+alwaysApply: true
+---
+
+# Tàng Thư Các — quy ước chung
+
+- **Stack:** Vite 8, React 19, Tailwind 4. Đọc **`AGENTS.md`** ở root để có bản đồ file và lệnh `npm run dev|build|test|lint`.
+- **Trục chính:** `src/App.jsx` — đầu file có liệt kê module đã tách; ưu tiên sửa đúng file modal (`AppModal*.jsx`) hoặc `src/lib/` thay vì mở rộng vô hạn `App.jsx`.
+- **Cài gói:** dùng `npm install` bình thường (`.npmrc` đã `legacy-peer-deps=true`).
+- **Cạm bẫy:** không import **`Map`** từ `lucide-react` trong file dùng **`new Map()`** — đổi tên icon (vd. `Map as MapIcon`).
+- **Sau khi sửa logic thuần** trong `src/lib/**` hoặc `src/appNhatKyVaGoiThe.js`: chạy **`npm run test`**.

@@ -2,6 +2,15 @@
 // TRỤ 4: TRẬN NHÃN TRUNG TÂM
 // File: App.jsx
 // Vai trò: State toàn cục, điều phối, layout chính, Quản lý Thư mục Truyện
+//
+// Đã tách (cùng thư mục src/, tên dễ nhớ):
+//   appNhatKyVaGoiThe.js     — findEntitiesByHintInNovel, mutateNovelJournalSelections
+//   AppPhongChuVaTheme.jsx   — font + CSS theme toàn cục
+//   AppModalMotCua.jsx       — Một cửa cập nhật (tạo thẻ / nhật ký batch)
+//   AppModalQuanLyTab.jsx    — Trận pháp / quản lý tab
+//   AppModalLenhNhanh.jsx    — Command palette
+//   AppModalGoiYNoiTraCuu.jsx — Gợi ý AI nối tra cứu
+//   lib/stripWikiBrackets.js, lib/computeRelatedEntities.js
 // ==========================================
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
@@ -10,7 +19,7 @@ import {
   User, Hexagon, Settings, Edit3, Network, Plus, Trash2, Edit2,
   X, Save, Check, Library, Sparkles, Cloud, History, LayoutGrid, Clock,
   AlignLeft, Shield, Link2, Download, Eye, TrendingUp, BarChart2, BookMarked, Users, Layers, Activity,
-  Images, GitBranch, Command
+  Images, GitBranch
 } from 'lucide-react';
 import {
   apiKey, FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
@@ -37,210 +46,14 @@ import {
   countEntitiesInNovel,
   metadataSearchHits,
 } from './deepSearchCore.js';
-
-// Kiểm tra template có phải 3 trường generic mặc định không (hoặc rỗng/undefined)
-const isGenericDefault = (t) =>
-  !t || t.length === 0 ||
-  (t.length === 3 && t[0]?.id === 'f_status' && t[1]?.id === 'f_title' && t[2]?.id === 'f_desc');
-
-/** Tìm thẻ trong toàn bộ novel (dùng khi áp nhật ký batch). */
-function findEntitiesByHintInNovel(novelData, hint) {
-  const h = safeString(hint).toLowerCase().trim();
-  if (!h || !novelData?.tabsConfig) return [];
-  const scored = [];
-  (novelData.tabsConfig || []).forEach((lon) => {
-    if (lon.id === 'tong-quan') return;
-    (lon.subTabs || []).forEach((sub) => {
-      if (sub.viewType !== 'collection-track') return;
-      const ents = novelData.data?.[lon.id]?.[sub.id]?.entities || [];
-      ents.forEach((ent) => {
-        const n = safeString(ent.name).toLowerCase();
-        if (!n) return;
-        let score = 0;
-        if (n === h) score = 100;
-        else if (n.includes(h) || h.includes(n)) score = 60;
-        else {
-          const ws = h.split(/\s+/).filter((w) => w.length > 1);
-          if (ws.some((w) => n.includes(w))) score = 30;
-        }
-        if (score) scored.push({ score, lonId: lon.id, nhoId: sub.id, ent });
-      });
-    });
-  });
-  return scored.sort((a, b) => b.score - a.score);
-}
-
-/** Hub cập nhật nhanh: không lưu [[wiki]] — chỉ văn bản thường (liên kết làm trên thẻ). */
-function stripWikiBracketSyntax(s) {
-  if (s == null || typeof s !== 'string') return s;
-  let out = s;
-  let prev;
-  do {
-    prev = out;
-    out = out.replace(/\[\[([^\]]+)\]\]/g, '$1');
-  } while (out !== prev);
-  return out;
-}
-
-/** Áp các gợi ý nhật ký đã chọn vào novel (mutate nov). */
-function mutateNovelJournalSelections(nov, panel) {
-  const fails = [];
-  let ok = 0;
-  const chapterCtx = Math.max(0, parseInt(panel.chapter, 10) || 0);
-  const sk = panel.selectedKeys;
-  const suggestions = panel.suggestions || [];
-  const indices = suggestions.map((_, i) => i).filter((i) => sk && sk.has(`j-${i}`));
-  if (!indices.length) return { ok: 0, fails, chapterCtx, didWork: false };
-
-  const resolvePath = (tabLonId, tabNhoId) => {
-    const cfg = nov.tabsConfig || [];
-    const lon = cfg.find((t) => t.id === tabLonId);
-    const nho = lon?.subTabs?.find((s) => s.id === tabNhoId && s.viewType === 'collection-track');
-    if (lon && nho) return { lonId: lon.id, nhoId: nho.id };
-    const nv = cfg.find((t) => t.id === 'nhan-vat');
-    const nvSub = nv?.subTabs?.find((s) => s.viewType === 'collection-track');
-    if (nv && nvSub) return { lonId: nv.id, nhoId: nvSub.id };
-    for (const L of cfg) {
-      if (L.id === 'tong-quan') continue;
-      const st = L.subTabs?.find((s) => s.viewType === 'collection-track');
-      if (st) return { lonId: L.id, nhoId: st.id };
-    }
-    return null;
-  };
-  const ensureTab = (lonId, nhoId) => {
-    if (!nov.data) nov.data = {};
-    if (!nov.data[lonId]) nov.data[lonId] = {};
-    let td = nov.data[lonId][nhoId];
-    if (!td || typeof td === 'string') td = { overview: typeof td === 'string' ? td : '', entities: [] };
-    if (!td.entities) td.entities = [];
-    nov.data[lonId][nhoId] = td;
-    return td;
-  };
-
-  indices.forEach((idx) => {
-    const s = suggestions[idx];
-    const kind = safeString(s.kind).toLowerCase().replace(/\s/g, '_');
-    const tag = `#${idx + 1}`;
-
-    if (kind === 'new_entity') {
-      const path = resolvePath(s.tabLonId, s.tabNhoId);
-      if (!path) {
-        fails.push(`${tag} thẻ mới: mục không hợp lệ`);
-        return;
-      }
-      const name = safeString(s.suggestedName).trim();
-      if (!name) {
-        fails.push(`${tag} thiếu tên thẻ`);
-        return;
-      }
-      const tabData = ensureTab(path.lonId, path.nhoId);
-      if (tabData.entities.some((e) => safeString(e.name).trim().toLowerCase() === name.toLowerCase())) {
-        fails.push(`«${name}» đã có`);
-        return;
-      }
-      tabData.entities.push({
-        id: generateId('ent'),
-        name,
-        avatar: '',
-        rawText: stripWikiBracketSyntax(safeString(s.draftRawText)),
-        dynamicData: {},
-        info: '',
-        milestones: [],
-      });
-      ok++;
-      return;
-    }
-
-    if (kind === 'milestone') {
-      const hint = safeString(s.entityHint).trim();
-      if (!hint) {
-        fails.push(`${tag} mốc: thiếu tên thẻ`);
-        return;
-      }
-      const matches = findEntitiesByHintInNovel(nov, hint);
-      if (!matches.length) {
-        fails.push(`${tag} không tìm «${hint}»`);
-        return;
-      }
-      const m = matches[0];
-      const tabData = ensureTab(m.lonId, m.nhoId);
-      const ent = tabData.entities.find((e) => e.id === m.ent.id);
-      if (!ent) {
-        fails.push(`${tag} lỗi dữ liệu thẻ`);
-        return;
-      }
-      if (!ent.milestones) ent.milestones = [];
-      const ch = parseInt(s.chapter, 10);
-      const chFinal = !isNaN(ch) && ch >= 0 ? ch : chapterCtx;
-      const ev = stripWikiBracketSyntax(safeString(s.eventText).trim() || safeString(s.why));
-      if (!ev) {
-        fails.push(`${tag} thiếu mô tả sự kiện`);
-        return;
-      }
-      ent.milestones.push({ id: generateId('ms'), chapter: chFinal, event: ev, snapshot: {} });
-      ent.milestones.sort((a, b) => (a.chapter || 0) - (b.chapter || 0));
-      ok++;
-      return;
-    }
-
-    if (kind === 'update_profile') {
-      const hint = safeString(s.entityHint).trim();
-      if (!hint) {
-        fails.push(`${tag} hồ sơ: thiếu tên thẻ`);
-        return;
-      }
-      const matches = findEntitiesByHintInNovel(nov, hint);
-      if (!matches.length) {
-        fails.push(`${tag} không tìm «${hint}»`);
-        return;
-      }
-      const m = matches[0];
-      const lon = (nov.tabsConfig || []).find((t) => t.id === m.lonId);
-      const nho = lon?.subTabs?.find((st) => st.id === m.nhoId);
-      const template = nho?.fieldsTemplate || [];
-      const tabData = ensureTab(m.lonId, m.nhoId);
-      const ent = tabData.entities.find((e) => e.id === m.ent.id);
-      if (!ent) {
-        fails.push(`${tag} lỗi thẻ`);
-        return;
-      }
-      if (!ent.dynamicData) ent.dynamicData = {};
-      const patches = Array.isArray(s.fieldPatches) ? s.fieldPatches : [];
-      let patched = 0;
-      patches.forEach((patch) => {
-        const label = safeString(patch.fieldLabel).trim();
-        const val = stripWikiBracketSyntax(safeString(patch.value));
-        if (!label || !val) return;
-        const low = label.toLowerCase();
-        const f =
-          template.find((t) => safeString(t.label).toLowerCase().trim() === low) ||
-          template.find(
-            (t) =>
-              low.includes(safeString(t.label).toLowerCase()) ||
-              safeString(t.label).toLowerCase().includes(low)
-          );
-        if (f) {
-          ent.dynamicData[f.id] = val;
-          patched++;
-        }
-      });
-      const note = stripWikiBracketSyntax(safeString(s.profileNote).trim());
-      if (note) {
-        ent.rawText =
-          safeString(ent.rawText) + (ent.rawText ? '\n\n' : '') + `[ch.${chapterCtx}] ${note}`;
-      }
-      if (!patched && !note) {
-        fails.push(`${tag} hồ sơ: không có trường/ghi chú`);
-        return;
-      }
-      ok++;
-      return;
-    }
-    fails.push(`${tag} loại «${kind}» không xử lý`);
-  });
-
-  return { ok, fails, chapterCtx, didWork: true };
-}
+import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
+import { computeRelatedEntities } from './lib/computeRelatedEntities.js';
+import { findEntitiesByHintInNovel, mutateNovelJournalSelections } from './appNhatKyVaGoiThe.js';
+import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
+import { AppModalMotCua } from './AppModalMotCua.jsx';
+import { AppModalQuanLyTab } from './AppModalQuanLyTab.jsx';
+import { AppModalLenhNhanh } from './AppModalLenhNhanh.jsx';
+import { AppModalGoiYNoiTraCuu } from './AppModalGoiYNoiTraCuu.jsx';
 
 export default function App() {
   const [novelsMetadata, setNovelsMetadata] = useState(MOCK_METADATA);
@@ -676,113 +489,29 @@ export default function App() {
       return;
     }
     setIsCalculatingNetwork(true);
-
-    const relMap = new Map();
-    const addRel = (entity, lonId, nhoId, tabLabel, ctx) => {
-      if (!entity || entity.id === selectedEntity.id) return;
-      const k = `${lonId}|${nhoId}|${entity.id}`;
-      if (!relMap.has(k)) relMap.set(k, { entity, lonId, nhoId, tabLabel, parts: new Set([ctx]) });
-      else relMap.get(k).parts.add(ctx);
-    };
-
-    const namesToMatch = new Set();
-    const extractNames = (str) => {
-      if (!str) return;
-      str.split(/[,/|()]/).forEach((n) => {
-        const clean = n.trim();
-        if (clean.length >= 2) namesToMatch.add(clean.toLowerCase());
-      });
-    };
-    extractNames(selectedEntity.name);
-    if (selectedEntity.dynamicData?.f_alias) extractNames(selectedEntity.dynamicData.f_alias);
-
-    if (namesToMatch.size > 0) {
-      const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regexStr = Array.from(namesToMatch).map(escapeRegExp).join('|');
-      const combinedRegex = new RegExp(`(${regexStr})`, 'i');
-
-      Object.entries(activeNovelData.data || {}).forEach(([lonId, lonData]) => {
-        const tL = activeTabs.find((t) => t.id === lonId);
-        Object.entries(lonData || {}).forEach(([nhoId, nhoData]) => {
-          const tN = tL?.subTabs?.find((s) => s.id === nhoId);
-          if (nhoData && nhoData.entities) {
-            nhoData.entities.forEach((otherEnt) => {
-              if (otherEnt.id === selectedEntity.id) return;
-              let mentioned = false;
-              let contextInfo = '';
-              if (otherEnt.dynamicData) {
-                Object.entries(otherEnt.dynamicData).forEach(([fId, fVal]) => {
-                  if (typeof fVal === 'string') {
-                    combinedRegex.lastIndex = 0;
-                    if (combinedRegex.test(fVal)) {
-                      mentioned = true;
-                      const f = tN?.fieldsTemplate?.find((field) => field.id === fId);
-                      contextInfo = f ? f.label : 'Thuộc tính';
-                    }
-                  }
-                });
-              }
-              if (!mentioned && typeof otherEnt.info === 'string') {
-                combinedRegex.lastIndex = 0;
-                if (combinedRegex.test(otherEnt.info)) {
-                  mentioned = true;
-                  contextInfo = 'Trong ghi chép';
-                }
-              }
-              if (mentioned) addRel(otherEnt, lonId, nhoId, tN ? tN.label : lonId, contextInfo);
-            });
-          }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      try {
+        const relations = computeRelatedEntities({
+          activeNovelData,
+          selectedEntity,
+          activeTabs,
+          entityMap,
+          wikiExactMatchOnly,
         });
-      });
-    }
-
-    const resolveWikiDest = (linkInner) => {
-      const label = safeString(linkInner).trim();
-      if (!label) return null;
-      const low = label.toLowerCase();
-      const exact = entityMap.find((e) => e.name.toLowerCase() === low);
-      if (exact) return { dest: exact.dest, matched: exact.name };
-      if (wikiExactMatchOnly) return null;
-      for (const e of entityMap) {
-        const en = e.name.toLowerCase();
-        if (en.length < 2) continue;
-        if (low.includes(en) || en.includes(low)) return { dest: e.dest, matched: e.name };
+        if (!cancelled) setRelatedEntities(relations);
+      } catch (err) {
+        console.error('computeRelatedEntities', err);
+        if (!cancelled) setRelatedEntities([]);
+      } finally {
+        if (!cancelled) setIsCalculatingNetwork(false);
       }
-      return null;
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      setIsCalculatingNetwork(false);
     };
-
-    const wikiRe = /\[\[([^\]]+)\]\]/g;
-    const absorbWikiText = (text, ctxLead) => {
-      if (!text || typeof text !== 'string') return;
-      let m;
-      wikiRe.lastIndex = 0;
-      while ((m = wikiRe.exec(text)) !== null) {
-        const resolved = resolveWikiDest(m[1]);
-        if (!resolved) continue;
-        const { dest, matched } = resolved;
-        if (dest.entityId === selectedEntity.id) continue;
-        const td = activeNovelData.data?.[dest.lonId]?.[dest.nhoId];
-        const ent = td?.entities?.find((e) => e.id === dest.entityId);
-        if (!ent) continue;
-        const tN = activeTabs.find((t) => t.id === dest.lonId)?.subTabs?.find((s) => s.id === dest.nhoId);
-        addRel(ent, dest.lonId, dest.nhoId, tN ? tN.label : dest.lonId, `${ctxLead}[[${matched}]]`);
-      }
-    };
-
-    absorbWikiText(selectedEntity.rawText, 'Bản thảo · ');
-    (selectedEntity.milestones || []).forEach((ms) => {
-      absorbWikiText(ms.event, `Mốc ch.${safeString(ms.chapter)} · `);
-    });
-
-    const relations = Array.from(relMap.values()).map((v) => ({
-      entity: v.entity,
-      lonId: v.lonId,
-      nhoId: v.nhoId,
-      tabLabel: v.tabLabel,
-      context: [...v.parts].join(' · '),
-    }));
-    setRelatedEntities(relations);
-    setIsCalculatingNetwork(false);
   }, [activeNovelData, selectedEntity, activeTabs, entityMap, wikiExactMatchOnly]);
 
   // BẢO VỆ CHỐNG CRASH KHI LỌC THỂ LOẠI
@@ -889,31 +618,7 @@ export default function App() {
   }, [activeNovelData]);
 
   const findEntitiesByXrefHint = useCallback(
-    (hint) => {
-      const h = safeString(hint).toLowerCase().trim();
-      if (!h || !activeNovelData) return [];
-      const scored = [];
-      (activeNovelData.tabsConfig || []).forEach((lon) => {
-        if (lon.id === 'tong-quan') return;
-        (lon.subTabs || []).forEach((sub) => {
-          if (sub.viewType !== 'collection-track') return;
-          const ents = activeNovelData.data?.[lon.id]?.[sub.id]?.entities || [];
-          ents.forEach((ent) => {
-            const n = safeString(ent.name).toLowerCase();
-            if (!n) return;
-            let score = 0;
-            if (n === h) score = 100;
-            else if (n.includes(h) || h.includes(n)) score = 60;
-            else {
-              const ws = h.split(/\s+/).filter((w) => w.length > 1);
-              if (ws.some((w) => n.includes(w))) score = 30;
-            }
-            if (score) scored.push({ score, lonId: lon.id, nhoId: sub.id, ent });
-          });
-        });
-      });
-      return scored.sort((a, b) => b.score - a.score);
-    },
+    (hint) => findEntitiesByHintInNovel(activeNovelData, hint),
     [activeNovelData]
   );
 
@@ -1111,14 +816,14 @@ export default function App() {
         showToast(`Đã có thẻ «${name}» — chuyển sang tab Cập nhật.`, 'warning');
         setOverviewHubTab('update');
         setHubUpdateText(`Cập nhật về «${name}»: ${raw.slice(0, 3500)}`);
-        setHubCreateBusy(false);
         return;
       }
       setHubCreatePreview({ name, rawText, dynamicData });
     } catch (e) {
       showToast(mapGeminiErrorToUserMessage(e), 'error');
+    } finally {
+      setHubCreateBusy(false);
     }
-    setHubCreateBusy(false);
   }, [hubCreatePath, hubCreateInput, activeNovelData, activeTabs, geminiApiKeys, showToast]);
 
   const hubSaveCreateEntity = useCallback(() => {
@@ -1231,6 +936,8 @@ export default function App() {
       setHubUpdatePanel((p) =>
         p ? { ...p, loading: false, error: mapGeminiErrorToUserMessage(e) } : p
       );
+    } finally {
+      setHubUpdatePanel((p) => (p?.loading ? { ...p, loading: false } : p));
     }
   }, [hubUpdateText, hubUpdateChapter, activeNovelData, geminiApiKeys, showToast]);
 
@@ -3794,76 +3501,20 @@ export default function App() {
         setWikiExactMatchOnly={setWikiExactMatchOnly}
       />
       {isCommandPaletteOpen && (
-        <div
-          className="fixed inset-0 z-[250] flex items-start justify-center pt-[12vh] px-4 bg-slate-950/85 backdrop-blur-md animate-fade-fast"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Lệnh nhanh"
-          onClick={() => setIsCommandPaletteOpen(false)}
-        >
-          <div
-            className="w-full max-w-lg bg-slate-900 border border-amber-900/40 rounded-2xl shadow-2xl overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 border-b border-slate-800 px-3 py-2">
-              <Command size={18} className="text-amber-500 flex-shrink-0" />
-              <input
-                autoFocus
-                className="flex-1 bg-transparent text-slate-100 text-sm font-serif py-2 outline-none placeholder:text-slate-600"
-                placeholder="Lệnh hoặc tên truyện…"
-                value={commandPaletteQuery}
-                onChange={(e) => setCommandPaletteQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') setIsCommandPaletteOpen(false);
-                }}
-              />
-              <span className="text-[10px] text-slate-600 font-mono hidden sm:inline">Esc đóng</span>
-            </div>
-            <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-2 text-left">
-              {commandPaletteFiltered.actions.length > 0 && (
-                <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest px-2 py-1">Lệnh</p>
-              )}
-              {commandPaletteFiltered.actions.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => {
-                    if (a.id === 'set') runCommandPaletteAction(() => setIsSettingsOpen(true));
-                    else if (a.id === 'deep') runCommandPaletteAction(() => setIsDeepSearchOpen(true));
-                    else if (a.id === 'innov') runCommandPaletteAction(() => setIsInNovelSearchOpen(true));
-                    else if (a.id === 'hub') runCommandPaletteAction(() => openOverviewHub());
-                    else if (a.id === 'home') runCommandPaletteAction(() => handleGoHome());
-                  }}
-                  className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-slate-800/80 border border-transparent hover:border-slate-700 mb-1"
-                >
-                  <div className="text-sm font-bold text-slate-200 font-serif">{a.label}</div>
-                  <div className="text-[10px] text-slate-500">{a.sub}</div>
-                </button>
-              ))}
-              {commandPaletteFiltered.novels.length > 0 && (
-                <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest px-2 py-1 mt-2">Thư tịch</p>
-              )}
-              {commandPaletteFiltered.novels.map((n) => (
-                <button
-                  key={n.id}
-                  type="button"
-                  onClick={() =>
-                    runCommandPaletteAction(() => {
-                      void handleSelectNovel(n);
-                    })
-                  }
-                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-amber-950/30 border border-transparent hover:border-amber-900/30 mb-0.5"
-                >
-                  <div className="text-sm font-serif text-amber-100/90 truncate">{safeString(n.title)}</div>
-                  <div className="text-[10px] text-slate-500 truncate">{safeString(n.author)}</div>
-                </button>
-              ))}
-              {commandPaletteFiltered.actions.length === 0 && commandPaletteFiltered.novels.length === 0 && (
-                <p className="text-center text-slate-500 text-sm font-serif py-8">Không khớp mục nào.</p>
-              )}
-            </div>
-          </div>
-        </div>
+        <AppModalLenhNhanh
+          onClose={() => setIsCommandPaletteOpen(false)}
+          commandPaletteQuery={commandPaletteQuery}
+          setCommandPaletteQuery={setCommandPaletteQuery}
+          commandPaletteFiltered={commandPaletteFiltered}
+          onSelectCommand={(id) => {
+            if (id === 'set') runCommandPaletteAction(() => setIsSettingsOpen(true));
+            else if (id === 'deep') runCommandPaletteAction(() => setIsDeepSearchOpen(true));
+            else if (id === 'innov') runCommandPaletteAction(() => setIsInNovelSearchOpen(true));
+            else if (id === 'hub') runCommandPaletteAction(() => openOverviewHub());
+            else if (id === 'home') runCommandPaletteAction(() => handleGoHome());
+          }}
+          onSelectNovel={(n) => runCommandPaletteAction(() => { void handleSelectNovel(n); })}
+        />
       )}
 
       <ModalConfirm isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onClose={() => setConfirmDialog({...confirmDialog, isOpen: false})} onConfirm={confirmDialog.onConfirm} />
@@ -3872,470 +3523,60 @@ export default function App() {
       <ModalDeepSearch isOpen={isDeepSearchOpen} onClose={() => setIsDeepSearchOpen(false)} novelsMetadata={novelsMetadata} performDeepSearch={performDeepSearch} onSelectResult={handleDeepSearchResultSelect} />
       {activeNovelData && <ModalInNovelSearch isOpen={isInNovelSearchOpen} onClose={() => setIsInNovelSearchOpen(false)} novel={activeNovelData} onSelectResult={handleDeepSearchResultSelect} />}
       {xrefAiPanel && (
-        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-950/85 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setXrefAiPanel(null)} role="presentation">
-          <div className="bg-slate-900 border border-amber-700/40 rounded-2xl w-full max-w-lg max-h-[min(85vh,560px)] flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="p-4 border-b border-slate-800 flex justify-between items-start gap-3">
-              <div className="min-w-0">
-                <h3 className="font-heading text-lg text-amber-400 flex items-center gap-2">
-                  <Sparkles size={18} className="flex-shrink-0" /> Gợi ý từ nối tra cứu
-                </h3>
-                <p className="text-xs text-slate-500 font-serif mt-1 tabular-nums">
-                  Ch.{xrefAiPanel.xref.fromCh} → Ch.{xrefAiPanel.xref.toCh}
-                </p>
-              </div>
-              <button type="button" onClick={() => setXrefAiPanel(null)} className="text-slate-500 hover:text-white p-1 rounded-lg hover:bg-slate-800 flex-shrink-0" aria-label="Đóng"><X size={20} /></button>
-            </div>
-            <div className="px-4 py-2 text-sm text-slate-400 font-serif border-b border-slate-800/80 max-h-20 overflow-y-auto custom-scrollbar">
-              {safeString(xrefAiPanel.xref.note)}
-            </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3 min-h-[120px]">
-              {xrefAiPanel.loading && (
-                <div className="flex flex-col items-center gap-3 py-10">
-                  <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm text-slate-500">Đang phân tích ghi chú…</p>
-                </div>
-              )}
-              {xrefAiPanel.error && <p className="text-rose-400 text-sm">{xrefAiPanel.error}</p>}
-              {!xrefAiPanel.loading && !xrefAiPanel.error && xrefAiPanel.suggestions.length === 0 && (
-                <p className="text-slate-500 text-sm italic text-center py-8 leading-relaxed">Không có gợi ý thao tác — có thể ghi chú chỉ để tra cứu chéo.</p>
-              )}
-              {!xrefAiPanel.loading && !xrefAiPanel.error && xrefAiPanel.suggestions.map((sug, idx) => {
-                const kind = safeString(sug.kind).toLowerCase().replace(/\s/g, '_');
-                const matches = (kind === 'milestone' || kind === 'update_profile') ? findEntitiesByXrefHint(sug.entityHint) : [];
-                const kindLabel = kind === 'new_entity' ? 'Thẻ mới' : kind === 'milestone' ? 'Mốc timeline' : kind === 'update_profile' ? 'Cập nhật hồ sơ' : safeString(sug.kind);
-                return (
-                  <div key={idx} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-2">
-                    <span className="text-[10px] uppercase font-bold text-amber-600/90 tracking-wider">{kindLabel}</span>
-                    {safeString(sug.why) && <p className="text-sm text-slate-300 leading-snug">{safeString(sug.why)}</p>}
-                    {kind === 'new_entity' && (
-                      <button type="button" onClick={() => applyXrefSuggestionNewEntity(sug, xrefAiPanel.xref)} className="w-full py-2.5 rounded-xl bg-amber-800/80 hover:bg-amber-700 text-white text-sm font-bold font-heading transition-colors">
-                        Mở form tạo: {safeString(sug.suggestedName) || 'Thẻ mới'}
-                      </button>
-                    )}
-                    {(kind === 'milestone' || kind === 'update_profile') && !safeString(sug.entityHint) && (
-                      <p className="text-xs text-amber-700/90">Thiếu tên thẻ gợi ý từ AI.</p>
-                    )}
-                    {(kind === 'milestone' || kind === 'update_profile') && safeString(sug.entityHint) && matches.length === 0 && (
-                      <p className="text-xs text-slate-500 leading-relaxed">Không khớp thẻ «{safeString(sug.entityHint)}» trong danh mục — thử tạo thẻ mới hoặc đổi tên trong ghi chú rồi gợi ý lại.</p>
-                    )}
-                    {kind === 'milestone' && matches.slice(0, 6).map((m, i) => (
-                      <button key={i} type="button" onClick={() => applyXrefSuggestionMilestone(m, sug, xrefAiPanel.xref)} className="w-full text-left py-2 px-3 rounded-xl bg-cyan-950/50 border border-cyan-900/40 hover:border-cyan-600/50 text-sm text-cyan-200/95 transition-colors">
-                        <span className="text-cyan-600/80 text-xs font-sans uppercase">Thêm mốc · ch.{parseInt(sug.chapter, 10) >= 0 ? sug.chapter : xrefAiPanel.xref.fromCh}</span>
-                        <br /><span className="font-medium">{safeString(m.ent.name)}</span>
-                        <span className="text-slate-500 text-xs ml-1">({safeString(sug.eventText).slice(0, 80)}{safeString(sug.eventText).length > 80 ? '…' : ''})</span>
-                      </button>
-                    ))}
-                    {kind === 'update_profile' && matches.slice(0, 6).map((m, i) => (
-                      <button key={i} type="button" onClick={() => applyXrefSuggestionProfile(m, sug, activeNovelData)} className="w-full text-left py-2 px-3 rounded-xl bg-emerald-950/40 border border-emerald-900/40 hover:border-emerald-600/50 text-sm text-emerald-200/95 transition-colors">
-                        Sửa hồ sơ: <span className="font-medium">{safeString(m.ent.name)}</span>
-                      </button>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-            <p className="px-4 py-2.5 text-[10px] text-slate-600 text-center border-t border-slate-800/80 leading-relaxed">Chỉ mở form — không tự lưu. Bạn xác nhận khi bấm Lưu trong modal thẻ / mốc.</p>
-          </div>
-        </div>
+        <AppModalGoiYNoiTraCuu
+          panel={xrefAiPanel}
+          onClose={() => setXrefAiPanel(null)}
+          findEntitiesByXrefHint={findEntitiesByXrefHint}
+          applyXrefSuggestionNewEntity={applyXrefSuggestionNewEntity}
+          applyXrefSuggestionMilestone={applyXrefSuggestionMilestone}
+          applyXrefSuggestionProfile={applyXrefSuggestionProfile}
+          activeNovelData={activeNovelData}
+        />
       )}
       {overviewHubOpen && activeNovelData && (
-        <div
-          className="fixed inset-0 z-[218] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm p-4 animate-fade-in"
-          onClick={() => !hubCreateBusy && !hubUpdatePanel?.loading && setOverviewHubOpen(false)}
-          role="presentation"
-        >
-          <div
-            className="bg-slate-900 border border-violet-800/45 rounded-2xl w-full max-w-2xl max-h-[min(92vh,720px)] flex flex-col shadow-2xl overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-4 border-b border-slate-800 flex justify-between items-center gap-3 bg-slate-950/80">
-              <div className="flex items-center gap-2 min-w-0">
-                <Layers size={22} className="text-violet-400 flex-shrink-0" />
-                <div>
-                  <h2 className="font-heading text-lg text-violet-100">Một cửa cập nhật</h2>
-                  <p className="text-[10px] text-slate-500 font-serif truncate">{safeString(activeNovelData.title)}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                disabled={hubCreateBusy || hubUpdatePanel?.loading}
-                onClick={() => setOverviewHubOpen(false)}
-                className="text-slate-500 hover:text-white p-2 rounded-lg hover:bg-slate-800 disabled:opacity-40"
-                aria-label="Đóng"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="flex border-b border-slate-800">
-              <button
-                type="button"
-                onClick={() => setOverviewHubTab('create')}
-                className={`flex-1 py-3 text-sm font-heading font-bold transition-colors ${overviewHubTab === 'create' ? 'text-violet-300 border-b-2 border-violet-500 bg-violet-950/25' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                Tạo mới
-              </button>
-              <button
-                type="button"
-                onClick={() => setOverviewHubTab('update')}
-                className={`flex-1 py-3 text-sm font-heading font-bold transition-colors ${overviewHubTab === 'update' ? 'text-emerald-300 border-b-2 border-emerald-500 bg-emerald-950/20' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                Cập nhật
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 min-h-[200px]">
-              {overviewHubTab === 'create' && (
-                <div className="space-y-4">
-                  <p className="text-xs text-slate-500 font-serif leading-relaxed">
-                    Chọn mục → dán hoặc gõ mô tả. AI điền tên và các trường để tạo thẻ nhanh.{' '}
-                    <b className="text-slate-400">Không tạo liên kết wiki hay ảnh</b> — muốn link/avatar thì vào đúng mục → thẻ.
-                  </p>
-                  <div>
-                    <label className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Mục sưu tập</label>
-                    <select
-                      className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm text-slate-200 focus:border-violet-600/50 outline-none font-serif"
-                      value={hubCreatePath}
-                      onChange={(e) => setHubCreatePath(e.target.value)}
-                    >
-                      <option value="">— Chọn —</option>
-                      {activeTabs
-                        .filter((lon) => lon.id !== 'tong-quan')
-                        .flatMap((lon) =>
-                          (lon.subTabs || [])
-                            .filter((n) => n.viewType === 'collection-track')
-                            .map((n) => (
-                              <option key={`${lon.id}|${n.id}`} value={`${lon.id}|${n.id}`}>
-                                {safeString(lon.label)} › {safeString(n.label)}
-                              </option>
-                            ))
-                        )}
-                    </select>
-                  </div>
-                  <textarea
-                    className="w-full min-h-[100px] bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm text-slate-200 font-serif focus:border-violet-600/40 outline-none resize-y"
-                    placeholder="Dán đoạn mô tả nhân vật, pháp bảo, cảnh giới..."
-                    value={hubCreateInput}
-                    onChange={(e) => setHubCreateInput(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    disabled={hubCreateBusy || !hubCreatePath}
-                    onClick={() => hubRunCreateAi()}
-                    className="w-full py-2.5 rounded-xl bg-violet-800 hover:bg-violet-700 disabled:opacity-50 text-white font-heading text-sm flex items-center justify-center gap-2"
-                  >
-                    {hubCreateBusy ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Sparkles size={16} />}
-                    Phân tích AI (tạo thẻ nhanh)
-                  </button>
-                  {hubCreatePreview && (() => {
-                    const [hlon, hnho] = hubCreatePath.split('|');
-                    const hlonObj = activeTabs.find((t) => t.id === hlon);
-                    const hnhoObj = hlonObj?.subTabs?.find((s) => s.id === hnho);
-                    const ft = hnhoObj?.fieldsTemplate || [];
-                    return (
-                      <div className="rounded-xl border border-violet-900/40 bg-slate-950/60 p-4 space-y-3 mt-2">
-                        <p className="text-[10px] text-amber-700/90 font-serif">Duyệt rồi bấm Lưu. Đã bỏ qua avatar từ AI.</p>
-                        <div>
-                          <label className="text-[10px] uppercase text-slate-500">Tên thẻ *</label>
-                          <input
-                            className="mt-1 w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-amber-100 font-serif text-sm"
-                            value={hubCreatePreview.name}
-                            onChange={(e) =>
-                              setHubCreatePreview((p) => (p ? { ...p, name: e.target.value } : p))
-                            }
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] uppercase text-slate-500">Bản thảo (text)</label>
-                          <textarea
-                            className="mt-1 w-full min-h-[72px] bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300 font-serif"
-                            value={hubCreatePreview.rawText}
-                            onChange={(e) =>
-                              setHubCreatePreview((p) => (p ? { ...p, rawText: e.target.value } : p))
-                            }
-                          />
-                        </div>
-                        {ft.map((f) => (
-                          <div key={f.id}>
-                            <label className="text-[10px] uppercase text-slate-500">{safeString(f.label)}</label>
-                            <input
-                              className="mt-1 w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 font-serif"
-                              value={safeString(hubCreatePreview.dynamicData[f.id])}
-                              onChange={(e) =>
-                                setHubCreatePreview((p) =>
-                                  p
-                                    ? {
-                                        ...p,
-                                        dynamicData: { ...p.dynamicData, [f.id]: e.target.value },
-                                      }
-                                    : p
-                                )
-                              }
-                            />
-                          </div>
-                        ))}
-                        <div className="flex gap-2 pt-2">
-                          <button
-                            type="button"
-                            onClick={() => hubSaveCreateEntity()}
-                            className="flex-1 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-sm"
-                          >
-                            Lưu thẻ
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setHubCreatePreview(null)}
-                            className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-400 text-sm hover:bg-slate-800"
-                          >
-                            Phân tích lại
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-              {overviewHubTab === 'update' && (
-                <div className="space-y-4">
-                  <p className="text-xs text-slate-500 font-serif leading-relaxed">
-                    Giống nhật ký nhanh: AI tách gợi ý (chữ thường).{' '}
-                    <b className="text-slate-400">Không tạo [[liên kết wiki]] hay ảnh</b> — muốn link/avatar thì vào đúng mục → thẻ.
-                  </p>
-                  <div className="flex gap-2 items-end flex-wrap">
-                    <div>
-                      <label className="text-[10px] uppercase text-slate-500">Chương</label>
-                      <input
-                        type="number"
-                        min="0"
-                        className="mt-1 w-24 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-emerald-100"
-                        value={hubUpdateChapter}
-                        onChange={(e) => setHubUpdateChapter(e.target.value)}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setHubUpdateChapter(
-                          String(
-                            Math.max(
-                              0,
-                              parseInt(
-                                activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0,
-                                10
-                              ) || 0
-                            )
-                          )
-                        )
-                      }
-                      className="text-xs text-slate-500 hover:text-emerald-400 font-serif mb-1"
-                    >
-                      = neo
-                    </button>
-                  </div>
-                  <textarea
-                    className="w-full min-h-[100px] bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm text-slate-200 font-serif"
-                    placeholder="ch.200: …"
-                    value={hubUpdateText}
-                    onChange={(e) => setHubUpdateText(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    disabled={hubUpdatePanel?.loading}
-                    onClick={() => runHubUpdateAi()}
-                    className="w-full py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 disabled:opacity-50 text-white font-heading text-sm flex items-center justify-center gap-2"
-                  >
-                    {hubUpdatePanel?.loading ? (
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <Sparkles size={16} />
-                    )}
-                    Phân tích & hiện gợi ý
-                  </button>
-                  {hubUpdatePanel && !hubUpdatePanel.loading && hubUpdatePanel.error && (
-                    <p className="text-rose-400 text-sm">{hubUpdatePanel.error}</p>
-                  )}
-                  {hubUpdatePanel && !hubUpdatePanel.loading && hubUpdatePanel.suggestions?.length > 0 && (
-                    <div className="space-y-2 max-h-[280px] overflow-y-auto custom-scrollbar border border-slate-800 rounded-xl p-2 bg-slate-950/50">
-                      {hubUpdatePanel.suggestions.map((sug, idx) => {
-                        const key = `j-${idx}`;
-                        const kind = safeString(sug.kind).toLowerCase().replace(/\s/g, '_');
-                        const kindLabel =
-                          kind === 'new_entity'
-                            ? 'Tạo thẻ'
-                            : kind === 'milestone'
-                              ? 'Mốc'
-                              : kind === 'update_profile'
-                                ? 'Hồ sơ'
-                                : kind;
-                        const matches =
-                          kind === 'milestone' || kind === 'update_profile'
-                            ? findEntitiesByXrefHint(sug.entityHint)
-                            : [];
-                        return (
-                          <label
-                            key={key}
-                            className={`flex gap-2 items-start rounded-lg border p-2 cursor-pointer text-xs ${hubUpdatePanel.selectedKeys.has(key) ? 'border-emerald-700/50 bg-emerald-950/15' : 'border-slate-800'}`}
-                          >
-                            <input
-                              type="checkbox"
-                              className="mt-0.5 rounded border-slate-600 text-emerald-600"
-                              checked={hubUpdatePanel.selectedKeys.has(key)}
-                              onChange={() =>
-                                setHubUpdatePanel((p) => {
-                                  if (!p) return p;
-                                  const next = new Set(p.selectedKeys);
-                                  if (next.has(key)) next.delete(key);
-                                  else next.add(key);
-                                  return { ...p, selectedKeys: next };
-                                })
-                              }
-                            />
-                            <span>
-                              <span className="font-bold text-emerald-600/90">{kindLabel}</span>{' '}
-                              {kind === 'new_entity' ? safeString(sug.suggestedName) : matches[0] ? safeString(matches[0].ent.name) : safeString(sug.entityHint)}
-                              {safeString(sug.why) && (
-                                <span className="text-slate-500 block mt-0.5">{safeString(sug.why)}</span>
-                              )}
-                              {(kind === 'milestone' || kind === 'update_profile') &&
-                                safeString(sug.entityHint) &&
-                                matches.length === 0 && (
-                                  <span className="text-amber-700 block mt-0.5">Không khớp thẻ — sẽ lỗi khi áp</span>
-                                )}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {hubUpdatePanel && !hubUpdatePanel.loading && hubUpdatePanel.suggestions?.length > 0 && (
-                    <div className="flex flex-wrap gap-2 justify-between items-center pt-2">
-                      <button
-                        type="button"
-                        className="text-xs text-slate-500"
-                        onClick={() =>
-                          setHubUpdatePanel((p) =>
-                            p
-                              ? {
-                                  ...p,
-                                  selectedKeys: new Set(p.suggestions.map((_, i) => `j-${i}`)),
-                                }
-                              : p
-                          )
-                        }
-                      >
-                        Chọn tất cả
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyHubUpdateSelected()}
-                        disabled={!hubUpdatePanel.selectedKeys?.size}
-                        className="px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold text-sm"
-                      >
-                        Áp dụng ({hubUpdatePanel.selectedKeys.size})
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <AppModalMotCua
+          activeNovelData={activeNovelData}
+          onClose={() => setOverviewHubOpen(false)}
+          overviewHubTab={overviewHubTab}
+          setOverviewHubTab={setOverviewHubTab}
+          hubCreatePath={hubCreatePath}
+          setHubCreatePath={setHubCreatePath}
+          hubCreateInput={hubCreateInput}
+          setHubCreateInput={setHubCreateInput}
+          hubCreateBusy={hubCreateBusy}
+          hubCreatePreview={hubCreatePreview}
+          setHubCreatePreview={setHubCreatePreview}
+          hubUpdateChapter={hubUpdateChapter}
+          setHubUpdateChapter={setHubUpdateChapter}
+          hubUpdateText={hubUpdateText}
+          setHubUpdateText={setHubUpdateText}
+          hubUpdatePanel={hubUpdatePanel}
+          setHubUpdatePanel={setHubUpdatePanel}
+          activeTabs={activeTabs}
+          hubRunCreateAi={hubRunCreateAi}
+          hubSaveCreateEntity={hubSaveCreateEntity}
+          runHubUpdateAi={runHubUpdateAi}
+          applyHubUpdateSelected={applyHubUpdateSelected}
+          findEntitiesByXrefHint={findEntitiesByXrefHint}
+        />
       )}
       <ModalQuickCreate isOpen={!!quickCreateData} onClose={() => setQuickCreateData(null)} quickCreateName={quickCreateData} onConfirm={handleConfirmQuickCreate} activeTabs={activeTabs} />
 
       {isManageTabsOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in">
-          <div className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-             <div className="p-6 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-amber-900/30 text-amber-500 rounded-xl border border-amber-500/20"><Network size={24}/></div>
-                <div><h2 className="text-xl font-heading font-bold text-amber-400">Trận Pháp Cải Tạo {activeNovelData ? `(${safeString(activeNovelData.title)})` : '(Cấu trúc Mẫu)'}</h2></div>
-              </div>
-              <div className="flex items-center gap-3">
-                <button onClick={handleAddTabLon} className="px-4 py-2 bg-amber-700 hover:bg-amber-600 text-white rounded-lg text-sm font-bold shadow-lg flex items-center gap-2"><Plus size={16}/> Tab Lớn</button>
-                <button onClick={() => setIsManageTabsOpen(false)} className="text-slate-400 hover:text-white p-2 bg-slate-800 rounded-lg"><X size={20}/></button>
-              </div>
-            </div>
-            
-            <div id="tab-manager-scroll-container" className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-4 bg-slate-900/50">
-              {sortedTabs.map((tabLon) => (
-                <div key={tabLon.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-5 shadow-inner">
-                  <div className="flex items-center gap-3">
-                    <span className="text-amber-600 bg-amber-950/50 p-2 rounded-lg">{getIconComponent(tabLon.iconName)}</span>
-                    {editingTab?.path === [tabLon.id].join('-') ? (
-                      <div className="flex flex-1 items-center gap-2 pr-2"><input autoFocus className="flex-1 bg-slate-900 border border-amber-600/50 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none" value={editingTab.label} onChange={(e) => setEditingTab({...editingTab, label: e.target.value})} onKeyDown={(e) => { if(e.key === 'Enter') handleSaveEditLabel([tabLon.id], editingTab.label); }} /><button onClick={() => handleSaveEditLabel([tabLon.id], editingTab.label)} className="text-emerald-500 bg-emerald-950 p-1.5 rounded-lg"><Save size={16}/></button></div>
-                    ) : (
-                      <div className="flex items-center justify-between w-full group">
-                         <span className="font-serif text-base text-slate-100 font-bold">{safeString(tabLon.label)}</span>
-                         <div className="flex items-center gap-2 opacity-20 group-hover:opacity-100 transition-opacity">
-                            {!tabLon.isFixed && <button onClick={() => handleToggleViewType([tabLon.id])} className="text-slate-400 hover:text-amber-400 p-1.5 bg-slate-900 rounded-lg" title="Bật/tắt chế độ Danh Sách Bộ Sưu Tập">{tabLon.viewType === 'collection-track' ? <LayoutGrid size={14}/> : <AlignLeft size={14}/>}</button>}
-                            {!tabLon.isFixed && <button onClick={() => setEditingTab({ path: [tabLon.id].join('-'), label: tabLon.label })} className="text-slate-400 hover:text-blue-400 p-1.5 bg-slate-900 rounded-lg"><Edit2 size={14}/></button>}
-                            {!tabLon.isFixed && <button onClick={() => setConfirmDialog({isOpen: true, title: 'Hủy Diệt', message: `Xóa vĩnh viễn <b>${safeString(tabLon.label)}</b> cùng mọi thứ bên trong?`, onConfirm: () => handleDeleteTab([tabLon.id])})} className="text-slate-400 hover:text-rose-400 p-1.5 bg-slate-900 rounded-lg"><Trash2 size={14}/></button>}
-                            {!tabLon.isFixed && <button onClick={() => handleAddTabNho(tabLon.id)} className="text-slate-300 hover:text-emerald-400 p-1.5 bg-slate-800 rounded-lg ml-2 flex items-center gap-1 text-xs font-bold border border-slate-700"><Plus size={12}/> Thêm Chương Mục</button>}
-                         </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {!tabLon.isFixed && tabLon.subTabs?.length > 0 && (
-                    <div className="mt-4 pl-8 space-y-3 border-l-2 border-slate-800/80">
-                      {tabLon.subTabs.map((tabNho) => (
-                        <div key={tabNho.id} className="relative">
-                          <div className="absolute -left-8 top-4 w-6 h-0.5 bg-slate-800/80"></div>
-                          <div className="bg-slate-900/80 border border-slate-700/50 p-3 rounded-xl flex flex-col gap-3">
-                              <div className="flex items-center gap-3">
-                                {editingTab?.path === [tabLon.id, tabNho.id].join('-') ? (
-                                  <div className="flex flex-1 items-center gap-2"><input autoFocus className="flex-1 bg-slate-950 border border-amber-600/50 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none" value={editingTab.label} onChange={(e) => setEditingTab({...editingTab, label: e.target.value})} onKeyDown={(e) => { if(e.key === 'Enter') handleSaveEditLabel([tabLon.id, tabNho.id], editingTab.label); }} /><button onClick={() => handleSaveEditLabel([tabLon.id, tabNho.id], editingTab.label)} className="text-emerald-500 bg-emerald-950 p-1.5 rounded-lg"><Save size={16}/></button></div>
-                                ) : (
-                                  <div className="flex items-center justify-between w-full group">
-                                     <div className="flex items-center gap-2">
-                                        {tabNho.viewType === 'collection-track' ? <LayoutGrid size={14} className="text-amber-500"/> : <AlignLeft size={14} className="text-slate-600"/>}
-                                        <span className="font-serif text-sm text-slate-200 font-medium">{safeString(tabNho.label)}</span>
-                                     </div>
-                                     <div className="flex items-center gap-1 opacity-20 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => handleToggleViewType([tabLon.id, tabNho.id])} className={`p-1.5 rounded-lg border transition-all ${tabNho.viewType === 'collection-track' ? 'bg-amber-900/20 border-amber-700/50 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-400'}`} title="Bật/Tắt chế độ Quản lý Vạn Vật (Lưới & Timeline)">
-                                           <LayoutGrid size={14}/>
-                                        </button>
-                                        <button onClick={() => setEditingTab({ path: [tabLon.id, tabNho.id].join('-'), label: tabNho.label })} className="text-slate-400 p-1.5 bg-slate-800 rounded-lg hover:text-blue-400 ml-1"><Edit2 size={14}/></button>
-                                        <button onClick={() => setConfirmDialog({isOpen: true, title: 'Hủy Diệt', message: `Xóa <b>${safeString(tabNho.label)}</b>?`, onConfirm: () => handleDeleteTab([tabLon.id, tabNho.id])})} className="text-slate-400 p-1.5 bg-slate-800 rounded-lg hover:text-rose-400"><Trash2 size={14}/></button>
-                                        {tabNho.viewType !== 'collection-track' && <button onClick={() => handleAddTabCon(tabLon.id, tabNho.id)} className="text-slate-300 hover:text-emerald-400 p-1.5 bg-slate-800 rounded-lg ml-2 flex items-center gap-1 text-xs font-bold border border-slate-700"><Plus size={12}/> Tiểu Mục</button>}
-                                     </div>
-                                  </div>
-                                )}
-                              </div>
-
-                              {tabNho.viewType !== 'collection-track' && tabNho.tabCon && tabNho.tabCon.length > 0 && (
-                                <div className="pl-6 space-y-2 border-l border-dashed border-slate-700/50 relative mt-2">
-                                  {tabNho.tabCon.map(tabCon => (
-                                    <div key={tabCon.id} className="flex items-center gap-2 relative">
-                                      <div className="absolute -left-6 top-3.5 w-4 h-px bg-slate-700/50 border-dashed"></div>
-                                      {editingTab?.path === [tabLon.id, tabNho.id, tabCon.id].join('-') ? (
-                                        <div className="flex flex-1 items-center gap-2 bg-slate-900/50 p-1 rounded-lg"><input autoFocus className="flex-1 bg-slate-950 border border-amber-600/50 rounded-lg px-2 py-1 text-xs text-slate-200 outline-none" value={editingTab.label} onChange={(e) => setEditingTab({...editingTab, label: e.target.value})} onKeyDown={(e) => { if(e.key === 'Enter') handleSaveEditLabel([tabLon.id, tabNho.id, tabCon.id], editingTab.label); }} /><button onClick={() => handleSaveEditLabel([tabLon.id, tabNho.id, tabCon.id], editingTab.label)} className="text-emerald-500 bg-emerald-950 p-1 rounded-md"><Save size={14}/></button></div>
-                                      ) : (
-                                        <div className="flex items-center justify-between w-full group bg-slate-950/30 p-2 rounded-lg">
-                                           <span className="font-serif text-xs text-slate-400">{safeString(tabCon.label)}</span>
-                                           <div className="flex items-center gap-1 opacity-20 group-hover:opacity-100 transition-opacity">
-                                              <button onClick={() => setEditingTab({ path: [tabLon.id, tabNho.id, tabCon.id].join('-'), label: tabCon.label })} className="text-slate-500 hover:text-blue-400 p-1"><Edit2 size={12}/></button>
-                                              <button onClick={() => setConfirmDialog({isOpen: true, title: 'Hủy Diệt', message: `Xóa tiểu mục <b>${safeString(tabCon.label)}</b>?`, onConfirm: () => handleDeleteTab([tabLon.id, tabNho.id, tabCon.id])})} className="text-slate-500 hover:text-rose-400 p-1"><Trash2 size={12}/></button>
-                                           </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="p-5 border-t border-slate-800 bg-slate-950 flex justify-between items-center z-10">
-              <span className="text-xs text-slate-500 italic flex items-center gap-2"><LayoutGrid size={12}/> Lưới = Chế độ Quản lý Thực Thể</span>
-              <button onClick={() => setIsManageTabsOpen(false)} className="px-8 py-3 bg-amber-700 hover:bg-amber-600 text-white rounded-xl font-bold shadow-lg">Hoàn Tất Cải Tạo</button>
-            </div>
-          </div>
-        </div>
+        <AppModalQuanLyTab
+          activeNovelData={activeNovelData}
+          onClose={() => setIsManageTabsOpen(false)}
+          sortedTabs={sortedTabs}
+          editingTab={editingTab}
+          setEditingTab={setEditingTab}
+          handleAddTabLon={handleAddTabLon}
+          handleSaveEditLabel={handleSaveEditLabel}
+          handleToggleViewType={handleToggleViewType}
+          handleDeleteTab={handleDeleteTab}
+          handleAddTabNho={handleAddTabNho}
+          handleAddTabCon={handleAddTabCon}
+          setConfirmDialog={setConfirmDialog}
+        />
       )}
 
       {/* LIGHTBOX */}
@@ -4433,83 +3674,7 @@ export default function App() {
         </div>
       )}
 
-      <style dangerouslySetInnerHTML={{__html: `
-        @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400&family=Playfair+Display:wght@700&display=swap');
-        .font-serif { font-family: 'Lora', serif; }
-        .font-heading { font-family: 'Playfair Display', serif; }
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.3); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.6); }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
-        @keyframes fadeFast { from { opacity: 0; } to { opacity: 1; } }
-        .animate-fade-fast { animation: fadeFast 0.15s ease-out forwards; }
-        @keyframes spinSlow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .animate-spin-slow { animation: spinSlow 40s linear infinite; }
-
-        /* THEME SYSTEM VARIABLES */
-        .theme-huyen-huyen { --t-100: #f3e8ff; --t-300: #d8b4fe; --t-400: #c084fc; --t-500: #a855f7; --t-600: #9333ea; --t-700: #7e22ce; --t-800: #6b21a8; --t-500-rgb: 168, 85, 247; --t-600-rgb: 147, 51, 234; --t-800-rgb: 107, 33, 168; }
-        .theme-ngon-tinh { --t-100: #ffe4e6; --t-300: #fda4af; --t-400: #fb7185; --t-500: #f43f5e; --t-600: #e11d48; --t-700: #be123c; --t-800: #9f1239; --t-500-rgb: 244, 63, 94; --t-600-rgb: 225, 29, 72; --t-800-rgb: 159, 18, 57; }
-        .theme-he-thong { --t-100: #cffafe; --t-300: #67e8f9; --t-400: #22d3ee; --t-500: #06b6d4; --t-600: #0891b2; --t-700: #0e7490; --t-800: #155e75; --t-500-rgb: 6, 182, 212; --t-600-rgb: 8, 145, 178; --t-800-rgb: 21, 94, 117; }
-        .theme-trong-sinh { --t-100: #d1fae5; --t-300: #6ee7b7; --t-400: #34d399; --t-500: #10b981; --t-600: #059669; --t-700: #047857; --t-800: #065f46; --t-500-rgb: 16, 185, 129; --t-600-rgb: 5, 150, 105; --t-800-rgb: 6, 95, 70; }
-        .theme-do-thi { --t-100: #dbeafe; --t-300: #93c5fd; --t-400: #60a5fa; --t-500: #3b82f6; --t-600: #2563eb; --t-700: #1d4ed8; --t-800: #1e40af; --t-500-rgb: 59, 130, 246; --t-600-rgb: 37, 99, 235; --t-800-rgb: 30, 64, 175; }
-        .theme-vo-han-luu { --t-100: #ffedd5; --t-300: #fdba74; --t-400: #fb923c; --t-500: #f97316; --t-600: #ea580c; --t-700: #c2410c; --t-800: #9a3412; --t-500-rgb: 249, 115, 22; --t-600-rgb: 234, 88, 12; --t-800-rgb: 154, 52, 18; }
-
-        /* THEME OVERRIDES */
-        .theme-wrapper:not(.theme-tien-hiep) .text-amber-100 { color: var(--t-100) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .text-amber-200 { color: var(--t-300) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .text-amber-300 { color: var(--t-300) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .text-amber-400 { color: var(--t-400) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .text-amber-500 { color: var(--t-500) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .text-amber-600 { color: var(--t-600) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .text-amber-600\\/80 { color: rgba(var(--t-600-rgb), 0.8) !important; }
-
-        .theme-wrapper:not(.theme-tien-hiep) .bg-amber-400 { background-color: var(--t-400) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .bg-amber-500 { background-color: var(--t-500) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .bg-amber-600 { background-color: var(--t-600) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .bg-amber-700 { background-color: var(--t-700) !important; }
-        
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-400 { border-color: var(--t-400) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-500 { border-color: var(--t-500) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-900 { border-color: var(--t-800) !important; }
-
-        .theme-wrapper:not(.theme-tien-hiep) .bg-amber-500\\/10 { background-color: rgba(var(--t-500-rgb), 0.1) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .bg-amber-600\\/5 { background-color: rgba(var(--t-600-rgb), 0.05) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .bg-amber-900\\/10 { background-color: rgba(var(--t-800-rgb), 0.1) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .bg-amber-900\\/20 { background-color: rgba(var(--t-800-rgb), 0.2) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .bg-amber-900\\/30 { background-color: rgba(var(--t-800-rgb), 0.3) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .bg-amber-900\\/40 { background-color: rgba(var(--t-800-rgb), 0.4) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .bg-amber-900\\/50 { background-color: rgba(var(--t-800-rgb), 0.5) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .bg-amber-950\\/50 { background-color: rgba(var(--t-800-rgb), 0.15) !important; }
-
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-500\\/10 { border-color: rgba(var(--t-500-rgb), 0.1) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-500\\/20 { border-color: rgba(var(--t-500-rgb), 0.2) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-500\\/30 { border-color: rgba(var(--t-500-rgb), 0.3) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-500\\/40 { border-color: rgba(var(--t-500-rgb), 0.4) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-600\\/30 { border-color: rgba(var(--t-600-rgb), 0.3) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-600\\/50 { border-color: rgba(var(--t-600-rgb), 0.5) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-600\\/80 { border-color: rgba(var(--t-600-rgb), 0.8) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-700\\/30 { border-color: rgba(var(--t-600-rgb), 0.4) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-700\\/50 { border-color: rgba(var(--t-600-rgb), 0.6) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-800\\/20 { border-color: rgba(var(--t-800-rgb), 0.2) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-800\\/30 { border-color: rgba(var(--t-800-rgb), 0.3) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .border-amber-800\\/50 { border-color: rgba(var(--t-800-rgb), 0.5) !important; }
-
-        .theme-wrapper:not(.theme-tien-hiep) .from-amber-200 { --tw-gradient-from: var(--t-300) !important; --tw-gradient-to: rgba(var(--t-500-rgb), 0) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .from-amber-800 { --tw-gradient-from: var(--t-800) !important; --tw-gradient-to: rgba(var(--t-800-rgb), 0) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .to-amber-600 { --tw-gradient-to: var(--t-600) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .from-amber-900\\/40 { --tw-gradient-from: rgba(var(--t-800-rgb), 0.4) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .from-amber-900 { --tw-gradient-from: var(--t-800) !important; }
-        
-        .theme-wrapper:not(.theme-tien-hiep) .shadow-\\[0_0_30px_rgba\\(245\\,158\\,11\\,0\\.15\\)\\] { box-shadow: 0 0 30px rgba(var(--t-500-rgb), 0.15) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .shadow-\\[0_0_15px_rgba\\(217\\,119\\,6\\,0\\.1\\)\\] { box-shadow: 0 0 15px rgba(var(--t-600-rgb), 0.1) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .shadow-\\[0_0_50px_rgba\\(217\\,119\\,6\\,0\\.05\\)\\] { box-shadow: 0 0 50px rgba(var(--t-600-rgb), 0.05) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .shadow-\\[0_0_50px_rgba\\(217\\,119\\,6\\,0\\.2\\)\\] { box-shadow: 0 0 50px rgba(var(--t-600-rgb), 0.2) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .shadow-\\[0_0_10px_var\\(--t-400\\)\\] { box-shadow: 0 0 10px var(--t-400) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .shadow-\\[0_0_10px_\\#fbbf24\\] { box-shadow: 0 0 10px var(--t-400) !important; }
-        .theme-wrapper:not(.theme-tien-hiep) .shadow-\\[0_0_15px_rgba\\(217\\,119\\,6\\,0\\.5\\)\\] { box-shadow: 0 0 15px rgba(var(--t-600-rgb), 0.5) !important; }
-      `}} />
+      <AppPhongChuVaTheme />
     </div>
   );
 }

@@ -1,0 +1,10 @@
+---
+description: Nhắc chạy Vitest khi đụng lib hoặc test
+globs: src/lib/**/*,src/**/*.test.js,src/appNhatKyVaGoiThe.js
+alwaysApply: false
+---
+
+# Logic thuần & test
+
+- File khớp glob: sau khi chỉnh **`src/lib/`**, **`appNhatKyVaGoiThe.js`**, hoặc **`*.test.js`**, chạy **`npm run test`** và đảm bảo pass.
+- Thêm hàm thuần mới: cân nhắc **Vitest** smoke test cùng thư mục hoặc `src/lib/*.test.js`.

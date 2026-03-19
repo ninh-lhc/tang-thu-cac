@@ -2,12 +2,16 @@
 
 Ứng dụng web quản lý **thư viện truyện** (metadata + trạng thái đọc), **neo chương**, **thẻ nhân vật / địa danh / vật phẩm**, **mốc câu chuyện**, **wiki nội bộ** và **tra cứu nối (cross-ref)**. Chạy hoàn toàn trên trình duyệt; dữ liệu lưu trong `localStorage` (và có thể xuất / nhập backup).
 
+**Cho contributor / AI:** xem **[`AGENTS.md`](./AGENTS.md)** — bản đồ mã nguồn, lệnh, quy ước sửa & test.
+
 ## Cài đặt & chạy
 
 ```bash
 npm install
 npm run dev
 ```
+
+Test nhanh (Vitest): `npm run test`
 
 Build production:
 
