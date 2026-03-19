@@ -1,0 +1,101 @@
+import { describe, it, expect } from 'vitest';
+import {
+  migrateIndex,
+  migrateNovel,
+  migrateBackup,
+  INDEX_DATA_VERSION,
+  NOVEL_DATA_VERSION,
+} from './dataMigration.js';
+
+describe('dataMigration', () => {
+  describe('migrateIndex', () => {
+    it('sanitizes empty input', () => {
+      const out = migrateIndex({});
+      expect(out.metadata).toEqual([]);
+      expect(out.config).toEqual([]);
+      expect(out.novelStats).toEqual({});
+      expect(out.dataVersion).toBe(INDEX_DATA_VERSION);
+    });
+
+    it('sanitizes metadata items with defaults', () => {
+      const out = migrateIndex({
+        metadata: [{ id: 'n1', title: 'Truyện A' }],
+        config: [],
+        novelStats: {},
+      });
+      expect(out.metadata.length).toBe(1);
+      expect(out.metadata[0].author).toBe('');
+      expect(out.metadata[0].status).toBe('Đang đọc');
+      expect(out.metadata[0].genres).toEqual([]);
+    });
+
+    it('preserves valid data', () => {
+      const in_ = {
+        metadata: [{ id: 'n1', title: 'A', author: 'X', genres: ['TH'] }],
+        config: [{ id: 'lon1', subTabs: [] }],
+        novelStats: { n1: { entities: 5 } },
+      };
+      const out = migrateIndex(in_);
+      expect(out.metadata[0].title).toBe('A');
+      expect(out.config.length).toBe(1);
+      expect(out.novelStats.n1.entities).toBe(5);
+    });
+  });
+
+  describe('migrateNovel', () => {
+    it('sanitizes empty novel', () => {
+      const out = migrateNovel({});
+      expect(out.id).toBe('');
+      expect(out.data).toEqual({});
+      expect(out.tabsConfig).toEqual([]);
+      expect(out.dataVersion).toBe(NOVEL_DATA_VERSION);
+    });
+
+    it('sanitizes tabData and entities', () => {
+      const out = migrateNovel({
+        id: 'n1',
+        title: 'Test',
+        data: {
+          lon1: {
+            sub1: { overview: 'x', entities: [{ id: 'e1', name: 'Nhân vật' }] },
+          },
+        },
+      });
+      expect(out.data.lon1.sub1.entities[0].name).toBe('Nhân vật');
+      expect(out.data.lon1.sub1.overview).toBe('x');
+    });
+
+    it('handles string tabData (legacy)', () => {
+      const out = migrateNovel({
+        id: 'n1',
+        data: { lon1: { sub1: 'chỉ overview' } },
+      });
+      expect(out.data.lon1.sub1.overview).toBe('chỉ overview');
+      expect(out.data.lon1.sub1.entities).toEqual([]);
+    });
+  });
+
+  describe('migrateBackup', () => {
+    it('migrates full backup', () => {
+      const backup = migrateBackup({
+        metadata: [{ id: 'n1', title: 'A' }],
+        config: [],
+        novelStats: {},
+        novels: { n1: { id: 'n1', title: 'A', data: {} } },
+      });
+      expect(backup.metadata.length).toBe(1);
+      expect(backup.novels.n1.dataVersion).toBe(NOVEL_DATA_VERSION);
+    });
+
+    it('handles index-only backup', () => {
+      const backup = migrateBackup({
+        indexOnly: true,
+        metadata: [],
+        config: [],
+        novelStats: {},
+      });
+      expect(backup.novels).toEqual({});
+      expect(backup.indexOnly).toBe(true);
+    });
+  });
+});

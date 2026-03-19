@@ -54,6 +54,7 @@ import { AppModalMotCua } from './AppModalMotCua.jsx';
 import { AppModalQuanLyTab } from './AppModalQuanLyTab.jsx';
 import { AppModalLenhNhanh } from './AppModalLenhNhanh.jsx';
 import { AppModalGoiYNoiTraCuu } from './AppModalGoiYNoiTraCuu.jsx';
+import { migrateIndex, migrateNovel, migrateBackup } from './dataMigration.js';
 
 export default function App() {
   const [novelsMetadata, setNovelsMetadata] = useState(MOCK_METADATA);
@@ -538,11 +539,12 @@ export default function App() {
        if (localIndex) {
           try {
              const parsed = JSON.parse(localIndex);
-             if (parsed.metadata && parsed.metadata.length > 0) setNovelsMetadata(parsed.metadata);
-             if (parsed.config) setGlobalTabsConfig(parsed.config);
-             if (parsed.novelStats && typeof parsed.novelStats === 'object') {
-               novelStatsByIdRef.current = parsed.novelStats;
-               setNovelStatsById(parsed.novelStats);
+             const index = migrateIndex(parsed);
+             if (index.metadata && index.metadata.length > 0) setNovelsMetadata(index.metadata);
+             if (index.config) setGlobalTabsConfig(index.config);
+             if (index.novelStats && typeof index.novelStats === 'object') {
+               novelStatsByIdRef.current = index.novelStats;
+               setNovelStatsById(index.novelStats);
              }
              setDirHandle("LOCAL_STORAGE");
           } catch(e) {}
@@ -1089,7 +1091,7 @@ export default function App() {
     if (!rootDir || rootDir === 'LOCAL_STORAGE') {
         const data = localStorage.getItem(`tangthu_novel_${meta.id}`);
         if (!data) return null;
-        try { return JSON.parse(data); } catch(e) { console.warn(`[TTC] Dữ liệu bị hỏng cho truyện ${meta.id}, bỏ qua.`, e); return null; }
+        try { return migrateNovel(JSON.parse(data)); } catch(e) { console.warn(`[TTC] Dữ liệu bị hỏng cho truyện ${meta.id}, bỏ qua.`, e); return null; }
     }
     const folderName = meta.folderName || meta.title.replace(/[\\/:*?"<>|]/g, '').trim() || meta.id;
     try {
@@ -1097,14 +1099,14 @@ export default function App() {
         const f = await novelDir.getFileHandle(`${folderName}.json`);
         const file = await f.getFile();
         const text = await file.text();
-        try { return JSON.parse(text); } catch(pe) { console.warn(`[TTC] File JSON bị hỏng: ${folderName}.json`, pe); return null; }
+        try { return migrateNovel(JSON.parse(text)); } catch(pe) { console.warn(`[TTC] File JSON bị hỏng: ${folderName}.json`, pe); return null; }
     } catch (e) {
         try {
             const novelsDir = await rootDir.getDirectoryHandle('novels');
             const f = await novelsDir.getFileHandle(`${meta.id}.json`);
             const file = await f.getFile();
             const text = await file.text();
-            try { return JSON.parse(text); } catch(pe) { console.warn(`[TTC] File JSON bị hỏng: ${meta.id}.json`, pe); return null; }
+            try { return migrateNovel(JSON.parse(text)); } catch(pe) { console.warn(`[TTC] File JSON bị hỏng: ${meta.id}.json`, pe); return null; }
         } catch(err2) { return null; }
     }
   };
@@ -1268,7 +1270,7 @@ export default function App() {
     if (window.self !== window.top) {
        setDirHandle("LOCAL_STORAGE"); showToast("Preview: Đã chuyển sang Local Storage.");
        const local = localStorage.getItem('tangthu_index');
-       if (local) { try { const p = JSON.parse(local); if (p.metadata) setNovelsMetadata(p.metadata); if (p.config) setGlobalTabsConfig(p.config); if (p.novelStats && typeof p.novelStats === 'object') { novelStatsByIdRef.current = p.novelStats; setNovelStatsById(p.novelStats); } } catch(e) {} }
+       if (local) { try { const p = migrateIndex(JSON.parse(local)); if (p.metadata) setNovelsMetadata(p.metadata); if (p.config) setGlobalTabsConfig(p.config); if (p.novelStats && typeof p.novelStats === 'object') { novelStatsByIdRef.current = p.novelStats; setNovelStatsById(p.novelStats); } } catch(e) {} }
        return;
     }
     try {
@@ -1296,8 +1298,25 @@ export default function App() {
          } catch(e) { setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Thư mục trống. Đã kết nối Mệnh Bàn!"); return; }
       }
       if (content) {
-        try { const parsed = JSON.parse(content); if (parsed.metadata) setNovelsMetadata(parsed.metadata); if (parsed.config) setGlobalTabsConfig(parsed.config); if (parsed.novelStats && typeof parsed.novelStats === 'object') { novelStatsByIdRef.current = parsed.novelStats; setNovelStatsById(parsed.novelStats); } else { setNovelStatsById({}); novelStatsByIdRef.current = {}; } setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Đã tải Mệnh Bàn (Index) thành công!"); } 
-        catch (parseErr) { showToast("LỖI CHÍ MẠNG: File index.json bị hỏng cấu trúc.", "error"); }
+        try {
+          const parsed = JSON.parse(content);
+          const index = migrateIndex(parsed);
+          if (index.metadata) setNovelsMetadata(index.metadata);
+          if (index.config) setGlobalTabsConfig(index.config);
+          if (index.novelStats && typeof index.novelStats === 'object') {
+            novelStatsByIdRef.current = index.novelStats;
+            setNovelStatsById(index.novelStats);
+          } else {
+            setNovelStatsById({});
+            novelStatsByIdRef.current = {};
+          }
+          setDirHandle(h);
+          setActiveNovelData(null);
+          setActiveNovelDirHandle(null);
+          showToast("Đã tải Mệnh Bàn (Index) thành công!");
+        } catch (parseErr) {
+          showToast("LỖI CHÍ MẠNG: File index.json bị hỏng cấu trúc.", "error");
+        }
       }
     } catch (e) {}
   };
@@ -1361,17 +1380,17 @@ export default function App() {
     reader.onload = async (event) => {
       try {
         const parsed = JSON.parse(event.target.result);
-        if (parsed.metadata && parsed.config) {
-          setGlobalTabsConfig(parsed.config);
-          setNovelsMetadata(parsed.metadata);
-          novelsMetadataRef.current = parsed.metadata;
-          const stats =
-            parsed.novelStats && typeof parsed.novelStats === 'object' ? parsed.novelStats : {};
+        const backup = migrateBackup(parsed);
+        if (backup.metadata && backup.config) {
+          setGlobalTabsConfig(backup.config);
+          setNovelsMetadata(backup.metadata);
+          novelsMetadataRef.current = backup.metadata;
+          const stats = backup.novelStats && typeof backup.novelStats === 'object' ? backup.novelStats : {};
           novelStatsByIdRef.current = stats;
           setNovelStatsById(stats);
-          await syncIndex(parsed.metadata, parsed.config, dirHandle, stats);
-          if (parsed.novels && typeof parsed.novels === 'object') {
-            for (const [, data] of Object.entries(parsed.novels)) {
+          await syncIndex(backup.metadata, backup.config, dirHandle, stats);
+          if (backup.novels && typeof backup.novels === 'object') {
+            for (const [, data] of Object.entries(backup.novels)) {
               await syncNovel(data, dirHandle);
             }
           }
