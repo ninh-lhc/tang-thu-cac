@@ -24,6 +24,7 @@ import {
   truncateForAI, mapGeminiErrorToUserMessage
 } from './MasterUtils.jsx';
 import { searchNovelData, dedupeDeepSearchResults, metadataSearchHits } from './deepSearchCore.js';
+import { useFocusTrap } from './lib/useFocusTrap.js';
 
 // Lấy fieldsTemplate đúng cho tab — ưu tiên template đã lưu, fallback theo ID rồi label
 const resolveFieldsTemplate = (tabConfig, parentTabId, parentLabel = '') => {
@@ -93,7 +94,7 @@ export const AppHeader = ({ menu1Visible, setMenu1Visible, handleGoHome, setIsSe
 // ==========================================
 // DASHBOARD SCREEN
 // ==========================================
-export const DashboardScreen = ({ novelsMetadata, stats, isLoading, onSelectNovel, onAddNovel, novelStatsById = {} }) => {
+export const DashboardScreen = memo(({ novelsMetadata, stats, isLoading, onSelectNovel, onAddNovel, novelStatsById = {} }) => {
   const { total, byStatus, byGenre, totalChaptersRead, totalChaptersAll, totalEntities, totalMilestones, recentNovels, topGenre } = stats;
   const [recentFilter, setRecentFilter] = useState('');
   const pct = totalChaptersAll > 0 ? Math.round((totalChaptersRead / totalChaptersAll) * 100) : 0;
@@ -303,9 +304,9 @@ export const DashboardScreen = ({ novelsMetadata, stats, isLoading, onSelectNove
       </div>
     </div>
   );
-};
+});
 
-export const LandingScreen = ({ setIsAddNovelOpen, setIsManageTabsOpen }) => (
+export const LandingScreen = memo(({ setIsAddNovelOpen, setIsManageTabsOpen }) => (
   <div className="flex-1 flex flex-col items-center justify-center text-slate-200 relative w-full h-full bg-slate-950 overflow-hidden">
     <div className="z-10 flex flex-col items-center text-center max-w-3xl px-6 animate-fade-fast">
       <div className="w-40 h-40 border-2 border-amber-700/30 rounded-full flex items-center justify-center mb-8 relative shadow-[0_0_50px_rgba(217,119,6,0.05)] group">
@@ -324,7 +325,7 @@ export const LandingScreen = ({ setIsAddNovelOpen, setIsManageTabsOpen }) => (
       </div>
     </div>
   </div>
-);
+));
 
 export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, tabConfig, dirHandle, parentTabId, parentLabel }) => {
   const fields = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
@@ -345,9 +346,12 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
   const avatarTextColors = ['text-amber-400','text-indigo-400','text-emerald-400','text-rose-400','text-purple-400','text-sky-400','text-orange-400','text-teal-400'];
   const colorIdx = safeString(entity.name).charCodeAt(0) % avatarColors.length;
 
+  const handleSelect = () => onSelect?.(entity);
+  const handleDelete = (e) => { e?.stopPropagation?.(); onDelete?.(entity); };
+  const handleAddMs = (e) => { e?.stopPropagation?.(); onAddMilestone?.(entity); };
   return (
-    <div onClick={onSelect} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-amber-600/50 hover:shadow-lg transition-all cursor-pointer group relative">
-      <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="absolute top-4 right-4 text-slate-600 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity z-10"><Trash2 size={16}/></button>
+    <div onClick={handleSelect} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-amber-600/50 hover:shadow-lg transition-all cursor-pointer group relative">
+      <button onClick={handleDelete} className="absolute top-4 right-4 text-slate-600 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity z-10"><Trash2 size={16}/></button>
       <div className="flex items-center gap-4 mb-4">
          <div className={`w-14 h-14 rounded-full border border-amber-600/20 flex items-center justify-center font-bold text-xl overflow-hidden flex-shrink-0 ${entity.avatar ? 'bg-slate-950' : avatarColors[colorIdx]}`}>
            {entity.avatar ? (
@@ -368,7 +372,7 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
       <div className="w-full pt-3 border-t border-slate-800/80 flex justify-between items-center text-[10px] text-slate-500 uppercase tracking-widest font-bold">
         <span>{entity.milestones?.length || 0} {terms.msTitle.split('/')[0].trim()}</span>
         <div className="flex items-center gap-2">
-          <button onClick={(e) => { e.stopPropagation(); onAddMilestone && onAddMilestone(); }} className="p-1 rounded-md bg-slate-800 hover:bg-amber-900/40 hover:text-amber-400 text-slate-500 transition-colors opacity-0 group-hover:opacity-100" title="Thêm mốc sự kiện nhanh">
+          <button onClick={handleAddMs} className="p-1 rounded-md bg-slate-800 hover:bg-amber-900/40 hover:text-amber-400 text-slate-500 transition-colors opacity-0 group-hover:opacity-100" title="Thêm mốc sự kiện nhanh">
             <Plus size={12}/>
           </button>
           <span className="group-hover:text-amber-400 transition-colors flex items-center gap-1">Hồ Sơ <ChevronRight size={12}/></span>
@@ -420,6 +424,14 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
      }
   }, [isOpen, initialData]);
 
+  useEffect(() => {
+    const handler = () => {
+      if (isOpen && formData.name.trim()) { onSave(formData, dynamicData); onClose(); }
+    };
+    window.addEventListener('ttc-save', handler);
+    return () => window.removeEventListener('ttc-save', handler);
+  }, [isOpen, formData, dynamicData, onSave, onClose]);
+
   const handleAI = async () => {
      const keys = Array.isArray(geminiApiKey) ? geminiApiKey : (geminiApiKey ? [geminiApiKey] : []);
      if (keys.length === 0) { setErrorMsg("Vui lòng thiết lập API Key trong phần Cài Đặt để dùng tính năng AI."); return; }
@@ -446,10 +458,11 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
      setNewFieldLabel('');
   };
 
+  const trapRef = useFocusTrap(isOpen);
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in">
-       <div className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-5xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col md:flex-row h-[85vh]">
+       <div ref={trapRef} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-5xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col md:flex-row h-[85vh]">
           <div className="w-full md:w-5/12 bg-slate-950 border-r border-slate-800 p-6 flex flex-col relative">
              <h2 className="text-xl font-heading font-bold text-amber-500 mb-4 flex items-center gap-2"><Sparkles size={20}/> Tinh Luyện Khí Tức (AI)</h2>
              <div className="flex gap-4 mb-4">
@@ -621,6 +634,18 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
     } 
   }, [isOpen, initialData, defaultChapterWhenNew]);
 
+  useEffect(() => {
+    const handler = () => {
+      if (isOpen && formData.chapter && formData.event.trim()) {
+        const hasData = snapshotData.avatar || Object.values(snapshotData.dynamicData || {}).some(v => v);
+        onSave(formData, hasData ? snapshotData : null);
+        onClose();
+      }
+    };
+    window.addEventListener('ttc-save', handler);
+    return () => window.removeEventListener('ttc-save', handler);
+  }, [isOpen, formData, snapshotData, onSave, onClose]);
+
   const handleAI = async () => {
      const keys = Array.isArray(geminiApiKey) ? geminiApiKey : (geminiApiKey ? [geminiApiKey] : []);
      if (keys.length === 0) { setErrorMsg("Vui lòng thiết lập API Key trong phần Cài Đặt để dùng tính năng AI."); return; }
@@ -651,10 +676,11 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
      onClose();
   };
 
+  const trapRefMs = useFocusTrap(isOpen);
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in">
-       <div className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-5xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col md:flex-row h-[85vh]">
+       <div ref={trapRefMs} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-5xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col md:flex-row h-[85vh]">
           <div className="w-full md:w-5/12 bg-slate-950 border-r border-slate-800 p-6 flex flex-col relative">
              <h2 className="text-xl font-heading font-bold text-amber-500 mb-6 flex items-center gap-2"><Clock size={20}/> Ghi Chép Mệnh Số</h2>
              <div className="flex-1 flex flex-col space-y-4">
@@ -1190,6 +1216,31 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, performDeepSe
     return Object.values(map);
   }, [results]);
 
+  const flatResults = useMemo(() => grouped.flatMap(g => g.items), [grouped]);
+  const [highlightIdx, setHighlightIdx] = useState(0);
+  const resultRefs = useRef([]);
+  useEffect(() => { setHighlightIdx(0); }, [flatResults.length]);
+  useEffect(() => {
+    const el = resultRefs.current[highlightIdx];
+    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [highlightIdx]);
+
+  const handleResultKeyDown = (e) => {
+    if (e.key === 'Escape') { onClose(); return; }
+    if (flatResults.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightIdx((i) => Math.min(i + 1, flatResults.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightIdx((i) => Math.max(0, i - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const r = flatResults[highlightIdx];
+      if (r) { onSelectResult(r); onClose(); }
+    }
+  };
+
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[300] flex items-start justify-center bg-slate-950/95 backdrop-blur-md pt-[8vh] px-4 animate-fade-in">
@@ -1197,9 +1248,9 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, performDeepSe
         <div className="p-4 border-b border-slate-800 flex items-center gap-3 bg-slate-950">
           <Search size={20} className="text-amber-500 flex-shrink-0" />
           <input autoFocus type="text"
-            placeholder={`Tìm trong ${novelsMetadata.length} bộ thư tịch (đọc từng file)...`}
+            placeholder={`Tìm trong ${novelsMetadata.length} bộ thư tịch (↑↓ Enter)`}
             className="flex-1 bg-transparent text-lg font-serif text-slate-100 outline-none"
-            value={query} onChange={e => setQuery(e.target.value)} />
+            value={query} onChange={e => setQuery(e.target.value)} onKeyDown={handleResultKeyDown} />
           {searchPending && <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin flex-shrink-0"/>}
           <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-white rounded-lg flex-shrink-0"><X size={18}/></button>
         </div>
@@ -1230,9 +1281,14 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, performDeepSe
                     <span className="text-[10px] text-slate-600">{group.items.length}</span>
                   </div>
                   <div className="space-y-1.5">
-                    {group.items.map((r, i) => (
-                      <div key={`${r.novelId}-${r.tabLonId || ''}-${r.tabNhoId || ''}-${r.entityId || ''}-${r.location}-${i}`} onClick={() => { onSelectResult(r); onClose(); }}
-                        className="flex items-start gap-3 p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl hover:border-amber-600/40 hover:bg-slate-800/50 cursor-pointer transition-all">
+                    {group.items.map((r, i) => {
+                      const globalIdx = grouped.slice(0, gi).reduce((acc, g) => acc + g.items.length, 0) + i;
+                      const isHighlight = flatResults[globalIdx] === r && highlightIdx === globalIdx;
+                      return (
+                      <div key={`${r.novelId}-${r.tabLonId || ''}-${r.tabNhoId || ''}-${r.entityId || ''}-${r.location}-${i}`}
+                        ref={(el) => { resultRefs.current[globalIdx] = el; }}
+                        onClick={() => { onSelectResult(r); onClose(); }}
+                        className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all ${isHighlight ? 'bg-amber-950/40 border-2 border-amber-600/50' : 'bg-slate-950/60 border border-slate-800/80 hover:border-amber-600/40 hover:bg-slate-800/50'}`}>
                         <div className="flex-shrink-0 mt-0.5 w-5 h-5 rounded-md bg-amber-900/30 flex items-center justify-center">
                           <Search size={10} className="text-amber-600"/>
                         </div>
@@ -1241,7 +1297,7 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, performDeepSe
                           <p className="text-sm text-slate-300 font-serif line-clamp-2 leading-relaxed">{safeString(r.snippet)}</p>
                         </div>
                       </div>
-                    ))}
+                    ); })}
                   </div>
                 </div>
               ))}
@@ -1290,6 +1346,31 @@ export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) =
     return Object.values(map);
   }, [results]);
 
+  const flatResultsInNovel = useMemo(() => grouped.flatMap(g => g.items), [grouped]);
+  const [highlightIdxInNovel, setHighlightIdxInNovel] = useState(0);
+  const resultRefsInNovel = useRef([]);
+  useEffect(() => { setHighlightIdxInNovel(0); }, [flatResultsInNovel.length]);
+  useEffect(() => {
+    const el = resultRefsInNovel.current[highlightIdxInNovel];
+    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [highlightIdxInNovel]);
+
+  const handleInNovelKeyDown = (e) => {
+    if (e.key === 'Escape') { onClose(); return; }
+    if (flatResultsInNovel.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightIdxInNovel((i) => Math.min(i + 1, flatResultsInNovel.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightIdxInNovel((i) => Math.max(0, i - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const r = flatResultsInNovel[highlightIdxInNovel];
+      if (r) { onSelectResult(r); onClose(); }
+    }
+  };
+
   if (!isOpen || !novel) return null;
   return (
     <div className="fixed inset-0 z-[295] flex items-start justify-center bg-slate-950/95 backdrop-blur-md pt-[8vh] px-4 animate-fade-in">
@@ -1300,10 +1381,11 @@ export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) =
             <input
               autoFocus
               type="text"
-              placeholder={`Tra trong «${safeString(novel.title)}»...`}
+              placeholder={`Tra trong «${safeString(novel.title)}»... (↑↓ Enter)`}
               className="w-full bg-transparent text-lg font-serif text-slate-100 outline-none"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleInNovelKeyDown}
             />
             <p className="text-[10px] text-slate-500 font-serif mt-0.5">Chỉ truyện này — gõ tên, sự kiện, ghi chép...</p>
           </div>
@@ -1332,14 +1414,18 @@ export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) =
                     </div>
                   )}
                   <div className="space-y-1">
-                    {group.items.map((r, i) => (
+                    {group.items.map((r, i) => {
+                      const globalIdx = grouped.slice(0, gi).reduce((acc, g) => acc + g.items.length, 0) + i;
+                      const isHighlight = highlightIdxInNovel === globalIdx;
+                      return (
                       <div
                         key={`${r.tabLonId}-${r.tabNhoId}-${r.entityId}-${i}`}
+                        ref={(el) => { resultRefsInNovel.current[globalIdx] = el; }}
                         onClick={() => {
                           onSelectResult(r);
                           onClose();
                         }}
-                        className="flex items-start gap-3 p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl hover:border-cyan-600/35 hover:bg-slate-800/40 cursor-pointer transition-all"
+                        className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all ${isHighlight ? 'bg-cyan-950/40 border-2 border-cyan-600/50' : 'bg-slate-950/70 border border-slate-800/80 hover:border-cyan-600/35 hover:bg-slate-800/40'}`}
                       >
                         <Search size={12} className="text-cyan-600 mt-1 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
@@ -1347,7 +1433,7 @@ export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) =
                           <p className="text-sm text-slate-300 font-serif line-clamp-3 leading-relaxed">{safeString(r.snippet)}</p>
                         </div>
                       </div>
-                    ))}
+                    ); })}
                   </div>
                 </div>
               ))}

@@ -76,6 +76,7 @@ export default function App() {
   const [entitySortMode, setEntitySortMode] = useState('newest');
   const [entityGroupBy, setEntityGroupBy] = useState('none'); // none | field_id
   const [entityPage, setEntityPage] = useState(1);
+  const [groupVisibleCount, setGroupVisibleCount] = useState({});
   const ENTITY_PAGE_SIZE = 24; 
   
   const [collectionSubTab, setCollectionSubTab] = useState('list'); 
@@ -159,6 +160,7 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState(null);
   const [lightboxSrc, setLightboxSrc] = useState(null); // null = đóng, string = URL/local_image
   const [isUploading, setIsUploading] = useState(false);
+  const [importProgress, setImportProgress] = useState(null);
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagValue, setNewTagValue] = useState('');
   const [isInsertImageModalOpen, setIsInsertImageModalOpen] = useState(false);
@@ -398,7 +400,7 @@ export default function App() {
   );
 
   // Reset page khi filter thay đổi
-  useEffect(() => { setEntityPage(1); }, [entitySearch, entitySortMode, entityGroupBy, activeTabLon, activeTabNho]);
+  useEffect(() => { setEntityPage(1); setGroupVisibleCount({}); }, [entitySearch, entitySortMode, entityGroupBy, activeTabLon, activeTabNho]);
 
   /** Luôn resolve từ toàn bộ entities tab — không dùng entitiesList đã lọc theo ô tìm (tránh mất thẻ đang xem). */
   const selectedEntity = useMemo(() => {
@@ -507,7 +509,7 @@ export default function App() {
       } finally {
         if (!cancelled) setIsCalculatingNetwork(false);
       }
-    }, 0);
+    }, 180);
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -1376,9 +1378,11 @@ export default function App() {
   const handleImportBackup = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setImportProgress({ stage: 'Đang đọc file...', current: 0, total: 1 });
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
+        setImportProgress({ stage: 'Đang chuẩn hóa dữ liệu...', current: 0, total: 1 });
         const parsed = JSON.parse(event.target.result);
         const backup = migrateBackup(parsed);
         if (backup.metadata && backup.config) {
@@ -1388,21 +1392,26 @@ export default function App() {
           const stats = backup.novelStats && typeof backup.novelStats === 'object' ? backup.novelStats : {};
           novelStatsByIdRef.current = stats;
           setNovelStatsById(stats);
+          setImportProgress({ stage: 'Đang ghi danh mục...', current: 0, total: 1 });
           await syncIndex(backup.metadata, backup.config, dirHandle, stats);
-          if (backup.novels && typeof backup.novels === 'object') {
-            for (const [, data] of Object.entries(backup.novels)) {
-              await syncNovel(data, dirHandle);
-            }
+          const novelEntries = backup.novels && typeof backup.novels === 'object' ? Object.entries(backup.novels) : [];
+          for (let i = 0; i < novelEntries.length; i++) {
+            setImportProgress({ stage: `Đang ghi truyện ${i + 1}/${novelEntries.length}...`, current: i + 1, total: novelEntries.length });
+            await syncNovel(novelEntries[i][1], dirHandle);
           }
+          setImportProgress(null);
           showToast("Khôi phục thành công! Tải lại trang…");
           setTimeout(() => window.location.reload(), 1200);
         } else {
+          setImportProgress(null);
           showToast("File không đúng cấu trúc Tàng Thư Các.", "error");
         }
       } catch (err) {
+        setImportProgress(null);
         showToast("Lỗi đọc file backup!", "error");
       }
     };
+    reader.onerror = () => { setImportProgress(null); showToast("Lỗi đọc file!", "error"); };
     reader.readAsText(file);
     e.target.value = '';
   };
@@ -1597,6 +1606,7 @@ export default function App() {
   const handleOpenEditEntity = () => { if(selectedEntity) { setEditingEntityData({...selectedEntity}); setIsEntityModalOpen(true); } };
 
   const handleSaveEntity = (formData, dynamicData) => {
+    const prev = activeNovelData ? structuredClone(activeNovelData) : null;
     updateActiveNovelData(nov => {
        if (!nov.data) nov.data = {}; if (!nov.data[activeTabLon]) nov.data[activeTabLon] = {};
        let tabData = nov.data[activeTabLon][activeTabNho || 'default'];
@@ -1608,7 +1618,12 @@ export default function App() {
        } else { tabData.entities.push({ id: generateId('ent'), name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData, info: '', milestones: [] }); }
        nov.data[activeTabLon][activeTabNho || 'default'] = tabData;
     });
-    showToast(formData.id ? "Đã tu bổ lại Thực Thể!" : "Đã ngưng tụ Thực Thể mới!");
+    showToast(formData.id ? "Đã tu bổ lại Thực Thể!" : "Đã ngưng tụ Thực Thể mới!", "success", prev ? {
+      undoLabel: "Hoàn tác", onUndo: () => {
+        setActiveNovelData(structuredClone(prev));
+        void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
+      }
+    } : null);
   };
 
   const handleUpdateEntityInfo = (content) => {
@@ -1622,6 +1637,7 @@ export default function App() {
   };
 
   const handleSaveMilestone = (formData, snapshot) => {
+    const prev = activeNovelData ? structuredClone(activeNovelData) : null;
     updateActiveNovelData(nov => {
        if (!nov.data?.[activeTabLon]) return;
        const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
@@ -1635,7 +1651,12 @@ export default function App() {
          ent.milestones.sort((a,b) => a.chapter - b.chapter);
        }
     });
-    showToast(formData.id ? "Đã tu bổ Kỷ Nguyên!" : "Đã khắc ghi Kỷ Nguyên mới!");
+    showToast(formData.id ? "Đã tu bổ Kỷ Nguyên!" : "Đã khắc ghi Kỷ Nguyên mới!", "success", prev ? {
+      undoLabel: "Hoàn tác", onUndo: () => {
+        setActiveNovelData(structuredClone(prev));
+        void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
+      }
+    } : null);
   };
 
   const handleDeleteMilestone = (msId) => {
@@ -1684,6 +1705,16 @@ export default function App() {
        }
     });
   };
+
+  const onEntityCardSelect = useCallback((ent) => {
+    handleNavigate({ lonId: activeTabLon, nhoId: activeTabNho, entityId: ent.id });
+  }, [activeTabLon, activeTabNho]);
+  const onEntityCardDelete = useCallback((ent) => handleDeleteEntity(ent.id), []);
+  const onEntityCardAddMilestone = useCallback((ent) => {
+    setSelectedEntityId(ent.id);
+    setCollectionSubTab('timeline');
+    setTimeout(() => { setEditingMilestoneData(null); setIsMilestoneModalOpen(true); }, 100);
+  }, []);
 
   const handleAIExtractSuccess = (existingData, newFieldsArr) => {
     updateActiveNovelData(nov => {
@@ -2270,6 +2301,19 @@ export default function App() {
         e.preventDefault();
         setIsCommandPaletteOpen((o) => !o);
         setCommandPaletteQuery('');
+        return;
+      }
+      if (e.ctrlKey && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('ttc-save'));
+        return;
+      }
+      if (e.ctrlKey && e.shiftKey && (e.key === 'N' || e.key === 'n')) {
+        e.preventDefault();
+        if (activeNovelData && !isEntityModalOpen) {
+          setEditingEntityData(null);
+          setIsEntityModalOpen(true);
+        }
         return;
       }
       if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -2993,9 +3037,9 @@ export default function App() {
                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 content-start">
                                              {list.map(ent => (
                                                <EntityCard key={ent.id} entity={ent} tabConfig={currentTabConfig}
-                                                onSelect={() => { handleNavigate({ lonId: activeTabLon, nhoId: activeTabNho, entityId: ent.id }); }}
-                                                onDelete={() => handleDeleteEntity(ent.id)}
-                                                onAddMilestone={() => { setSelectedEntityId(ent.id); setCollectionSubTab('timeline'); setTimeout(() => { setEditingMilestoneData(null); setIsMilestoneModalOpen(true); }, 100); }}
+                                                onSelect={onEntityCardSelect}
+                                                onDelete={onEntityCardDelete}
+                                                onAddMilestone={onEntityCardAddMilestone}
                                                 dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} />
                                              ))}
 
@@ -3046,7 +3090,12 @@ export default function App() {
                                            });
                                            return (
                                              <div className="space-y-8">
-                                               {sortedGroups.map(([groupName, groupItems]) => (
+                                               {sortedGroups.map(([groupName, groupItems]) => {
+                                                 const visible = (groupVisibleCount[groupName] || 1) * ENTITY_PAGE_SIZE;
+                                                 const visibleItems = groupItems.slice(0, visible);
+                                                 const hasMore = groupItems.length > visible;
+                                                 const remaining = groupItems.length - visible;
+                                                 return (
                                                  <div key={groupName} className="animate-fade-in">
                                                    <div className="flex items-center gap-3 mb-4">
                                                      <div className="flex items-center gap-2 bg-slate-900/80 border border-slate-700/60 rounded-full px-4 py-1.5">
@@ -3056,10 +3105,14 @@ export default function App() {
                                                      </div>
                                                      <div className="flex-1 h-px bg-slate-800"></div>
                                                    </div>
-                                                   {renderGrid(groupItems)}
+                                                   {renderGrid(visibleItems)}
+                                                   {hasMore && (
+                                                     <div className="mt-4 flex justify-center">
+                                                       <button onClick={() => setGroupVisibleCount(prev => ({ ...prev, [groupName]: (prev[groupName] || 1) + 1 }))} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-sm text-slate-300 font-serif">Xem thêm ({remaining} còn lại)</button>
+                                                     </div>
+                                                   )}
                                                  </div>
-                                               ))}
-
+                                               ); })}
                                              </div>
                                            );
                                          }
@@ -3661,11 +3714,16 @@ export default function App() {
       )}
 
       {toastMessage && (
-        <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] animate-fade-fast px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border max-w-[min(96vw,520px)] ${
+        <div
+          role="alert"
+          aria-live="polite"
+          aria-atomic="true"
+          className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] animate-fade-fast px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border max-w-[min(96vw,520px)] ${
           toastMessage.type === 'error' ? 'bg-rose-950 border-rose-700 text-rose-100' :
           toastMessage.type === 'warning' ? 'bg-amber-950 border-amber-700 text-amber-100' :
           'bg-slate-800 border-slate-700 text-slate-100'
-        }`}>
+        }`}
+        >
            <Sparkles size={18} className={`flex-shrink-0 animate-pulse ${toastMessage.type === 'error' ? 'text-rose-400' : toastMessage.type === 'warning' ? 'text-amber-400' : 'text-emerald-400'}`} />
            <span className="font-serif text-sm flex-1 min-w-0">{safeString(toastMessage.msg)}</span>
            {toastMessage.onUndo && (
@@ -3683,6 +3741,7 @@ export default function App() {
                {safeString(toastMessage.undoLabel || 'Hoàn tác')}
              </button>
            )}
+           <button type="button" onClick={() => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); setToastMessage(null); toastTimerRef.current = null; }} className="flex-shrink-0 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors" aria-label="Đóng thông báo"><X size={16}/></button>
         </div>
       )}
 
@@ -3690,6 +3749,18 @@ export default function App() {
         <div className="fixed inset-0 z-[400] bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-fast">
            <div className="w-16 h-16 border-4 border-amber-600 border-t-transparent rounded-full animate-spin mb-4 shadow-xl"></div>
            <p className="text-amber-500 font-heading text-lg animate-pulse">Đang luân chuyển linh ảnh...</p>
+        </div>
+      )}
+
+      {importProgress && (
+        <div className="fixed inset-0 z-[400] bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-fast">
+          <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4 shadow-xl"></div>
+          <p className="text-emerald-400 font-heading text-lg animate-pulse mb-2">{importProgress.stage}</p>
+          {importProgress.total > 1 && (
+            <div className="w-64 h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}></div>
+            </div>
+          )}
         </div>
       )}
 
