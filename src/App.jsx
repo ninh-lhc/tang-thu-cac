@@ -10,7 +10,7 @@ import {
   User, Hexagon, Settings, Edit3, Network, Plus, Trash2, Edit2,
   X, Save, Check, Library, Sparkles, Cloud, History, LayoutGrid, Clock,
   AlignLeft, Shield, Link2, Download, Eye, TrendingUp, BarChart2, BookMarked, Users, Layers, Activity,
-  Images, GitBranch
+  Images, GitBranch, Command
 } from 'lucide-react';
 import {
   apiKey, FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
@@ -316,6 +316,28 @@ export default function App() {
   
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchHistory, setSearchHistory] = useState(() => {
+    try {
+      const raw = localStorage.getItem('tangthu_lib_search_hist');
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  });
+  const [wikiExactMatchOnly, setWikiExactMatchOnly] = useState(() => {
+    try {
+      return localStorage.getItem('tangthu_wiki_exact') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
+  const [overviewStatsOpen, setOverviewStatsOpen] = useState(false);
+  const librarySearchInputRef = useRef(null);
+  const commandPaletteOpenRef = useRef(false);
+  commandPaletteOpenRef.current = isCommandPaletteOpen;
   
   const [dirHandle, setDirHandle] = useState(null);
   const [activeNovelDirHandle, setActiveNovelDirHandle] = useState(null);
@@ -355,6 +377,7 @@ export default function App() {
   const novelsMetadataRef = useRef(novelsMetadata);
   const globalTabsConfigRef = useRef(globalTabsConfig);
   const dirHandleRef = useRef(dirHandle);
+  const syncNovelRef = useRef(null);
   const persistIndexStatsTimerRef = useRef(null);
 
   useEffect(() => {
@@ -563,7 +586,45 @@ export default function App() {
   // Reset page khi filter thay đổi
   useEffect(() => { setEntityPage(1); }, [entitySearch, entitySortMode, entityGroupBy, activeTabLon, activeTabNho]);
 
-  const selectedEntity = useMemo(() => entitiesList.find(e => e.id === selectedEntityId), [entitiesList, selectedEntityId]);
+  /** Luôn resolve từ toàn bộ entities tab — không dùng entitiesList đã lọc theo ô tìm (tránh mất thẻ đang xem). */
+  const selectedEntity = useMemo(() => {
+    if (!activeNovelData || !activeTabLon || !selectedEntityId) return undefined;
+    if (!currentTabConfig || currentTabConfig.viewType !== 'collection-track') return undefined;
+    const tabData = activeNovelData.data?.[activeTabLon]?.[activeTabNho || 'default'];
+    if (!tabData || typeof tabData === 'string' || !Array.isArray(tabData.entities)) return undefined;
+    return tabData.entities.find((e) => e.id === selectedEntityId);
+  }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig, selectedEntityId]);
+
+  /** Đổi mục / loại tab: bỏ chọn thẻ nếu không còn thuộc tab collection hiện tại hoặc thẻ đã bị xóa. */
+  useEffect(() => {
+    if (!selectedEntityId) return;
+
+    const clearEntitySelection = () => {
+      setSelectedEntityId(null);
+      setSelectedMilestoneId(null);
+      setEditingMilestoneData(null);
+      setIsEntityModalOpen(false);
+      setIsMilestoneModalOpen(false);
+      setCollectionSubTab((sub) => (sub === 'detail' || sub === 'timeline' ? 'list' : sub));
+    };
+
+    if (!activeNovelData) {
+      clearEntitySelection();
+      return;
+    }
+    if (!activeTabLon || !activeTabNho || !currentTabConfig || currentTabConfig.viewType !== 'collection-track') {
+      clearEntitySelection();
+      return;
+    }
+    const tabData = activeNovelData.data?.[activeTabLon]?.[activeTabNho || 'default'];
+    if (!tabData || typeof tabData === 'string' || !Array.isArray(tabData.entities)) {
+      clearEntitySelection();
+      return;
+    }
+    if (!tabData.entities.some((e) => e.id === selectedEntityId)) {
+      clearEntitySelection();
+    }
+  }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig, selectedEntityId]);
 
   const entityMap = useMemo(() => {
     if (!activeNovelData) return [];
@@ -611,114 +672,118 @@ export default function App() {
   useEffect(() => {
     if (!activeNovelData || !selectedEntity) {
       setRelatedEntities([]);
+      setIsCalculatingNetwork(false);
       return;
     }
     setIsCalculatingNetwork(true);
-    const timerId = setTimeout(() => {
-      const relMap = new Map();
-      const addRel = (entity, lonId, nhoId, tabLabel, ctx) => {
-        if (!entity || entity.id === selectedEntity.id) return;
-        const k = `${lonId}|${nhoId}|${entity.id}`;
-        if (!relMap.has(k)) relMap.set(k, { entity, lonId, nhoId, tabLabel, parts: new Set([ctx]) });
-        else relMap.get(k).parts.add(ctx);
-      };
 
-      const namesToMatch = new Set();
-      const extractNames = (str) => {
-        if (!str) return;
-        str.split(/[,/|()]/).forEach((n) => {
-          const clean = n.trim();
-          if (clean.length >= 2) namesToMatch.add(clean.toLowerCase());
-        });
-      };
-      extractNames(selectedEntity.name);
-      if (selectedEntity.dynamicData?.f_alias) extractNames(selectedEntity.dynamicData.f_alias);
+    const relMap = new Map();
+    const addRel = (entity, lonId, nhoId, tabLabel, ctx) => {
+      if (!entity || entity.id === selectedEntity.id) return;
+      const k = `${lonId}|${nhoId}|${entity.id}`;
+      if (!relMap.has(k)) relMap.set(k, { entity, lonId, nhoId, tabLabel, parts: new Set([ctx]) });
+      else relMap.get(k).parts.add(ctx);
+    };
 
-      if (namesToMatch.size > 0) {
-        const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regexStr = Array.from(namesToMatch).map(escapeRegExp).join('|');
-        const combinedRegex = new RegExp(`(${regexStr})`, 'i');
+    const namesToMatch = new Set();
+    const extractNames = (str) => {
+      if (!str) return;
+      str.split(/[,/|()]/).forEach((n) => {
+        const clean = n.trim();
+        if (clean.length >= 2) namesToMatch.add(clean.toLowerCase());
+      });
+    };
+    extractNames(selectedEntity.name);
+    if (selectedEntity.dynamicData?.f_alias) extractNames(selectedEntity.dynamicData.f_alias);
 
-        Object.entries(activeNovelData.data || {}).forEach(([lonId, lonData]) => {
-          const tL = activeTabs.find((t) => t.id === lonId);
-          Object.entries(lonData || {}).forEach(([nhoId, nhoData]) => {
-            const tN = tL?.subTabs?.find((s) => s.id === nhoId);
-            if (nhoData && nhoData.entities) {
-              nhoData.entities.forEach((otherEnt) => {
-                if (otherEnt.id === selectedEntity.id) return;
-                let mentioned = false;
-                let contextInfo = '';
-                if (otherEnt.dynamicData) {
-                  Object.entries(otherEnt.dynamicData).forEach(([fId, fVal]) => {
-                    if (typeof fVal === 'string' && combinedRegex.test(fVal)) {
+    if (namesToMatch.size > 0) {
+      const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regexStr = Array.from(namesToMatch).map(escapeRegExp).join('|');
+      const combinedRegex = new RegExp(`(${regexStr})`, 'i');
+
+      Object.entries(activeNovelData.data || {}).forEach(([lonId, lonData]) => {
+        const tL = activeTabs.find((t) => t.id === lonId);
+        Object.entries(lonData || {}).forEach(([nhoId, nhoData]) => {
+          const tN = tL?.subTabs?.find((s) => s.id === nhoId);
+          if (nhoData && nhoData.entities) {
+            nhoData.entities.forEach((otherEnt) => {
+              if (otherEnt.id === selectedEntity.id) return;
+              let mentioned = false;
+              let contextInfo = '';
+              if (otherEnt.dynamicData) {
+                Object.entries(otherEnt.dynamicData).forEach(([fId, fVal]) => {
+                  if (typeof fVal === 'string') {
+                    combinedRegex.lastIndex = 0;
+                    if (combinedRegex.test(fVal)) {
                       mentioned = true;
                       const f = tN?.fieldsTemplate?.find((field) => field.id === fId);
                       contextInfo = f ? f.label : 'Thuộc tính';
                     }
-                  });
-                }
-                if (!mentioned && typeof otherEnt.info === 'string') {
-                  if (combinedRegex.test(otherEnt.info)) {
-                    mentioned = true;
-                    contextInfo = 'Trong ghi chép';
                   }
+                });
+              }
+              if (!mentioned && typeof otherEnt.info === 'string') {
+                combinedRegex.lastIndex = 0;
+                if (combinedRegex.test(otherEnt.info)) {
+                  mentioned = true;
+                  contextInfo = 'Trong ghi chép';
                 }
-                if (mentioned) addRel(otherEnt, lonId, nhoId, tN ? tN.label : lonId, contextInfo);
-              });
-            }
-          });
+              }
+              if (mentioned) addRel(otherEnt, lonId, nhoId, tN ? tN.label : lonId, contextInfo);
+            });
+          }
         });
-      }
-
-      const resolveWikiDest = (linkInner) => {
-        const label = safeString(linkInner).trim();
-        if (!label) return null;
-        const low = label.toLowerCase();
-        const exact = entityMap.find((e) => e.name.toLowerCase() === low);
-        if (exact) return { dest: exact.dest, matched: exact.name };
-        for (const e of entityMap) {
-          const en = e.name.toLowerCase();
-          if (en.length < 2) continue;
-          if (low.includes(en) || en.includes(low)) return { dest: e.dest, matched: e.name };
-        }
-        return null;
-      };
-
-      const wikiRe = /\[\[([^\]]+)\]\]/g;
-      const absorbWikiText = (text, ctxLead) => {
-        if (!text || typeof text !== 'string') return;
-        let m;
-        wikiRe.lastIndex = 0;
-        while ((m = wikiRe.exec(text)) !== null) {
-          const resolved = resolveWikiDest(m[1]);
-          if (!resolved) continue;
-          const { dest, matched } = resolved;
-          if (dest.entityId === selectedEntity.id) continue;
-          const td = activeNovelData.data?.[dest.lonId]?.[dest.nhoId];
-          const ent = td?.entities?.find((e) => e.id === dest.entityId);
-          if (!ent) continue;
-          const tN = activeTabs.find((t) => t.id === dest.lonId)?.subTabs?.find((s) => s.id === dest.nhoId);
-          addRel(ent, dest.lonId, dest.nhoId, tN ? tN.label : dest.lonId, `${ctxLead}[[${matched}]]`);
-        }
-      };
-
-      absorbWikiText(selectedEntity.rawText, 'Bản thảo · ');
-      (selectedEntity.milestones || []).forEach((ms) => {
-        absorbWikiText(ms.event, `Mốc ch.${safeString(ms.chapter)} · `);
       });
+    }
 
-      const relations = Array.from(relMap.values()).map((v) => ({
-        entity: v.entity,
-        lonId: v.lonId,
-        nhoId: v.nhoId,
-        tabLabel: v.tabLabel,
-        context: [...v.parts].join(' · '),
-      }));
-      setRelatedEntities(relations);
-      setIsCalculatingNetwork(false);
-    }, 10);
-    return () => clearTimeout(timerId);
-  }, [activeNovelData, selectedEntity, activeTabs, entityMap]);
+    const resolveWikiDest = (linkInner) => {
+      const label = safeString(linkInner).trim();
+      if (!label) return null;
+      const low = label.toLowerCase();
+      const exact = entityMap.find((e) => e.name.toLowerCase() === low);
+      if (exact) return { dest: exact.dest, matched: exact.name };
+      if (wikiExactMatchOnly) return null;
+      for (const e of entityMap) {
+        const en = e.name.toLowerCase();
+        if (en.length < 2) continue;
+        if (low.includes(en) || en.includes(low)) return { dest: e.dest, matched: e.name };
+      }
+      return null;
+    };
+
+    const wikiRe = /\[\[([^\]]+)\]\]/g;
+    const absorbWikiText = (text, ctxLead) => {
+      if (!text || typeof text !== 'string') return;
+      let m;
+      wikiRe.lastIndex = 0;
+      while ((m = wikiRe.exec(text)) !== null) {
+        const resolved = resolveWikiDest(m[1]);
+        if (!resolved) continue;
+        const { dest, matched } = resolved;
+        if (dest.entityId === selectedEntity.id) continue;
+        const td = activeNovelData.data?.[dest.lonId]?.[dest.nhoId];
+        const ent = td?.entities?.find((e) => e.id === dest.entityId);
+        if (!ent) continue;
+        const tN = activeTabs.find((t) => t.id === dest.lonId)?.subTabs?.find((s) => s.id === dest.nhoId);
+        addRel(ent, dest.lonId, dest.nhoId, tN ? tN.label : dest.lonId, `${ctxLead}[[${matched}]]`);
+      }
+    };
+
+    absorbWikiText(selectedEntity.rawText, 'Bản thảo · ');
+    (selectedEntity.milestones || []).forEach((ms) => {
+      absorbWikiText(ms.event, `Mốc ch.${safeString(ms.chapter)} · `);
+    });
+
+    const relations = Array.from(relMap.values()).map((v) => ({
+      entity: v.entity,
+      lonId: v.lonId,
+      nhoId: v.nhoId,
+      tabLabel: v.tabLabel,
+      context: [...v.parts].join(' · '),
+    }));
+    setRelatedEntities(relations);
+    setIsCalculatingNetwork(false);
+  }, [activeNovelData, selectedEntity, activeTabs, entityMap, wikiExactMatchOnly]);
 
   // BẢO VỆ CHỐNG CRASH KHI LỌC THỂ LOẠI
   const filteredNovelsList = useMemo(() => {
@@ -762,6 +827,25 @@ export default function App() {
   }, [searchInput]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem('tangthu_wiki_exact', wikiExactMatchOnly ? '1' : '0');
+    } catch {}
+  }, [wikiExactMatchOnly]);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) return;
+    try {
+      const raw = localStorage.getItem('tangthu_lib_search_hist');
+      let arr = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(arr)) arr = [];
+      arr = [q, ...arr.filter((x) => safeString(x).toLowerCase() !== q.toLowerCase())].slice(0, 12);
+      localStorage.setItem('tangthu_lib_search_hist', JSON.stringify(arr));
+      setSearchHistory(arr);
+    } catch {}
+  }, [searchQuery]);
+
+  useEffect(() => {
     if (activeNovelData) {
       setOverviewForm({ status: activeNovelData.status, chaptersRead: activeNovelData.chaptersRead, chaptersTotal: activeNovelData.chaptersTotal, rating: activeNovelData.rating, review: activeNovelData.review });
       setIsAddingTag(false); setNewTagValue('');
@@ -769,10 +853,21 @@ export default function App() {
   }, [activeNovelData]); 
 
   const toastTimerRef = useRef(null);
-  const showToast = useCallback((msg, type = 'success') => {
+  /** options: { undoLabel, onUndo } — hiện nút hoàn tác, toast lâu hơn */
+  const showToast = useCallback((msg, type = 'success', options = null) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToastMessage({ msg, type });
-    toastTimerRef.current = setTimeout(() => { setToastMessage(null); toastTimerRef.current = null; }, 3500);
+    const hasUndo = options && typeof options.onUndo === 'function';
+    setToastMessage({
+      msg,
+      type,
+      undoLabel: hasUndo ? (options.undoLabel || 'Hoàn tác') : undefined,
+      onUndo: hasUndo ? options.onUndo : undefined,
+    });
+    const ms = hasUndo ? 9000 : 3500;
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+      toastTimerRef.current = null;
+    }, ms);
   }, []);
   useEffect(() => () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); }, []);
 
@@ -1146,6 +1241,7 @@ export default function App() {
       return;
     }
     const panel = hubUpdatePanel;
+    const prevNovel = activeNovelData ? structuredClone(activeNovelData) : null;
     let ok = 0;
     let fails = [];
     updateActiveNovelData((nov) => {
@@ -1167,14 +1263,22 @@ export default function App() {
     setHubUpdatePanel(null);
     setHubUpdateText('');
     if (ok > 0) {
-      showToast(`Đã áp dụng ${ok} thao tác (cập nhật).${fails.length ? ` (${fails.length} bỏ qua)` : ''}`, 'success');
+      showToast(`Đã áp dụng ${ok} thao tác (cập nhật).${fails.length ? ` (${fails.length} bỏ qua)` : ''}`, 'success', {
+        onUndo:
+          prevNovel
+            ? () => {
+                setActiveNovelData(structuredClone(prevNovel));
+                void (syncNovelRef.current && syncNovelRef.current(prevNovel, dirHandleRef.current));
+              }
+            : undefined,
+      });
     } else {
       showToast(fails.length ? fails.slice(0, 4).join('; ') : 'Không áp dụng được.', 'warning');
     }
     if (ok > 0 && fails.length) {
       setTimeout(() => showToast(`Một số dòng lỗi: ${fails.slice(0, 3).join('; ')}`, 'warning'), 400);
     }
-  }, [hubUpdatePanel, showToast]);
+  }, [hubUpdatePanel, showToast, activeNovelData]);
 
   useEffect(() => {
     if (!isSplitPreview) return;
@@ -1272,6 +1376,7 @@ export default function App() {
       }
     }
   };
+  syncNovelRef.current = syncNovel;
 
   const loadNovelData = async (meta, rootDir) => {
     if (!rootDir || rootDir === 'LOCAL_STORAGE') {
@@ -1493,31 +1598,87 @@ export default function App() {
   const handleExportBackup = async () => {
     showToast("Đang gom tụ linh khí, chuẩn bị xuất Mệnh Bàn...");
     try {
-      let allData = { config: globalTabsConfig, metadata: novelsMetadata, novels: {} };
-      for (const meta of novelsMetadata) { const data = await loadNovelData(meta, dirHandle); if (data) allData.novels[meta.id] = data; }
+      const allData = {
+        backupVersion: 2,
+        exportedAt: new Date().toISOString(),
+        config: globalTabsConfig,
+        metadata: novelsMetadata,
+        novelStats: { ...novelStatsById },
+        novels: {},
+      };
+      for (const meta of novelsMetadata) {
+        const data = await loadNovelData(meta, dirHandle);
+        if (data) allData.novels[meta.id] = data;
+      }
       const blob = new Blob([JSON.stringify(allData, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = `TangThuCac_Backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url);
-      showToast("Đã xuất Mệnh Bàn (File Backup) thành công!");
-    } catch(e) { showToast("Lỗi không lường trước khi xuất Mệnh Bàn!"); }
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `TangThuCac_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("Đã xuất backup đầy đủ (index + thống kê + từng truyện).");
+    } catch (e) {
+      showToast("Lỗi khi xuất backup!", "error");
+    }
+  };
+
+  /** Chỉ index + thống kê — không đọc từng file truyện (nhanh). */
+  const handleExportIndexOnly = () => {
+    try {
+      const payload = {
+        backupVersion: 2,
+        indexOnly: true,
+        exportedAt: new Date().toISOString(),
+        config: globalTabsConfig,
+        metadata: novelsMetadata,
+        novelStats: { ...novelStatsById },
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `TangThuCac_Index_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("Đã xuất file index (mệnh bàn + thống kê).");
+    } catch (e) {
+      showToast("Lỗi xuất index!", "error");
+    }
   };
 
   const handleImportBackup = (e) => {
-    const file = e.target.files[0]; if (!file) return;
+    const file = e.target.files[0];
+    if (!file) return;
     const reader = new FileReader();
     reader.onload = async (event) => {
-        try {
-            const parsed = JSON.parse(event.target.result);
-            if (parsed.metadata && parsed.config) {
-                setGlobalTabsConfig(parsed.config); setNovelsMetadata(parsed.metadata);
-                await syncIndex(parsed.metadata, parsed.config, dirHandle);
-                if (parsed.novels) { for (const [id, data] of Object.entries(parsed.novels)) { await syncNovel(data, dirHandle); } }
-                showToast("Khôi phục Mệnh Bàn thành công! Đang tái lập không gian...");
-                setTimeout(() => window.location.reload(), 1500); 
-            } else { showToast("Dị Vật! File không đúng cấu trúc Tàng Thư Các.", "error"); }
-        } catch(err) { showToast("Lỗi đọc file Mệnh Bàn!", "error"); }
+      try {
+        const parsed = JSON.parse(event.target.result);
+        if (parsed.metadata && parsed.config) {
+          setGlobalTabsConfig(parsed.config);
+          setNovelsMetadata(parsed.metadata);
+          novelsMetadataRef.current = parsed.metadata;
+          const stats =
+            parsed.novelStats && typeof parsed.novelStats === 'object' ? parsed.novelStats : {};
+          novelStatsByIdRef.current = stats;
+          setNovelStatsById(stats);
+          await syncIndex(parsed.metadata, parsed.config, dirHandle, stats);
+          if (parsed.novels && typeof parsed.novels === 'object') {
+            for (const [, data] of Object.entries(parsed.novels)) {
+              await syncNovel(data, dirHandle);
+            }
+          }
+          showToast("Khôi phục thành công! Tải lại trang…");
+          setTimeout(() => window.location.reload(), 1200);
+        } else {
+          showToast("File không đúng cấu trúc Tàng Thư Các.", "error");
+        }
+      } catch (err) {
+        showToast("Lỗi đọc file backup!", "error");
+      }
     };
     reader.readAsText(file);
+    e.target.value = '';
   };
 
   const handleOpenCreateNovel = () => {
@@ -1753,8 +1914,9 @@ export default function App() {
 
   const handleDeleteMilestone = (msId) => {
     setConfirmDialog({
-       isOpen: true, title: 'Xóa Kỷ Nguyên', message: 'Xóa vĩnh viễn mốc thời gian này? Hành động không thể hoàn tác.',
+       isOpen: true, title: 'Xóa Kỷ Nguyên', message: 'Xóa mốc thời gian này? Có thể hoàn tác ngay sau khi xóa.',
        onConfirm: () => {
+          const prev = activeNovelData ? structuredClone(activeNovelData) : null;
           updateActiveNovelData(nov => {
              if (!nov.data?.[activeTabLon]) return;
              const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
@@ -1762,6 +1924,14 @@ export default function App() {
              if (ent && ent.milestones) ent.milestones = ent.milestones.filter(m => m.id !== msId);
           });
           setSelectedMilestoneId(null);
+          if (prev) {
+            showToast('Đã xóa mốc.', 'success', {
+              onUndo: () => {
+                setActiveNovelData(structuredClone(prev));
+                void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
+              },
+            });
+          }
        }
     });
   };
@@ -1769,11 +1939,23 @@ export default function App() {
   const handleDeleteEntity = (id) => {
     setConfirmDialog({
        isOpen: true, title: 'Hủy Diệt Thực Thể', message: 'Xóa vĩnh viễn hồ sơ này khỏi Tàng Thư Các?',
-       onConfirm: () => updateActiveNovelData(nov => {
+       onConfirm: () => {
+          const prev = activeNovelData ? structuredClone(activeNovelData) : null;
+          updateActiveNovelData(nov => {
           if (!nov.data?.[activeTabLon]) return;
           const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
           if(tabData && tabData.entities) { tabData.entities = tabData.entities.filter(e => e.id !== id); nov.data[activeTabLon][activeTabNho || 'default'] = tabData; }
-       })
+          });
+          if (selectedEntityId === id) setSelectedEntityId(null);
+          if (prev) {
+            showToast('Đã xóa thẻ.', 'success', {
+              onUndo: () => {
+                setActiveNovelData(structuredClone(prev));
+                void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
+              },
+            });
+          }
+       }
     });
   };
 
@@ -1815,6 +1997,7 @@ export default function App() {
       title: 'Áp Dụng Vào Hồ Sơ',
       message: 'Merge thông tin từ mốc này vào Nền Tảng Căn Cơ? Chỉ các trường <b>có giá trị</b> trong snapshot mới được cập nhật, các trường còn lại giữ nguyên.',
       onConfirm: () => {
+        const prev = activeNovelData ? structuredClone(activeNovelData) : null;
         // Tính mergedKeys TRƯỚC khi updateActiveNovelData (tránh stale closure)
         const mergedKeys = new Set();
         if (snapshot.dynamicData) {
@@ -1841,7 +2024,15 @@ export default function App() {
         setRecentlyMergedFields(mergedKeys);
         setCollectionSubTab('detail'); // Chuyển về tab Hồ Sơ
         setTimeout(() => setRecentlyMergedFields(new Set()), 15000);
-        showToast('Đã áp dụng snapshot vào Hồ Sơ thành công!');
+        showToast('Đã áp dụng snapshot vào Hồ Sơ.', 'success', {
+          onUndo: prev
+            ? () => {
+                setRecentlyMergedFields(new Set());
+                setActiveNovelData(structuredClone(prev));
+                void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
+              }
+            : undefined,
+        });
       }
     });
   };
@@ -2308,17 +2499,149 @@ export default function App() {
       return <div className="font-serif animate-fade-in flex-1">{renderMarkdown(safeString(currentStandardData), currentContextDirHandle, entityMap, globalLinkRegex, (dest) => { if(navFnRef.current) navFnRef.current(dest); })}</div>;
   }, [currentStandardData, isEditingMode, currentTabConfig?.viewType, currentContextDirHandle, entityMap, globalLinkRegex]);
 
+  const novelQuickStats = useMemo(() => {
+    if (!activeNovelData?.tabsConfig) return null;
+    let totalEnt = 0;
+    let totalMs = 0;
+    const byTab = [];
+    const chMap = {};
+    (activeNovelData.tabsConfig || []).forEach((lon) => {
+      if (lon.id === 'tong-quan') return;
+      (lon.subTabs || []).forEach((nho) => {
+        if (nho.viewType !== 'collection-track') return;
+        const ents = activeNovelData.data?.[lon.id]?.[nho.id]?.entities || [];
+        totalEnt += ents.length;
+        let msHere = 0;
+        ents.forEach((ent) => {
+          (ent.milestones || []).forEach((m) => {
+            msHere++;
+            totalMs++;
+            const c = parseInt(m.chapter, 10);
+            if (!isNaN(c) && c >= 0) chMap[c] = (chMap[c] || 0) + 1;
+          });
+        });
+        if (ents.length > 0 || msHere > 0) {
+          byTab.push({
+            key: `${lon.id}|${nho.id}`,
+            label: `${safeString(lon.label)} › ${safeString(nho.label)}`,
+            entities: ents.length,
+            milestones: msHere,
+          });
+        }
+      });
+    });
+    const topChapters = Object.entries(chMap)
+      .map(([ch, n]) => ({ ch: parseInt(ch, 10), n }))
+      .sort((a, b) => b.n - a.n)
+      .slice(0, 14);
+    const maxBar = topChapters[0]?.n || 1;
+    return { totalEnt, totalMs, byTab, topChapters, maxBar };
+  }, [activeNovelData]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.ctrlKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setIsCommandPaletteOpen((o) => !o);
+        setCommandPaletteQuery('');
+        return;
+      }
+      if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable)) return;
+        e.preventDefault();
+        setMenu1Visible(true);
+        setTimeout(() => librarySearchInputRef.current?.focus?.(), 0);
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (commandPaletteOpenRef.current) {
+          setIsCommandPaletteOpen(false);
+          return;
+        }
+        setConfirmDialog((c) => (c.isOpen ? { ...c, isOpen: false } : c));
+        setIsSettingsOpen(false);
+        setOverviewHubOpen(false);
+        setIsDeepSearchOpen(false);
+        setIsInNovelSearchOpen(false);
+        setIsAddNovelOpen(false);
+        setIsEntityModalOpen(false);
+        setIsMilestoneModalOpen(false);
+        setIsInsertImageModalOpen(false);
+        setIsManageTabsOpen(false);
+        setIsGenreFilterOpen(false);
+        setQuickCreateData(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const runCommandPaletteAction = useCallback((fn) => {
+    setIsCommandPaletteOpen(false);
+    setCommandPaletteQuery('');
+    fn();
+  }, []);
+
+  const commandPaletteFiltered = useMemo(() => {
+    const q = commandPaletteQuery.trim().toLowerCase();
+    const m = (t) => !q || safeString(t).toLowerCase().includes(q);
+    const actions = [
+      { id: 'set', label: 'Cài đặt & API Key', sub: 'Gemini, wiki, backup' },
+      { id: 'deep', label: 'Tìm toàn bộ thư viện', sub: 'Deep search' },
+    ];
+    if (activeNovelData) {
+      actions.push(
+        { id: 'innov', label: 'Tra trong truyện đang mở', sub: safeString(activeNovelData.title) },
+        { id: 'hub', label: 'Một cửa cập nhật (Hub)', sub: 'Tạo thẻ / nhật ký AI' },
+        { id: 'home', label: 'Về mệnh bàn', sub: 'Đóng truyện, xem dashboard' }
+      );
+    }
+    const fa = actions.filter((a) => m(a.label) || m(a.sub));
+    const fn = novelsMetadata.filter((n) => m(n.title) || m(n.author)).slice(0, 28);
+    return { actions: fa, novels: fn };
+  }, [commandPaletteQuery, novelsMetadata, activeNovelData]);
+
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden relative theme-wrapper ${activeThemeClass}`}>
-      <AppHeader menu1Visible={menu1Visible} setMenu1Visible={setMenu1Visible} handleGoHome={handleGoHome} setIsSettingsOpen={() => setIsSettingsOpen(true)} hasDirectory={!!dirHandle} dirName={dirName} setIsDeepSearchOpen={() => setIsDeepSearchOpen(true)} showInNovelSearch={!!activeNovelData} onInNovelSearch={() => setIsInNovelSearchOpen(true)} />
+      <AppHeader
+        menu1Visible={menu1Visible}
+        setMenu1Visible={setMenu1Visible}
+        handleGoHome={handleGoHome}
+        setIsSettingsOpen={() => setIsSettingsOpen(true)}
+        hasDirectory={!!dirHandle}
+        dirName={dirName}
+        setIsDeepSearchOpen={() => setIsDeepSearchOpen(true)}
+        showInNovelSearch={!!activeNovelData}
+        onInNovelSearch={() => setIsInNovelSearchOpen(true)}
+        onOpenCommandPalette={() => {
+          setIsCommandPaletteOpen(true);
+          setCommandPaletteQuery('');
+        }}
+      />
 
       <div className="flex-1 flex overflow-hidden">
         <div onMouseLeave={() => setMenu1Visible(false)} className={`absolute inset-y-0 left-0 z-40 bg-slate-900 border-r border-slate-800 shadow-2xl flex flex-col transition-transform duration-300 ease-out w-80 ${menu1Visible ? 'translate-x-0' : '-translate-x-full'}`}>
            <div className="p-5 border-b border-slate-800 flex flex-col gap-4">
               <div className="relative">
-                <input type="text" placeholder="Tìm kiếm thư tịch..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-10 text-sm font-serif outline-none focus:border-amber-600/50" value={searchInput} onChange={e=>setSearchInput(e.target.value)}/>
+                <input ref={librarySearchInputRef} type="text" placeholder="Tìm kiếm thư tịch… (/)" className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-10 text-sm font-serif outline-none focus:border-amber-600/50" value={searchInput} onChange={e=>setSearchInput(e.target.value)}/>
                 <Search className="absolute left-3 top-2.5 text-slate-600" size={16} />
               </div>
+              {searchHistory.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  <span className="text-[9px] text-slate-600 uppercase tracking-wider w-full">Gần đây</span>
+                  {searchHistory.slice(0, 8).map((h) => (
+                    <button
+                      key={h}
+                      type="button"
+                      onClick={() => { setSearchInput(h); setSearchQuery(h); }}
+                      className="text-[10px] px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-amber-400 hover:border-amber-800/40 font-serif truncate max-w-full"
+                    >
+                      {safeString(h)}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <div className="relative">
                 <button onClick={() => setIsGenreFilterOpen(!isGenreFilterOpen)} className="w-full bg-slate-950/50 border border-slate-700/80 hover:border-amber-600/50 rounded-lg py-2 pl-3 pr-4 text-sm flex items-center justify-between text-slate-300 font-serif shadow-inner">
@@ -2391,6 +2714,7 @@ export default function App() {
                 novelsMetadata={novelsMetadata}
                 stats={dashboardStats}
                 isLoading={isStatsBackfilling}
+                novelStatsById={novelStatsById}
                 onSelectNovel={handleSelectNovel}
                 onAddNovel={handleOpenCreateNovel}
               />
@@ -2538,6 +2862,74 @@ export default function App() {
                                   </div>
                                 </div>
 
+                                {novelQuickStats && (novelQuickStats.totalEnt > 0 || novelQuickStats.totalMs > 0) && (
+                                  <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/40 overflow-hidden">
+                                    <button
+                                      type="button"
+                                      onClick={() => setOverviewStatsOpen((o) => !o)}
+                                      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-800/30 transition-colors"
+                                    >
+                                      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <BarChart2 size={14} className="text-cyan-500/80" /> Thống kê truyện
+                                      </span>
+                                      <span className="text-[10px] text-slate-500 font-serif">
+                                        {novelQuickStats.totalEnt} thẻ · {novelQuickStats.totalMs} mốc
+                                        <ChevronDown size={14} className={`inline ml-1 transition-transform ${overviewStatsOpen ? 'rotate-180' : ''}`} />
+                                      </span>
+                                    </button>
+                                    {overviewStatsOpen && (
+                                      <div className="px-4 pb-4 pt-0 border-t border-slate-800/80 animate-fade-in space-y-4">
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-3">
+                                          <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 text-center">
+                                            <div className="text-xl font-heading font-bold text-indigo-300">{novelQuickStats.totalEnt}</div>
+                                            <div className="text-[9px] text-slate-500 uppercase">Tổng thẻ</div>
+                                          </div>
+                                          <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 text-center">
+                                            <div className="text-xl font-heading font-bold text-emerald-300">{novelQuickStats.totalMs}</div>
+                                            <div className="text-[9px] text-slate-500 uppercase">Tổng mốc</div>
+                                          </div>
+                                          <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 text-center col-span-2 sm:col-span-1">
+                                            <div className="text-sm font-bold text-amber-400/90">{novelQuickStats.byTab.length}</div>
+                                            <div className="text-[9px] text-slate-500 uppercase">Mục có dữ liệu</div>
+                                          </div>
+                                        </div>
+                                        {novelQuickStats.byTab.length > 0 && (
+                                          <div>
+                                            <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">Theo mục</p>
+                                            <div className="space-y-1.5 max-h-32 overflow-y-auto custom-scrollbar text-xs font-serif">
+                                              {novelQuickStats.byTab.map((row) => (
+                                                <div key={row.key} className="flex justify-between text-slate-400 border-b border-slate-800/50 pb-1">
+                                                  <span className="truncate pr-2">{row.label}</span>
+                                                  <span className="text-slate-500 flex-shrink-0">{row.entities} thẻ · {row.milestones} mốc</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                        {novelQuickStats.topChapters.length > 0 && (
+                                          <div>
+                                            <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">Chương có nhiều mốc nhất</p>
+                                            <div className="space-y-2">
+                                              {novelQuickStats.topChapters.map(({ ch, n }) => (
+                                                <div key={ch} className="flex items-center gap-2">
+                                                  <span className="text-[10px] text-slate-500 w-10 tabular-nums">ch.{ch}</span>
+                                                  <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                    <div
+                                                      className="h-full bg-gradient-to-r from-amber-700 to-amber-500 rounded-full"
+                                                      style={{ width: `${Math.max(8, Math.round((n / novelQuickStats.maxBar) * 100))}%` }}
+                                                    />
+                                                  </div>
+                                                  <span className="text-[10px] text-slate-400 w-6 text-right">{n}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
                                 <div className="pt-6 border-t border-slate-800 flex-1 flex flex-col relative">
                                    <div className="flex gap-4 mb-4">
                                       <div className="flex-1">
@@ -2571,7 +2963,9 @@ export default function App() {
                                                <p className="font-serif text-xs text-slate-500 mt-1">
                                                  Neo <span className="text-amber-400 font-bold tabular-nums">ch.{anchor}</span>
                                                  {' · '}
-                                                 <span className="text-slate-600">Cập nhật hàng loạt dùng «Một cửa».</span>
+                                                 <span className="text-slate-600">Mốc timeline mới (khi tạo) mặc định theo chương neo.</span>
+                                                 {' · '}
+                                                 <span className="text-slate-600">Cập nhật hàng loạt: «Một cửa».</span>
                                                </p>
                                              </div>
                                              <div className="flex flex-wrap gap-2">
@@ -3037,8 +3431,8 @@ export default function App() {
                                                   
                                                   {!isCalculatingNetwork && (
                                                       <div className="flex flex-wrap gap-4">
-                                                         {displayedRelations.map((rel, idx) => (
-                                                             <button key={idx} onClick={() => handleNavigate({ lonId: rel.lonId, nhoId: rel.nhoId, entityId: rel.entity.id })} className="flex items-center gap-4 bg-slate-900/80 backdrop-blur-md border border-slate-700 hover:border-indigo-500/60 p-3 rounded-[24px] transition-all duration-300 shadow-md hover:shadow-[0_5px_20px_rgba(99,102,241,0.15)] hover:-translate-y-0.5 group w-full md:w-auto md:min-w-[280px]">
+                                                         {displayedRelations.map((rel) => (
+                                                             <button key={`${rel.lonId}|${rel.nhoId}|${rel.entity.id}`} onClick={() => handleNavigate({ lonId: rel.lonId, nhoId: rel.nhoId, entityId: rel.entity.id })} className="flex items-center gap-4 bg-slate-900/80 backdrop-blur-md border border-slate-700 hover:border-indigo-500/60 p-3 rounded-[24px] transition-all duration-300 shadow-md hover:shadow-[0_5px_20px_rgba(99,102,241,0.15)] hover:-translate-y-0.5 group w-full md:w-auto md:min-w-[280px]">
                                                                 <div className="w-12 h-12 rounded-[16px] bg-slate-950 overflow-hidden flex-shrink-0 border border-slate-800 group-hover:border-indigo-400/50 transition-colors relative">
                                                                    {rel.entity.avatar ? (
                                                                       rel.entity.avatar.startsWith('local_image:') ? (
@@ -3385,7 +3779,93 @@ export default function App() {
 
       <ModalEntity isOpen={isEntityModalOpen} onClose={() => setIsEntityModalOpen(false)} onSave={handleSaveEntity} initialData={editingEntityData} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} />
       <ModalMilestone isOpen={isMilestoneModalOpen} onClose={() => setIsMilestoneModalOpen(false)} onSave={handleSaveMilestone} initialData={editingMilestoneData} defaultChapterWhenNew={editingMilestoneData ? undefined : String(Math.max(0, parseInt(activeNovelData?.readingAnchorChapter ?? activeNovelData?.chaptersRead ?? 0, 10) || 0))} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} />
-      <ModalSettings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} handleConnectFolder={handleConnectFolder} dirHandle={dirHandle} dirName={dirName} onExportBackup={handleExportBackup} onImportBackup={handleImportBackup} geminiApiKeys={geminiApiKeys} setGeminiApiKeys={handleSaveApiKeys} />
+      <ModalSettings
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        handleConnectFolder={handleConnectFolder}
+        dirHandle={dirHandle}
+        dirName={dirName}
+        onExportBackup={handleExportBackup}
+        onExportIndexOnly={handleExportIndexOnly}
+        onImportBackup={handleImportBackup}
+        geminiApiKeys={geminiApiKeys}
+        setGeminiApiKeys={handleSaveApiKeys}
+        wikiExactMatchOnly={wikiExactMatchOnly}
+        setWikiExactMatchOnly={setWikiExactMatchOnly}
+      />
+      {isCommandPaletteOpen && (
+        <div
+          className="fixed inset-0 z-[250] flex items-start justify-center pt-[12vh] px-4 bg-slate-950/85 backdrop-blur-md animate-fade-fast"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Lệnh nhanh"
+          onClick={() => setIsCommandPaletteOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg bg-slate-900 border border-amber-900/40 rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 border-b border-slate-800 px-3 py-2">
+              <Command size={18} className="text-amber-500 flex-shrink-0" />
+              <input
+                autoFocus
+                className="flex-1 bg-transparent text-slate-100 text-sm font-serif py-2 outline-none placeholder:text-slate-600"
+                placeholder="Lệnh hoặc tên truyện…"
+                value={commandPaletteQuery}
+                onChange={(e) => setCommandPaletteQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setIsCommandPaletteOpen(false);
+                }}
+              />
+              <span className="text-[10px] text-slate-600 font-mono hidden sm:inline">Esc đóng</span>
+            </div>
+            <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-2 text-left">
+              {commandPaletteFiltered.actions.length > 0 && (
+                <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest px-2 py-1">Lệnh</p>
+              )}
+              {commandPaletteFiltered.actions.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => {
+                    if (a.id === 'set') runCommandPaletteAction(() => setIsSettingsOpen(true));
+                    else if (a.id === 'deep') runCommandPaletteAction(() => setIsDeepSearchOpen(true));
+                    else if (a.id === 'innov') runCommandPaletteAction(() => setIsInNovelSearchOpen(true));
+                    else if (a.id === 'hub') runCommandPaletteAction(() => openOverviewHub());
+                    else if (a.id === 'home') runCommandPaletteAction(() => handleGoHome());
+                  }}
+                  className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-slate-800/80 border border-transparent hover:border-slate-700 mb-1"
+                >
+                  <div className="text-sm font-bold text-slate-200 font-serif">{a.label}</div>
+                  <div className="text-[10px] text-slate-500">{a.sub}</div>
+                </button>
+              ))}
+              {commandPaletteFiltered.novels.length > 0 && (
+                <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest px-2 py-1 mt-2">Thư tịch</p>
+              )}
+              {commandPaletteFiltered.novels.map((n) => (
+                <button
+                  key={n.id}
+                  type="button"
+                  onClick={() =>
+                    runCommandPaletteAction(() => {
+                      void handleSelectNovel(n);
+                    })
+                  }
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-amber-950/30 border border-transparent hover:border-amber-900/30 mb-0.5"
+                >
+                  <div className="text-sm font-serif text-amber-100/90 truncate">{safeString(n.title)}</div>
+                  <div className="text-[10px] text-slate-500 truncate">{safeString(n.author)}</div>
+                </button>
+              ))}
+              {commandPaletteFiltered.actions.length === 0 && commandPaletteFiltered.novels.length === 0 && (
+                <p className="text-center text-slate-500 text-sm font-serif py-8">Không khớp mục nào.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <ModalConfirm isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onClose={() => setConfirmDialog({...confirmDialog, isOpen: false})} onConfirm={confirmDialog.onConfirm} />
       <ModalInsertImage isOpen={isInsertImageModalOpen} onClose={() => setIsInsertImageModalOpen(false)} imageForm={imageForm} setImageForm={setImageForm} handleConfirmInsertImage={handleConfirmInsertImage} />
       <ModalAddNovel isOpen={isAddNovelOpen} onClose={() => setIsAddNovelOpen(false)} formData={novelForm} setFormData={setNovelForm} onSave={handleSaveNovelModal} mode={novelModalMode} handlePickLocalImage={(cb) => handlePickCoverImage(cb, novelForm.title)} dirHandle={currentContextDirHandle} />
@@ -3921,13 +4401,28 @@ export default function App() {
       )}
 
       {toastMessage && (
-        <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] animate-fade-fast px-8 py-3 rounded-full shadow-2xl flex items-center gap-3 border ${
+        <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] animate-fade-fast px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border max-w-[min(96vw,520px)] ${
           toastMessage.type === 'error' ? 'bg-rose-950 border-rose-700 text-rose-100' :
           toastMessage.type === 'warning' ? 'bg-amber-950 border-amber-700 text-amber-100' :
           'bg-slate-800 border-slate-700 text-slate-100'
         }`}>
-           <Sparkles size={18} className={`animate-pulse ${toastMessage.type === 'error' ? 'text-rose-400' : toastMessage.type === 'warning' ? 'text-amber-400' : 'text-emerald-400'}`} />
-           <span className="font-serif text-sm">{safeString(toastMessage.msg)}</span>
+           <Sparkles size={18} className={`flex-shrink-0 animate-pulse ${toastMessage.type === 'error' ? 'text-rose-400' : toastMessage.type === 'warning' ? 'text-amber-400' : 'text-emerald-400'}`} />
+           <span className="font-serif text-sm flex-1 min-w-0">{safeString(toastMessage.msg)}</span>
+           {toastMessage.onUndo && (
+             <button
+               type="button"
+               onClick={() => {
+                 const fn = toastMessage.onUndo;
+                 if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+                 setToastMessage(null);
+                 toastTimerRef.current = null;
+                 try { fn(); } catch (_) {}
+               }}
+               className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-bold font-serif border border-indigo-500/50"
+             >
+               {safeString(toastMessage.undoLabel || 'Hoàn tác')}
+             </button>
+           )}
         </div>
       )}
 

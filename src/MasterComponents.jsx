@@ -12,7 +12,7 @@ import {
   FolderOpen, Cloud, Upload, HardDrive, Clock, Shield, Download, UploadCloud,
   Image as ImageIcon, History, LayoutGrid, Link2, ScrollText, User,
   TrendingUp, BarChart2, BookMarked, Users, Layers, Activity, Eye,
-  GitBranch, ZoomIn, ZoomOut, Maximize2, RefreshCw, SlidersHorizontal, Atom, Edit2
+  GitBranch, ZoomIn, ZoomOut, Maximize2, RefreshCw, SlidersHorizontal, Atom, Edit2, Command
 } from 'lucide-react';
 import {
   FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
@@ -60,7 +60,7 @@ export const MarkdownToolbar = ({ editorId, onInsertImage, onPickLocalImage }) =
   </div>
 );
 
-export const AppHeader = ({ menu1Visible, setMenu1Visible, handleGoHome, setIsSettingsOpen, hasDirectory, dirName, setIsDeepSearchOpen, onInNovelSearch, showInNovelSearch }) => (
+export const AppHeader = ({ menu1Visible, setMenu1Visible, handleGoHome, setIsSettingsOpen, hasDirectory, dirName, setIsDeepSearchOpen, onInNovelSearch, showInNovelSearch, onOpenCommandPalette }) => (
   <header className="h-16 bg-slate-950 border-b border-slate-900 flex items-center justify-between px-5 z-30 relative shadow-md">
     <div className="flex items-center gap-5">
       {!menu1Visible && <button onClick={() => setMenu1Visible(true)} className="p-2 hover:bg-slate-800 rounded-lg text-amber-500 transition-colors"><Menu size={24} /></button>}
@@ -76,6 +76,11 @@ export const AppHeader = ({ menu1Visible, setMenu1Visible, handleGoHome, setIsSe
       <div className={`hidden md:block px-3 py-1 rounded-full border text-[10px] font-serif ${hasDirectory ? 'border-emerald-500/50 text-emerald-400 bg-emerald-950/20' : 'border-slate-800 text-slate-500'}`}>
         {hasDirectory ? safeString(dirName).toUpperCase() : "CHƯA LIÊN KẾT"}
       </div>
+      {onOpenCommandPalette && (
+        <button type="button" onClick={onOpenCommandPalette} className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg border border-slate-700 text-[10px] text-slate-500 hover:text-amber-400 hover:border-amber-800/50 font-mono" title="Lệnh nhanh (Ctrl+K)">
+          <Command size={14} /> <span>Ctrl+K</span>
+        </button>
+      )}
       <button onClick={setIsDeepSearchOpen} className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-full transition-all" title="Tìm toàn thư viện"><Search size={20} /></button>
       {showInNovelSearch && (
         <button type="button" onClick={onInNovelSearch} className="p-2 text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-all" title="Tra chỉ trong truyện đang mở"><BookOpen size={20} /></button>
@@ -88,13 +93,33 @@ export const AppHeader = ({ menu1Visible, setMenu1Visible, handleGoHome, setIsSe
 // ==========================================
 // DASHBOARD SCREEN
 // ==========================================
-export const DashboardScreen = ({ novelsMetadata, stats, isLoading, onSelectNovel, onAddNovel }) => {
+export const DashboardScreen = ({ novelsMetadata, stats, isLoading, onSelectNovel, onAddNovel, novelStatsById = {} }) => {
   const { total, byStatus, byGenre, totalChaptersRead, totalChaptersAll, totalEntities, totalMilestones, recentNovels, topGenre } = stats;
+  const [recentFilter, setRecentFilter] = useState('');
   const pct = totalChaptersAll > 0 ? Math.round((totalChaptersRead / totalChaptersAll) * 100) : 0;
   const statusColors = { 'Đang đọc': 'text-amber-400 bg-amber-900/30 border-amber-700/40', 'Hoàn thành': 'text-emerald-400 bg-emerald-900/30 border-emerald-700/40', 'Tạm ngưng': 'text-slate-400 bg-slate-800/50 border-slate-700/40' };
   const statusDots = { 'Đang đọc': 'bg-amber-400', 'Hoàn thành': 'bg-emerald-400', 'Tạm ngưng': 'bg-slate-500' };
   const topGenres = Object.entries(byGenre).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const maxGenreCount = topGenres[0]?.[1] || 1;
+
+  const filteredRecentNovels = useMemo(() => {
+    const q = recentFilter.trim().toLowerCase();
+    if (!q) return recentNovels;
+    return novelsMetadata.filter((n) => {
+      const t = safeString(n.title).toLowerCase();
+      const au = safeString(n.author).toLowerCase();
+      const nGenres = Array.isArray(n.genres) ? n.genres : n.genre ? [n.genre] : [];
+      const g = nGenres.map((x) => safeString(x).toLowerCase()).join(' ');
+      return t.includes(q) || au.includes(q) || g.includes(q);
+    }).slice(0, 24);
+  }, [recentFilter, recentNovels, novelsMetadata]);
+
+  const statsFocusNovel = useMemo(() => {
+    const q = recentFilter.trim();
+    if (!q || filteredRecentNovels.length === 0) return null;
+    return filteredRecentNovels[0];
+  }, [recentFilter, filteredRecentNovels]);
+
   return (
     <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-950">
       <div className="px-10 pt-10 pb-6 border-b border-slate-800/60">
@@ -111,7 +136,7 @@ export const DashboardScreen = ({ novelsMetadata, stats, isLoading, onSelectNove
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { icon: <BookMarked size={22}/>, label: 'Tổng Thư Tịch', value: total, sub: `${byStatus['Đang đọc']||0} đang đọc`, color: 'amber' },
-            { icon: <Users size={22}/>, label: 'Tổng Thực Thể', value: isLoading ? '...' : totalEntities, sub: 'Nhân vật, pháp bảo...', color: 'indigo' },
+            { icon: <Users size={22}/>, label: 'Tổng Số Thẻ', value: isLoading ? '...' : totalEntities, sub: 'Trên mọi bộ thư tịch', color: 'indigo' },
             { icon: <Activity size={22}/>, label: 'Mốc Sự Kiện', value: isLoading ? '...' : totalMilestones, sub: 'Trên toàn bộ thư tịch', color: 'emerald' },
             { icon: <TrendingUp size={22}/>, label: 'Tiến Độ Đọc', value: `${pct}%`, sub: `${totalChaptersRead.toLocaleString()} / ${totalChaptersAll > 0 ? totalChaptersAll.toLocaleString() : '???'} chương`, color: 'rose' },
           ].map(({ icon, label, value, sub, color }) => {
@@ -175,38 +200,104 @@ export const DashboardScreen = ({ novelsMetadata, stats, isLoading, onSelectNove
           </div>
         </div>
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <div className="flex items-center gap-2"><Eye size={16} className="text-amber-500"/><h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Thư Tịch Gần Đây</h3></div>
             <span className="text-xs text-slate-600 font-serif">{total} bộ tổng cộng</span>
           </div>
+          <div className="relative mb-4">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" />
+            <input
+              type="text"
+              value={recentFilter}
+              onChange={(e) => setRecentFilter(e.target.value)}
+              placeholder="Lọc theo tên, tác giả, thể loại — hiện thống kê truyện khớp đầu tiên"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-9 pr-3 text-sm font-serif text-slate-200 placeholder:text-slate-600 outline-none focus:border-amber-600/40"
+            />
+          </div>
+          {statsFocusNovel && (() => {
+            const st = novelStatsById[statsFocusNovel.id];
+            const entN = st?.entities;
+            const msN = st?.milestones;
+            const chRead = parseInt(statsFocusNovel.chaptersRead || 0);
+            const chTotal = statsFocusNovel.chaptersTotal && statsFocusNovel.chaptersTotal !== '???' ? parseInt(statsFocusNovel.chaptersTotal) : 0;
+            const nGenres = Array.isArray(statsFocusNovel.genres) ? statsFocusNovel.genres : statsFocusNovel.genre ? [statsFocusNovel.genre] : [];
+            return (
+              <div className="mb-4 rounded-xl border border-amber-900/40 bg-amber-950/15 p-4">
+                <p className="text-[10px] font-bold text-amber-600/90 uppercase tracking-widest mb-2">Thống kê truyện khớp</p>
+                <p className="text-base font-heading font-bold text-slate-100 font-serif truncate">{safeString(statsFocusNovel.title)}</p>
+                <p className="text-xs text-slate-500 font-serif mt-0.5">{safeString(statsFocusNovel.author)}{nGenres.length > 0 ? ` · ${nGenres.join(', ')}` : ''}</p>
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                  <div className="rounded-lg bg-slate-900/80 border border-slate-800 py-2 px-2">
+                    <div className="text-lg font-bold text-indigo-300">{isLoading && (entN == null) ? '…' : (entN ?? '—')}</div>
+                    <div className="text-[9px] text-slate-500 uppercase tracking-wider">Thẻ</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-900/80 border border-slate-800 py-2 px-2">
+                    <div className="text-lg font-bold text-emerald-300">{isLoading && (msN == null) ? '…' : (msN ?? '—')}</div>
+                    <div className="text-[9px] text-slate-500 uppercase tracking-wider">Mốc</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-900/80 border border-slate-800 py-2 px-2 col-span-2 sm:col-span-1">
+                    <div className="text-lg font-bold text-amber-300">{chTotal > 0 ? `${chRead} / ${chTotal}` : (chRead > 0 ? `ch.${chRead}` : '—')}</div>
+                    <div className="text-[9px] text-slate-500 uppercase tracking-wider">Chương</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-900/80 border border-slate-800 py-2 px-2 col-span-2 sm:col-span-1 flex items-center justify-center">
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${statusColors[statsFocusNovel.status] || statusColors['Đang đọc']}`}>{statsFocusNovel.status || 'Đang đọc'}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onSelectNovel(statsFocusNovel)}
+                  className="mt-3 w-full py-2 rounded-lg bg-amber-700 hover:bg-amber-600 text-white text-sm font-bold font-serif transition-colors flex items-center justify-center gap-2"
+                >
+                  <BookOpen size={16} /> Xem truyện (Tổng quan)
+                </button>
+              </div>
+            );
+          })()}
+          {recentFilter.trim() && filteredRecentNovels.length === 0 && (
+            <p className="text-sm text-slate-500 font-serif italic mb-4">Không có thư tịch khớp «{recentFilter.trim()}»</p>
+          )}
           <div className="space-y-2">
-            {recentNovels.map(novel => {
+            {filteredRecentNovels.map((novel) => {
               const nGenres = Array.isArray(novel.genres) ? novel.genres : (novel.genre ? [novel.genre] : []);
               const chRead = parseInt(novel.chaptersRead || 0);
               const chTotal = novel.chaptersTotal && novel.chaptersTotal !== '???' ? parseInt(novel.chaptersTotal) : 0;
               const nPct = chTotal > 0 ? Math.round((chRead/chTotal)*100) : null;
+              const stRow = novelStatsById[novel.id];
+              const rowEnt = stRow?.entities;
+              const rowMs = stRow?.milestones;
               return (
-                <div key={novel.id} onClick={() => onSelectNovel(novel)} className="flex items-center gap-4 p-3 rounded-xl hover:bg-slate-800/60 cursor-pointer transition-colors group border border-transparent hover:border-slate-700/50">
+                <div key={novel.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-800/80 bg-slate-950/40 hover:border-slate-700 transition-colors group">
                   <div className="w-9 h-12 rounded-lg bg-slate-800 overflow-hidden flex-shrink-0 border border-slate-700">
                     {novel.cover && !novel.cover.startsWith('local_image:') ? <img src={novel.cover} className="w-full h-full object-cover" alt="" onError={e=>{e.target.onerror=null;}}/> : <div className="w-full h-full flex items-center justify-center"><BookOpen size={14} className="text-slate-600"/></div>}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-slate-200 group-hover:text-amber-400 transition-colors truncate font-serif">{safeString(novel.title)}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-bold text-slate-200 font-serif truncate">{safeString(novel.title)}</p>
                       <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${statusColors[novel.status]||statusColors['Đang đọc']}`}>{novel.status||'Đang đọc'}</span>
                     </div>
                     <p className="text-xs text-slate-500 truncate font-serif">{safeString(novel.author)} {nGenres.length > 0 && `· ${nGenres[0]}`}</p>
+                    <p className="text-[10px] text-slate-600 font-serif mt-1">
+                      {isLoading && (rowEnt == null) ? 'Đang đếm thẻ…' : `${rowEnt ?? '—'} thẻ · ${rowMs ?? '—'} mốc`}
+                    </p>
                   </div>
-                  <div className="flex-shrink-0 text-right">
+                  <div className="flex-shrink-0 text-right hidden sm:block">
                     {nPct !== null ? (
                       <div className="flex flex-col items-end gap-1"><span className="text-xs font-bold text-amber-500">{nPct}%</span><div className="w-16 h-1 bg-slate-700 rounded-full overflow-hidden"><div className="h-full bg-amber-500 rounded-full" style={{width:`${nPct}%`}}></div></div></div>
                     ) : <span className="text-xs text-slate-600 font-serif">{chRead > 0 ? `ch.${chRead}` : '—'}</span>}
                   </div>
-                  <ChevronRight size={14} className="text-slate-700 group-hover:text-amber-500 transition-colors flex-shrink-0"/>
+                  <button
+                    type="button"
+                    onClick={() => onSelectNovel(novel)}
+                    className="flex-shrink-0 px-3 py-2 rounded-lg bg-slate-800 hover:bg-amber-900/50 border border-slate-700 hover:border-amber-600/50 text-amber-500/90 hover:text-amber-400 text-xs font-bold font-serif transition-colors whitespace-nowrap"
+                  >
+                    Xem truyện
+                  </button>
                 </div>
               );
             })}
-            {total > 5 && <p className="text-center text-xs text-slate-600 font-serif pt-2">... và {total - 5} bộ khác trong thư viện</p>}
+            {!recentFilter.trim() && total > 5 && (
+              <p className="text-center text-xs text-slate-600 font-serif pt-2">... và {total - 5} bộ khác trong thư viện — gõ lọc để tìm</p>
+            )}
           </div>
         </div>
       </div>
@@ -696,7 +787,20 @@ export const ModalQuickCreate = ({ isOpen, onClose, quickCreateName, onConfirm, 
     );
 };
 
-export const ModalSettings = ({ isOpen, onClose, handleConnectFolder, dirHandle, dirName, onExportBackup, onImportBackup, geminiApiKeys, setGeminiApiKeys }) => {
+export const ModalSettings = ({
+  isOpen,
+  onClose,
+  handleConnectFolder,
+  dirHandle,
+  dirName,
+  onExportBackup,
+  onExportIndexOnly,
+  onImportBackup,
+  geminiApiKeys,
+  setGeminiApiKeys,
+  wikiExactMatchOnly,
+  setWikiExactMatchOnly,
+}) => {
   const [newKey, setNewKey] = useState('');
   const [testStatus, setTestStatus] = useState({}); // idx -> 'testing'|'ok'|'fail'
   const [showKeys, setShowKeys] = useState({});     // idx -> bool (hiện plain text)
@@ -813,15 +917,42 @@ export const ModalSettings = ({ isOpen, onClose, handleConnectFolder, dirHandle,
              <div className="h-px bg-slate-800 w-full"></div>
 
              <div>
+               <h3 className="text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest flex items-center gap-2"><Link2 size={16}/> Liên kết wiki & mạng lưới</h3>
+               <label className="flex items-start gap-3 cursor-pointer group p-3 rounded-xl border border-slate-800 bg-slate-950/40 hover:border-indigo-800/50">
+                 <input
+                   type="checkbox"
+                   className="mt-1 rounded border-slate-600 text-indigo-600 focus:ring-indigo-500"
+                   checked={!!wikiExactMatchOnly}
+                   onChange={(e) => setWikiExactMatchOnly && setWikiExactMatchOnly(e.target.checked)}
+                 />
+                 <div>
+                   <span className="text-sm font-bold text-slate-200">Chỉ khớp tên wiki chính xác</span>
+                   <p className="text-xs text-slate-500 font-serif mt-1 leading-relaxed">
+                     Bật: <code className="text-indigo-400/90">[[Tên]]</code> chỉ nối đúng thẻ trùng tên (an toàn hơn). Tắt: giữ khớp mờ như cũ (dễ nhầm tên ngắn).
+                   </p>
+                 </div>
+               </label>
+             </div>
+
+             <div className="h-px bg-slate-800 w-full"></div>
+
+             <div>
                <h3 className="text-sm font-bold text-blue-400 mb-3 uppercase tracking-widest flex items-center gap-2"><UploadCloud size={16}/> Mệnh Bàn Thủ Công</h3>
-               <p className="text-slate-400 font-serif text-xs leading-relaxed mb-4">Xuất và Nhập dữ liệu dưới dạng file JSON.</p>
-               <div className="flex gap-3">
-                  <button onClick={onExportBackup} className="flex-1 py-3 bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border border-blue-800/50 rounded-xl font-bold flex items-center justify-center gap-2 text-sm">
-                     <Download size={16} /> Xuất Backup
-                  </button>
-                  <label className="flex-1 py-3 bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-800/50 rounded-xl font-bold flex items-center justify-center gap-2 text-sm cursor-pointer">
-                     <Upload size={16} /> Nhập Restore
-                     <input type="file" accept=".json" className="hidden" onChange={onImportBackup} />
+               <p className="text-slate-400 font-serif text-xs leading-relaxed mb-4">
+                 Xuất đầy đủ (mọi truyện + thống kê) hoặc chỉ index; nhập JSON để khôi phục.
+               </p>
+               <div className="flex flex-col gap-2">
+                  <div className="flex gap-2 flex-wrap">
+                    <button type="button" onClick={onExportBackup} className="flex-1 min-w-[140px] py-3 bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border border-blue-800/50 rounded-xl font-bold flex items-center justify-center gap-2 text-sm">
+                       <Download size={16} /> Xuất backup đầy đủ
+                    </button>
+                    <button type="button" onClick={onExportIndexOnly} className="flex-1 min-w-[140px] py-3 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-600/50 rounded-xl font-bold flex items-center justify-center gap-2 text-sm">
+                       <Download size={16} /> Chỉ xuất index
+                    </button>
+                  </div>
+                  <label className="w-full py-3 bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-800/50 rounded-xl font-bold flex items-center justify-center gap-2 text-sm cursor-pointer">
+                     <Upload size={16} /> Nhập khôi phục (JSON)
+                     <input type="file" accept=".json,application/json" className="hidden" onChange={onImportBackup} />
                   </label>
                </div>
              </div>
