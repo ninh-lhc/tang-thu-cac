@@ -382,7 +382,7 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
   );
 });
 
-export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, parentLabel, geminiApiKey }) => {
+export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, parentLabel, geminiApiKey, geminiMode = 'standard' }) => {
   const fieldsTemplate = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const [editingFieldId, setEditingFieldId] = useState(null);
   const [editingFieldLabel, setEditingFieldLabel] = useState('');
@@ -437,9 +437,9 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
      if (keys.length === 0) { setErrorMsg("Vui lòng thiết lập API Key trong phần Cài Đặt để dùng tính năng AI."); return; }
      if (!formData.rawText.trim()) return;
      const { wasTruncated } = truncateForAI(formData.rawText);
-     setIsAnalyzing(true); setErrorMsg(wasTruncated ? "Đoạn quá dài — AI chỉ xử lý ~28k ký tự đầu." : '');
+     setIsAnalyzing(true); setErrorMsg(wasTruncated ? "Đoạn quá dài — AI chỉ xử lý ~12k ký tự đầu." : '');
      try {
-         const result = await analyzeTextWithAI(formData.rawText, fieldsTemplate, keys);
+         const result = await analyzeTextWithAI(formData.rawText, fieldsTemplate, keys, geminiMode);
          if (result) {
              if (result.name) setFormData(prev => ({ ...prev, name: safeString(result.name) }));
              if (result.avatar) setFormData(prev => ({ ...prev, avatar: safeString(result.avatar) }));
@@ -608,7 +608,7 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   );
 };
 
-export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultChapterWhenNew, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, parentLabel, geminiApiKey }) => {
+export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultChapterWhenNew, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, parentLabel, geminiApiKey, geminiMode = 'standard' }) => {
   const fieldsTemplate = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const [editingFieldId, setEditingFieldId] = useState(null);
   const [editingFieldLabel, setEditingFieldLabel] = useState('');
@@ -651,9 +651,9 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
      if (keys.length === 0) { setErrorMsg("Vui lòng thiết lập API Key trong phần Cài Đặt để dùng tính năng AI."); return; }
      if (!formData.event.trim()) return;
      const { wasTruncated } = truncateForAI(formData.event);
-     setIsAnalyzing(true); setErrorMsg(wasTruncated ? "Đoạn quá dài — AI chỉ xử lý ~28k ký tự đầu." : '');
+     setIsAnalyzing(true); setErrorMsg(wasTruncated ? "Đoạn quá dài — AI chỉ xử lý ~12k ký tự đầu." : '');
      try {
-         const result = await analyzeTextWithAI(formData.event, fieldsTemplate, keys);
+         const result = await analyzeTextWithAI(formData.event, fieldsTemplate, keys, geminiMode);
          if (result) {
              const newDyn = { ...snapshotData.dynamicData };
              fieldsTemplate.forEach(f => { if (result[f.id]) newDyn[f.id] = safeString(result[f.id]); });
@@ -824,6 +824,8 @@ export const ModalSettings = ({
   onImportBackup,
   geminiApiKeys,
   setGeminiApiKeys,
+  aiMode = 'standard',
+  setAiMode,
   wikiExactMatchOnly,
   setWikiExactMatchOnly,
 }) => {
@@ -927,6 +929,21 @@ export const ModalSettings = ({
                    ✦ Có {keys.length} key — tự động xoay vòng khi gặp giới hạn tốc độ.
                  </p>
                )}
+             </div>
+
+             <div>
+               <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-widest">Chế độ AI</label>
+               <select
+                 value={aiMode}
+                 onChange={(e) => setAiMode && setAiMode(e.target.value)}
+                 className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-200 text-sm focus:border-indigo-500 outline-none font-serif shadow-inner"
+               >
+                 <option value="standard">Chuẩn (đầy đủ, chính xác hơn)</option>
+                 <option value="quick">Nhanh (phản hồi nhanh, nhẹ hơn)</option>
+               </select>
+               <p className="mt-2 text-[11px] text-slate-500 font-serif italic">
+                 Mẹo: Chọn “Nhanh” khi dán đoạn dài hoặc đang cần phản hồi tức thời.
+               </p>
              </div>
 
              <div className="h-px bg-slate-800 w-full"></div>

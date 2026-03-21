@@ -185,6 +185,14 @@ export default function App() {
     localStorage.setItem('tangthu_apikeys', JSON.stringify(filtered));
     if (filtered.length > 0) localStorage.setItem('tangthu_apikey', filtered[0]);
   };
+  const [aiMode, setAiMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('tangthu_ai_mode');
+      return saved === 'quick' ? 'quick' : 'standard';
+    } catch {
+      return 'standard';
+    }
+  });
 
   /** Tổng thực thể / mốc — lưu trong index.json, không preload toàn bộ novel */
   const [novelStatsById, setNovelStatsById] = useState({});
@@ -564,6 +572,11 @@ export default function App() {
       localStorage.setItem('tangthu_wiki_exact', wikiExactMatchOnly ? '1' : '0');
     } catch {}
   }, [wikiExactMatchOnly]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('tangthu_ai_mode', aiMode);
+    } catch {}
+  }, [aiMode]);
 
   useEffect(() => {
     const q = searchQuery.trim();
@@ -806,7 +819,7 @@ export default function App() {
     const fieldsTemplate = nho?.fieldsTemplate || [];
     setHubCreateBusy(true);
     try {
-      const result = await analyzeTextWithAI(raw, fieldsTemplate, geminiApiKeys);
+      const result = await analyzeTextWithAI(raw, fieldsTemplate, geminiApiKeys, aiMode);
       const dynamicData = {};
       (fieldsTemplate || []).forEach((f) => {
         if (result && result[f.id]) dynamicData[f.id] = safeString(result[f.id]);
@@ -3260,7 +3273,7 @@ export default function App() {
                                                               const text = document.getElementById('entity-info-editor').value;
                                                               if (!text.trim()) return;
                                                               const { wasTruncated } = truncateForAI(text);
-                                                              if (wasTruncated) showToast("Đoạn quá dài — chỉ gửi ~28.000 ký tự đầu cho AI.", "warning");
+                                                              if (wasTruncated) showToast("Đoạn quá dài — chỉ gửi ~12.000 ký tự đầu cho AI.", "warning");
                                                               setIsExtractingAI(true);
                                                               try {
                                                                 const res = await extractEntityAttributesWithAI(text, currentTabConfig?.fieldsTemplate || [], geminiApiKeys);
@@ -3282,10 +3295,10 @@ export default function App() {
                                                               const text = ta?.value;
                                                               if (!text?.trim()) return;
                                                               const { wasTruncated } = truncateForAI(text);
-                                                              if (wasTruncated) showToast("Đoạn quá dài — chỉ gửi ~28.000 ký tự đầu cho AI.", "warning");
+                                                              if (wasTruncated) showToast("Đoạn quá dài — chỉ gửi ~12.000 ký tự đầu cho AI.", "warning");
                                                               setIsExtractingAI(true);
                                                               try {
-                                                                const res = await analyzeTextWithAI(text, currentTabConfig?.fieldsTemplate || [], geminiApiKeys);
+                                                                const res = await analyzeTextWithAI(text, currentTabConfig?.fieldsTemplate || [], geminiApiKeys, aiMode);
                                                                 if (res?.processedText) {
                                                                   ta.value = res.processedText;
                                                                   if (isSplitPreview) {
@@ -3556,8 +3569,8 @@ export default function App() {
         </div>
       </div>
 
-      <ModalEntity isOpen={isEntityModalOpen} onClose={() => setIsEntityModalOpen(false)} onSave={handleSaveEntity} initialData={editingEntityData} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} />
-      <ModalMilestone isOpen={isMilestoneModalOpen} onClose={() => setIsMilestoneModalOpen(false)} onSave={handleSaveMilestone} initialData={editingMilestoneData} defaultChapterWhenNew={editingMilestoneData ? undefined : String(Math.max(0, parseInt(activeNovelData?.readingAnchorChapter ?? activeNovelData?.chaptersRead ?? 0, 10) || 0))} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} />
+      <ModalEntity isOpen={isEntityModalOpen} onClose={() => setIsEntityModalOpen(false)} onSave={handleSaveEntity} initialData={editingEntityData} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} geminiMode={aiMode} />
+      <ModalMilestone isOpen={isMilestoneModalOpen} onClose={() => setIsMilestoneModalOpen(false)} onSave={handleSaveMilestone} initialData={editingMilestoneData} defaultChapterWhenNew={editingMilestoneData ? undefined : String(Math.max(0, parseInt(activeNovelData?.readingAnchorChapter ?? activeNovelData?.chaptersRead ?? 0, 10) || 0))} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} geminiMode={aiMode} />
       <ModalSettings
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -3569,6 +3582,8 @@ export default function App() {
         onImportBackup={handleImportBackup}
         geminiApiKeys={geminiApiKeys}
         setGeminiApiKeys={handleSaveApiKeys}
+        aiMode={aiMode}
+        setAiMode={setAiMode}
         wikiExactMatchOnly={wikiExactMatchOnly}
         setWikiExactMatchOnly={setWikiExactMatchOnly}
       />

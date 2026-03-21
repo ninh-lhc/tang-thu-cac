@@ -28,6 +28,7 @@ export function AppModalLenhNhanh({
     commandPaletteFiltered.novels.forEach((n) => items.push({ type: 'novel', data: n }));
     return items;
   }, [commandPaletteFiltered.actions, commandPaletteFiltered.novels]);
+  const trapRef = useFocusTrap(true);
 
   useEffect(() => { setHighlightIndex(0); }, [flatItems.length]);
   useEffect(() => {

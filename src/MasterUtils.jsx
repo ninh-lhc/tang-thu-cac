@@ -30,7 +30,9 @@ export const safeString = (val) => {
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 /** Giới hạn ký tự gửi Gemini (tránh quota / payload lớn). */
-export const AI_MAX_INPUT_CHARS = 28000;
+export const AI_MAX_INPUT_CHARS = 12000;
+const AI_REQUEST_TIMEOUT_MS = 15000;
+const AI_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export const truncateForAI = (raw, max = AI_MAX_INPUT_CHARS) => {
   const s = safeString(raw);
@@ -41,6 +43,7 @@ export const truncateForAI = (raw, max = AI_MAX_INPUT_CHARS) => {
 export const mapGeminiErrorToUserMessage = (err) => {
   const m = safeString(err?.message);
   if (m.startsWith('rate_limit:')) return 'Quá tải API (429/503). Thử lại sau hoặc thêm API Key trong Cài đặt.';
+  if (m.startsWith('timeout:')) return 'AI phản hồi quá chậm. Hãy thử lại với đoạn ngắn hơn.';
   if (/API key not valid|API_KEY_INVALID|invalid api key/i.test(m)) return 'API Key không hợp lệ. Kiểm tra lại trong Cài đặt.';
   if (/quota|RESOURCE_EXHAUSTED|exceeded/i.test(m)) return 'Hết quota / giới hạn key. Thử key khác hoặc đợi reset.';
   if (m.startsWith('HTTP 401') || m.startsWith('HTTP 403')) return 'Key bị từ chối (401/403). Kiểm tra quyền API.';
@@ -50,6 +53,9 @@ export const mapGeminiErrorToUserMessage = (err) => {
 
 const normalizeKeys = (keysInput) =>
   (Array.isArray(keysInput) ? keysInput : [keysInput]).map(k => (k || '').trim()).filter(Boolean);
+
+const geminiResponseCache = new Map();
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function readGeminiErrorDetail(res) {
   let detail = `HTTP ${res.status}`;
@@ -65,18 +71,35 @@ async function readGeminiErrorDetail(res) {
 export const callGeminiAPIText = async (payload, keysInput) => {
   const keys = normalizeKeys(keysInput);
   if (keys.length === 0) throw new Error('Chưa thiết lập API Key');
-  const maxAttempts = Math.max(6, keys.length * 2);
+  const payloadKey = JSON.stringify(payload);
+  const cacheKey = `${keys.join('|')}::${payloadKey}`;
+  const cached = geminiResponseCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < AI_CACHE_TTL_MS) {
+    return cached.text;
+  }
+
+  const maxAttempts = Math.max(3, keys.length);
   let lastError = null;
   for (let i = 0; i < maxAttempts; i++) {
     const key = keys[i % keys.length];
     try {
-      const res = await fetch(`${GEMINI_BASE_URL}?key=${key}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-      });
+      const ac = new AbortController();
+      const timeoutId = setTimeout(() => ac.abort(), AI_REQUEST_TIMEOUT_MS);
+      let res;
+      try {
+        res = await fetch(`${GEMINI_BASE_URL}?key=${key}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payloadKey,
+          signal: ac.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       if (res.status === 429 || res.status === 503) {
         lastError = new Error(`rate_limit:${res.status}`);
         if (i % keys.length < keys.length - 1) continue;
-        if (i < maxAttempts - 1) await new Promise(r => setTimeout(r, Math.min(3000 * (Math.floor(i / keys.length) + 1), 20000)));
+        if (i < maxAttempts - 1) await sleep(Math.min(1000 * (Math.floor(i / keys.length) + 1), 4000));
         continue;
       }
       if (!res.ok) {
@@ -84,11 +107,17 @@ export const callGeminiAPIText = async (payload, keysInput) => {
         throw new Error(detail);
       }
       const data = await res.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+      geminiResponseCache.set(cacheKey, { text, ts: Date.now() });
+      return text;
     } catch (e) {
-      lastError = e;
+      if (e?.name === 'AbortError') {
+        lastError = new Error(`timeout:${AI_REQUEST_TIMEOUT_MS}`);
+      } else {
+        lastError = e;
+      }
       if (i >= maxAttempts - 1) break;
-      if (!e.message?.startsWith('rate_limit')) await new Promise(r => setTimeout(r, Math.min(1500 * (i + 1), 10000)));
+      if (!lastError.message?.startsWith('rate_limit')) await sleep(Math.min(500 * (i + 1), 1500));
     }
   }
   throw lastError || new Error('Tất cả API Key đều thất bại');
@@ -106,18 +135,31 @@ export const callGeminiAPI = async (payload, keysInput) => {
   }
 };
 
-export const analyzeTextWithAI = async (text, fieldsTemplate, key) => {
-  const { text: t } = truncateForAI(text);
+export const analyzeTextWithAI = async (text, fieldsTemplate, key, mode = 'standard') => {
+  const isQuick = mode === 'quick';
+  const { text: t } = truncateForAI(text, isQuick ? 7000 : AI_MAX_INPUT_CHARS);
   const properties = {
     name: { type: "STRING", description: "Tên/Danh xưng (nếu là tạo mới thực thể)" },
     avatar: { type: "STRING", description: "URL ảnh đại diện (nếu có)" },
-    processedText: { type: "STRING", description: "Giữ nguyên ý nghĩa văn bản gốc, nhưng TỰ ĐỘNG BỌC TẤT CẢ các danh từ riêng (Tên người, thế lực, công pháp, pháp bảo, địa danh...) vào trong ngoặc vuông kép để tạo Link. Ví dụ: 'Hàn Lập đánh Nam Cung Uyển' -> '[[Hàn Lập]] đánh [[Nam Cung Uyển]]'." }
   };
-  fieldsTemplate.forEach(f => { properties[f.id] = { type: "STRING", description: f.label }; });
+  if (!isQuick) {
+    properties.processedText = {
+      type: "STRING",
+      description: "Giữ nguyên ý nghĩa văn bản gốc, nhưng TỰ ĐỘNG BỌC TẤT CẢ các danh từ riêng vào [[...]] để tạo Link."
+    };
+  }
+  const fields = isQuick ? fieldsTemplate.slice(0, 8) : fieldsTemplate;
+  fields.forEach(f => { properties[f.id] = { type: "STRING", description: f.label }; });
 
   const payload = {
     contents: [{ parts: [{ text: t }] }],
-    systemInstruction: { parts: [{ text: "Trích xuất thông tin chính xác. Trả về JSON. Đặc biệt chú trọng việc tạo Link [[...]] trong processedText." }] },
+    systemInstruction: {
+      parts: [{
+        text: isQuick
+          ? "Trích xuất nhanh thông tin cốt lõi, ưu tiên chính xác tên và các trường quan trọng. Trả về JSON ngắn gọn."
+          : "Trích xuất thông tin chính xác. Trả về JSON. Đặc biệt chú trọng việc tạo Link [[...]] trong processedText."
+      }]
+    },
     generationConfig: { responseMimeType: "application/json", responseSchema: { type: "OBJECT", properties } }
   };
   return callGeminiAPI(payload, key);
