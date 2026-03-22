@@ -15,30 +15,17 @@ import {
   GitBranch, ZoomIn, ZoomOut, Maximize2, RefreshCw, SlidersHorizontal, Atom, Edit2, Command
 } from 'lucide-react';
 import {
-  FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
-  DEFAULT_FIELDS_MAP, DEFAULT_FIELDS_BY_PARENT, guessFieldsByLabel
+  FALLBACK_IMG, GENRES, THEMES,
+  resolveFieldsTemplate
 } from './MasterEngines.js';
 import {
   generateId, safeString, getTerms, AsyncLocalImage,
   handleToolbarClick, applyWikiLinkWrap, renderMarkdown, analyzeTextWithAI,
   truncateForAI, mapGeminiErrorToUserMessage
 } from './MasterUtils.jsx';
+import { mergeTabsByGenres } from './genreTabsMap.js';
 import { searchNovelData, dedupeDeepSearchResults, metadataSearchHits } from './deepSearchCore.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
-
-// Lấy fieldsTemplate đúng cho tab — ưu tiên template đã lưu, fallback theo ID rồi label
-const resolveFieldsTemplate = (tabConfig, parentTabId, parentLabel = '') => {
-  const t = tabConfig?.fieldsTemplate;
-  const target =
-    DEFAULT_FIELDS_MAP[tabConfig?.id] ||
-    DEFAULT_FIELDS_BY_PARENT[parentTabId] ||
-    guessFieldsByLabel(tabConfig?.label || '') ||
-    guessFieldsByLabel(parentLabel);
-  if (!t || t.length === 0) return target || DEFAULT_ENTITY_FIELDS;
-  // Nâng cấp nếu toàn bộ là stock field (f_xxx) và ngắn hơn (hoặc bằng) template chuẩn
-  if (target && t.every(f => /^f_/.test(f.id)) && t.length <= target.length) return target;
-  return t;
-};
 
 const preventToolbarFocusSteal = (e) => e.preventDefault();
 
@@ -94,9 +81,10 @@ export const AppHeader = ({ menu1Visible, setMenu1Visible, handleGoHome, setIsSe
 // ==========================================
 // DASHBOARD SCREEN
 // ==========================================
-export const DashboardScreen = memo(({ novelsMetadata, stats, isLoading, onSelectNovel, onAddNovel, novelStatsById = {} }) => {
+export const DashboardScreen = memo(({ novelsMetadata, stats, isLoading, onSelectNovel, onAddNovel, onSelectNovelAtTab, novelStatsById = {} }) => {
   const { total, byStatus, byGenre, totalChaptersRead, totalChaptersAll, totalEntities, totalMilestones, recentNovels, topGenre } = stats;
   const [recentFilter, setRecentFilter] = useState('');
+  const [selectedNovel, setSelectedNovel] = useState(null);
   const pct = totalChaptersAll > 0 ? Math.round((totalChaptersRead / totalChaptersAll) * 100) : 0;
   const statusColors = { 'Đang đọc': 'text-amber-400 bg-amber-900/30 border-amber-700/40', 'Hoàn thành': 'text-emerald-400 bg-emerald-900/30 border-emerald-700/40', 'Tạm ngưng': 'text-slate-400 bg-slate-800/50 border-slate-700/40' };
   const statusDots = { 'Đang đọc': 'bg-amber-400', 'Hoàn thành': 'bg-emerald-400', 'Tạm ngưng': 'bg-slate-500' };
@@ -116,10 +104,11 @@ export const DashboardScreen = memo(({ novelsMetadata, stats, isLoading, onSelec
   }, [recentFilter, recentNovels, novelsMetadata]);
 
   const statsFocusNovel = useMemo(() => {
+    if (selectedNovel && filteredRecentNovels.some((n) => n.id === selectedNovel.id)) return selectedNovel;
     const q = recentFilter.trim();
     if (!q || filteredRecentNovels.length === 0) return null;
     return filteredRecentNovels[0];
-  }, [recentFilter, filteredRecentNovels]);
+  }, [selectedNovel, recentFilter, filteredRecentNovels]);
 
   return (
     <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-950">
@@ -211,7 +200,7 @@ export const DashboardScreen = memo(({ novelsMetadata, stats, isLoading, onSelec
               type="text"
               value={recentFilter}
               onChange={(e) => setRecentFilter(e.target.value)}
-              placeholder="Lọc theo tên, tác giả, thể loại — hiện thống kê truyện khớp đầu tiên"
+              placeholder="Lọc theo tên, tác giả, thể loại — hoặc nhấp thư tịch bên dưới để xem thống kê"
               className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-9 pr-3 text-sm font-serif text-slate-200 placeholder:text-slate-600 outline-none focus:border-amber-600/40"
             />
           </div>
@@ -219,12 +208,16 @@ export const DashboardScreen = memo(({ novelsMetadata, stats, isLoading, onSelec
             const st = novelStatsById[statsFocusNovel.id];
             const entN = st?.entities;
             const msN = st?.milestones;
+            const byTab = st?.byTab || [];
             const chRead = parseInt(statsFocusNovel.chaptersRead || 0);
             const chTotal = statsFocusNovel.chaptersTotal && statsFocusNovel.chaptersTotal !== '???' ? parseInt(statsFocusNovel.chaptersTotal) : 0;
             const nGenres = Array.isArray(statsFocusNovel.genres) ? statsFocusNovel.genres : statsFocusNovel.genre ? [statsFocusNovel.genre] : [];
             return (
               <div className="mb-4 rounded-xl border border-amber-900/40 bg-amber-950/15 p-4">
-                <p className="text-[10px] font-bold text-amber-600/90 uppercase tracking-widest mb-2">Thống kê truyện khớp</p>
+                <div className="flex justify-between items-start mb-2">
+                  <p className="text-[10px] font-bold text-amber-600/90 uppercase tracking-widest">Thống kê truyện</p>
+                  <button type="button" onClick={() => setSelectedNovel(null)} className="text-slate-500 hover:text-slate-300 text-xs">Đóng</button>
+                </div>
                 <p className="text-base font-heading font-bold text-slate-100 font-serif truncate">{safeString(statsFocusNovel.title)}</p>
                 <p className="text-xs text-slate-500 font-serif mt-0.5">{safeString(statsFocusNovel.author)}{nGenres.length > 0 ? ` · ${nGenres.join(', ')}` : ''}</p>
                 <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
@@ -244,6 +237,27 @@ export const DashboardScreen = memo(({ novelsMetadata, stats, isLoading, onSelec
                     <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${statusColors[statsFocusNovel.status] || statusColors['Đang đọc']}`}>{statsFocusNovel.status || 'Đang đọc'}</span>
                   </div>
                 </div>
+                {byTab.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-amber-900/30">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Theo mục — nhấp để xem chi tiết</p>
+                    <div className="space-y-1.5">
+                      {byTab.map((row) => {
+                        const [lonId, nhoId] = row.key.split('|');
+                        return (
+                          <button
+                            key={row.key}
+                            type="button"
+                            onClick={() => (onSelectNovelAtTab ? onSelectNovelAtTab(statsFocusNovel, lonId, nhoId) : onSelectNovel(statsFocusNovel))}
+                            className="w-full flex justify-between items-center text-left py-2 px-3 rounded-lg border border-slate-800/80 hover:border-amber-600/40 hover:bg-slate-900/60 text-slate-400 hover:text-slate-200 transition-colors"
+                          >
+                            <span className="text-sm font-serif truncate pr-2">{row.label}</span>
+                            <span className="text-xs text-slate-500 flex-shrink-0">{row.entities} thẻ · {row.milestones} mốc</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => onSelectNovel(statsFocusNovel)}
@@ -267,7 +281,11 @@ export const DashboardScreen = memo(({ novelsMetadata, stats, isLoading, onSelec
               const rowEnt = stRow?.entities;
               const rowMs = stRow?.milestones;
               return (
-                <div key={novel.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-800/80 bg-slate-950/40 hover:border-slate-700 transition-colors group">
+                <div
+                  key={novel.id}
+                  onClick={() => setSelectedNovel(novel)}
+                  className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors group ${statsFocusNovel?.id === novel.id ? 'border-amber-600/50 bg-amber-950/20' : 'border-slate-800/80 bg-slate-950/40 hover:border-slate-700'}`}
+                >
                   <div className="w-9 h-12 rounded-lg bg-slate-800 overflow-hidden flex-shrink-0 border border-slate-700">
                     {novel.cover && !novel.cover.startsWith('local_image:') ? <img src={novel.cover} className="w-full h-full object-cover" alt="" onError={e=>{e.target.onerror=null;}}/> : <div className="w-full h-full flex items-center justify-center"><BookOpen size={14} className="text-slate-600"/></div>}
                   </div>
@@ -288,7 +306,7 @@ export const DashboardScreen = memo(({ novelsMetadata, stats, isLoading, onSelec
                   </div>
                   <button
                     type="button"
-                    onClick={() => onSelectNovel(novel)}
+                    onClick={(e) => { e.stopPropagation(); onSelectNovel(novel); }}
                     className="flex-shrink-0 px-3 py-2 rounded-lg bg-slate-800 hover:bg-amber-900/50 border border-slate-700 hover:border-amber-600/50 text-amber-500/90 hover:text-amber-400 text-xs font-bold font-serif transition-colors whitespace-nowrap"
                   >
                     Xem truyện
@@ -296,8 +314,8 @@ export const DashboardScreen = memo(({ novelsMetadata, stats, isLoading, onSelec
                 </div>
               );
             })}
-            {!recentFilter.trim() && total > 5 && (
-              <p className="text-center text-xs text-slate-600 font-serif pt-2">... và {total - 5} bộ khác trong thư viện — gõ lọc để tìm</p>
+            {!recentFilter.trim() && total > 24 && (
+              <p className="text-center text-xs text-slate-600 font-serif pt-2">... và {total - 24} bộ khác trong thư viện — gõ lọc để tìm</p>
             )}
           </div>
         </div>
@@ -1015,7 +1033,7 @@ export const ModalConfirm = ({ isOpen, onClose, title, message, onConfirm }) => 
          <p className="text-sm text-slate-400 font-serif mb-8" dangerouslySetInnerHTML={{ __html: safeString(message).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/&lt;b&gt;/g,'<b>').replace(/&lt;\/b&gt;/g,'</b>') }}></p>
          <div className="flex justify-center gap-3">
             <button onClick={onClose} className="px-5 py-2.5 text-slate-400 font-serif hover:text-slate-200">Hủy</button>
-            <button onClick={() => { onConfirm(); onClose(); }} className="px-6 py-2.5 bg-rose-700 hover:bg-rose-600 text-white rounded-lg font-bold font-serif shadow-lg">Xác nhận</button>
+            <button onClick={() => { typeof onConfirm === 'function' && onConfirm(); onClose(); }} className="px-6 py-2.5 bg-rose-700 hover:bg-rose-600 text-white rounded-lg font-bold font-serif shadow-lg">Xác nhận</button>
          </div>
        </div>
     </div>
@@ -1112,17 +1130,35 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
                 </div>
 
                 <div>
-                   <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Đại Lộ Tu Luyện (Chọn Nhiều Thể Loại)</label>
-                   <div className="flex flex-wrap gap-2">
+                   <label className="block text-[11px] font-bold text-slate-400 mb-2 uppercase tracking-widest">Đại Lộ Tu Luyện (Chọn Nhiều Thể Loại)</label>
+                   <div className="flex flex-wrap gap-1.5">
                        {GENRES.map(g => {
                            const isSelected = (formData.genres || []).includes(g);
                            return (
-                               <button key={g} onClick={() => toggleGenre(g)} className={`px-3 py-1.5 rounded-lg text-sm font-serif transition-colors border ${isSelected ? 'bg-amber-900/40 border-amber-500/50 text-amber-300' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-amber-600/30'}`}>
+                               <button key={g} onClick={() => toggleGenre(g)} className={`px-2.5 py-1 rounded-md text-xs font-serif transition-colors border ${isSelected ? 'bg-amber-900/40 border-amber-500/50 text-amber-300' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-amber-600/30'}`}>
                                    {g}
                                </button>
                            );
                        })}
                    </div>
+                   {mode === "create" && (
+                     <div className="mt-3 flex items-center gap-3">
+                       <button
+                         type="button"
+                         disabled={(formData.genres || []).length === 0}
+                         onClick={() => {
+                           const cfg = mergeTabsByGenres(formData.genres || []);
+                           if (cfg) setFormData({ ...formData, tabsConfig: cfg });
+                         }}
+                         className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-serif bg-amber-900/30 border border-amber-600/40 text-amber-300 hover:bg-amber-800/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                       >
+                         <Sparkles size={16} /> Tạo cấu trúc theo thể loại
+                       </button>
+                       {formData.tabsConfig && (
+                         <span className="text-xs text-emerald-500 font-serif">✓ Đã có cấu trúc</span>
+                       )}
+                     </div>
+                   )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-6">

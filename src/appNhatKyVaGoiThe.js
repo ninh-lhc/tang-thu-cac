@@ -8,6 +8,7 @@
  */
 import { generateId, safeString } from './MasterUtils.jsx';
 import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
+import { lockFieldsTemplateIfFirstEntity, resolveFieldsTemplate } from './MasterEngines.js';
 
 /** Tìm thẻ trong toàn bộ novel (dùng khi áp nhật ký batch). */
 export function findEntitiesByHintInNovel(novelData, hint) {
@@ -101,6 +102,7 @@ export function mutateNovelJournalSelections(nov, panel) {
         info: '',
         milestones: [],
       });
+      lockFieldsTemplateIfFirstEntity(nov, path.lonId, path.nhoId);
       ok++;
       return;
     }
@@ -151,7 +153,9 @@ export function mutateNovelJournalSelections(nov, panel) {
       const m = matches[0];
       const lon = (nov.tabsConfig || []).find((t) => t.id === m.lonId);
       const nho = lon?.subTabs?.find((st) => st.id === m.nhoId);
-      const template = nho?.fieldsTemplate || [];
+      const template = nho
+        ? resolveFieldsTemplate(nho, m.lonId, lon?.label || '')
+        : [];
       const tabData = ensureTab(m.lonId, m.nhoId);
       const ent = tabData.entities.find((e) => e.id === m.ent.id);
       if (!ent) {
@@ -162,9 +166,19 @@ export function mutateNovelJournalSelections(nov, panel) {
       const patches = Array.isArray(s.fieldPatches) ? s.fieldPatches : [];
       let patched = 0;
       patches.forEach((patch) => {
-        const label = safeString(patch.fieldLabel).trim();
         const val = stripWikiBracketSyntax(safeString(patch.value));
-        if (!label || !val) return;
+        if (!val) return;
+        const byId = safeString(patch.fieldId).trim();
+        if (byId) {
+          const f = template.find((t) => t.id === byId);
+          if (f) {
+            ent.dynamicData[f.id] = val;
+            patched++;
+          }
+          return;
+        }
+        const label = safeString(patch.fieldLabel).trim();
+        if (!label) return;
         const low = label.toLowerCase();
         const f =
           template.find((t) => safeString(t.label).toLowerCase().trim() === low) ||

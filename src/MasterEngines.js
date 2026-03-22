@@ -49,6 +49,22 @@ export const DEFAULT_ENTITY_FIELDS = [
   { id: 'f_desc', label: 'Mô tả đặc trưng' }
 ];
 
+/** Gộp target vào cur: thêm trường mới từ target, giữ nhãn tùy chỉnh của cur, giữ trường custom. */
+export const mergeFieldsTemplate = (cur, target) => {
+  if (!target || target.length === 0) return cur && cur.length > 0 ? structuredClone(cur) : [];
+  if (!cur || cur.length === 0) return structuredClone(target);
+  const targetIds = new Set(target.map((f) => f.id));
+  const curById = new Map(cur.map((f) => [f.id, f]));
+  const merged = target.map((tf) => {
+    const existing = curById.get(tf.id);
+    return existing ? { ...existing } : { ...tf };
+  });
+  cur.forEach((cf) => {
+    if (!targetIds.has(cf.id)) merged.push({ ...cf });
+  });
+  return merged;
+};
+
 // ==========================================
 // BẢN ĐỒ TRƯỜNG MẶC ĐỊNH THEO LOẠI TAB
 // Dùng để tự động gán fieldsTemplate phù hợp
@@ -301,6 +317,33 @@ export const isStockTemplate = (template) => {
   if (!template || template.length === 0) return true;
   return template.every(f => /^f_/.test(f.id));
 };
+
+/** Lấy fieldsTemplate cho tab — ưu tiên template đã lưu, fallback theo ID rồi label */
+export const resolveFieldsTemplate = (tabConfig, parentTabId, parentLabel = '') => {
+  const t = tabConfig?.fieldsTemplate;
+  const target =
+    DEFAULT_FIELDS_MAP[tabConfig?.id] ||
+    DEFAULT_FIELDS_BY_PARENT[parentTabId] ||
+    guessFieldsByLabel(tabConfig?.label || '') ||
+    guessFieldsByLabel(parentLabel);
+  if (!t || t.length === 0) return target || DEFAULT_ENTITY_FIELDS;
+  return t;
+};
+
+/** Lần đầu có đúng 1 thẻ trong mục: ghi fieldsTemplate vào tabsConfig (thẻ chuẩn cho mục đó). */
+export function lockFieldsTemplateIfFirstEntity(nov, lonId, nhoDataKey) {
+  const tabData = nov.data?.[lonId]?.[nhoDataKey];
+  if (!tabData?.entities || tabData.entities.length !== 1) return;
+  if (!nov.tabsConfig) nov.tabsConfig = [];
+  const lon = nov.tabsConfig.find((t) => t.id === lonId);
+  let nho = lon?.subTabs?.find((s) => s.id === nhoDataKey);
+  if (!nho && nhoDataKey === 'default' && lon?.subTabs?.length) {
+    nho = lon.subTabs.find((s) => s.viewType === 'collection-track') || lon.subTabs[0];
+  }
+  if (!nho) return;
+  const parentLabel = lon?.label || '';
+  nho.fieldsTemplate = structuredClone(resolveFieldsTemplate(nho, lonId, parentLabel));
+}
 
 // ==========================================
 // CẤU TRÚC MỤC LỤC MẶC ĐỊNH KHI TẠO TRUYỆN MỚI

@@ -1,0 +1,321 @@
+CÂY THƯ MỤC "TÀNG THƯ CÁC" - TOÀN BỘ THỂ LOẠI (Bản thiết kế cấu trúc dữ liệu Wiki bằng thuật ngữ chuẩn Web Novel)
+=========================================
+📁 1. Tiên Hiệp (Tu Tiên, Đạo Giáo)
+├── 📁 Tu Sĩ (Nhân Vật)
+│ ├── 📄 Thiên Mệnh Chi Tử (NVC)
+│ ├── 📄 Đạo Lữ
+│ ├── 📄 Hồng Nhan Tri Kỷ
+│ ├── 📄 Sinh Tử Giao (Huynh đệ)
+│ ├── 📄 Đồng Môn Sư Đệ/Sư Muội
+│ ├── 📄 Tử Địch (Kẻ thù)
+│ └── 📄 Phản Diện / Pháo Khôi
+│
+├── 📁 Đại Đạo (Tu Luyện)
+│ ├── 📄 Cảnh Giới Tu Vi
+│ ├── 📄 Công Pháp
+│ ├── 📄  Võ Kỹ
+│ ├── 📄 Cấm Thuật 
+│ └── 📄 Bí Pháp
+│ ├── 📄 Đặc Thù Thể Chất
+│ ├── 📄 Thái Cổ Huyết Mạch
+│ ├── 📄 Linh Căn
+│ └── 📄 Ngộ Tính Thiên Phú
+│ └── 📄 Thiên Phú
+│
+├── 📁 Chư Thiên Vạn Giới (Thế Giới)
+│ ├── 📄 Tu Tiên Giới / Phàm Nhân Giới
+│ ├── 📄 Vị Diện / Tinh Vực
+│ ├── 📄 Thượng Giới / Tiên Giới
+│ ├── 📄 Cấm Địa
+│ └── 📄 Thượng Cổ Di Tích
+│
+├── 📁 Đỉnh Cấp Thế Lực
+│ ├── 📄 Tông Môn / Thánh Địa
+│ ├── 📄 Trường Tồn Thế Gia
+│ └── 📄 Ẩn Thế Tông Môn
+│
+└── 📁 Kỳ Trân Dị Bảo (Vật Phẩm)
+├── 📄 Pháp Bảo / Tiên Khí
+├── 📄 Thần Binh Lợi Khí
+├── 📄 Đan Dược
+├── 📄 Tiên Thảo / Linh Dược
+├── 📄 Thiên Tài Địa Bảo
+├── 📄 Trận Pháp
+└── 📄 Linh Phù / Bùa Chú
+=========================================
+📁 2. Huyền Huyễn (Kỳ Ảo, Dị Giới)
+├── 📁 Sinh Linh (Nhân Vật)
+│ ├── 📄 Khí Vận Chi Tử (NVC)
+│ ├── 📄 Đồng Bọn / Khế Ước Giả
+│ ├── 📄 Sứ Ma / Tinh Linh
+│ ├── 📄 Hắc Ám Cự Đầu (Phản diện)
+│ └── 📄 Ma Vương / Tà Thần
+│
+├── 📁 Thể Hệ Lực Lượng (Sức Mạnh)
+│ ├── 📄 Ma Pháp / Chú Ngữ
+│ ├── 📄 Đấu Khí / Nguyên Lực
+│ ├── 📄 Chức Nghiệp (Pháp sư, Kỵ sĩ...)
+│ └── 📄 Thần Cách / Thần Hỏa
+│
+├── 📁 Vị Diện Đại Lục (Thế Giới)
+│ ├── 📄 Đại Lục
+│ ├── 📄 Vực Sâu (Abyss)
+│ └── 📄 Thần Quốc / Tinh Giới
+│
+├── 📁 Vạn Tộc Quần Đảo (Thế Lực)
+│ ├── 📄 Chủng Tộc (Elf, Orc, Dragon...)
+│ ├── 📄 Đế Quốc / Vương Quốc
+│ ├── 📄 Thần Điện / Giáo Hội
+│ └── 📄 Công Hội Lính Đánh Thuê
+│
+└── 📁 Thần Vật & Ma Vật
+├── 📄 Thần Khí / Thánh Khí
+├── 📄 Thánh Vật Truyền Thừa
+├── 📄 Ma Thú / Cự Long
+├── 📄 Ma Hạch / Tinh Mạch
+└── 📄 Yêu Đan
+=========================================
+📁 3. Ngôn Tình (Tình Cảm, Nữ Chủ)
+├── 📁 Quần Chúng Tuyến (Nhân Vật)
+│ ├── 📄 Nữ Chủ / Nam Chủ
+│ ├── 📄 Bạch Nguyệt Quang (Tình đầu)
+│ ├── 📄 Trà Xanh / Bạch Liên Hoa
+│ ├── 📄 Cố Chấp Cuồng / Bệnh Kiều
+│ ├── 📄 Tra Nam / Tiện Nữ
+│ └── 📄 Hào Môn Thế Gia
+│
+├── 📁 Bối Cảnh Thiết Lập
+│ ├── 📄 Cổ Đại / Giá Không
+│ ├── 📄 Cung Đình Hầu Tước
+│ ├── 📄 Đô Thị / Hào Môn Tổng Tài
+│ └── 📄 Thanh Xuân Vườn Trường
+│
+├── 📁 Ái Tình Tuyến (Tình Cảm)
+│ ├── 📄 Ngọt Sủng / Chữa Lành
+│ ├── 📄 Ngược Tâm / Ngược Thân
+│ ├── 📄 Cưới Trước Yêu Sau
+│ ├── 📄 Gương Vỡ Lại Lành
+│ └── 📄 Tu La Tràng (Ghen tuông)
+│
+└── 📁 Kịch Bản Kịch Tình (Sự Kiện)
+├── 📄 Trạch Đấu / Gia Đấu
+├── 📄 Cung Đấu / Đoạt Đích
+├── 📄 Vả Mặt / Sảng Văn (Báo thù)
+├── 📄 Giới Giải Trí / Showbiz
+└── 📄 Hắc Đạo Giao Phong
+=========================================
+📁 4. Hệ Thống (Bàn Tay Vàng)
+├── 📁 Bản Thể Hệ Thống
+│ ├── 📄 Nguồn Gốc Hệ Thống
+│ ├── 📄 Mã Định Danh / Phiên Bản
+│ ├── 📄 Trí Não / Hệ Thống Tinh Linh
+│ └── 📄 Quyền Hạn Cấp Độ
+│
+├── 📁 Giao Diện Thuộc Tính
+│ ├── 📄 Cá Nhân Miêu Tả (Bảng Stats)
+│ ├── 📄 Điểm Kinh Nghiệm (EXP)
+│ ├── 📄 Điểm Tích Lũy / Tiền Tệ
+│ ├── 📄 Danh Hiệu
+│ └── 📄 Độ Thuần Thục (Kỹ năng)
+│
+└── 📁 Chức Năng Cốt Lõi
+├── 📄 Hệ Thống Thương Thành
+├── 📄 Nhiệm Vụ Chủ Tuyến
+├── 📄 Nhiệm Vụ Chi Nhánh / Ẩn
+├── 📄 Chế Tài Trừng Phạt
+└── 📄 Gacha / Vòng Quay May Mắn
+=========================================
+📁 5. Trọng Sinh (Làm Lại Cuộc Đời)
+├── 📁 Dòng Chảy Luân Hồi
+│ ├── 📄 Nguyên Nhân Trùng Sinh
+│ ├── 📄 Tiền Thế Ký Ức
+│ ├── 📄 Bát Điểm (Cột mốc trọng sinh)
+│ └── 📄 Hiệu Ứng Cánh Bướm
+│
+├── 📁 Nhân Quả Nghiệt Duyên
+│ ├── 📄 Tử Địch Tiền Thế
+│ ├── 📄 Ân Nhân Kim Sinh
+│ ├── 📄 Tiếc Nuối Tiền Thế
+│ └── 📄 Vả Mặt Phản Diện
+│
+└── 📁 Kim Chỉ Nam (Bàn Tay Vàng)
+├── 📄 Tiên Tri (Biết trước tương lai)
+├── 📄 Tiên Cơ / Cướp Cơ Duyên
+├── 📄 Tùy Thân Không Gian
+└── 📄 Dị Năng Thức Tỉnh Sớm
+=========================================
+📁 6. Đô Thị (Hiện Đại, Tài Phiệt)
+├── 📁 Đô Thị Nhân Vật
+│ ├── 📄 Long Ngạo Thiên (NVC bá đạo)
+│ ├── 📄 Ở Rể / Cao Thủ Xuống Núi
+│ ├── 📄 Bá Đạo Tổng Tài
+│ ├── 📄 Băng Sơn Mỹ Nữ / Hoa Khôi
+│ ├── 📄 Phú Nhị Đại / Hoàn Khố Di Tử
+│ └── 📄 Thế Gia Lão Hủ
+│
+├── 📁 Đỉnh Cấp Vòng Tròn (Thế Lực)
+│ ├── 📄 Tứ Đại Cổ Tộc / Thế Gia
+│ ├── 📄 Đỉnh Cấp Tài Phiệt
+│ ├── 📄 Hắc Đạo Cự Phách
+│ ├── 📄 Thế Giới Ngầm / Lính Đánh Thuê
+│ ├── 📄 Cục Dị Năng / Long Tổ
+│ └── 📄 Cổ Võ Giả / Ẩn Môn
+│
+└── 📁 Bản Đồ Sự Nghiệp
+├── 📄 Thương Vị / Khống Chế Kinh Tế
+├── 📄 Y Thuật Tiên Thiên
+├── 📄 Phong Thủy / Tướng Thuật
+├── 📄 Giám Bảo / Đổ Thạch
+└── 📄 Đấu Giá Hội Cấp Cao
+=========================================
+📁 7. Vô Hạn Lưu (Xuyên Nhiều Thế Giới)
+├── 📁 Chủ Thần Không Gian
+│ ├── 📄 Chủ Thần / Hệ Thống Mẫu
+│ ├── 📄 Luân Hồi Điện / Quảng Trường
+│ ├── 📄 Khu Vực Nghỉ Ngơi cá nhân
+│ └── 📄 Chủ Thần Quy Tắc
+│
+├── 📁 Luân Hồi Tiểu Đội
+│ ├── 📄 Luân Hồi Giả (Người chơi)
+│ ├── 📄 Đội Trưởng
+│ ├── 📄 Trí Giả (Đầu não phân tích)
+│ ├── 📄 Hỏa Lực Thủ (Chiến đấu)
+│ ├── 📄 Nãi Ma (Healer/Hỗ trợ)
+│ └── 📄 Tử Chiến Tiểu Đội (Kẻ thù)
+│
+├── 📁 Thế Giới Nhiệm Vụ (Phó Bản)
+│ ├── 📄 Kịch Bản Thế Giới
+│ ├── 📄 Chân Tướng Nhiệm Vụ
+│ ├── 📄 Nhiệm Vụ Sinh Tồn
+│ └── 📄 Cấp Độ Ác Mộng (S, A, B...)
+│
+└── 📁 Hối Đoái & Cường Hóa (Đổi Điểm)
+├── 📄 Điểm Sinh Tồn / Khen Thưởng
+├── 📄 Tiến Hóa Huyết Thống
+├── 📄 Cường Hóa Thể Chất
+├── 📄 Kỹ Năng Cây (Skill tree)
+├── 📄 Dị Năng Thức Tỉnh
+└── 📄 Đạo Cụ Bảo Mệnh
+=========================================
+📁 8. Võng Du (Game Thực Tế Ảo / Esport)
+├── 📁 Số Liệu Nhân Vật
+│ ├── 📄 ID Trò Chơi
+│ ├── 📄 Bảng Trạng Thái (Stats)
+│ ├── 📄 Chức Nghiệp / Chức Nghiệp Ẩn
+│ └── 📄 Thiên Phú Kỹ Năng
+│
+├── 📁 Trang Bị & Thần Vật
+│ ├── 📄 Thần Khí / Truyền Thuyết Vũ Khí
+│ ├── 📄 Sáo Trang (Set trang bị)
+│ ├── 📄 Sủng Vật / Tọa Kỵ
+│ └── 📄 Đồ Tể Luyện (Nguyên liệu)
+│
+├── 📁 Trận Doanh Thế Lực
+│ ├── 📄 Đại Công Hội (Guild)
+│ ├── 📄 Câu Lạc Bộ Esport
+│ ├── 📄 Liên Minh Trận Doanh
+│ └── 📄 NPC Thế Lực
+│
+└── 📁 Cốt Truyện & Gameplay
+├── 📄 Main Quests (Nhiệm vụ chính)
+├── 📄 Chuỗi Nhiệm Vụ Ẩn
+├── 📄 Phụ Bản (Dungeon) / Bí Cảnh
+├── 📄 Dã Ngoại Boss / Thế Giới Boss
+├── 📄 Lịch Sử PK / Hồng Danh
+└── 📄 Thi Đấu Chuyên Nghiệp
+=========================================
+📁 9. Khoa Huyễn (Khoa Học Viễn Tưởng)
+├── 📁 Tinh Tế Cương Vực (Thế Giới)
+│ ├── 📄 Ngân Hà / Vị Tinh Hệ
+│ ├── 📄 Trái Đất Cổ / Mẫu Tinh
+│ ├── 📄 Tinh Tế Liên Bang / Đế Quốc
+│ ├── 📄 Vực Ngoại Chủng Tộc (Trùng tộc)
+│ └── 📄 Cơ Sở Hắc Ám
+│
+├── 📁 Hắc Khoa Kỹ (Công Nghệ)
+│ ├── 📄 Cơ Giáp (Mecha)
+│ ├── 📄 Tinh Hạm / Phi Thuyền
+│ ├── 📄 Quang Não / Siêu AI
+│ ├── 📄 Vũ Khí Phản Vật Chất
+│ └── 📄 Bước Nhảy Không Gian / Lỗ Giun
+│
+└── 📁 Tiến Hóa Lộ Tuyến
+├── 📄 Tinh Thần Lực (S, A, B...)
+├── 📄 Thể Thuật / Khải Giáp Thuật
+├── 📄 Gien Đột Biến
+├── 📄 Dung Hợp Dược Tề
+└── 📄 Cơ Thế Sinh Hóa (Cyborg)
+=========================================
+📁 10. Mạt Thế (Tận Thế, Sinh Tồn)
+├── 📁 Kỷ Nguyên Hắc Ám (Bối Cảnh)
+│ ├── 📄 Bạo Phát Nguy Cơ
+│ ├── 📄 Tiền Mạt Thế / Hậu Mạt Thế
+│ ├── 📄 Biến Đổi Khí Hậu
+│ └── 📄 Phế Tích Văn Minh
+│
+├── 📁 Nguy Cơ Tứ Phía (Kẻ Địch)
+│ ├── 📄 Thi Tộc / Tang Thi Vi Quân
+│ ├── 📄 Dị Thú Lãnh Chúa
+│ ├── 📄 Ma Hóa Thực Vật
+│ └── 📄 Tà Ác Người Sinh Tồn
+│
+├── 📁 Doanh Trại Sinh Tồn (Thế Lực)
+│ ├── 📄 Khu An Toàn / Căn Cứ Địa
+│ ├── 📄 Liệp Sát Giả / Lính Đánh Thuê
+│ ├── 📄 Quân Bộ / Chính Phủ Tàn Dư
+│ └── 📄 Thế Lực Tôn Giáo Mới
+│
+└── 📁 Tinh Hạch & Vật Tư (Tài Nguyên)
+├── 📄 Giác Tỉnh Giả (Người dị năng)
+├── 📄 Dị Năng Phân Hệ
+├── 📄 Tinh Hạch / Tinh Nguyên
+├── 📄 Vật Tư Cứu Sinh (Thức ăn, nước)
+└── 📄 Hỏa Khí / Khí Giới Lạnh
+=========================================
+📁 11. Đồng Nhân (Fanfiction)
+├── 📁 Nguyên Tác Vị Diện
+│ ├── 📄 Canon World (Thế giới gốc)
+│ ├── 📄 Nguyên Tác Thiết Lập
+│ └── 📄 Quy Tắc Thế Giới
+│
+├── 📁 Nhóm Nhân Vật Đồng Nhân
+│ ├── 📄 Canon Character (Nhân vật gốc)
+│ ├── 📄 Original Character (OC)
+│ ├── 📄 Băng Hoại Kịch Tình (OOC)
+│ └── 📄 Kẻ Xuyên Thư / Trọng Sinh
+│
+└── 📁 Tuyến Truyện Ma Cải
+├── 📄 Điểm Rẽ Nhánh
+├── 📄 Hiệu Ứng Cánh Bướm
+├── 📄 Cứu Rỗi Tuyến
+├── 📄 Hắc Hóa Tuyến
+└── 📄 Kết Cục Mới (Alternative Universe)
+=========================================
+📁 12. Lịch Sử (Xuyên Về Quá Khứ, Dã Sử)
+├── 📁 Thiên Hạ Đại Thế (Bối Cảnh)
+│ ├── 📄 Triều Đại Kỷ Nguyên
+│ ├── 📄 Đế Vương Thống Trị
+│ ├── 📄 Loạn Thế Tranh Hùng
+│ ├── 📄 Phiên Trấn Cát Cứ
+│ └── 📄 Quần Hùng Trục Lộc
+│
+├── 📁 Vương Hầu Tướng Lĩnh (Nhân Vật)
+│ ├── 📄 Chân Long Thiên Tử
+│ ├── 📄 Hậu Cung Phi Tần
+│ ├── 📄 Mưu Sĩ / Môn Khách
+│ ├── 📄 Văn Thần / Võ Tướng
+│ ├── 📄 Man Di / Phiên Bang
+│ └── 📄 Thảo Mãnh Anh Hùng
+│
+├── 📁 Lịch Sử Quỹ Tích (Sự Kiện)
+│ ├── 📄 Sa Bàn Tranh Bá (Chiến dịch)
+│ ├── 📄 Cung Biến / Đoạt Đích
+│ ├── 📄 Biến Pháp Cải Cách
+│ └── 📄 Khoa Cử Ký
+│
+└── 📁 Chủng Điền Cơ Sở (Phát Triển)
+├── 📄 Luyện Binh Trị Quân
+├── 📄 Công Trình Binh Pháp
+├── 📄 Hắc Khoa Kỹ Lịch Sử
+├── 📄 Nông Thương Chi Đạo
+└── 📄 Kiến Thiết Trì Sảnh

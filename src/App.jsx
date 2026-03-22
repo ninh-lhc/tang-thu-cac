@@ -25,7 +25,8 @@ import {
   apiKey, FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
   INITIAL_TABS_CONFIG, MOCK_METADATA, MOCK_NOVEL_DATA,
   DEFAULT_FIELDS_MAP, DEFAULT_FIELDS_BY_PARENT,
-  guessFieldsByLabel, isStockTemplate
+  guessFieldsByLabel, isStockTemplate, mergeFieldsTemplate, lockFieldsTemplateIfFirstEntity,
+  resolveFieldsTemplate
 } from './MasterEngines.js';
 import {
   generateId, safeString, getTerms, sortTabsAlphabetically,
@@ -48,6 +49,7 @@ import {
 } from './deepSearchCore.js';
 import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
 import { computeRelatedEntities } from './lib/computeRelatedEntities.js';
+import { TAB_GROUP_MAP, TAB_GROUP_ORDER } from './genreTabsMap.js';
 import { findEntitiesByHintInNovel, mutateNovelJournalSelections } from './appNhatKyVaGoiThe.js';
 import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
 import { AppModalMotCua } from './AppModalMotCua.jsx';
@@ -67,6 +69,9 @@ export default function App() {
   const [hoveredNovelData, setHoveredNovelData] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [menu2Expanded, setMenu2Expanded] = useState(true);
+  const [collapsedTabGroups, setCollapsedTabGroups] = useState(() => new Set());
+  const [sidebarGrouped, setSidebarGrouped] = useState(true);
+  const lastSyncedActiveTabRef = useRef(null);
   const [activeTabLon, setActiveTabLon] = useState('tong-quan');
   const [activeTabNho, setActiveTabNho] = useState(null);
   const [activeTabCon, setActiveTabCon] = useState(null);
@@ -203,12 +208,18 @@ export default function App() {
   const dirHandleRef = useRef(dirHandle);
   const syncNovelRef = useRef(null);
   const persistIndexStatsTimerRef = useRef(null);
+  const activeNovelDataRef = useRef(null);
+  const confirmDeleteEntityRef = useRef(null);
 
   useEffect(() => {
     novelsMetadataRef.current = novelsMetadata;
     globalTabsConfigRef.current = globalTabsConfig;
     dirHandleRef.current = dirHandle;
   }, [novelsMetadata, globalTabsConfig, dirHandle]);
+
+  useEffect(() => {
+    activeNovelDataRef.current = activeNovelData;
+  }, [activeNovelData]);
 
   useEffect(() => {
     novelStatsByIdRef.current = novelStatsById;
@@ -239,7 +250,7 @@ export default function App() {
       }
     });
     const topGenre = Object.entries(byGenre).sort((a,b)=>b[1]-a[1])[0];
-    const recentNovels = [...novelsMetadata].slice(0, 5);
+    const recentNovels = [...novelsMetadata].slice(0, 24);
     return { total, byStatus, byGenre, totalChaptersRead, totalChaptersAll, totalEntities, totalMilestones, recentNovels, topGenre };
   }, [novelsMetadata, novelStatsById]);
 
@@ -287,6 +298,45 @@ export default function App() {
 
   const activeTabs = useMemo(() => activeNovelData?.tabsConfig || globalTabsConfig, [activeNovelData, globalTabsConfig]);
   const sortedTabs = useMemo(() => sortTabsAlphabetically(activeTabs), [activeTabs]);
+
+  const tabGroups = useMemo(() => {
+    const tongQuan = sortedTabs.find(t => t.id === 'tong-quan');
+    const rest = sortedTabs.filter(t => t.id !== 'tong-quan');
+    if (rest.length === 0) return tongQuan ? [{ groupLabel: null, tabs: [tongQuan] }] : [];
+    const byGroup = new Map();
+    rest.forEach(t => {
+      const g = t._group || TAB_GROUP_MAP[t.id] || 'Khác';
+      if (!byGroup.has(g)) byGroup.set(g, []);
+      byGroup.get(g).push(t);
+    });
+    const ordered = [];
+    for (const gl of TAB_GROUP_ORDER) {
+      if (byGroup.has(gl)) ordered.push({ groupLabel: gl, tabs: byGroup.get(gl) });
+    }
+    const remaining = [...byGroup.entries()].filter(([g]) => !TAB_GROUP_ORDER.includes(g));
+    remaining.forEach(([g, tabs]) => ordered.push({ groupLabel: g, tabs }));
+    return [{ groupLabel: null, tabs: tongQuan ? [tongQuan] : [] }, ...ordered];
+  }, [sortedTabs]);
+
+  useEffect(() => {
+    const labels = tabGroups.filter(g => g.groupLabel).map(g => g.groupLabel);
+    setCollapsedTabGroups(new Set(labels));
+    lastSyncedActiveTabRef.current = null;
+  }, [activeNovelData?.id]);
+
+  useEffect(() => {
+    if (activeTabLon === lastSyncedActiveTabRef.current) return;
+    lastSyncedActiveTabRef.current = activeTabLon;
+    const grp = tabGroups.find(g => g.tabs.some(t => t.id === activeTabLon));
+    if (grp?.groupLabel) {
+      setCollapsedTabGroups(prev => {
+        const next = new Set(prev);
+        next.delete(grp.groupLabel);
+        return next;
+      });
+    }
+  }, [activeTabLon, tabGroups]);
+
   const dirName = typeof dirHandle === 'string' ? 'Bộ nhớ đệm' : (dirHandle?.name || '');
   
   const currentTabConfig = useMemo(() => {
@@ -294,19 +344,16 @@ export default function App() {
     const parent = sortedTabs.find(t => t.id === activeTabLon);
     const tab = parent?.subTabs?.find(s => s.id === activeTabNho) || parent;
     if (!tab) return null;
-    // Tự động bổ sung/nâng cấp fieldsTemplate cho tab collection-track
+    // Chỉ inject template mặc định khi chưa có template đã lưu (giữ nhãn tùy chỉnh)
     if (tab.viewType === 'collection-track') {
-      const targetTemplate =
-        DEFAULT_FIELDS_MAP[tab.id] ||
-        DEFAULT_FIELDS_BY_PARENT[parent?.id] ||
-        guessFieldsByLabel(tab.label || '') ||
-        guessFieldsByLabel(parent?.label || '');
-      if (targetTemplate) {
-        const cur = tab.fieldsTemplate;
-        // Nâng cấp khi: chưa có template, rỗng, hoặc toàn stock f_xxx và ngắn hơn/bằng target
-        const needsUpgrade = !cur || cur.length === 0 ||
-          (cur.every(f => /^f_/.test(f.id)) && cur.length <= targetTemplate.length);
-        if (needsUpgrade) return { ...tab, fieldsTemplate: targetTemplate, _parentLabel: parent?.label || '' };
+      const cur = tab.fieldsTemplate;
+      if (!cur || cur.length === 0) {
+        const targetTemplate =
+          DEFAULT_FIELDS_MAP[tab.id] ||
+          DEFAULT_FIELDS_BY_PARENT[parent?.id] ||
+          guessFieldsByLabel(tab.label || '') ||
+          guessFieldsByLabel(parent?.label || '');
+        if (targetTemplate) return { ...tab, fieldsTemplate: targetTemplate, _parentLabel: parent?.label || '' };
       }
     }
     return { ...tab, _parentLabel: parent?.label || '' };
@@ -816,7 +863,9 @@ export default function App() {
     const [lonId, nhoId] = hubCreatePath.split('|');
     const lon = activeTabs.find((t) => t.id === lonId);
     const nho = lon?.subTabs?.find((s) => s.id === nhoId);
-    const fieldsTemplate = nho?.fieldsTemplate || [];
+    const fieldsTemplate = nho
+      ? resolveFieldsTemplate(nho, lonId, lon?.label || '')
+      : DEFAULT_ENTITY_FIELDS;
     setHubCreateBusy(true);
     try {
       const result = await analyzeTextWithAI(raw, fieldsTemplate, geminiApiKeys, aiMode);
@@ -874,6 +923,7 @@ export default function App() {
         milestones: [],
       });
       nov.data[lonId][nhoId] = td;
+      lockFieldsTemplateIfFirstEntity(nov, lonId, nhoId);
     });
     showToast(`Đã tạo «${name}». Ảnh avatar: mở đúng mục → thẻ để thêm.`, 'success');
     setHubCreatePreview(null);
@@ -912,12 +962,12 @@ export default function App() {
           if (sub.viewType !== 'collection-track') return;
           const ents = activeNovelData.data?.[lon.id]?.[sub.id]?.entities || [];
           const names = ents.map((e) => safeString(e.name)).filter(Boolean).slice(0, 80);
-          const fields = (sub.fieldsTemplate || [])
-            .map((f) => safeString(f.label))
-            .filter(Boolean)
+          const resolved = resolveFieldsTemplate(sub, lon.id, lon?.label || '');
+          const fields = resolved
+            .map((f) => `${safeString(f.id)}:${safeString(f.label)}`)
             .join('; ');
           lines.push(
-            `${lon.id}|${sub.id} | ${safeString(lon.label)} › ${safeString(sub.label)} | Thẻ: ${names.join(', ') || '—'} | Trường: ${fields || '—'}`
+            `${lon.id}|${sub.id} | ${safeString(lon.label)} › ${safeString(sub.label)} | Thẻ: ${names.join(', ') || '—'} | Trường (id:nhãn): ${fields || '—'}`
           );
         });
       });
@@ -937,6 +987,7 @@ export default function App() {
         fieldPatches: Array.isArray(sug.fieldPatches)
           ? sug.fieldPatches.map((p) => ({
               ...p,
+              fieldId: safeString(p.fieldId).trim(),
               value: stripWikiBracketSyntax(safeString(p.value)),
             }))
           : sug.fieldPatches,
@@ -1132,21 +1183,22 @@ export default function App() {
     const root = dirHandle;
     const run = async () => {
       const need = novelsMetadata.filter((m) => !novelStatsByIdRef.current[m.id]);
-      if (need.length === 0 || cancelled) return;
+      const toRecalc = need.length > 0 ? need : novelsMetadata;
+      if (toRecalc.length === 0 || cancelled) return;
       setIsStatsBackfilling(true);
       try {
         const acc = { ...novelStatsByIdRef.current };
         const chunk = 2;
-        for (let i = 0; i < need.length; i += chunk) {
+        for (let i = 0; i < toRecalc.length; i += chunk) {
           if (cancelled) return;
-          const batch = need.slice(i, i + chunk);
+          const batch = toRecalc.slice(i, i + chunk);
           await Promise.all(
             batch.map(async (meta) => {
               try {
                 const d = await loadNovelData(meta, root);
-                acc[meta.id] = d ? countEntitiesInNovel(d) : { entities: 0, milestones: 0 };
+                acc[meta.id] = d ? countEntitiesInNovel(d) : { entities: 0, milestones: 0, byTab: [] };
               } catch {
-                acc[meta.id] = { entities: 0, milestones: 0 };
+                acc[meta.id] = { entities: 0, milestones: 0, byTab: [] };
               }
             })
           );
@@ -1267,6 +1319,7 @@ export default function App() {
           if (!tabData.entities) tabData.entities = [];
           tabData.entities.push({ id: newEntityId, name: name, avatar: '', rawText: '', dynamicData: {}, info: '', milestones: [] });
           nov.data[lonId][nhoId] = tabData;
+          lockFieldsTemplateIfFirstEntity(nov, lonId, nhoId);
       });
       showToast(`Đã ngưng tụ thành công ${name}!`);
       handleNavigate({ lonId, nhoId, entityId: newEntityId });
@@ -1430,7 +1483,7 @@ export default function App() {
   };
 
   const handleOpenCreateNovel = () => {
-    setNovelForm({ title: '', author: '', genres: (GENRES && GENRES.length > 0) ? [GENRES[0]] : [], theme: 'theme-tien-hiep', cover: '', status: 'Đang đọc', chaptersTotal: '' });
+    setNovelForm({ title: '', author: '', genres: (GENRES && GENRES.length > 0) ? [GENRES[0]] : [], theme: 'theme-tien-hiep', cover: '', status: 'Đang đọc', chaptersTotal: '', tabsConfig: undefined });
     setNovelModalMode('create'); setIsAddNovelOpen(true);
   };
 
@@ -1463,9 +1516,12 @@ export default function App() {
         rating: 0, review: '', cover: novelForm.cover, folderName: folderName 
       };
       
-      const newFullData = { ...newMeta, data: {}, tabsConfig: structuredClone(INITIAL_TABS_CONFIG), chapterCrossRefs: [], readingJournal: [] };
+      const tabsToUse = Array.isArray(novelForm.tabsConfig) && novelForm.tabsConfig.length > 0
+        ? structuredClone(novelForm.tabsConfig)
+        : structuredClone(INITIAL_TABS_CONFIG);
+      const newFullData = { ...newMeta, data: {}, tabsConfig: tabsToUse, chapterCrossRefs: [], readingJournal: [] };
       const newMetaList = [newMeta, ...novelsMetadata];
-      const nextStats = { ...novelStatsByIdRef.current, [newId]: { entities: 0, milestones: 0 } };
+      const nextStats = { ...novelStatsByIdRef.current, [newId]: { entities: 0, milestones: 0, byTab: [] } };
       novelStatsByIdRef.current = nextStats;
       setNovelStatsById(nextStats);
       setNovelsMetadata(newMetaList); setActiveNovelData(newFullData);
@@ -1628,7 +1684,10 @@ export default function App() {
        if (formData.id) { 
           const idx = tabData.entities.findIndex(e => e.id === formData.id);
           if (idx > -1) { tabData.entities[idx] = { ...tabData.entities[idx], name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData }; }
-       } else { tabData.entities.push({ id: generateId('ent'), name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData, info: '', milestones: [] }); }
+       } else {
+          tabData.entities.push({ id: generateId('ent'), name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData, info: '', milestones: [] });
+          lockFieldsTemplateIfFirstEntity(nov, activeTabLon, activeTabNho || 'default');
+       }
        nov.data[activeTabLon][activeTabNho || 'default'] = tabData;
     });
     showToast(formData.id ? "Đã tu bổ lại Thực Thể!" : "Đã ngưng tụ Thực Thể mới!", "success", prev ? {
@@ -1697,25 +1756,54 @@ export default function App() {
   };
 
   const handleDeleteEntity = (id) => {
-    setConfirmDialog({
-       isOpen: true, title: 'Hủy Diệt Thực Thể', message: 'Xóa vĩnh viễn hồ sơ này khỏi Tàng Thư Các?',
-       onConfirm: () => {
-          const prev = activeNovelData ? structuredClone(activeNovelData) : null;
-          updateActiveNovelData(nov => {
-          if (!nov.data?.[activeTabLon]) return;
-          const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
-          if(tabData && tabData.entities) { tabData.entities = tabData.entities.filter(e => e.id !== id); nov.data[activeTabLon][activeTabNho || 'default'] = tabData; }
-          });
-          if (selectedEntityId === id) setSelectedEntityId(null);
-          if (prev) {
-            showToast('Đã xóa thẻ.', 'success', {
-              onUndo: () => {
-                setActiveNovelData(structuredClone(prev));
-                void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
-              },
-            });
+    const entityIdToDelete = id;
+    const prevSelectedId = selectedEntityId;
+    confirmDeleteEntityRef.current = () => {
+      const data = activeNovelDataRef.current;
+      if (!data?.data) return;
+      const prev = structuredClone(data);
+      const updated = structuredClone(data);
+      let removed = false;
+      for (const lonId of Object.keys(updated.data || {})) {
+        const lonData = updated.data[lonId];
+        if (!lonData || typeof lonData !== 'object') continue;
+        for (const nhoId of Object.keys(lonData)) {
+          const tabData = lonData[nhoId];
+          if (!tabData?.entities) continue;
+          const idx = tabData.entities.findIndex(e => e.id === entityIdToDelete);
+          if (idx >= 0) {
+            tabData.entities.splice(idx, 1);
+            removed = true;
+            break;
           }
-       }
+        }
+        if (removed) break;
+      }
+      if (removed) {
+        const nextStats = { ...novelStatsByIdRef.current, [updated.id]: countEntitiesInNovel(updated) };
+        novelStatsByIdRef.current = nextStats;
+        setNovelStatsById(nextStats);
+        setActiveNovelData(updated);
+        syncNovelRef.current?.(updated, dirHandleRef.current);
+        if (prevSelectedId === entityIdToDelete) setSelectedEntityId(null);
+        showToast('Đã xóa thẻ.', 'success', {
+          onUndo: () => {
+            setActiveNovelData(prev);
+            void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
+          },
+        });
+      }
+      confirmDeleteEntityRef.current = null;
+    };
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Hủy Diệt Thực Thể',
+      message: 'Xóa vĩnh viễn hồ sơ này khỏi Tàng Thư Các?',
+      onConfirm: () => {
+        if (typeof confirmDeleteEntityRef.current === 'function') {
+          confirmDeleteEntityRef.current();
+        }
+      },
     });
   };
 
@@ -1947,7 +2035,7 @@ export default function App() {
     setMenu1Visible(false);
   };
 
-  // Migration: tự động nâng cấp fieldsTemplate cho tất cả sub-tab khi load truyện
+  // Migration: gộp fieldsTemplate — thêm trường mới, giữ nhãn tùy chỉnh của người dùng
   const migrateTabsFieldTemplates = (novelData) => {
     if (!novelData?.tabsConfig) return novelData;
     let changed = false;
@@ -1964,23 +2052,26 @@ export default function App() {
         const cur = nho.fieldsTemplate;
         const needsUpgrade = !cur || cur.length === 0 ||
           (cur.every(f => /^f_/.test(f.id)) && cur.length <= target.length);
-        if (needsUpgrade) { nho.fieldsTemplate = structuredClone(target); changed = true; }
+        if (needsUpgrade) {
+          nho.fieldsTemplate = mergeFieldsTemplate(cur, target);
+          changed = true;
+        }
       });
     });
     return changed ? { ...novelData, tabsConfig: tabs } : novelData;
   };
 
-  const handleSelectNovel = async (meta) => {
+  const handleSelectNovel = async (meta, tabAt) => {
     setMenu1Visible(false);
     setSelectedEntityId(null);
     setNavHistory([]);
-    setActiveTabLon('tong-quan');
-    setActiveTabNho(null);
+    setActiveTabLon(tabAt?.lonId || 'tong-quan');
+    setActiveTabNho(tabAt?.nhoId || null);
     setActiveTabCon(null);
-    setCollectionSubTab('list');
+    setCollectionSubTab(tabAt ? 'list' : 'list');
     setIsEditingMode(false);
     setIsEntityEditing(false);
-    setIsUploading(true); // dùng lại overlay loading
+    setIsUploading(true);
 
     let novelDir = null;
     if (dirHandle && dirHandle !== 'LOCAL_STORAGE') {
@@ -1996,14 +2087,28 @@ export default function App() {
       if (!data.tabsConfig) data.tabsConfig = structuredClone(globalTabsConfig);
       const migrated = migrateTabsFieldTemplates(data);
       setActiveNovelData(migrated);
-      // Lưu lại nếu có thay đổi migration
+      const s = countEntitiesInNovel(migrated);
+      const prevS = novelStatsByIdRef.current[migrated.id];
+      const statsChanged = !prevS || prevS.entities !== s.entities || prevS.milestones !== s.milestones;
+      const nextStats = { ...novelStatsByIdRef.current, [migrated.id]: s };
+      novelStatsByIdRef.current = nextStats;
+      setNovelStatsById(nextStats);
+      if (statsChanged && dirHandle) {
+        void syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, dirHandle, nextStats);
+      }
       if (migrated !== data) syncNovel(migrated, dirHandle);
+      if (tabAt?.lonId) {
+        setActiveTabLon(tabAt.lonId);
+        setActiveTabNho(tabAt.nhoId || null);
+        setCollectionSubTab('list');
+      }
     } else {
       const newData = { ...meta, data: {}, tabsConfig: structuredClone(globalTabsConfig) };
       setActiveNovelData(newData);
     }
     setIsUploading(false);
   };
+
 
   const toggleGenre = (genre) => {
     setSelectedGenres(prev =>
@@ -2028,6 +2133,8 @@ export default function App() {
   };
 
   const handleDeleteNovel = async (id) => {
+    const meta = novelsMetadata.find(m => m.id === id);
+    const folderName = meta ? (meta.folderName || (meta.title || '').replace(/[\\/:*?"<>|]/g, '').trim() || meta.id) : null;
     const newMetaList = novelsMetadata.filter(m => m.id !== id);
     const nextStats = { ...novelStatsByIdRef.current };
     delete nextStats[id];
@@ -2038,6 +2145,13 @@ export default function App() {
     syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
     if (dirHandle === 'LOCAL_STORAGE') {
       localStorage.removeItem(`tangthu_novel_${id}`);
+    } else if (dirHandle && folderName) {
+      try {
+        await dirHandle.removeEntry(folderName, { recursive: true });
+      } catch (e) {
+        console.warn('[TTC] Không xóa được thư mục truyện:', folderName, e);
+        setTimeout(() => showToast(`Đã xóa khỏi sổ nhưng không xóa được thư mục "${folderName}".`, 'warning'), 0);
+      }
     }
     setActiveNovelData(null);
     setActiveNovelDirHandle(null);
@@ -2231,13 +2345,12 @@ export default function App() {
   const navFnRef = useRef(null);
   navFnRef.current = handleNavigate;
 
-  // Lưu lại fieldsTemplate khi currentTabConfig đã inject (để persist vào disk)
+  // Lưu lại fieldsTemplate khi cần gộp — thêm trường mới, giữ nhãn tùy chỉnh
   useEffect(() => {
     if (!activeNovelData || !activeTabNho || !currentTabConfig) return;
     if (currentTabConfig.viewType !== 'collection-track') return;
     const targetTemplate = DEFAULT_FIELDS_MAP[activeTabNho] || DEFAULT_FIELDS_BY_PARENT[activeTabLon];
     if (!targetTemplate) return;
-    // Chỉ persist nếu currentTabConfig đang dùng injected template (tức data chưa có đủ)
     updateActiveNovelData(nov => {
       if (!nov.tabsConfig) return;
       const lon = nov.tabsConfig.find(t => t.id === activeTabLon);
@@ -2246,7 +2359,7 @@ export default function App() {
       const cur = nho.fieldsTemplate;
       const needsUpgrade = !cur || cur.length === 0 ||
         (cur.every(f => /^f_/.test(f.id)) && cur.length < targetTemplate.length);
-      if (needsUpgrade) nho.fieldsTemplate = structuredClone(targetTemplate);
+      if (needsUpgrade) nho.fieldsTemplate = mergeFieldsTemplate(cur, targetTemplate);
     });
   }, [activeTabLon, activeTabNho, activeNovelData?.id]);
 
@@ -2499,6 +2612,7 @@ export default function App() {
                 isLoading={isStatsBackfilling}
                 novelStatsById={novelStatsById}
                 onSelectNovel={handleSelectNovel}
+                onSelectNovelAtTab={(meta, lonId, nhoId) => handleSelectNovel(meta, { lonId, nhoId })}
                 onAddNovel={handleOpenCreateNovel}
               />
             ) : (
@@ -2520,52 +2634,125 @@ export default function App() {
                        <ChevronRight size={16}/>
                      </button>
                    )}
-                   {menu2Expanded && <button onClick={() => setIsManageTabsOpen(true)} className="text-amber-600 hover:text-amber-400 flex-shrink-0"><Network size={18}/></button>}
+                   {menu2Expanded && (
+                     <div className="flex items-center gap-1">
+                       <button
+                         onClick={() => setSidebarGrouped(p => !p)}
+                         className={`p-1.5 rounded-lg transition-colors ${sidebarGrouped ? 'text-amber-500 bg-amber-900/30' : 'text-slate-500 hover:text-amber-500 hover:bg-slate-800'}`}
+                         title={sidebarGrouped ? 'Tắt gom nhóm' : 'Bật gom nhóm'}
+                       >
+                         <Layers size={16}/>
+                       </button>
+                       <button onClick={() => setIsManageTabsOpen(true)} className="p-1.5 text-amber-600 hover:text-amber-400 rounded-lg hover:bg-slate-800 transition-colors"><Network size={18}/></button>
+                     </div>
+                   )}
                 </div>
                 
                 <div className="flex-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
                    <div className="py-3 flex flex-col">
-                       {sortedTabs.map(tab => {
-                         const isActive = activeTabLon === tab.id;
-                         return (
-                           <div key={tab.id} className="px-3 mb-1">
-                              <button onClick={() => handleSelectTabLon(tab.id)} className={`w-full flex items-center p-3 rounded-lg transition-colors overflow-hidden whitespace-nowrap ${isActive && !activeTabNho ? 'bg-amber-900/20 text-amber-400 border-l-2 border-amber-500' : 'text-slate-500 hover:bg-slate-800 border-l-2 border-transparent'}`}>
+                       {sidebarGrouped ? (
+                         tabGroups.filter(grp => grp.tabs.length > 0).map((grp) => {
+                           const isCollapsed = grp.groupLabel && collapsedTabGroups.has(grp.groupLabel);
+                           return (
+                             <div key={grp.groupLabel || 'tong-quan'} className="px-3 mb-1">
+                               {grp.groupLabel ? (
+                                 <button
+                                   onClick={() => setCollapsedTabGroups(prev => {
+                                     const next = new Set(prev);
+                                     if (next.has(grp.groupLabel)) next.delete(grp.groupLabel);
+                                     else next.add(grp.groupLabel);
+                                     return next;
+                                   })}
+                                   className="w-full flex items-center gap-2 py-2 px-2 rounded-md text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-amber-500 hover:bg-slate-800/50 transition-colors"
+                                 >
+                                   {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                                   <span className="flex-1 text-left truncate">{grp.groupLabel}</span>
+                                   <span className="text-slate-600">({grp.tabs.length})</span>
+                                 </button>
+                               ) : null}
+                               {(!grp.groupLabel || !isCollapsed) && grp.tabs.map(tab => {
+                                 const isActive = activeTabLon === tab.id;
+                                 return (
+                                   <div key={tab.id} className="mb-1">
+                                     <button onClick={() => handleSelectTabLon(tab.id)} className={`w-full flex items-center p-3 rounded-lg transition-colors overflow-hidden whitespace-nowrap ${isActive && !activeTabNho ? 'bg-amber-900/20 text-amber-400 border-l-2 border-amber-500' : 'text-slate-500 hover:bg-slate-800 border-l-2 border-transparent'}`}>
+                                       <div className="w-5 flex justify-center flex-shrink-0">{getIconComponent(tab.iconName)}</div>
+                                       <span className={`ml-3 font-serif text-sm transition-opacity duration-200 ${menu2Expanded ? 'opacity-100' : 'opacity-0'}`}>{safeString(tab.label)}</span>
+                                     </button>
+                                     {isActive && tab.subTabs?.length > 0 && menu2Expanded && (
+                                       <div className="mt-1 ml-6 border-l border-slate-700/50 pl-2 space-y-1 animate-fade-in">
+                                         {tab.subTabs.map(sub => {
+                                           const isActiveNho = activeTabNho === sub.id;
+                                           const hasTabCon = sub.tabCon && sub.tabCon.length > 0;
+                                           return (
+                                             <div key={sub.id}>
+                                               <button onClick={(e) => handleSelectTabNho(e, tab.id, sub)} className={`w-full text-left py-2 px-3 text-sm rounded-md font-serif flex items-center justify-between transition-colors ${isActiveNho ? 'bg-slate-800/80 text-amber-300' : 'text-slate-500 hover:text-slate-300'}`}>
+                                                 <span className="flex items-center gap-2 truncate">
+                                                   {sub.viewType === 'collection-track' && <LayoutGrid size={12} className="opacity-50 flex-shrink-0" />}
+                                                   <span className="truncate">{safeString(sub.label)}</span>
+                                                 </span>
+                                                 {hasTabCon && <ChevronDown size={14} className={`flex-shrink-0 transition-transform ${isActiveNho ? 'text-amber-400' : 'text-slate-600 -rotate-90'}`} />}
+                                               </button>
+                                               {isActiveNho && hasTabCon && sub.viewType !== 'collection-track' && (
+                                                 <div className="mt-1 ml-4 border-l border-dashed border-slate-700/50 pl-2 space-y-1 animate-fade-in">
+                                                   {sub.tabCon.map(con => (
+                                                     <button key={con.id} onClick={(e) => { e.stopPropagation(); setNavHistory(prev => [...prev, { lonId: activeTabLon, nhoId: activeTabNho, conId: activeTabCon, entityId: selectedEntityId, subTab: collectionSubTab }]); setActiveTabCon(con.id); setIsEditingMode(false); }} className={`w-full text-left py-1.5 px-3 text-xs rounded-md font-serif truncate transition-colors ${activeTabCon === con.id ? 'bg-amber-900/30 text-amber-400' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'}`}>
+                                                       {safeString(con.label)}
+                                                     </button>
+                                                   ))}
+                                                 </div>
+                                               )}
+                                             </div>
+                                           );
+                                         })}
+                                       </div>
+                                     )}
+                                   </div>
+                                 );
+                               })}
+                             </div>
+                           );
+                         })
+                       ) : (
+                         sortedTabs.map(tab => {
+                           const isActive = activeTabLon === tab.id;
+                           return (
+                             <div key={tab.id} className="px-3 mb-1">
+                               <button onClick={() => handleSelectTabLon(tab.id)} className={`w-full flex items-center p-3 rounded-lg transition-colors overflow-hidden whitespace-nowrap ${isActive && !activeTabNho ? 'bg-amber-900/20 text-amber-400 border-l-2 border-amber-500' : 'text-slate-500 hover:bg-slate-800 border-l-2 border-transparent'}`}>
                                  <div className="w-5 flex justify-center flex-shrink-0">{getIconComponent(tab.iconName)}</div>
                                  <span className={`ml-3 font-serif text-sm transition-opacity duration-200 ${menu2Expanded ? 'opacity-100' : 'opacity-0'}`}>{safeString(tab.label)}</span>
-                              </button>
-                              
-                              {isActive && tab.subTabs?.length > 0 && menu2Expanded && (
-                                <div className="mt-1 ml-6 border-l border-slate-700/50 pl-2 space-y-1 animate-fade-in">
+                               </button>
+                               {isActive && tab.subTabs?.length > 0 && menu2Expanded && (
+                                 <div className="mt-1 ml-6 border-l border-slate-700/50 pl-2 space-y-1 animate-fade-in">
                                    {tab.subTabs.map(sub => {
                                      const isActiveNho = activeTabNho === sub.id;
                                      const hasTabCon = sub.tabCon && sub.tabCon.length > 0;
                                      return (
                                        <div key={sub.id}>
-                                          <button onClick={(e) => handleSelectTabNho(e, tab.id, sub)} className={`w-full text-left py-2 px-3 text-sm rounded-md font-serif flex items-center justify-between transition-colors ${isActiveNho ? 'bg-slate-800/80 text-amber-300' : 'text-slate-500 hover:text-slate-300'}`}>
-                                             <span className="flex items-center gap-2 truncate">
-                                                {sub.viewType === 'collection-track' && <LayoutGrid size={12} className="opacity-50 flex-shrink-0" />} 
-                                                <span className="truncate">{safeString(sub.label)}</span>
-                                             </span>
-                                             {hasTabCon && <ChevronDown size={14} className={`flex-shrink-0 transition-transform ${isActiveNho ? 'text-amber-400' : 'text-slate-600 -rotate-90'}`} />}
-                                          </button>
-
-                                          {isActiveNho && hasTabCon && sub.viewType !== 'collection-track' && (
-                                             <div className="mt-1 ml-4 border-l border-dashed border-slate-700/50 pl-2 space-y-1 animate-fade-in">
-                                                {sub.tabCon.map(con => (
-                                                   <button key={con.id} onClick={(e) => { e.stopPropagation(); setNavHistory(prev => [...prev, { lonId: activeTabLon, nhoId: activeTabNho, conId: activeTabCon, entityId: selectedEntityId, subTab: collectionSubTab }]); setActiveTabCon(con.id); setIsEditingMode(false); }} className={`w-full text-left py-1.5 px-3 text-xs rounded-md font-serif truncate transition-colors ${activeTabCon === con.id ? 'bg-amber-900/30 text-amber-400' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'}`}>
-                                                      {safeString(con.label)}
-                                                   </button>
-                                                ))}
-                                             </div>
-                                          )}
+                                         <button onClick={(e) => handleSelectTabNho(e, tab.id, sub)} className={`w-full text-left py-2 px-3 text-sm rounded-md font-serif flex items-center justify-between transition-colors ${isActiveNho ? 'bg-slate-800/80 text-amber-300' : 'text-slate-500 hover:text-slate-300'}`}>
+                                           <span className="flex items-center gap-2 truncate">
+                                             {sub.viewType === 'collection-track' && <LayoutGrid size={12} className="opacity-50 flex-shrink-0" />}
+                                             <span className="truncate">{safeString(sub.label)}</span>
+                                           </span>
+                                           {hasTabCon && <ChevronDown size={14} className={`flex-shrink-0 transition-transform ${isActiveNho ? 'text-amber-400' : 'text-slate-600 -rotate-90'}`} />}
+                                         </button>
+                                         {isActiveNho && hasTabCon && sub.viewType !== 'collection-track' && (
+                                           <div className="mt-1 ml-4 border-l border-dashed border-slate-700/50 pl-2 space-y-1 animate-fade-in">
+                                             {sub.tabCon.map(con => (
+                                               <button key={con.id} onClick={(e) => { e.stopPropagation(); setNavHistory(prev => [...prev, { lonId: activeTabLon, nhoId: activeTabNho, conId: activeTabCon, entityId: selectedEntityId, subTab: collectionSubTab }]); setActiveTabCon(con.id); setIsEditingMode(false); }} className={`w-full text-left py-1.5 px-3 text-xs rounded-md font-serif truncate transition-colors ${activeTabCon === con.id ? 'bg-amber-900/30 text-amber-400' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'}`}>
+                                                 {safeString(con.label)}
+                                               </button>
+                                             ))}
+                                           </div>
+                                         )}
                                        </div>
                                      );
                                    })}
-                                </div>
-                              )}
-                           </div>
-                         );
-                       })}
+                                 </div>
+                               )}
+                             </div>
+                           );
+                         })
+                       )}
                    </div>
                 </div>
               </div>

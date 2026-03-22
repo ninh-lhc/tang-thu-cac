@@ -6,6 +6,7 @@
 import React from 'react';
 import { X, Layers, Sparkles } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
+import { resolveFieldsTemplate } from './MasterEngines.js';
 
 export function AppModalMotCua({
   activeNovelData,
@@ -125,7 +126,9 @@ export function AppModalMotCua({
                 const [hlon, hnho] = hubCreatePath.split('|');
                 const hlonObj = activeTabs.find((t) => t.id === hlon);
                 const hnhoObj = hlonObj?.subTabs?.find((s) => s.id === hnho);
-                const ft = hnhoObj?.fieldsTemplate || [];
+                const ft = hnhoObj
+                  ? resolveFieldsTemplate(hnhoObj, hlon, hlonObj?.label || '')
+                  : [];
                 return (
                   <div className="rounded-xl border border-violet-900/40 bg-slate-950/60 p-4 space-y-3 mt-2">
                     <p className="text-[10px] text-amber-700/90 font-serif">Duyệt rồi bấm Lưu. Đã bỏ qua avatar từ AI.</p>

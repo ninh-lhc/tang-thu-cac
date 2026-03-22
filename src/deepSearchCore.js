@@ -111,21 +111,40 @@ export function runDeepSearch({ novelsMetadata, allNovelsCache, activeNovelData,
   return dedupeDeepSearchResults(res);
 }
 
+function safeStr(v) {
+  return (v != null && String(v).trim()) || '';
+}
+
+/** Chỉ đếm từ các mục collection-track trong tabsConfig — tránh trùng khi data có cả 'default' và nho.id. Trả về byTab để hiển thị thống kê theo mục. */
 export function countEntitiesInNovel(novelData) {
   let entities = 0;
   let milestones = 0;
-  if (!novelData?.data) return { entities: 0, milestones: 0 };
-  Object.values(novelData.data).forEach((lonData) => {
-    if (typeof lonData !== 'object' || !lonData) return;
-    Object.values(lonData).forEach((nhoData) => {
-      if (!nhoData?.entities) return;
-      entities += nhoData.entities.length;
-      nhoData.entities.forEach((e) => {
-        milestones += e.milestones?.length || 0;
+  const byTab = [];
+  if (!novelData?.data) return { entities: 0, milestones: 0, byTab: [] };
+  const tabsConfig = novelData.tabsConfig || [];
+  tabsConfig.forEach((lon) => {
+    if (lon.id === 'tong-quan') return;
+    (lon.subTabs || []).forEach((nho) => {
+      if (nho.viewType !== 'collection-track') return;
+      const tabData = novelData.data?.[lon.id]?.[nho.id];
+      const ents = tabData?.entities || [];
+      let msHere = 0;
+      ents.forEach((e) => {
+        msHere += (e.milestones?.length || 0);
       });
+      entities += ents.length;
+      milestones += msHere;
+      if (ents.length > 0 || msHere > 0) {
+        byTab.push({
+          key: `${lon.id}|${nho.id}`,
+          label: `${safeStr(lon.label)} › ${safeStr(nho.label)}`,
+          entities: ents.length,
+          milestones: msHere,
+        });
+      }
     });
   });
-  return { entities, milestones };
+  return { entities, milestones, byTab };
 }
 
 export function dedupeDeepSearchResults(res) {

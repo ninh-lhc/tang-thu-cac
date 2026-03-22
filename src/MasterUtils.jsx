@@ -43,7 +43,7 @@ export const truncateForAI = (raw, max = AI_MAX_INPUT_CHARS) => {
 export const mapGeminiErrorToUserMessage = (err) => {
   const m = safeString(err?.message);
   if (m.startsWith('rate_limit:')) return 'Quá tải API (429/503). Thử lại sau hoặc thêm API Key trong Cài đặt.';
-  if (m.startsWith('timeout:')) return 'AI phản hồi quá chậm. Hãy thử lại với đoạn ngắn hơn.';
+  if (m.startsWith('timeout:')) return 'AI phản hồi quá chậm. Vui lòng thử lại sau.';
   if (/API key not valid|API_KEY_INVALID|invalid api key/i.test(m)) return 'API Key không hợp lệ. Kiểm tra lại trong Cài đặt.';
   if (/quota|RESOURCE_EXHAUSTED|exceeded/i.test(m)) return 'Hết quota / giới hạn key. Thử key khác hoặc đợi reset.';
   if (m.startsWith('HTTP 401') || m.startsWith('HTTP 403')) return 'Key bị từ chối (401/403). Kiểm tra quyền API.';
@@ -68,9 +68,11 @@ async function readGeminiErrorDetail(res) {
 }
 
 // Gọi Gemini và trả về text thô (không parse JSON)
-export const callGeminiAPIText = async (payload, keysInput) => {
+// options.timeoutMs: timeout tùy chọn (mặc định AI_REQUEST_TIMEOUT_MS)
+export const callGeminiAPIText = async (payload, keysInput, options = {}) => {
   const keys = normalizeKeys(keysInput);
   if (keys.length === 0) throw new Error('Chưa thiết lập API Key');
+  const timeoutMs = options.timeoutMs ?? AI_REQUEST_TIMEOUT_MS;
   const payloadKey = JSON.stringify(payload);
   const cacheKey = `${keys.join('|')}::${payloadKey}`;
   const cached = geminiResponseCache.get(cacheKey);
@@ -84,7 +86,7 @@ export const callGeminiAPIText = async (payload, keysInput) => {
     const key = keys[i % keys.length];
     try {
       const ac = new AbortController();
-      const timeoutId = setTimeout(() => ac.abort(), AI_REQUEST_TIMEOUT_MS);
+      const timeoutId = setTimeout(() => ac.abort(), timeoutMs);
       let res;
       try {
         res = await fetch(`${GEMINI_BASE_URL}?key=${key}`, {
@@ -112,7 +114,7 @@ export const callGeminiAPIText = async (payload, keysInput) => {
       return text;
     } catch (e) {
       if (e?.name === 'AbortError') {
-        lastError = new Error(`timeout:${AI_REQUEST_TIMEOUT_MS}`);
+        lastError = new Error(`timeout:${timeoutMs}`);
       } else {
         lastError = e;
       }
@@ -124,8 +126,9 @@ export const callGeminiAPIText = async (payload, keysInput) => {
 };
 
 // Gọi Gemini và trả về JSON đã parse (dùng cho structured output)
-export const callGeminiAPI = async (payload, keysInput) => {
-  const rawText = await callGeminiAPIText(payload, keysInput);
+// options.timeoutMs: timeout tùy chọn
+export const callGeminiAPI = async (payload, keysInput, options = {}) => {
+  const rawText = await callGeminiAPIText(payload, keysInput, options);
   if (!rawText) return null;
   const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
   try {
@@ -187,6 +190,117 @@ export const generateReviewWithAI = async (novelInfo, keysInput) => {
     systemInstruction: { parts: [{ text: "Bạn là một đạo hữu uyên bác đang review ngọc giản. Hành văn có khí chất." }] }
   };
   return callGeminiAPIText(payload, keysInput);
+};
+
+/** Icons hợp lệ cho tab (getIconComponent hỗ trợ). */
+const VALID_TAB_ICONS = ['BookOpen', 'Flame', 'User', 'Hexagon', 'Swords', 'Map', 'Globe', 'ScrollText'];
+
+/** Kiểm tra và chuẩn hóa tabsConfig từ AI. */
+const sanitizeTabsConfig = (raw) => {
+  if (!Array.isArray(raw) || raw.length < 2) return null;
+  const out = [];
+  for (const tab of raw) {
+    if (!tab || typeof tab.id !== 'string' || typeof tab.label !== 'string') continue;
+    const icon = VALID_TAB_ICONS.includes(tab.iconName) ? tab.iconName : 'ScrollText';
+    const subTabs = Array.isArray(tab.subTabs) ? tab.subTabs : [];
+    const sanitizedSub = [];
+    for (const st of subTabs) {
+      if (!st || typeof st.id !== 'string' || typeof st.label !== 'string') continue;
+      if (st.viewType === 'collection-track') {
+        const ft = Array.isArray(st.fieldsTemplate) ? st.fieldsTemplate : [];
+        const fields = ft.map(f => (f && f.id && f.label) ? { id: String(f.id).replace(/[^a-zA-Z0-9_-]/g, '_'), label: String(f.label) } : null).filter(Boolean);
+        if (fields.length < 2) fields.push({ id: 'f_title', label: 'Tên / Danh xưng' }, { id: 'f_desc', label: 'Mô tả' });
+        sanitizedSub.push({ id: st.id, label: st.label, viewType: 'collection-track', tabCon: [], fieldsTemplate: fields });
+      } else if (Array.isArray(st.tabCon) && st.tabCon.length > 0) {
+        sanitizedSub.push({ id: st.id, label: st.label, tabCon: st.tabCon.filter(t => t && t.id && t.label).map(t => ({ id: t.id, label: t.label })) });
+      } else {
+        sanitizedSub.push({ id: st.id, label: st.label, viewType: 'collection-track', tabCon: [], fieldsTemplate: [{ id: 'f_title', label: 'Tên' }, { id: 'f_desc', label: 'Mô tả' }] });
+      }
+    }
+    out.push({
+      id: tab.id,
+      label: tab.label,
+      iconName: icon,
+      subTabs: sanitizedSub,
+      isFixed: tab.id === 'tong-quan' ? true : (tab.isFixed === true)
+    });
+  }
+  const hasTongQuan = out.some(t => t.id === 'tong-quan');
+  if (!hasTongQuan) out.unshift({ id: 'tong-quan', label: 'Tổng Quan', iconName: 'BookOpen', subTabs: [], isFixed: true });
+  return out;
+};
+
+/**
+ * AI sinh cấu trúc mục lục (tabsConfig) phù hợp với thể loại truyện.
+ * @param {string[]} genres - Mảng thể loại (vd: ['Tiên Hiệp', 'Hệ Thống'])
+ * @param {string[]} keysInput - API keys Gemini
+ * @returns {Promise<Array>} tabsConfig đã chuẩn hóa
+ */
+export const generateTabsConfigByGenres = async (genres, keysInput) => {
+  const g = Array.isArray(genres) ? genres : [genres];
+  const genreStr = g.length > 0 ? g.join(', ') : 'Tiên Hiệp';
+
+  const schema = {
+    type: 'OBJECT',
+    properties: {
+      tabs: {
+        type: 'ARRAY',
+        description: 'Danh sách tab chính (mục lớn)',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            id: { type: 'STRING', description: 'Id tab, dạng kebab-case (vd: nhan-vat, the-luc)' },
+            label: { type: 'STRING', description: 'Tên hiển thị' },
+            iconName: { type: 'STRING', description: 'Một trong: BookOpen, Flame, User, Hexagon, Swords, Map, Globe, ScrollText' },
+            subTabs: {
+              type: 'ARRAY',
+              description: 'Các tab con',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  id: { type: 'STRING', description: 'Id tab con, kebab-case' },
+                  label: { type: 'STRING', description: 'Tên hiển thị' },
+                  viewType: { type: 'STRING', description: 'collection-track cho danh sách thẻ' },
+                  fieldsTemplate: {
+                    type: 'ARRAY',
+                    description: 'Các trường thuộc tính cho thẻ',
+                    items: {
+                      type: 'OBJECT',
+                      properties: { id: { type: 'STRING' }, label: { type: 'STRING' } },
+                      required: ['id', 'label']
+                    }
+                  }
+                },
+                required: ['id', 'label']
+              }
+            }
+          },
+          required: ['id', 'label']
+        }
+      }
+    },
+    required: ['tabs']
+  };
+
+  const prompt = [
+    `Thể loại truyện: ${genreStr}.`,
+    'Sinh cấu trúc mục lục (tabs) phù hợp để người đọc ghi chép nhân vật, thế lực, pháp bảo, địa danh, v.v.',
+    'Luôn có tab đầu tiên "Tổng Quan" (id: tong-quan, iconName: BookOpen, subTabs: []).',
+    'Các tab khác phải có subTabs với viewType: "collection-track" và fieldsTemplate (các trường như f_status, f_title, f_desc,...).',
+    'Phù hợp với thể loại: Tiên Hiệp có Tu Luyện/Cảnh Giới; Ngôn Tình có Nhân Vật/Quan Hệ; Đô Thị có Công Ty/Nhân Vật; Võng Du có Kỹ năng/Trang bị; v.v.'
+  ].join('\n');
+
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    systemInstruction: { parts: [{ text: 'Bạn sinh JSON cấu trúc mục lục. Chỉ trả về JSON, không chú thích. Id dùng kebab-case. fieldsTemplate mỗi subTab có 3-6 trường.' }] },
+    generationConfig: { responseMimeType: 'application/json', responseSchema: schema }
+  };
+
+  const out = await callGeminiAPI(payload, keysInput, { timeoutMs: 45000 });
+  const arr = Array.isArray(out?.tabs) ? out.tabs : (Array.isArray(out) ? out : null);
+  const sanitized = sanitizeTabsConfig(arr);
+  if (!sanitized) throw new Error('AI trả về cấu trúc không hợp lệ');
+  return sanitized;
 };
 
 /** Phân tích ghi chú nối tra cứu → gợi ý tạo thẻ / mốc timeline / cập nhật hồ sơ (người dùng xác nhận sau). */
@@ -260,7 +374,8 @@ const journalSuggestionItem = {
       items: {
         type: 'OBJECT',
         properties: {
-          fieldLabel: { type: 'STRING' },
+          fieldId: { type: 'STRING', description: 'Ưu tiên: id trường từ danh mục (vd. f_status)' },
+          fieldLabel: { type: 'STRING', description: 'Nếu không có fieldId thì nhãn trường khớp danh mục' },
           value: { type: 'STRING' }
         }
       }
@@ -284,7 +399,7 @@ export const analyzeReadingJournalWithAI = async (keysInput, ctx) => {
     'DANH MỤC (tabLonId|tabNhoId | mục | thẻ hiện có | tên các trường template):',
     cat || '(trống)',
     '',
-    'Đề xuất tối đa 10 hành động. new_entity: thẻ chưa có. milestone: sự kiện timeline cho thẻ ĐÃ CÓ (entityHint khớp tên). update_profile: đổi thông tin hồ sơ thẻ có sẵn — dùng fieldPatches với fieldLabel khớp một trong các trường liệt kê, kèm profileNote ngắn nếu cần.',
+    'Đề xuất tối đa 10 hành động. new_entity: thẻ chưa có. milestone: sự kiện timeline cho thẻ ĐÃ CÓ (entityHint khớp tên). update_profile: đổi hồ sơ thẻ có sẵn — fieldPatches: ưu tiên fieldId đúng id trong danh mục; không có id thì fieldLabel khớp nhãn.',
     'tabLonId/tabNhoId chỉ từ danh mục. Ưu tiên gợi ý cụ thể, tránh trùng lặp vô ích.',
     '',
     'QUAN TRỌNG: Mọi chuỗi (draftRawText, eventText, profileNote, fieldPatches.value) chỉ là văn bản thường. TUYỆT ĐỐI KHÔNG dùng cú pháp [[...]] (wiki link). Không điền URL ảnh hay hướng dẫn gắn ảnh — người dùng sẽ vào thẻ để làm link/ảnh.'
@@ -294,7 +409,7 @@ export const analyzeReadingJournalWithAI = async (keysInput, ctx) => {
     contents: [{ parts: [{ text: userText }] }],
     systemInstruction: {
       parts: [{
-        text: 'Trả về JSON đúng schema. Tiếng Việt. Ngắn gọn. fieldPatches chỉ khi chắc nhãn trường khớp danh mục. Không bao giờ dùng [[...]] trong bất kỳ trường chuỗi nào; không URL ảnh trong fieldPatches.'
+        text: 'Trả về JSON đúng schema. Tiếng Việt. Ngắn gọn. fieldPatches: ưu tiên fieldId từ danh mục. Không bao giờ dùng [[...]] trong bất kỳ trường chuỗi nào; không URL ảnh trong fieldPatches.'
       }]
     },
     generationConfig: {

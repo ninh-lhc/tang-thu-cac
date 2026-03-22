@@ -1,0 +1,231 @@
+BỘ FORM NHẬP LIỆU "TÀNG THƯ CÁC" TỐI ƯU CHO AI TRÍCH XUẤT
+
+Quy tắc thiết kế AI-First (Ưu tiên AI tự động điền):
+
+Toàn bộ dữ liệu được quy chuẩn về dạng Text để AI dễ dàng trích xuất từ Bản thảo nguyên thủy (Raw text) và truyền vào Form thông qua JSON.
+
+[*]: Trường bắt buộc nhập.
+
+(Text): Khung nhập liệu ngắn (1 dòng). VD: "Trúc Cơ Kỳ", "Nam".
+
+(Tags): Khung nhập liệu ngắn, AI sẽ xuất ra chuỗi cách nhau bằng dấu phẩy. VD: "Lãnh khốc, Phúc hắc".
+
+(Textarea): Khung nhập văn bản dài, đoạn văn.
+
+1. FORM: TU BỔ NHÂN VẬT (Bao gồm NVC, Đạo Lữ, Kẻ Thù...)
+
+A. Các trường CƠ BẢN (Thể loại nào cũng hiện)
+
+Ảnh Đại Diện (Avatar) [Upload/Link Image]
+
+Danh Xưng / Tên Gọi (Text) [*]
+
+Bí Danh / Tên Khác (Tags)
+
+Phân Loại Nhân Vật (Text): (AI tự phân loại: Thiên Mệnh Chi Tử, Đạo Lữ, Kẻ Thù, Pháo Khôi...)
+
+Quan Hệ Với NVC (Text): (AI điền tự do: Vợ của Lạc Nam, Sư tôn...)
+
+Giới Tính (Text): (Nam, Nữ, Không rõ)
+
+Trạng Thái Sinh Tồn (Text): (Còn sống, Đã tàn phế, Đã Vẫn Lạc...)
+
+Tính Cách / Đặc Điểm (Tags): (Phúc hắc, Thánh mẫu, Kiêu ngạo...)
+
+Tiểu Sử / Tóm Tắt (Textarea)
+
+B. Các trường ĐẶC THÙ (Tự động hiện theo Thể Loại đã chọn)
+
+Nếu chọn [Tiên Hiệp / Huyền Huyễn]:
+
+Cảnh Giới Tu Vi (Text): (Luyện Khí, Trúc Cơ, Kim Đan...)
+
+Linh Căn / Thể Chất (Text): (Hỗn Độn Linh Căn, Thái Cổ Thể...)
+
+Công Pháp Chính (Text)
+
+Pháp Bảo Bản Mệnh (Text)
+
+Thế Lực / Tông Môn (Text)
+
+Nếu chọn [Ngôn Tình / Đô Thị]:
+
+Chỉ Số Mị Lực / Nhan Sắc (Text): (Khuynh quốc khuynh thành, Điểm: 95/100...)
+
+Thân Phận / Nghề Nghiệp (Text): (Tổng Tài, Ảnh Đế, Trà Xanh...)
+
+Độ Hảo Cảm / Ái Tình (Text): (Sinh tử không rời, Cừu hận tột độ, 100 điểm...)
+
+Gia Thế / Chống Lưng (Text)
+
+Nếu chọn [Võng Du / Hệ Thống / Vô Hạn Lưu]:
+
+ID Trò Chơi / Bí Danh (Text)
+
+Chức Nghiệp (Class) (Text): (Sát Thủ, Trí Giả...)
+
+Cấp Độ (Level) (Text): (Cấp 99, Max Level...)
+
+Chỉ Số Sinh Tồn (Lực Chiến/HP/MP) (Text): (Ví dụ: 15.000 HP)
+
+Bàn Tay Vàng / Dị Năng (Tags)
+
+Nếu chọn [Khoa Huyễn / Mạt Thế]:
+
+Tuyến Tiến Hóa (Text): (Tinh thần lực cấp S, Thể thuật...)
+
+Cấp Độ Dị Năng (Text): (Hệ Lôi cấp 5, Biến dị...)
+
+Mức Độ Đột Biến (Text): (Bán Cơ Khí, Zombie bậc 3...)
+
+Điểm Sinh Tồn (Text)
+
+Nếu chọn [Lịch Sử / Đồng Nhân]:
+
+Chức Quan / Tước Vị (Text): (Thừa tướng, Hoàng Hậu...)
+
+Triều Đại / Trận Doanh (Text): (Đại Minh, Bắc Ngụy...)
+
+Tên Nguyên Tác (Text): (Dành cho Đồng Nhân - Tác phẩm gốc)
+
+Vai Trò Nguyên Tác (Text): (Kẻ bị thay đổi số phận, OOC...)
+
+2. FORM: KHỞI TẠO SỨC MẠNH (Công Pháp / Kỹ Năng / Bí Thuật)
+
+A. Các trường CƠ BẢN
+
+Icon / Hình Ảnh Minh Họa [Upload/Link Image]
+
+Tên Chiêu Thức / Công Pháp (Text) [*]
+
+Phẩm Giai / Độ Hiếm (Text): (Địa Giai, Thiên Giai, Cấm Thuật...)
+
+Thuộc Tính Nguyên Tố (Text): (Kim, Mộc, Ám, Thời Gian...)
+
+Người Sáng Tạo / Nguồn Gốc (Text)
+
+Mô Tả Hiệu Ứng (Textarea)
+
+B. Các trường ĐẶC THÙ
+
+Nếu chọn [Tiên Hiệp / Huyền Huyễn]:
+
+Khí Huyết / Linh Lực Tiêu Hao (Text)
+
+Yêu Cầu Cảnh Giới Kích Hoạt (Text)
+
+Tác Dụng Phụ / Phản Phệ (Text): (Tẩu hỏa nhập ma, Trọng thương...)
+
+Nếu chọn [Võng Du / Hệ Thống / Vô Hạn Lưu]:
+
+Thời Gian Hồi Chiêu (Cooldown) (Text): (10 giây, 1 canh giờ...)
+
+Thời Gian Niệm (Casting Time) (Text): (Thuấn phát, 5 giây...)
+
+Sát Thương / Hệ Số Buff (Text): (Gây 500% sát thương, Hồi 50% máu...)
+
+Cấp Kỹ Năng (Skill Level) (Text)
+
+Nếu chọn [Khoa Huyễn / Mạt Thế]:
+
+Năng Lượng Tiêu Hao (Text): (Tinh hạch, Pin năng lượng...)
+
+Yêu Cầu Gen / Lõi Sinh Hóa (Text)
+
+Bức Xạ / Độc Tính (Text)
+
+3. FORM: KIẾN THIẾT THẾ LỰC & THẾ GIỚI (Tông Môn / Bản Đồ / Bí Cảnh)
+
+A. Các trường CƠ BẢN
+
+Hình Ảnh Tổng Quan / Logo [Upload/Link Image]
+
+Tên Phân Khu / Tên Thế Lực (Text) [*]
+
+Phân Loại (Text): (Tông Môn, Bí Cảnh, Vị Diện, Tổ Chức...)
+
+Cấp Bậc Đánh Giá (Text): (Siêu Cấp, Nhất Lưu, Tam Lưu, 5 Sao...)
+
+Vị Trí Cụ Thể (Text): (Tọa lạc tại Bắc Bộ, Dưới đáy vực sâu...)
+
+Tổng Quan / Lịch Sử (Textarea)
+
+B. Các trường ĐẶC THÙ
+
+Dành cho [Tông Môn / Đế Quốc / Gia Tộc]:
+
+Người Đứng Đầu (Text): (Tông Chủ, Tộc Trưởng, Tổng Tài...)
+
+Lực Lượng / Dân Số (Text): (Mấy vạn đệ tử, 10 vạn quân...)
+
+Đồng Minh / Trận Doanh (Text)
+
+Kẻ Thù Truyền Kiếp (Text)
+
+Tài Sản / Tuyệt Học Trấn Phái (Tags)
+
+Dành cho [Bí Cảnh / Phó Bản / Khu An Toàn Mạt Thế]:
+
+Mức Độ Nguy Hiểm (Text): (An Toàn, Thí Luyện, Cửu Tử Nhất Sinh...)
+
+Chu Kỳ Mở Cửa (Text): (100 năm mở 1 lần, Luôn mở...)
+
+Điều Kiện Tiến Vào (Text): (Cốt linh dưới 30, Trúc cơ kỳ...)
+
+Kẻ Địch / Boss Khu Vực (Tags)
+
+Vật Phẩm Rơi Ra / Kỳ Trân (Tags)
+
+Dành cho [Khoa Huyễn / Tinh Hệ]:
+
+Tài Nguyên Khoáng Sản (Tags): (Tinh Thạch, Năng lượng...)
+
+Mức Độ Ô Nhiễm / Bức Xạ (Text)
+
+Trình Độ Khoa Kỹ (Text): (Văn minh bậc 2, Vượt thời gian...)
+
+4. FORM: RÈN ĐÚC VẬT PHẨM (Pháp Bảo / Đan Dược / Thần Khí)
+
+A. Các trường CƠ BẢN
+
+Hình Ảnh Vật Phẩm [Upload/Link Image]
+
+Tên Danh Mục (Text) [*]
+
+Loại Hình (Text): (Vũ Khí, Phòng Cụ, Đan Dược, Vật Phẩm Tiêu Hao...)
+
+Phẩm Chất (Rarity) (Text): (Thần Khí, Rác Rưởi, Cực Phẩm...)
+
+Chủ Sở Hữu Hiện Tại (Text)
+
+Công Dụng Biểu Hiện (Textarea)
+
+B. Các trường ĐẶC THÙ
+
+Nếu chọn [Pháp Bảo / Vũ Khí / Trang Bị]:
+
+Độ Bền (Text): (Vĩnh cửu, Dùng 1 lần, Tự phục hồi...)
+
+Khí Linh / Quang Não (Text): (Tên linh hồn hoặc AI của vũ khí)
+
+Vật Liệu Luyện Chế (Tags)
+
+Chỉ Số Cộng Thêm (Stats Buff) (Text): (+1000 Công, Xuyên giáp...)
+
+Nếu chọn [Đan Dược / Dược Tề / Tinh Hạch]:
+
+Dược Hiệu / Năng Lượng (Text): (Trực tiếp đột phá, Cải tử hoàn sinh...)
+
+Tác Dụng Phụ / Độc Tính (Text)
+
+Tuổi Thọ / Phẩm Cấp (Text): (100.000 năm, Cấp 5...)
+
+Công Thức / Đan Phương (Textarea)
+
+Nếu chọn [Đạo Cụ Hệ Thống / Hắc Khoa Kỹ]:
+
+Cấp Độ Quyền Hạn (Text)
+
+Số Lần Sử Dụng (Text)
+
+Giới Hạn Không Gian (Text)
