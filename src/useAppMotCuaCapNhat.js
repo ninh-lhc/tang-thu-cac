@@ -1,0 +1,285 @@
+/**
+ * Hub "Một cửa cập nhật": mở modal, tạo thẻ bằng AI, nhật ký batch → áp gợi ý.
+ *
+ * State hub (overviewHub*, hubCreate*, hubUpdate*) vẫn ở App.jsx — hook chỉ gói handler.
+ * Phải gọi sau khi App đã có hàm updateActiveNovelData (mutate novel + sync).
+ *
+ * Phụ thuộc: MasterEngines (resolveFieldsTemplate), MasterUtils (AI), appNhatKyVaGoiThe (mutate).
+ */
+import { useCallback } from 'react';
+import { DEFAULT_ENTITY_FIELDS, lockFieldsTemplateIfFirstEntity, resolveFieldsTemplate } from './MasterEngines.js';
+import {
+  analyzeTextWithAI,
+  analyzeReadingJournalWithAI,
+  mapGeminiErrorToUserMessage,
+  generateId,
+  safeString,
+} from './MasterUtils.jsx';
+import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
+import { mutateNovelJournalSelections } from './appNhatKyVaGoiThe.js';
+import { buildHubExtendedCatalogLines } from './lib/hubBangDanhMucCacMucNhatKy.js';
+
+export function useAppMotCuaCapNhat({
+  activeNovelData,
+  activeTabs,
+  geminiApiKeys,
+  aiMode,
+  showToast,
+  updateActiveNovelData,
+  hubCreatePath,
+  hubCreateInput,
+  hubCreatePreview,
+  hubUpdateChapter,
+  hubUpdateText,
+  hubUpdatePanel,
+  setOverviewHubOpen,
+  setOverviewHubTab,
+  setHubCreatePreview,
+  setHubUpdatePanel,
+  setHubCreateInput,
+  setHubUpdateChapter,
+  setHubCreatePath,
+  setHubCreateBusy,
+  setHubUpdateText,
+  setActiveNovelData,
+  syncNovelRef,
+  dirHandleRef,
+}) {
+  const openOverviewHub = useCallback(() => {
+    if (!activeNovelData) return;
+    setOverviewHubOpen(true);
+    setOverviewHubTab('create');
+    setHubCreatePreview(null);
+    setHubUpdatePanel(null);
+    setHubCreateInput('');
+    const a = Math.max(0, parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) || 0);
+    setHubUpdateChapter(String(a));
+    let firstPath = '';
+    (activeTabs || []).forEach((lon) => {
+      if (lon.id === 'tong-quan') return;
+      (lon.subTabs || []).forEach((nho) => {
+        if (nho.viewType === 'collection-track' && !firstPath) firstPath = `${lon.id}|${nho.id}`;
+      });
+    });
+    setHubCreatePath(firstPath);
+  }, [activeNovelData, activeTabs, setOverviewHubOpen, setOverviewHubTab, setHubCreatePreview, setHubUpdatePanel, setHubCreateInput, setHubUpdateChapter, setHubCreatePath]);
+
+  const hubRunCreateAi = useCallback(async () => {
+    if (!hubCreatePath) {
+      showToast('Chọn mục sưu tập.', 'warning');
+      return;
+    }
+    const raw = hubCreateInput.trim();
+    if (!raw) {
+      showToast('Nhập mô tả hoặc dán văn bản.', 'warning');
+      return;
+    }
+    if (!activeNovelData || geminiApiKeys.length === 0) {
+      showToast('Cần API Key (Cài đặt).', 'warning');
+      return;
+    }
+    const [lonId, nhoId] = hubCreatePath.split('|');
+    const lon = activeTabs.find((t) => t.id === lonId);
+    const nho = lon?.subTabs?.find((s) => s.id === nhoId);
+    const fieldsTemplate = nho ? resolveFieldsTemplate(nho, lonId, lon?.label || '') : DEFAULT_ENTITY_FIELDS;
+    setHubCreateBusy(true);
+    try {
+      const result = await analyzeTextWithAI(raw, fieldsTemplate, geminiApiKeys, aiMode);
+      const dynamicData = {};
+      (fieldsTemplate || []).forEach((f) => {
+        if (result && result[f.id]) dynamicData[f.id] = safeString(result[f.id]);
+      });
+      const name = safeString(result?.name).trim() || 'Chưa đặt tên';
+      const proc = safeString(result?.processedText);
+      const rawText = stripWikiBracketSyntax(proc || raw);
+      const ents = activeNovelData.data?.[lonId]?.[nhoId]?.entities || [];
+      if (ents.some((e) => safeString(e.name).trim().toLowerCase() === name.toLowerCase())) {
+        showToast(`Đã có thẻ «${name}» — chuyển sang tab Cập nhật.`, 'warning');
+        setOverviewHubTab('update');
+        setHubUpdateText(`Cập nhật về «${name}»: ${raw.slice(0, 3500)}`);
+        return;
+      }
+      setHubCreatePreview({ name, rawText, dynamicData });
+    } catch (e) {
+      showToast(mapGeminiErrorToUserMessage(e), 'error');
+    } finally {
+      setHubCreateBusy(false);
+    }
+  }, [
+    hubCreatePath,
+    hubCreateInput,
+    activeNovelData,
+    activeTabs,
+    geminiApiKeys,
+    aiMode,
+    showToast,
+    setHubCreateBusy,
+    setOverviewHubTab,
+    setHubUpdateText,
+    setHubCreatePreview,
+  ]);
+
+  const hubSaveCreateEntity = useCallback(() => {
+    if (!hubCreatePreview || !hubCreatePath.includes('|')) return;
+    const [lonId, nhoId] = hubCreatePath.split('|');
+    const name = safeString(hubCreatePreview.name).trim();
+    if (!name || name === 'Chưa đặt tên') {
+      showToast('Điền tên thẻ trước khi lưu.', 'warning');
+      return;
+    }
+    const ents = activeNovelData?.data?.[lonId]?.[nhoId]?.entities || [];
+    if (ents.some((e) => safeString(e.name).trim().toLowerCase() === name.toLowerCase())) {
+      showToast('Thẻ đã tồn tại — dùng tab Cập nhật.', 'warning');
+      setOverviewHubTab('update');
+      setHubUpdateText((t) => (safeString(t).trim() ? t : `Cập nhật về «${name}»: `));
+      return;
+    }
+    updateActiveNovelData((nov) => {
+      if (!nov.data) nov.data = {};
+      if (!nov.data[lonId]) nov.data[lonId] = {};
+      let td = nov.data[lonId][nhoId];
+      if (!td || typeof td === 'string') td = { overview: typeof td === 'string' ? td : '', entities: [] };
+      if (!td.entities) td.entities = [];
+      td.entities.push({
+        id: generateId('ent'),
+        name,
+        avatar: '',
+        rawText: stripWikiBracketSyntax(safeString(hubCreatePreview.rawText)),
+        dynamicData: { ...hubCreatePreview.dynamicData },
+        info: '',
+        milestones: [],
+      });
+      nov.data[lonId][nhoId] = td;
+      lockFieldsTemplateIfFirstEntity(nov, lonId, nhoId);
+    });
+    showToast(`Đã tạo «${name}». Ảnh avatar: mở đúng mục → thẻ để thêm.`, 'success');
+    setHubCreatePreview(null);
+    setHubCreateInput('');
+  }, [
+    hubCreatePreview,
+    hubCreatePath,
+    activeNovelData,
+    showToast,
+    updateActiveNovelData,
+    setOverviewHubTab,
+    setHubUpdateText,
+    setHubCreatePreview,
+    setHubCreateInput,
+  ]);
+
+  const runHubUpdateAi = useCallback(async () => {
+    const text = hubUpdateText.trim();
+    if (!text) {
+      showToast('Nhập nội dung cập nhật.', 'warning');
+      return;
+    }
+    if (!activeNovelData || geminiApiKeys.length === 0) {
+      showToast('Cần API Key (Cài đặt).', 'warning');
+      return;
+    }
+    const ch = Math.max(
+      0,
+      parseInt(hubUpdateChapter, 10) ||
+        parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) ||
+        0
+    );
+    setHubUpdatePanel({
+      chapter: String(ch),
+      sourceText: text,
+      suggestions: [],
+      selectedKeys: new Set(),
+      loading: true,
+      error: '',
+    });
+    try {
+      const lines = buildHubExtendedCatalogLines(activeNovelData, safeString, resolveFieldsTemplate);
+      const { suggestions } = await analyzeReadingJournalWithAI(geminiApiKeys, {
+        novelTitle: activeNovelData.title,
+        chapter: ch,
+        journalText: text,
+        extendedCatalog: lines.join('\n'),
+      });
+      const list = Array.isArray(suggestions) ? suggestions : [];
+      const normalized = list.map((sug) => ({
+        ...sug,
+        draftRawText: stripWikiBracketSyntax(safeString(sug.draftRawText)),
+        eventText: stripWikiBracketSyntax(safeString(sug.eventText)),
+        profileNote: stripWikiBracketSyntax(safeString(sug.profileNote)),
+        why: stripWikiBracketSyntax(safeString(sug.why)),
+        fieldPatches: Array.isArray(sug.fieldPatches)
+          ? sug.fieldPatches.map((p) => ({
+              ...p,
+              fieldId: safeString(p.fieldId).trim(),
+              value: stripWikiBracketSyntax(safeString(p.value)),
+            }))
+          : sug.fieldPatches,
+      }));
+      setHubUpdatePanel({
+        chapter: String(ch),
+        sourceText: text,
+        suggestions: normalized,
+        selectedKeys: new Set(list.map((_, i) => `j-${i}`)),
+        loading: false,
+        error: '',
+      });
+    } catch (e) {
+      setHubUpdatePanel((p) => (p ? { ...p, loading: false, error: mapGeminiErrorToUserMessage(e) } : p));
+    } finally {
+      setHubUpdatePanel((p) => (p?.loading ? { ...p, loading: false } : p));
+    }
+  }, [hubUpdateText, hubUpdateChapter, activeNovelData, geminiApiKeys, showToast, setHubUpdatePanel]);
+
+  const applyHubUpdateSelected = useCallback(() => {
+    if (!hubUpdatePanel?.suggestions?.length) return;
+    if (!hubUpdatePanel.selectedKeys?.size) {
+      showToast('Chọn ít nhất một dòng gợi ý.', 'warning');
+      return;
+    }
+    const panel = hubUpdatePanel;
+    const prevNovel = activeNovelData ? structuredClone(activeNovelData) : null;
+    let ok = 0;
+    let fails = [];
+    updateActiveNovelData((nov) => {
+      const r = mutateNovelJournalSelections(nov, panel);
+      ok = r.ok;
+      fails = r.fails;
+      if (r.ok > 0 && panel.sourceText) {
+        if (!nov.readingJournal) nov.readingJournal = [];
+        nov.readingJournal.unshift({
+          id: generateId('jr'),
+          chapter: r.chapterCtx,
+          text: `[Hub] ${panel.sourceText.slice(0, 7800)}`,
+          at: Date.now(),
+          appliedCount: ok,
+        });
+        if (nov.readingJournal.length > 50) nov.readingJournal.length = 50;
+      }
+    });
+    setHubUpdatePanel(null);
+    setHubUpdateText('');
+    if (ok > 0) {
+      showToast(`Đã áp dụng ${ok} thao tác (cập nhật).${fails.length ? ` (${fails.length} bỏ qua)` : ''}`, 'success', {
+        onUndo:
+          prevNovel
+            ? () => {
+                setActiveNovelData(structuredClone(prevNovel));
+                void (syncNovelRef.current && syncNovelRef.current(prevNovel, dirHandleRef.current));
+              }
+            : undefined,
+      });
+    } else {
+      showToast(fails.length ? fails.slice(0, 4).join('; ') : 'Không áp dụng được.', 'warning');
+    }
+    if (ok > 0 && fails.length) {
+      setTimeout(() => showToast(`Một số dòng lỗi: ${fails.slice(0, 3).join('; ')}`, 'warning'), 400);
+    }
+  }, [hubUpdatePanel, showToast, activeNovelData, updateActiveNovelData, setHubUpdatePanel, setHubUpdateText, setActiveNovelData, syncNovelRef, dirHandleRef]);
+
+  return {
+    openOverviewHub,
+    hubRunCreateAi,
+    hubSaveCreateEntity,
+    runHubUpdateAi,
+    applyHubUpdateSelected,
+  };
+}

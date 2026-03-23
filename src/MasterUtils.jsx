@@ -612,6 +612,33 @@ export const applyWikiLinkWrap = (text, selStart, selEnd) => {
   return { newText: nv, selStart: caret, selEnd: caret };
 };
 
+/** Gỡ wiki [[...]]: ưu tiên vùng chọn; nếu không chọn thì gỡ cặp [[ ]] bao quanh con trỏ. */
+export const applyWikiLinkUnwrap = (text, selStart, selEnd) => {
+  if (selStart < selEnd) {
+    const picked = text.slice(selStart, selEnd);
+    if (picked.startsWith('[[') && picked.endsWith(']]') && picked.length >= 4) {
+      const inner = picked.slice(2, -2);
+      const nv = text.slice(0, selStart) + inner + text.slice(selEnd);
+      return { newText: nv, selStart, selEnd: selStart + inner.length };
+    }
+    const cleaned = picked.replace(/\[\[/g, '').replace(/\]\]/g, '');
+    if (cleaned === picked) return { newText: text, selStart, selEnd };
+    const nv = text.slice(0, selStart) + cleaned + text.slice(selEnd);
+    return { newText: nv, selStart, selEnd: selStart + cleaned.length };
+  }
+
+  const pos = selStart;
+  const left = text.lastIndexOf('[[', pos);
+  const right = text.indexOf(']]', pos);
+  if (left === -1 || right === -1 || left >= right) return { newText: text, selStart, selEnd };
+  if (left + 2 > pos || right < pos) return { newText: text, selStart, selEnd };
+
+  const inner = text.slice(left + 2, right);
+  const nv = text.slice(0, left) + inner + text.slice(right + 2);
+  const caret = Math.max(left, pos - 2);
+  return { newText: nv, selStart: caret, selEnd: caret };
+};
+
 export const handleToolbarClick = (before, after = '', editorId) => {
   const textarea = document.getElementById(editorId);
   if (!textarea) return;
@@ -633,6 +660,11 @@ export const handleToolbarClick = (before, after = '', editorId) => {
 
   if (before === '[[' && after === ']]') {
     const { newText, selStart, selEnd } = applyWikiLinkWrap(text, start, end);
+    apply(newText, selStart, selEnd);
+    return;
+  }
+  if (before === '__WIKI_UNWRAP__') {
+    const { newText, selStart, selEnd } = applyWikiLinkUnwrap(text, start, end);
     apply(newText, selStart, selEnd);
     return;
   }

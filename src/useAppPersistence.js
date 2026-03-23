@@ -1,0 +1,202 @@
+/**
+ * Đồng bộ index.json / localStorage + ghi file truyện (.json).
+ * Tách khỏi App.jsx — refs do App giữ để handler khác dùng chung.
+ */
+import { useCallback, useEffect, useRef } from 'react';
+import { migrateNovel } from './dataMigration.js';
+import { countEntitiesInNovel } from './deepSearchCore.js';
+
+export function useAppPersistence({
+  novelStatsByIdRef,
+  novelsMetadataRef,
+  globalTabsConfigRef,
+  dirHandleRef,
+  setNovelStatsById,
+  showToast,
+}) {
+  const persistIndexStatsTimerRef = useRef(null);
+  const syncNovelRef = useRef(null);
+
+  useEffect(
+    () => () => {
+      if (persistIndexStatsTimerRef.current) clearTimeout(persistIndexStatsTimerRef.current);
+    },
+    []
+  );
+
+  const syncIndex = useCallback(
+    async (newMetadata, newConfig, dir, novelStatsOverride) => {
+      const novelStats =
+        novelStatsOverride !== undefined && novelStatsOverride !== null
+          ? novelStatsOverride
+          : { ...novelStatsByIdRef.current };
+      const payload = { metadata: newMetadata, config: newConfig, novelStats };
+      if (!dir || dir === 'LOCAL_STORAGE') {
+        try {
+          localStorage.setItem('tangthu_index', JSON.stringify(payload));
+        } catch (e) {
+          if (e.name === 'QuotaExceededError' || e.message.includes('quota'))
+            setTimeout(() => {
+              showToast('CẢNH BÁO: Bộ nhớ đệm đã đầy!', 'warning');
+            }, 500);
+        }
+        return;
+      }
+      try {
+        const f = await dir.getFileHandle('index.json', { create: true });
+        const w = await f.createWritable();
+        await w.write(JSON.stringify(payload, null, 2));
+        await w.close();
+      } catch {
+        setTimeout(() => {
+          showToast('Lỗi đồng bộ danh mục!', 'error');
+        }, 0);
+      }
+    },
+    [novelStatsByIdRef, showToast]
+  );
+
+  const queuePersistNovelStatsToIndex = useCallback(() => {
+    if (persistIndexStatsTimerRef.current) clearTimeout(persistIndexStatsTimerRef.current);
+    persistIndexStatsTimerRef.current = setTimeout(() => {
+      persistIndexStatsTimerRef.current = null;
+      const d = dirHandleRef.current;
+      if (!d) return;
+      syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, d, { ...novelStatsByIdRef.current });
+    }, 500);
+  }, [dirHandleRef, globalTabsConfigRef, novelsMetadataRef, novelStatsByIdRef, syncIndex]);
+
+  const bumpNovelStatsAfterWrite = useCallback(
+    (novelData) => {
+      const s = countEntitiesInNovel(novelData);
+      const next = { ...novelStatsByIdRef.current, [novelData.id]: s };
+      novelStatsByIdRef.current = next;
+      setNovelStatsById(next);
+      queuePersistNovelStatsToIndex();
+    },
+    [novelStatsByIdRef, queuePersistNovelStatsToIndex, setNovelStatsById]
+  );
+
+  const syncNovel = useCallback(
+    async (novelData, rootDir) => {
+      if (!rootDir || rootDir === 'LOCAL_STORAGE') {
+        try {
+          localStorage.setItem(`tangthu_novel_${novelData.id}`, JSON.stringify(novelData));
+          bumpNovelStatsAfterWrite(novelData);
+        } catch (e) {
+          if (e.name === 'QuotaExceededError' || e.message.includes('quota'))
+            setTimeout(() => {
+              showToast('CẢNH BÁO: Tràn bộ nhớ! Hãy dùng Thư Mục Máy Tính!', 'warning');
+            }, 500);
+        }
+        return;
+      }
+      const folderName = novelData.folderName || novelData.title.replace(/[\\/:*?"<>|]/g, '').trim() || novelData.id;
+      const jsonStr = JSON.stringify(novelData, null, 2);
+      const mainFile = `${folderName}.json`;
+      const tmpFile = `${folderName}.json.tmp`;
+      const tryAtomic = async () => {
+        const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
+        const tw = await novelDir.getFileHandle(tmpFile, { create: true });
+        const w = await tw.createWritable();
+        await w.write(jsonStr);
+        await w.close();
+        try {
+          await novelDir.removeEntry(mainFile);
+        } catch {
+          /* first save */
+        }
+        const tmpAgain = await novelDir.getFileHandle(tmpFile);
+        if (typeof tmpAgain.move === 'function') {
+          await tmpAgain.move(mainFile);
+        } else {
+          const out = await novelDir.getFileHandle(mainFile, { create: true });
+          const wo = await out.createWritable();
+          await wo.write(jsonStr);
+          await wo.close();
+          try {
+            await novelDir.removeEntry(tmpFile);
+          } catch { /* ignore */ }
+        }
+        await novelDir.getDirectoryHandle('images', { create: true });
+      };
+      const tryDirect = async () => {
+        const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
+        const f = await novelDir.getFileHandle(mainFile, { create: true });
+        const w = await f.createWritable();
+        await w.write(jsonStr);
+        await w.close();
+        await novelDir.getDirectoryHandle('images', { create: true });
+      };
+      try {
+        await tryAtomic();
+        bumpNovelStatsAfterWrite(novelData);
+      } catch {
+        try {
+          await tryDirect();
+          bumpNovelStatsAfterWrite(novelData);
+        } catch {
+          setTimeout(() => {
+            showToast(`Lỗi đồng bộ truyện ${novelData.title}!`, 'error');
+          }, 0);
+        }
+      }
+    },
+    [bumpNovelStatsAfterWrite, showToast]
+  );
+
+  useEffect(() => {
+    syncNovelRef.current = syncNovel;
+  }, [syncNovel]);
+
+  const loadNovelData = useCallback(async (meta, rootDir) => {
+    if (!rootDir || rootDir === 'LOCAL_STORAGE') {
+      const data = localStorage.getItem(`tangthu_novel_${meta.id}`);
+      if (!data) return null;
+      try {
+        return migrateNovel(JSON.parse(data));
+      } catch (e) {
+        console.warn(`[TTC] Dữ liệu bị hỏng cho truyện ${meta.id}, bỏ qua.`, e);
+        return null;
+      }
+    }
+    const folderName = meta.folderName || meta.title.replace(/[\\/:*?"<>|]/g, '').trim() || meta.id;
+    try {
+      const novelDir = await rootDir.getDirectoryHandle(folderName);
+      const f = await novelDir.getFileHandle(`${folderName}.json`);
+      const file = await f.getFile();
+      const text = await file.text();
+      try {
+        return migrateNovel(JSON.parse(text));
+      } catch (pe) {
+        console.warn(`[TTC] File JSON bị hỏng: ${folderName}.json`, pe);
+        return null;
+      }
+    } catch {
+      try {
+        const novelsDir = await rootDir.getDirectoryHandle('novels');
+        const f = await novelsDir.getFileHandle(`${meta.id}.json`);
+        const file = await f.getFile();
+        const text = await file.text();
+        try {
+          return migrateNovel(JSON.parse(text));
+        } catch (pe) {
+          console.warn(`[TTC] File JSON bị hỏng: ${meta.id}.json`, pe);
+          return null;
+        }
+      } catch {
+        return null;
+      }
+    }
+  }, []);
+
+  return {
+    syncIndex,
+    syncNovel,
+    loadNovelData,
+    queuePersistNovelStatsToIndex,
+    bumpNovelStatsAfterWrite,
+    syncNovelRef,
+    persistIndexStatsTimerRef,
+  };
+}

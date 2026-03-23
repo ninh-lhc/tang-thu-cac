@@ -20,7 +20,7 @@ import {
 } from './MasterEngines.js';
 import {
   generateId, safeString, getTerms, AsyncLocalImage,
-  handleToolbarClick, applyWikiLinkWrap, renderMarkdown, analyzeTextWithAI,
+  handleToolbarClick, applyWikiLinkWrap, applyWikiLinkUnwrap, renderMarkdown, analyzeTextWithAI,
   truncateForAI, mapGeminiErrorToUserMessage
 } from './MasterUtils.jsx';
 import { mergeTabsByGenres } from './genreTabsMap.js';
@@ -36,6 +36,7 @@ export const MarkdownToolbar = ({ editorId, onInsertImage, onPickLocalImage }) =
      <div className="w-px h-6 bg-slate-800 mx-1"></div>
      
      <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('[[', ']]', editorId)} className="p-2 text-indigo-500 hover:text-indigo-300 bg-indigo-950/50 rounded-lg hover:bg-indigo-900 transition-colors border border-indigo-900/50 shadow-inner" title="Wiki Link: bôi đen chữ để bọc [[...]], hoặc chèn [[]] tại con trỏ"><Link2 size={16}/></button>
+     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('__WIKI_UNWRAP__', '', editorId)} className="p-2 text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 rounded-lg hover:bg-cyan-900/40 transition-colors border border-cyan-900/50 shadow-inner" title="Gỡ Wiki Link: chọn [[...]] hoặc đặt con trỏ trong link để bỏ"><X size={16}/></button>
      <div className="w-px h-6 bg-slate-800 mx-1"></div>
 
      <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('# ', '', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Tiêu đề 1"><Heading1 size={16}/></button>
@@ -578,29 +579,49 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
                              onChange={e => setDynamicData({...dynamicData, [field.id]: e.target.value})}
                              onFocus={() => setLinkSuggestField(field.id)}
                              onBlur={() => setTimeout(() => setLinkSuggestField(null), 200)}
-                             className="w-full bg-slate-950/80 border border-slate-700 rounded-lg p-2.5 pr-8 text-sm text-slate-200 font-serif focus:border-amber-500 outline-none"
+                            className="w-full bg-slate-950/80 border border-slate-700 rounded-lg p-2.5 pr-20 text-sm text-slate-200 font-serif focus:border-amber-500 outline-none"
                              placeholder="Nhập giá trị hoặc [[Tên]] để liên kết..."
                            />
-                           {/* Nút chèn [[ ]] tại con trỏ / bọc đoạn chọn */}
+                          {/* Nút chèn/gỡ [[ ]] tại con trỏ hoặc vùng chọn */}
                            {linkSuggestField === field.id && (
-                             <button
-                               type="button"
-                               onMouseDown={(e) => e.preventDefault()}
-                               onClick={() => {
-                                 const cur = safeString(dynamicData[field.id]);
-                                 const input = dynamicFieldInputRefs.current[field.id];
-                                 let a = cur.length; let b = cur.length;
-                                 if (input && document.activeElement === input) {
-                                   a = input.selectionStart ?? 0;
-                                   b = input.selectionEnd ?? a;
-                                 }
-                                 const { newText, selStart, selEnd } = applyWikiLinkWrap(cur, a, b);
-                                 pendingWikiCaretRef.current = { fieldId: field.id, selStart, selEnd };
-                                 setDynamicData({ ...dynamicData, [field.id]: newText });
-                               }}
-                               className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-amber-500 hover:text-amber-300 bg-amber-900/30 px-1.5 py-0.5 rounded border border-amber-700/40"
-                               title="Chèn [[ ]] tại con trỏ hoặc bọc đoạn đang chọn"
-                             >[[]]</button>
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  const cur = safeString(dynamicData[field.id]);
+                                  const input = dynamicFieldInputRefs.current[field.id];
+                                  let a = cur.length; let b = cur.length;
+                                  if (input && document.activeElement === input) {
+                                    a = input.selectionStart ?? 0;
+                                    b = input.selectionEnd ?? a;
+                                  }
+                                  const { newText, selStart, selEnd } = applyWikiLinkWrap(cur, a, b);
+                                  pendingWikiCaretRef.current = { fieldId: field.id, selStart, selEnd };
+                                  setDynamicData({ ...dynamicData, [field.id]: newText });
+                                }}
+                                className="text-[10px] font-bold text-amber-500 hover:text-amber-300 bg-amber-900/30 px-1.5 py-0.5 rounded border border-amber-700/40"
+                                title="Chèn [[ ]] tại con trỏ hoặc bọc đoạn đang chọn"
+                              >[[]]</button>
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  const cur = safeString(dynamicData[field.id]);
+                                  const input = dynamicFieldInputRefs.current[field.id];
+                                  let a = cur.length; let b = cur.length;
+                                  if (input && document.activeElement === input) {
+                                    a = input.selectionStart ?? 0;
+                                    b = input.selectionEnd ?? a;
+                                  }
+                                  const { newText, selStart, selEnd } = applyWikiLinkUnwrap(cur, a, b);
+                                  pendingWikiCaretRef.current = { fieldId: field.id, selStart, selEnd };
+                                  setDynamicData({ ...dynamicData, [field.id]: newText });
+                                }}
+                                className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-900/20 px-1.5 py-0.5 rounded border border-cyan-700/35"
+                                title="Gỡ [[ ]] ở vùng chọn hoặc đoạn chứa con trỏ"
+                              >Bỏ</button>
+                            </div>
                            )}
                          </div>
                       </div>

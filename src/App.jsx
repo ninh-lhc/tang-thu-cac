@@ -4,13 +4,19 @@
 // Vai trò: State toàn cục, điều phối, layout chính, Quản lý Thư mục Truyện
 //
 // Đã tách (cùng thư mục src/, tên dễ nhớ):
-//   appNhatKyVaGoiThe.js     — findEntitiesByHintInNovel, mutateNovelJournalSelections
+//   appNhatKyVaGoiThe.js     — findEntitiesByHintInNovel (mutate… dùng trong useAppMotCuaCapNhat)
 //   AppPhongChuVaTheme.jsx   — font + CSS theme toàn cục
 //   AppModalMotCua.jsx       — Một cửa cập nhật (tạo thẻ / nhật ký batch)
 //   AppModalQuanLyTab.jsx    — Trận pháp / quản lý tab
 //   AppModalLenhNhanh.jsx    — Command palette
 //   AppModalGoiYNoiTraCuu.jsx — Gợi ý AI nối tra cứu
 //   lib/stripWikiBrackets.js, lib/computeRelatedEntities.js
+//   useAppPersistence.js      — sync index + file truyện
+//   AppShellOverlays.jsx      — lightbox, toast, spinner
+//   lib/appTabGroups, appDashboardStats, buildEntityLinkMap, filterNovelsForLibrary, buildCurrentContextDirHandle
+//   useAppPhimTatToanCuc.js     — phím tắt Ctrl+K, /, Escape…
+//   lib/tinhThongKeNhanhTruyen, locLenhNhanhCommandPalette, xrefBangDanhMucThucThe, xrefChonMucThuThap
+//   useAppMotCuaCapNhat.js, lib/hubBangDanhMucCacMucNhatKy — Hub một cửa + catalog nhật ký
 // ==========================================
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
@@ -33,7 +39,7 @@ import {
   AsyncLocalImage, processPlainTextWithLinks, renderMarkdown,
   getIconComponent, handleToolbarClick, processInline,
   extractEntityAttributesWithAI, analyzeTextWithAI, generateReviewWithAI,
-  analyzeCrossRefNoteWithAI, analyzeReadingJournalWithAI, truncateForAI, mapGeminiErrorToUserMessage
+  analyzeCrossRefNoteWithAI, truncateForAI, mapGeminiErrorToUserMessage
 } from './MasterUtils.jsx';
 import {
   MarkdownToolbar, AppHeader, LandingScreen, DashboardScreen, EntityCard,
@@ -47,16 +53,27 @@ import {
   countEntitiesInNovel,
   metadataSearchHits,
 } from './deepSearchCore.js';
-import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
 import { computeRelatedEntities } from './lib/computeRelatedEntities.js';
-import { TAB_GROUP_MAP, TAB_GROUP_ORDER } from './genreTabsMap.js';
-import { findEntitiesByHintInNovel, mutateNovelJournalSelections } from './appNhatKyVaGoiThe.js';
+import { findEntitiesByHintInNovel } from './appNhatKyVaGoiThe.js';
 import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
 import { AppModalMotCua } from './AppModalMotCua.jsx';
 import { AppModalQuanLyTab } from './AppModalQuanLyTab.jsx';
 import { AppModalLenhNhanh } from './AppModalLenhNhanh.jsx';
 import { AppModalGoiYNoiTraCuu } from './AppModalGoiYNoiTraCuu.jsx';
-import { migrateIndex, migrateNovel, migrateBackup } from './dataMigration.js';
+import { migrateIndex, migrateBackup } from './dataMigration.js';
+import { buildTabGroups } from './lib/appTabGroups.js';
+import { computeDashboardStats } from './lib/appDashboardStats.js';
+import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
+import { filterNovelsForLibrary } from './lib/filterNovelsForLibrary.js';
+import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
+import { useAppPersistence } from './useAppPersistence.js';
+import { AppShellOverlays } from './AppShellOverlays.jsx';
+import { useAppPhimTatToanCuc } from './useAppPhimTatToanCuc.js';
+import { useAppMotCuaCapNhat } from './useAppMotCuaCapNhat.js';
+import { computeNovelQuickStats } from './lib/tinhThongKeNhanhTruyen.js';
+import { buildCommandPaletteFiltered } from './lib/locLenhNhanhCommandPalette.js';
+import { buildXrefEntityCatalogText } from './lib/xrefBangDanhMucThucThe.js';
+import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 
 export default function App() {
   const [novelsMetadata, setNovelsMetadata] = useState(MOCK_METADATA);
@@ -163,6 +180,30 @@ export default function App() {
   const [activeNovelDirHandle, setActiveNovelDirHandle] = useState(null);
   
   const [toastMessage, setToastMessage] = useState(null);
+  const toastTimerRef = useRef(null);
+  /** options: { undoLabel, onUndo } — hiện nút hoàn tác, toast lâu hơn */
+  const showToast = useCallback((msg, type = 'success', options = null) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    const hasUndo = options && typeof options.onUndo === 'function';
+    setToastMessage({
+      msg,
+      type,
+      undoLabel: hasUndo ? (options.undoLabel || 'Hoàn tác') : undefined,
+      onUndo: hasUndo ? options.onUndo : undefined,
+    });
+    const ms = hasUndo ? 9000 : 3500;
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+      toastTimerRef.current = null;
+    }, ms);
+  }, []);
+  useEffect(
+    () => () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    },
+    []
+  );
+
   const [lightboxSrc, setLightboxSrc] = useState(null); // null = đóng, string = URL/local_image
   const [isUploading, setIsUploading] = useState(false);
   const [importProgress, setImportProgress] = useState(null);
@@ -206,10 +247,17 @@ export default function App() {
   const novelsMetadataRef = useRef(novelsMetadata);
   const globalTabsConfigRef = useRef(globalTabsConfig);
   const dirHandleRef = useRef(dirHandle);
-  const syncNovelRef = useRef(null);
-  const persistIndexStatsTimerRef = useRef(null);
   const activeNovelDataRef = useRef(null);
   const confirmDeleteEntityRef = useRef(null);
+
+  const { syncIndex, syncNovel, loadNovelData, syncNovelRef } = useAppPersistence({
+    novelStatsByIdRef,
+    novelsMetadataRef,
+    globalTabsConfigRef,
+    dirHandleRef,
+    setNovelStatsById,
+    showToast,
+  });
 
   useEffect(() => {
     novelsMetadataRef.current = novelsMetadata;
@@ -224,99 +272,26 @@ export default function App() {
   useEffect(() => {
     novelStatsByIdRef.current = novelStatsById;
   }, [novelStatsById]);
-  useEffect(() => () => {
-    if (persistIndexStatsTimerRef.current) clearTimeout(persistIndexStatsTimerRef.current);
-  }, []);
 
-  const dashboardStats = useMemo(() => {
-    const total = novelsMetadata.length;
-    const byStatus = { 'Đang đọc': 0, 'Hoàn thành': 0, 'Tạm ngưng': 0 };
-    const byGenre = {};
-    let totalChaptersRead = 0, totalChaptersAll = 0;
-    novelsMetadata.forEach(n => {
-      const s = n.status || 'Đang đọc';
-      byStatus[s] = (byStatus[s] || 0) + 1;
-      const genres = Array.isArray(n.genres) ? n.genres : (n.genre ? [n.genre] : []);
-      genres.forEach(g => { byGenre[g] = (byGenre[g] || 0) + 1; });
-      totalChaptersRead += parseInt(n.chaptersRead || 0);
-      if (n.chaptersTotal && n.chaptersTotal !== '???') totalChaptersAll += parseInt(n.chaptersTotal || 0);
-    });
-    let totalEntities = 0, totalMilestones = 0;
-    novelsMetadata.forEach((n) => {
-      const st = novelStatsById[n.id];
-      if (st) {
-        totalEntities += st.entities || 0;
-        totalMilestones += st.milestones || 0;
-      }
-    });
-    const topGenre = Object.entries(byGenre).sort((a,b)=>b[1]-a[1])[0];
-    const recentNovels = [...novelsMetadata].slice(0, 24);
-    return { total, byStatus, byGenre, totalChaptersRead, totalChaptersAll, totalEntities, totalMilestones, recentNovels, topGenre };
-  }, [novelsMetadata, novelStatsById]);
+  const dashboardStats = useMemo(
+    () => computeDashboardStats(novelsMetadata, novelStatsById),
+    [novelsMetadata, novelStatsById]
+  );
 
   const activeThemeClass = useMemo(() => {
       if (!activeNovelData) return 'theme-tien-hiep';
       return activeNovelData.theme || 'theme-tien-hiep';
   }, [activeNovelData]);
 
-  const currentContextDirHandle = useMemo(() => {
-      if (!dirHandle || dirHandle === 'LOCAL_STORAGE') return dirHandle;
-      if (!activeNovelDirHandle) return dirHandle;
-
-      return {
-          getDirectoryHandle: async (name, options) => {
-              if (name === 'images') {
-                  let novelImagesDir;
-                  try { novelImagesDir = await activeNovelDirHandle.getDirectoryHandle('images', options); } 
-                  catch(e) { if (options?.create) novelImagesDir = await activeNovelDirHandle.getDirectoryHandle('images', { create: true }); }
-                  let rootImagesDir;
-                  try { rootImagesDir = await dirHandle.getDirectoryHandle('images'); } catch(e) {}
-
-                  if (!novelImagesDir && !rootImagesDir) throw new Error("Images dir not found");
-
-                  return {
-                      getFileHandle: async (filename, fileOptions) => {
-                          if (fileOptions?.create) {
-                              if (!novelImagesDir) novelImagesDir = await activeNovelDirHandle.getDirectoryHandle('images', { create: true });
-                              return novelImagesDir.getFileHandle(filename, fileOptions);
-                          }
-                          try {
-                              if (novelImagesDir) return await novelImagesDir.getFileHandle(filename, fileOptions);
-                              throw new Error();
-                          } catch (e) {
-                              if (rootImagesDir) return await rootImagesDir.getFileHandle(filename, fileOptions);
-                              throw e;
-                          }
-                      }
-                  };
-              }
-              return activeNovelDirHandle.getDirectoryHandle(name, options);
-          },
-          getFileHandle: (name, options) => activeNovelDirHandle.getFileHandle(name, options)
-      };
-  }, [dirHandle, activeNovelDirHandle]);
+  const currentContextDirHandle = useMemo(
+    () => buildCurrentContextDirHandle(dirHandle, activeNovelDirHandle),
+    [dirHandle, activeNovelDirHandle]
+  );
 
   const activeTabs = useMemo(() => activeNovelData?.tabsConfig || globalTabsConfig, [activeNovelData, globalTabsConfig]);
   const sortedTabs = useMemo(() => sortTabsAlphabetically(activeTabs), [activeTabs]);
 
-  const tabGroups = useMemo(() => {
-    const tongQuan = sortedTabs.find(t => t.id === 'tong-quan');
-    const rest = sortedTabs.filter(t => t.id !== 'tong-quan');
-    if (rest.length === 0) return tongQuan ? [{ groupLabel: null, tabs: [tongQuan] }] : [];
-    const byGroup = new Map();
-    rest.forEach(t => {
-      const g = t._group || TAB_GROUP_MAP[t.id] || 'Khác';
-      if (!byGroup.has(g)) byGroup.set(g, []);
-      byGroup.get(g).push(t);
-    });
-    const ordered = [];
-    for (const gl of TAB_GROUP_ORDER) {
-      if (byGroup.has(gl)) ordered.push({ groupLabel: gl, tabs: byGroup.get(gl) });
-    }
-    const remaining = [...byGroup.entries()].filter(([g]) => !TAB_GROUP_ORDER.includes(g));
-    remaining.forEach(([g, tabs]) => ordered.push({ groupLabel: g, tabs }));
-    return [{ groupLabel: null, tabs: tongQuan ? [tongQuan] : [] }, ...ordered];
-  }, [sortedTabs]);
+  const tabGroups = useMemo(() => buildTabGroups(sortedTabs), [sortedTabs]);
 
   useEffect(() => {
     const labels = tabGroups.filter(g => g.groupLabel).map(g => g.groupLabel);
@@ -497,37 +472,7 @@ export default function App() {
     }
   }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig, selectedEntityId]);
 
-  const entityMap = useMemo(() => {
-    if (!activeNovelData) return [];
-    let map = [];
-    const addNames = (nameStr, dest) => {
-        if (!nameStr || typeof nameStr !== 'string') return;
-        nameStr.split(/[,/|()]/).forEach(n => {
-            const cleanName = n.trim();
-            if (cleanName.length >= 2 && cleanName.length <= 40) map.push({ name: cleanName, dest });
-        });
-    };
-    Object.keys(activeNovelData.data || {}).forEach(lonId => {
-        Object.keys(activeNovelData.data[lonId] || {}).forEach(nhoId => {
-            const tabData = activeNovelData.data[lonId][nhoId];
-            if (tabData && tabData.entities) {
-                tabData.entities.forEach(ent => {
-                    const dest = { lonId, nhoId, entityId: ent.id };
-                    addNames(ent.name, dest);
-                    if (ent.dynamicData) addNames(ent.dynamicData.f_alias, dest);
-                });
-            }
-        });
-    });
-    
-    const uniqueMap = [];
-    const seen = new Set();
-    map.forEach(item => {
-        const lower = item.name.toLowerCase();
-        if (!seen.has(lower)) { seen.add(lower); uniqueMap.push(item); }
-    });
-    return uniqueMap.sort((a,b) => b.name.length - a.name.length);
-  }, [activeNovelData]);
+  const entityMap = useMemo(() => buildEntityLinkMap(activeNovelData), [activeNovelData]);
 
   const globalLinkRegex = useMemo(() => {
      if (!entityMap || entityMap.length === 0) return null;
@@ -572,23 +517,10 @@ export default function App() {
     };
   }, [activeNovelData, selectedEntity, activeTabs, entityMap, wikiExactMatchOnly]);
 
-  // BẢO VỆ CHỐNG CRASH KHI LỌC THỂ LOẠI
-  const filteredNovelsList = useMemo(() => {
-    const q = searchQuery.toLowerCase();
-    return novelsMetadata.filter(n => {
-      const t = safeString(n.title).toLowerCase();
-      const au = safeString(n.author).toLowerCase();
-      const matchSearch = !q || t.includes(q) || au.includes(q);
-      
-      let nGenres = [];
-      if (Array.isArray(n.genres)) nGenres = n.genres;
-      else if (typeof n.genres === 'string') nGenres = [n.genres];
-      else if (n.genre) nGenres = [n.genre];
-
-      const matchGenre = selectedGenres.length === 0 || selectedGenres.some(sg => nGenres.includes(sg));
-      return matchSearch && matchGenre;
-    });
-  }, [novelsMetadata, searchQuery, selectedGenres]);
+  const filteredNovelsList = useMemo(
+    () => filterNovelsForLibrary(novelsMetadata, searchQuery, selectedGenres, safeString),
+    [novelsMetadata, searchQuery, selectedGenres]
+  );
 
   useEffect(() => {
     if (window.self !== window.top) {
@@ -645,64 +577,9 @@ export default function App() {
     }
   }, [activeNovelData]); 
 
-  const toastTimerRef = useRef(null);
-  /** options: { undoLabel, onUndo } — hiện nút hoàn tác, toast lâu hơn */
-  const showToast = useCallback((msg, type = 'success', options = null) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    const hasUndo = options && typeof options.onUndo === 'function';
-    setToastMessage({
-      msg,
-      type,
-      undoLabel: hasUndo ? (options.undoLabel || 'Hoàn tác') : undefined,
-      onUndo: hasUndo ? options.onUndo : undefined,
-    });
-    const ms = hasUndo ? 9000 : 3500;
-    toastTimerRef.current = setTimeout(() => {
-      setToastMessage(null);
-      toastTimerRef.current = null;
-    }, ms);
-  }, []);
-  useEffect(() => () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); }, []);
-
-  const buildXrefEntityCatalog = useCallback(() => {
-    if (!activeNovelData?.tabsConfig) return '';
-    const lines = [];
-    (activeNovelData.tabsConfig || []).forEach((lon) => {
-      if (lon.id === 'tong-quan') return;
-      (lon.subTabs || []).forEach((sub) => {
-        if (sub.viewType !== 'collection-track') return;
-        const ents = activeNovelData.data?.[lon.id]?.[sub.id]?.entities || [];
-        const names = ents.map((e) => safeString(e.name)).filter(Boolean).slice(0, 100);
-        lines.push(
-          `${lon.id}|${sub.id} | ${safeString(lon.label)} › ${safeString(sub.label)} | ${names.join(', ') || '(chưa có thẻ)'}`
-        );
-      });
-    });
-    return lines.join('\n');
-  }, [activeNovelData]);
-
   const findEntitiesByXrefHint = useCallback(
     (hint) => findEntitiesByHintInNovel(activeNovelData, hint),
     [activeNovelData]
-  );
-
-  const resolveXrefTargetCollectionTab = useCallback(
-    (tabLonId, tabNhoId) => {
-      const cfg = activeNovelData?.tabsConfig || globalTabsConfig || [];
-      const lon = cfg.find((t) => t.id === tabLonId);
-      const nho = lon?.subTabs?.find((s) => s.id === tabNhoId && s.viewType === 'collection-track');
-      if (lon && nho) return { lonId: lon.id, nhoId: nho.id };
-      const nv = cfg.find((t) => t.id === 'nhan-vat');
-      const nvSub = nv?.subTabs?.find((s) => s.viewType === 'collection-track');
-      if (nv && nvSub) return { lonId: nv.id, nhoId: nvSub.id };
-      for (const L of cfg) {
-        if (L.id === 'tong-quan') continue;
-        const st = L.subTabs?.find((s) => s.viewType === 'collection-track');
-        if (st) return { lonId: L.id, nhoId: st.id };
-      }
-      return null;
-    },
-    [activeNovelData, globalTabsConfig]
   );
 
   const runXrefAiForRow = useCallback(
@@ -713,7 +590,7 @@ export default function App() {
       }
       setXrefAiPanel({ xref, suggestions: [], loading: true, error: '' });
       try {
-        const catalog = buildXrefEntityCatalog();
+        const catalog = buildXrefEntityCatalogText(activeNovelData, safeString);
         const { suggestions } = await analyzeCrossRefNoteWithAI(geminiApiKeys, {
           novelTitle: activeNovelData.title,
           fromCh: xref.fromCh,
@@ -732,12 +609,16 @@ export default function App() {
         );
       }
     },
-    [activeNovelData, geminiApiKeys, buildXrefEntityCatalog, showToast]
+    [activeNovelData, geminiApiKeys, showToast]
   );
 
   const applyXrefSuggestionNewEntity = useCallback(
     (s, xref) => {
-      const path = resolveXrefTargetCollectionTab(s.tabLonId, s.tabNhoId);
+      const path = resolveXrefTargetCollectionTab(
+        s.tabLonId,
+        s.tabNhoId,
+        activeNovelData?.tabsConfig || globalTabsConfig
+      );
       if (!path) {
         showToast('Không tìm thấy mục sưu tập phù hợp.', 'warning');
         return;
@@ -763,15 +644,7 @@ export default function App() {
       setXrefAiPanel(null);
       showToast('Đã mở form tạo thẻ — kiểm tra rồi Lưu.');
     },
-    [
-      resolveXrefTargetCollectionTab,
-      activeTabLon,
-      activeTabNho,
-      activeTabCon,
-      selectedEntityId,
-      collectionSubTab,
-      showToast,
-    ]
+    [activeNovelData?.tabsConfig, globalTabsConfig, activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, showToast]
   );
 
   const applyXrefSuggestionMilestone = useCallback(
@@ -827,355 +700,12 @@ export default function App() {
     [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, showToast]
   );
 
-  const openOverviewHub = useCallback(() => {
-    if (!activeNovelData) return;
-    setOverviewHubOpen(true);
-    setOverviewHubTab('create');
-    setHubCreatePreview(null);
-    setHubUpdatePanel(null);
-    setHubCreateInput('');
-    const a = Math.max(0, parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) || 0);
-    setHubUpdateChapter(String(a));
-    let firstPath = '';
-    (activeTabs || []).forEach((lon) => {
-      if (lon.id === 'tong-quan') return;
-      (lon.subTabs || []).forEach((nho) => {
-        if (nho.viewType === 'collection-track' && !firstPath) firstPath = `${lon.id}|${nho.id}`;
-      });
-    });
-    setHubCreatePath(firstPath);
-  }, [activeNovelData, activeTabs]);
-
-  const hubRunCreateAi = useCallback(async () => {
-    if (!hubCreatePath) {
-      showToast('Chọn mục sưu tập.', 'warning');
-      return;
-    }
-    const raw = hubCreateInput.trim();
-    if (!raw) {
-      showToast('Nhập mô tả hoặc dán văn bản.', 'warning');
-      return;
-    }
-    if (!activeNovelData || geminiApiKeys.length === 0) {
-      showToast('Cần API Key (Cài đặt).', 'warning');
-      return;
-    }
-    const [lonId, nhoId] = hubCreatePath.split('|');
-    const lon = activeTabs.find((t) => t.id === lonId);
-    const nho = lon?.subTabs?.find((s) => s.id === nhoId);
-    const fieldsTemplate = nho
-      ? resolveFieldsTemplate(nho, lonId, lon?.label || '')
-      : DEFAULT_ENTITY_FIELDS;
-    setHubCreateBusy(true);
-    try {
-      const result = await analyzeTextWithAI(raw, fieldsTemplate, geminiApiKeys, aiMode);
-      const dynamicData = {};
-      (fieldsTemplate || []).forEach((f) => {
-        if (result && result[f.id]) dynamicData[f.id] = safeString(result[f.id]);
-      });
-      const name = safeString(result?.name).trim() || 'Chưa đặt tên';
-      const proc = safeString(result?.processedText);
-      // "Một cửa" chỉ ghi nhanh: không lưu cú pháp [[wiki]] (link/ảnh làm trong đúng thẻ)
-      const rawText = stripWikiBracketSyntax(proc || raw);
-      const ents = activeNovelData.data?.[lonId]?.[nhoId]?.entities || [];
-      if (ents.some((e) => safeString(e.name).trim().toLowerCase() === name.toLowerCase())) {
-        showToast(`Đã có thẻ «${name}» — chuyển sang tab Cập nhật.`, 'warning');
-        setOverviewHubTab('update');
-        setHubUpdateText(`Cập nhật về «${name}»: ${raw.slice(0, 3500)}`);
-        return;
-      }
-      setHubCreatePreview({ name, rawText, dynamicData });
-    } catch (e) {
-      showToast(mapGeminiErrorToUserMessage(e), 'error');
-    } finally {
-      setHubCreateBusy(false);
-    }
-  }, [hubCreatePath, hubCreateInput, activeNovelData, activeTabs, geminiApiKeys, showToast]);
-
-  const hubSaveCreateEntity = useCallback(() => {
-    if (!hubCreatePreview || !hubCreatePath.includes('|')) return;
-    const [lonId, nhoId] = hubCreatePath.split('|');
-    const name = safeString(hubCreatePreview.name).trim();
-    if (!name || name === 'Chưa đặt tên') {
-      showToast('Điền tên thẻ trước khi lưu.', 'warning');
-      return;
-    }
-    const ents = activeNovelData?.data?.[lonId]?.[nhoId]?.entities || [];
-    if (ents.some((e) => safeString(e.name).trim().toLowerCase() === name.toLowerCase())) {
-      showToast('Thẻ đã tồn tại — dùng tab Cập nhật.', 'warning');
-      setOverviewHubTab('update');
-      setHubUpdateText((t) => (safeString(t).trim() ? t : `Cập nhật về «${name}»: `));
-      return;
-    }
-    updateActiveNovelData((nov) => {
-      if (!nov.data) nov.data = {};
-      if (!nov.data[lonId]) nov.data[lonId] = {};
-      let td = nov.data[lonId][nhoId];
-      if (!td || typeof td === 'string') td = { overview: typeof td === 'string' ? td : '', entities: [] };
-      if (!td.entities) td.entities = [];
-      td.entities.push({
-        id: generateId('ent'),
-        name,
-        avatar: '',
-        rawText: stripWikiBracketSyntax(safeString(hubCreatePreview.rawText)),
-        dynamicData: { ...hubCreatePreview.dynamicData },
-        info: '',
-        milestones: [],
-      });
-      nov.data[lonId][nhoId] = td;
-      lockFieldsTemplateIfFirstEntity(nov, lonId, nhoId);
-    });
-    showToast(`Đã tạo «${name}». Ảnh avatar: mở đúng mục → thẻ để thêm.`, 'success');
-    setHubCreatePreview(null);
-    setHubCreateInput('');
-  }, [hubCreatePreview, hubCreatePath, activeNovelData, showToast]);
-
-  const runHubUpdateAi = useCallback(async () => {
-    const text = hubUpdateText.trim();
-    if (!text) {
-      showToast('Nhập nội dung cập nhật.', 'warning');
-      return;
-    }
-    if (!activeNovelData || geminiApiKeys.length === 0) {
-      showToast('Cần API Key (Cài đặt).', 'warning');
-      return;
-    }
-    const ch = Math.max(
-      0,
-      parseInt(hubUpdateChapter, 10) ||
-        parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) ||
-        0
-    );
-    setHubUpdatePanel({
-      chapter: String(ch),
-      sourceText: text,
-      suggestions: [],
-      selectedKeys: new Set(),
-      loading: true,
-      error: '',
-    });
-    try {
-      const lines = [];
-      (activeNovelData.tabsConfig || []).forEach((lon) => {
-        if (lon.id === 'tong-quan') return;
-        (lon.subTabs || []).forEach((sub) => {
-          if (sub.viewType !== 'collection-track') return;
-          const ents = activeNovelData.data?.[lon.id]?.[sub.id]?.entities || [];
-          const names = ents.map((e) => safeString(e.name)).filter(Boolean).slice(0, 80);
-          const resolved = resolveFieldsTemplate(sub, lon.id, lon?.label || '');
-          const fields = resolved
-            .map((f) => `${safeString(f.id)}:${safeString(f.label)}`)
-            .join('; ');
-          lines.push(
-            `${lon.id}|${sub.id} | ${safeString(lon.label)} › ${safeString(sub.label)} | Thẻ: ${names.join(', ') || '—'} | Trường (id:nhãn): ${fields || '—'}`
-          );
-        });
-      });
-      const { suggestions } = await analyzeReadingJournalWithAI(geminiApiKeys, {
-        novelTitle: activeNovelData.title,
-        chapter: ch,
-        journalText: text,
-        extendedCatalog: lines.join('\n'),
-      });
-      const list = Array.isArray(suggestions) ? suggestions : [];
-      const normalized = list.map((sug) => ({
-        ...sug,
-        draftRawText: stripWikiBracketSyntax(safeString(sug.draftRawText)),
-        eventText: stripWikiBracketSyntax(safeString(sug.eventText)),
-        profileNote: stripWikiBracketSyntax(safeString(sug.profileNote)),
-        why: stripWikiBracketSyntax(safeString(sug.why)),
-        fieldPatches: Array.isArray(sug.fieldPatches)
-          ? sug.fieldPatches.map((p) => ({
-              ...p,
-              fieldId: safeString(p.fieldId).trim(),
-              value: stripWikiBracketSyntax(safeString(p.value)),
-            }))
-          : sug.fieldPatches,
-      }));
-      setHubUpdatePanel({
-        chapter: String(ch),
-        sourceText: text,
-        suggestions: normalized,
-        selectedKeys: new Set(list.map((_, i) => `j-${i}`)),
-        loading: false,
-        error: '',
-      });
-    } catch (e) {
-      setHubUpdatePanel((p) =>
-        p ? { ...p, loading: false, error: mapGeminiErrorToUserMessage(e) } : p
-      );
-    } finally {
-      setHubUpdatePanel((p) => (p?.loading ? { ...p, loading: false } : p));
-    }
-  }, [hubUpdateText, hubUpdateChapter, activeNovelData, geminiApiKeys, showToast]);
-
-  const applyHubUpdateSelected = useCallback(() => {
-    if (!hubUpdatePanel?.suggestions?.length) return;
-    if (!hubUpdatePanel.selectedKeys?.size) {
-      showToast('Chọn ít nhất một dòng gợi ý.', 'warning');
-      return;
-    }
-    const panel = hubUpdatePanel;
-    const prevNovel = activeNovelData ? structuredClone(activeNovelData) : null;
-    let ok = 0;
-    let fails = [];
-    updateActiveNovelData((nov) => {
-      const r = mutateNovelJournalSelections(nov, panel);
-      ok = r.ok;
-      fails = r.fails;
-      if (r.ok > 0 && panel.sourceText) {
-        if (!nov.readingJournal) nov.readingJournal = [];
-        nov.readingJournal.unshift({
-          id: generateId('jr'),
-          chapter: r.chapterCtx,
-          text: `[Hub] ${panel.sourceText.slice(0, 7800)}`,
-          at: Date.now(),
-          appliedCount: ok,
-        });
-        if (nov.readingJournal.length > 50) nov.readingJournal.length = 50;
-      }
-    });
-    setHubUpdatePanel(null);
-    setHubUpdateText('');
-    if (ok > 0) {
-      showToast(`Đã áp dụng ${ok} thao tác (cập nhật).${fails.length ? ` (${fails.length} bỏ qua)` : ''}`, 'success', {
-        onUndo:
-          prevNovel
-            ? () => {
-                setActiveNovelData(structuredClone(prevNovel));
-                void (syncNovelRef.current && syncNovelRef.current(prevNovel, dirHandleRef.current));
-              }
-            : undefined,
-      });
-    } else {
-      showToast(fails.length ? fails.slice(0, 4).join('; ') : 'Không áp dụng được.', 'warning');
-    }
-    if (ok > 0 && fails.length) {
-      setTimeout(() => showToast(`Một số dòng lỗi: ${fails.slice(0, 3).join('; ')}`, 'warning'), 400);
-    }
-  }, [hubUpdatePanel, showToast, activeNovelData]);
-
   useEffect(() => {
     if (!isSplitPreview) return;
     const delay = (livePreviewText || '').length > 40000 ? 800 : 300;
     const t = setTimeout(() => setDebouncedMarkdownPreview(livePreviewText), delay);
     return () => clearTimeout(t);
   }, [livePreviewText, isSplitPreview]);
-
-  const syncIndex = async (newMetadata, newConfig, dir, novelStatsOverride) => {
-    const novelStats =
-      novelStatsOverride !== undefined && novelStatsOverride !== null
-        ? novelStatsOverride
-        : { ...novelStatsByIdRef.current };
-    const payload = { metadata: newMetadata, config: newConfig, novelStats };
-    if (!dir || dir === 'LOCAL_STORAGE') {
-        try { localStorage.setItem('tangthu_index', JSON.stringify(payload)); }
-        catch (e) { if (e.name === 'QuotaExceededError' || e.message.includes('quota')) setTimeout(() => { showToast("CẢNH BÁO: Bộ nhớ đệm đã đầy!", "warning"); }, 500); }
-        return;
-    }
-    try {
-        const f = await dir.getFileHandle('index.json', { create: true });
-        const w = await f.createWritable();
-        await w.write(JSON.stringify(payload, null, 2));
-        await w.close();
-    } catch (e) { setTimeout(() => { showToast("Lỗi đồng bộ danh mục!", "error"); }, 0); }
-  };
-
-  const queuePersistNovelStatsToIndex = () => {
-    if (persistIndexStatsTimerRef.current) clearTimeout(persistIndexStatsTimerRef.current);
-    persistIndexStatsTimerRef.current = setTimeout(() => {
-      persistIndexStatsTimerRef.current = null;
-      const d = dirHandleRef.current;
-      if (!d) return;
-      syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, d, { ...novelStatsByIdRef.current });
-    }, 500);
-  };
-
-  const bumpNovelStatsAfterWrite = (novelData) => {
-    const s = countEntitiesInNovel(novelData);
-    const next = { ...novelStatsByIdRef.current, [novelData.id]: s };
-    novelStatsByIdRef.current = next;
-    setNovelStatsById(next);
-    queuePersistNovelStatsToIndex();
-  };
-
-  const syncNovel = async (novelData, rootDir) => {
-    if (!rootDir || rootDir === 'LOCAL_STORAGE') {
-        try {
-          localStorage.setItem(`tangthu_novel_${novelData.id}`, JSON.stringify(novelData));
-          bumpNovelStatsAfterWrite(novelData);
-        }
-        catch (e) { if (e.name === 'QuotaExceededError' || e.message.includes('quota')) setTimeout(() => { showToast("CẢNH BÁO: Tràn bộ nhớ! Hãy dùng Thư Mục Máy Tính!", "warning"); }, 500); }
-        return;
-    }
-    const folderName = novelData.folderName || novelData.title.replace(/[\\/:*?"<>|]/g, '').trim() || novelData.id;
-    const jsonStr = JSON.stringify(novelData, null, 2);
-    const mainFile = `${folderName}.json`;
-    const tmpFile = `${folderName}.json.tmp`;
-    const tryAtomic = async () => {
-      const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
-      const tw = await novelDir.getFileHandle(tmpFile, { create: true });
-      const w = await tw.createWritable();
-      await w.write(jsonStr);
-      await w.close();
-      try { await novelDir.removeEntry(mainFile); } catch (_) { /* first save */ }
-      const tmpAgain = await novelDir.getFileHandle(tmpFile);
-      if (typeof tmpAgain.move === 'function') {
-        await tmpAgain.move(mainFile);
-      } else {
-        const out = await novelDir.getFileHandle(mainFile, { create: true });
-        const wo = await out.createWritable();
-        await wo.write(jsonStr);
-        await wo.close();
-        try { await novelDir.removeEntry(tmpFile); } catch (_) {}
-      }
-      await novelDir.getDirectoryHandle('images', { create: true });
-    };
-    const tryDirect = async () => {
-      const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
-      const f = await novelDir.getFileHandle(mainFile, { create: true });
-      const w = await f.createWritable();
-      await w.write(jsonStr);
-      await w.close();
-      await novelDir.getDirectoryHandle('images', { create: true });
-    };
-    try {
-      await tryAtomic();
-      bumpNovelStatsAfterWrite(novelData);
-    } catch (e) {
-      try {
-        await tryDirect();
-        bumpNovelStatsAfterWrite(novelData);
-      } catch (e2) {
-        setTimeout(() => { showToast(`Lỗi đồng bộ truyện ${novelData.title}!`, "error"); }, 0);
-      }
-    }
-  };
-  syncNovelRef.current = syncNovel;
-
-  const loadNovelData = async (meta, rootDir) => {
-    if (!rootDir || rootDir === 'LOCAL_STORAGE') {
-        const data = localStorage.getItem(`tangthu_novel_${meta.id}`);
-        if (!data) return null;
-        try { return migrateNovel(JSON.parse(data)); } catch(e) { console.warn(`[TTC] Dữ liệu bị hỏng cho truyện ${meta.id}, bỏ qua.`, e); return null; }
-    }
-    const folderName = meta.folderName || meta.title.replace(/[\\/:*?"<>|]/g, '').trim() || meta.id;
-    try {
-        const novelDir = await rootDir.getDirectoryHandle(folderName);
-        const f = await novelDir.getFileHandle(`${folderName}.json`);
-        const file = await f.getFile();
-        const text = await file.text();
-        try { return migrateNovel(JSON.parse(text)); } catch(pe) { console.warn(`[TTC] File JSON bị hỏng: ${folderName}.json`, pe); return null; }
-    } catch (e) {
-        try {
-            const novelsDir = await rootDir.getDirectoryHandle('novels');
-            const f = await novelsDir.getFileHandle(`${meta.id}.json`);
-            const file = await f.getFile();
-            const text = await file.text();
-            try { return migrateNovel(JSON.parse(text)); } catch(pe) { console.warn(`[TTC] File JSON bị hỏng: ${meta.id}.json`, pe); return null; }
-        } catch(err2) { return null; }
-    }
-  };
 
   useEffect(() => {
     if (!dirHandle || novelsMetadata.length === 0) return;
@@ -1252,41 +782,101 @@ export default function App() {
       }
       return dedupeDeepSearchResults(res);
     },
-    [novelsMetadata, activeNovelData, dirHandle]
+    [novelsMetadata, activeNovelData, dirHandle, loadNovelData]
   );
 
-  const updateActiveNovelData = (updateFn) => {
-    if (!activeNovelData) return;
-    const updatedData = structuredClone(activeNovelData);
-    updateFn(updatedData);
-    const nextStats = { ...novelStatsByIdRef.current, [updatedData.id]: countEntitiesInNovel(updatedData) };
-    novelStatsByIdRef.current = nextStats;
-    setNovelStatsById(nextStats);
-    setActiveNovelData(updatedData);
-    syncNovel(updatedData, dirHandle);
+  const updateActiveNovelData = useCallback(
+    (updateFn) => {
+      if (!activeNovelData) return;
+      const updatedData = structuredClone(activeNovelData);
+      updateFn(updatedData);
+      const nextStats = { ...novelStatsByIdRef.current, [updatedData.id]: countEntitiesInNovel(updatedData) };
+      novelStatsByIdRef.current = nextStats;
+      setNovelStatsById(nextStats);
+      setActiveNovelData(updatedData);
+      syncNovel(updatedData, dirHandle);
 
-    const newMetaStr = JSON.stringify({ title: updatedData.title, cover: updatedData.cover, tags: updatedData.tags, review: updatedData.review, status: updatedData.status, genres: updatedData.genres || [updatedData.genre], theme: updatedData.theme, author: updatedData.author, folderName: updatedData.folderName });
-    const oldMetaStr = JSON.stringify({ title: activeNovelData.title, cover: activeNovelData.cover, tags: activeNovelData.tags, review: activeNovelData.review, status: activeNovelData.status, genres: activeNovelData.genres || [activeNovelData.genre], theme: activeNovelData.theme, author: activeNovelData.author, folderName: activeNovelData.folderName });
+      const newMetaStr = JSON.stringify({
+        title: updatedData.title,
+        cover: updatedData.cover,
+        tags: updatedData.tags,
+        review: updatedData.review,
+        status: updatedData.status,
+        genres: updatedData.genres || [updatedData.genre],
+        theme: updatedData.theme,
+        author: updatedData.author,
+        folderName: updatedData.folderName,
+      });
+      const oldMetaStr = JSON.stringify({
+        title: activeNovelData.title,
+        cover: activeNovelData.cover,
+        tags: activeNovelData.tags,
+        review: activeNovelData.review,
+        status: activeNovelData.status,
+        genres: activeNovelData.genres || [activeNovelData.genre],
+        theme: activeNovelData.theme,
+        author: activeNovelData.author,
+        folderName: activeNovelData.folderName,
+      });
 
-    if (oldMetaStr !== newMetaStr) {
-        const newMetaList = novelsMetadata.map(m => m.id === updatedData.id ? {
-            ...m, title: updatedData.title, cover: updatedData.cover, tags: updatedData.tags,
-            review: updatedData.review, status: updatedData.status,
-            genres: updatedData.genres || [updatedData.genre], theme: updatedData.theme || 'theme-tien-hiep',
-            author: updatedData.author, chaptersTotal: updatedData.chaptersTotal, folderName: updatedData.folderName || m.folderName
-        } : m);
+      if (oldMetaStr !== newMetaStr) {
+        const newMetaList = novelsMetadata.map((m) =>
+          m.id === updatedData.id
+            ? {
+                ...m,
+                title: updatedData.title,
+                cover: updatedData.cover,
+                tags: updatedData.tags,
+                review: updatedData.review,
+                status: updatedData.status,
+                genres: updatedData.genres || [updatedData.genre],
+                theme: updatedData.theme || 'theme-tien-hiep',
+                author: updatedData.author,
+                chaptersTotal: updatedData.chaptersTotal,
+                folderName: updatedData.folderName || m.folderName,
+              }
+            : m
+        );
         setNovelsMetadata(newMetaList);
         novelsMetadataRef.current = newMetaList;
         syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
-    }
-  };
+      }
+    },
+    [activeNovelData, novelsMetadata, globalTabsConfig, dirHandle, syncNovel, syncIndex]
+  );
 
-  const scrollToTop = () => {
-     setTimeout(() => {
-         document.getElementById('main-scroll-container')?.scrollTo({ top: 0, behavior: 'smooth' });
-         document.getElementById('collection-scroll-container')?.scrollTo({ top: 0, behavior: 'smooth' });
-     }, 50);
-  };
+  const {
+    openOverviewHub,
+    hubRunCreateAi,
+    hubSaveCreateEntity,
+    runHubUpdateAi,
+    applyHubUpdateSelected,
+  } = useAppMotCuaCapNhat({
+    activeNovelData,
+    activeTabs,
+    geminiApiKeys,
+    aiMode,
+    showToast,
+    updateActiveNovelData,
+    hubCreatePath,
+    hubCreateInput,
+    hubCreatePreview,
+    hubUpdateChapter,
+    hubUpdateText,
+    hubUpdatePanel,
+    setOverviewHubOpen,
+    setOverviewHubTab,
+    setHubCreatePreview,
+    setHubUpdatePanel,
+    setHubCreateInput,
+    setHubUpdateChapter,
+    setHubCreatePath,
+    setHubCreateBusy,
+    setHubUpdateText,
+    setActiveNovelData,
+    syncNovelRef,
+    dirHandleRef,
+  });
 
   const handleNavigate = (dest) => {
      if (dest.type === 'QUICK_CREATE') { setQuickCreateData(dest.name); return; }
@@ -2382,96 +1972,33 @@ export default function App() {
       return <div className="font-serif animate-fade-in flex-1">{renderMarkdown(safeString(currentStandardData), currentContextDirHandle, entityMap, globalLinkRegex, (dest) => { if(navFnRef.current) navFnRef.current(dest); })}</div>;
   }, [currentStandardData, isEditingMode, currentTabConfig?.viewType, currentContextDirHandle, entityMap, globalLinkRegex]);
 
-  const novelQuickStats = useMemo(() => {
-    if (!activeNovelData?.tabsConfig) return null;
-    let totalEnt = 0;
-    let totalMs = 0;
-    const byTab = [];
-    const chMap = {};
-    (activeNovelData.tabsConfig || []).forEach((lon) => {
-      if (lon.id === 'tong-quan') return;
-      (lon.subTabs || []).forEach((nho) => {
-        if (nho.viewType !== 'collection-track') return;
-        const ents = activeNovelData.data?.[lon.id]?.[nho.id]?.entities || [];
-        totalEnt += ents.length;
-        let msHere = 0;
-        ents.forEach((ent) => {
-          (ent.milestones || []).forEach((m) => {
-            msHere++;
-            totalMs++;
-            const c = parseInt(m.chapter, 10);
-            if (!isNaN(c) && c >= 0) chMap[c] = (chMap[c] || 0) + 1;
-          });
-        });
-        if (ents.length > 0 || msHere > 0) {
-          byTab.push({
-            key: `${lon.id}|${nho.id}`,
-            label: `${safeString(lon.label)} › ${safeString(nho.label)}`,
-            entities: ents.length,
-            milestones: msHere,
-          });
-        }
-      });
-    });
-    const topChapters = Object.entries(chMap)
-      .map(([ch, n]) => ({ ch: parseInt(ch, 10), n }))
-      .sort((a, b) => b.n - a.n)
-      .slice(0, 14);
-    const maxBar = topChapters[0]?.n || 1;
-    return { totalEnt, totalMs, byTab, topChapters, maxBar };
-  }, [activeNovelData]);
+  const novelQuickStats = useMemo(
+    () => computeNovelQuickStats(activeNovelData, safeString),
+    [activeNovelData]
+  );
 
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.ctrlKey && (e.key === 'k' || e.key === 'K')) {
-        e.preventDefault();
-        setIsCommandPaletteOpen((o) => !o);
-        setCommandPaletteQuery('');
-        return;
-      }
-      if (e.ctrlKey && (e.key === 's' || e.key === 'S')) {
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent('ttc-save'));
-        return;
-      }
-      if (e.ctrlKey && e.shiftKey && (e.key === 'N' || e.key === 'n')) {
-        e.preventDefault();
-        if (activeNovelData && !isEntityModalOpen) {
-          setEditingEntityData(null);
-          setIsEntityModalOpen(true);
-        }
-        return;
-      }
-      if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const tag = (e.target && e.target.tagName) || '';
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable)) return;
-        e.preventDefault();
-        setMenu1Visible(true);
-        setTimeout(() => librarySearchInputRef.current?.focus?.(), 0);
-        return;
-      }
-      if (e.key === 'Escape') {
-        if (commandPaletteOpenRef.current) {
-          setIsCommandPaletteOpen(false);
-          return;
-        }
-        setConfirmDialog((c) => (c.isOpen ? { ...c, isOpen: false } : c));
-        setIsSettingsOpen(false);
-        setOverviewHubOpen(false);
-        setIsDeepSearchOpen(false);
-        setIsInNovelSearchOpen(false);
-        setIsAddNovelOpen(false);
-        setIsEntityModalOpen(false);
-        setIsMilestoneModalOpen(false);
-        setIsInsertImageModalOpen(false);
-        setIsManageTabsOpen(false);
-        setIsGenreFilterOpen(false);
-        setQuickCreateData(null);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  useAppPhimTatToanCuc({
+    activeNovelData,
+    isEntityModalOpen,
+    setIsCommandPaletteOpen,
+    setCommandPaletteQuery,
+    setEditingEntityData,
+    setIsEntityModalOpen,
+    librarySearchInputRef,
+    setMenu1Visible,
+    commandPaletteOpenRef,
+    setConfirmDialog,
+    setIsSettingsOpen,
+    setOverviewHubOpen,
+    setIsDeepSearchOpen,
+    setIsInNovelSearchOpen,
+    setIsAddNovelOpen,
+    setIsMilestoneModalOpen,
+    setIsInsertImageModalOpen,
+    setIsManageTabsOpen,
+    setIsGenreFilterOpen,
+    setQuickCreateData,
+  });
 
   const runCommandPaletteAction = useCallback((fn) => {
     setIsCommandPaletteOpen(false);
@@ -2479,24 +2006,10 @@ export default function App() {
     fn();
   }, []);
 
-  const commandPaletteFiltered = useMemo(() => {
-    const q = commandPaletteQuery.trim().toLowerCase();
-    const m = (t) => !q || safeString(t).toLowerCase().includes(q);
-    const actions = [
-      { id: 'set', label: 'Cài đặt & API Key', sub: 'Gemini, wiki, backup' },
-      { id: 'deep', label: 'Tìm toàn bộ thư viện', sub: 'Deep search' },
-    ];
-    if (activeNovelData) {
-      actions.push(
-        { id: 'innov', label: 'Tra trong truyện đang mở', sub: safeString(activeNovelData.title) },
-        { id: 'hub', label: 'Một cửa cập nhật (Hub)', sub: 'Tạo thẻ / nhật ký AI' },
-        { id: 'home', label: 'Về mệnh bàn', sub: 'Đóng truyện, xem dashboard' }
-      );
-    }
-    const fa = actions.filter((a) => m(a.label) || m(a.sub));
-    const fn = novelsMetadata.filter((n) => m(n.title) || m(n.author)).slice(0, 28);
-    return { actions: fa, novels: fn };
-  }, [commandPaletteQuery, novelsMetadata, activeNovelData]);
+  const commandPaletteFiltered = useMemo(
+    () => buildCommandPaletteFiltered(commandPaletteQuery, novelsMetadata, activeNovelData, safeString),
+    [commandPaletteQuery, novelsMetadata, activeNovelData]
+  );
 
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden relative theme-wrapper ${activeThemeClass}`}>
@@ -2767,9 +2280,16 @@ export default function App() {
                            </div>
                        )}
                        
-                       {activeTabLon === 'tong-quan' ? (
-                          <div className="flex flex-col md:flex-row gap-12 animate-fade-in">
-                             <div className="w-full md:w-1/3 flex-shrink-0">
+                       {activeTabLon === 'tong-quan' ? (() => {
+                          const anchor = Math.max(0, parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) || 0);
+                          const lo = Math.max(0, anchor - 12);
+                          const hi = anchor + 30;
+                          const xrefs = Array.isArray(activeNovelData.chapterCrossRefs) ? activeNovelData.chapterCrossRefs : [];
+                          return (
+                          <div className="space-y-7 animate-fade-in">
+                             <section className="rounded-[28px] border border-slate-800/70 bg-gradient-to-b from-slate-900/35 to-slate-950/60 p-8 shadow-xl">
+                             <div className="grid grid-cols-[260px_minmax(0,1fr)] gap-10 items-start">
+                             <aside className="w-[260px] flex-shrink-0">
                                 <div
                                    className="rounded-2xl overflow-hidden shadow-2xl border border-slate-800 relative group cursor-zoom-in"
                                    onClick={() => activeNovelData.cover && setLightboxSrc(activeNovelData.cover)}
@@ -2802,12 +2322,30 @@ export default function App() {
                                       </div>
                                    )}
                                 </div>
-                             </div>
-                             <div className="flex-1 flex flex-col">
-                                <h1 className="text-5xl font-heading font-bold text-slate-100 mb-2 leading-tight">{safeString(activeNovelData.title)}</h1>
-                                <p className="text-xl text-slate-400 font-serif italic mb-6">Tác giả: {safeString(activeNovelData.author)}</p>
-                                
-                                <div className="pt-2 mb-6">
+                             </aside>
+                             <div className="min-w-0 flex flex-col gap-5">
+                                <header className="space-y-1">
+                                <h1 className="text-5xl font-heading font-bold text-slate-100 leading-tight">{safeString(activeNovelData.title)}</h1>
+                                <p className="text-xl text-slate-400 font-serif italic">Tác giả: {safeString(activeNovelData.author)}</p>
+                                </header>
+
+                                <div className="rounded-xl bg-slate-950/55 border border-slate-800/90 px-4 py-3">
+                                        <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest block mb-2 flex items-center gap-1.5"><BookOpen size={12}/> Tiến độ đọc</label>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <input type="number" min="0" className="w-24 bg-slate-900/50 border border-slate-800 rounded-lg p-2 text-slate-200 text-sm focus:outline-none focus:border-amber-600/50 font-serif" value={overviewForm?.chaptersRead || 0}
+                                            onChange={e => setOverviewForm({...overviewForm, chaptersRead: parseInt(e.target.value,10)||0})}
+                                            onBlur={() => updateActiveNovelData(n => n.chaptersRead = overviewForm?.chaptersRead || 0)} />
+                                          <span className="text-slate-600 font-serif text-sm">/</span>
+                                          <span className="text-slate-400 font-serif text-sm">{safeString(activeNovelData.chaptersTotal) || '???'}</span>
+                                          {activeNovelData.chaptersTotal && parseInt(activeNovelData.chaptersTotal) > 0 && (
+                                            <span className="ml-1 text-xs text-amber-600 font-bold font-serif">
+                                              {Math.round(((overviewForm?.chaptersRead||0)/parseInt(activeNovelData.chaptersTotal))*100)}%
+                                            </span>
+                                          )}
+                                        </div>
+                                </div>
+
+                                <div className="pt-1 mb-6">
                                   <label className="flex items-center gap-2 text-xs font-bold text-slate-500 mb-3 uppercase tracking-widest"><BookOpen size={14} /> Đặc Trưng (Tags)</label>
                                   <div className="flex flex-wrap gap-2.5 items-center">
                                     {activeNovelData.tags?.map(tag => (
@@ -2899,50 +2437,37 @@ export default function App() {
                                     )}
                                   </div>
                                 )}
+                             </div>
+                             </div>
+                             </section>
 
-                                <div className="pt-6 border-t border-slate-800 flex-1 flex flex-col relative">
-                                   <div className="flex gap-4 mb-4">
-                                      <div className="flex-1">
-                                        <label className="text-xs text-slate-500 uppercase font-bold tracking-widest block mb-1.5 flex items-center gap-1"><BookOpen size={12}/> Đã đọc / Tổng chương</label>
-                                        <div className="flex items-center gap-2">
-                                          <input type="number" min="0" className="w-24 bg-slate-900/50 border border-slate-800 rounded-lg p-2 text-slate-200 text-sm focus:outline-none focus:border-amber-600/50 font-serif" value={overviewForm?.chaptersRead || 0}
-                                            onChange={e => setOverviewForm({...overviewForm, chaptersRead: parseInt(e.target.value,10)||0})}
-                                            onBlur={() => updateActiveNovelData(n => n.chaptersRead = overviewForm?.chaptersRead || 0)} />
-                                          <span className="text-slate-600 font-serif text-sm">/</span>
-                                          <span className="text-slate-400 font-serif text-sm">{safeString(activeNovelData.chaptersTotal) || '???'}</span>
-                                          {activeNovelData.chaptersTotal && parseInt(activeNovelData.chaptersTotal) > 0 && (
-                                            <span className="ml-2 text-xs text-amber-600 font-bold font-serif">
-                                              {Math.round(((overviewForm?.chaptersRead||0)/parseInt(activeNovelData.chaptersTotal))*100)}%
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
+                                   <section className="rounded-2xl border border-slate-800/70 bg-slate-900/25 p-6">
+                                   <div className="flex justify-between items-center mb-3">
+                                       <label className="text-xs text-slate-500 uppercase font-bold tracking-widest flex items-center gap-2"><BookOpen size={14}/> Cảm ngộ / Review</label>
+                                       <button onClick={async () => {
+                                           if (geminiApiKeys.length === 0) { showToast("Vui lòng nhập API Key (trong mục Cài Đặt) để dùng AI", "warning"); return; }
+                                           setIsGeneratingReview(true);
+                                           try {
+                                             const text = await generateReviewWithAI(activeNovelData, geminiApiKeys);
+                                             if (text) { setOverviewForm({...overviewForm, review: text}); updateActiveNovelData(n => n.review = text); showToast("Đã lĩnh ngộ thành công!"); }
+                                             else showToast("AI không trả về nội dung.", "warning");
+                                           } catch (e) { showToast(mapGeminiErrorToUserMessage(e), "error"); }
+                                           setIsGeneratingReview(false);
+                                       }} disabled={isGeneratingReview} className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 font-bold bg-amber-950/30 px-3 py-1.5 rounded-lg border border-amber-900/50 transition-colors disabled:opacity-50">
+                                           {isGeneratingReview ? <div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"/> : <Sparkles size={14} />}
+                                           {isGeneratingReview ? 'Đang tổng hợp...' : 'AI Tổng Hợp Đạo Tâm'}
+                                       </button>
                                    </div>
+                                   <textarea className="w-full flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 text-slate-300 font-serif text-lg leading-relaxed focus:outline-none focus:border-amber-600/50 min-h-[200px] resize-none custom-scrollbar" value={safeString(overviewForm?.review)} onChange={(e) => setOverviewForm({...overviewForm, review: e.target.value})} onBlur={() => updateActiveNovelData(n => n.review = overviewForm.review)} placeholder="Hạ bút... (Hệ thống tự động lưu khi bạn nhấp chuột ra khỏi đây)" />
+                                   </section>
 
-                                   <div className="mb-8 rounded-2xl border border-amber-900/25 bg-gradient-to-br from-slate-950 via-slate-900/95 to-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] overflow-hidden">
-                                     {(() => {
-                                       const anchor = Math.max(0, parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) || 0);
-                                       const lo = Math.max(0, anchor - 12);
-                                       const hi = anchor + 30;
-                                       const xrefs = Array.isArray(activeNovelData.chapterCrossRefs) ? activeNovelData.chapterCrossRefs : [];
-                                       return (
-                                         <div className="border-l-[5px] border-amber-500/85 pl-4 pr-3 py-4 sm:pl-5 sm:pr-4">
-                                           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-                                             <div className="min-w-0">
-                                               <h3 className="font-heading text-lg sm:text-xl text-amber-50 tracking-tight">Theo chương & công cụ</h3>
-                                               <p className="font-serif text-xs text-slate-500 mt-1">
-                                                 Neo <span className="text-amber-400 font-bold tabular-nums">ch.{anchor}</span>
-                                                 {' · '}
-                                                 <span className="text-slate-600">Mốc timeline mới (khi tạo) mặc định theo chương neo.</span>
-                                                 {' · '}
-                                                 <span className="text-slate-600">Cập nhật hàng loạt: «Một cửa».</span>
-                                               </p>
-                                             </div>
-                                             <div className="flex flex-wrap gap-2">
+                                   <section className="rounded-2xl border border-slate-800/70 bg-slate-950/40 p-5">
+                                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-3">Công cụ nhanh</label>
+                                   <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
                                                <button
                                                  type="button"
                                                  onClick={() => setOverviewNeoOpen((o) => !o)}
-                                                 className={`font-serif text-xs sm:text-sm px-3 sm:px-4 py-2 rounded-xl border flex items-center gap-2 transition-colors ${overviewNeoOpen ? 'bg-amber-950/50 border-amber-700/50 text-amber-200' : 'bg-slate-800/80 border-slate-600/50 text-slate-300 hover:border-amber-600/30'}`}
+                                                 className={`font-serif text-sm px-4 py-2.5 rounded-xl border flex items-center justify-center gap-2 transition-colors ${overviewNeoOpen ? 'bg-amber-950/50 border-amber-700/50 text-amber-200' : 'bg-slate-800/80 border-slate-600/50 text-slate-300 hover:border-amber-600/30'}`}
                                                >
                                                  <BookOpen size={15} className="opacity-80 flex-shrink-0" />
                                                  Ghi theo chương
@@ -2951,21 +2476,21 @@ export default function App() {
                                                <button
                                                  type="button"
                                                  onClick={() => setIsInNovelSearchOpen(true)}
-                                                 className="font-serif text-xs sm:text-sm px-3 sm:px-4 py-2 rounded-xl bg-cyan-950/50 border border-cyan-800/45 text-cyan-300 hover:bg-cyan-900/35 flex items-center gap-2 transition-colors"
+                                                 className="font-serif text-sm px-4 py-2.5 rounded-xl bg-cyan-950/50 border border-cyan-800/45 text-cyan-300 hover:bg-cyan-900/35 flex items-center justify-center gap-2 transition-colors"
                                                >
                                                  <Search size={15} className="opacity-80" /> Tra trong truyện
                                                </button>
                                                <button
                                                  type="button"
                                                  onClick={openOverviewHub}
-                                                 className="font-serif text-xs sm:text-sm px-3 sm:px-4 py-2 rounded-xl bg-violet-950/55 border border-violet-700/40 text-violet-200 hover:bg-violet-900/40 flex items-center gap-2 transition-colors"
+                                                 className="font-serif text-sm px-4 py-2.5 rounded-xl bg-violet-950/55 border border-violet-700/40 text-violet-200 hover:bg-violet-900/40 flex items-center justify-center gap-2 transition-colors"
                                                >
                                                  <Layers size={15} className="opacity-90" /> Một cửa cập nhật
                                                </button>
                                                <button
                                                  type="button"
                                                  onClick={() => setNeoXrefSectionOpen((o) => !o)}
-                                                 className={`font-serif text-xs sm:text-sm px-3 sm:px-4 py-2 rounded-xl border flex items-center gap-2 transition-colors ${neoXrefSectionOpen ? 'bg-amber-950/40 border-amber-800/50 text-amber-200' : 'bg-slate-800/80 border-slate-600/50 text-slate-300 hover:border-amber-600/25'}`}
+                                                 className={`font-serif text-sm px-4 py-2.5 rounded-xl border flex items-center justify-center gap-2 transition-colors ${neoXrefSectionOpen ? 'bg-amber-950/40 border-amber-800/50 text-amber-200' : 'bg-slate-800/80 border-slate-600/50 text-slate-300 hover:border-amber-600/25'}`}
                                                >
                                                  <GitBranch size={15} className="text-amber-500/80 flex-shrink-0" />
                                                  Nối tra cứu
@@ -2975,6 +2500,16 @@ export default function App() {
                                                  <ChevronDown size={16} className={`opacity-60 transition-transform flex-shrink-0 ${neoXrefSectionOpen ? 'rotate-180' : ''}`} />
                                                </button>
                                              </div>
+                                   </section>
+
+                                   <section className="rounded-2xl border border-amber-900/25 bg-gradient-to-br from-slate-950 via-slate-900/95 to-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] overflow-hidden">
+                                         <div className="border-l-[5px] border-amber-500/85 pl-4 pr-3 py-4 sm:pl-5 sm:pr-4">
+                                           <div className="min-w-0 mb-4">
+                                               <h3 className="font-heading text-lg sm:text-xl text-amber-50 tracking-tight">Theo chương & công cụ</h3>
+                                               <p className="font-serif text-xs text-slate-500 mt-1.5 max-w-3xl">
+                                                 Neo <span className="text-amber-400 font-bold tabular-nums">ch.{anchor}</span>
+                                                 <span className="text-slate-600"> · Mốc mới (khi tạo) theo chương neo. Cập nhật hàng loạt: «Một cửa» — dùng khối Công cụ nhanh phía trên.</span>
+                                               </p>
                                            </div>
 
                                            {overviewNeoOpen && (
@@ -3069,39 +2604,22 @@ export default function App() {
                                              </div>
                                            )}
                                          </div>
-                                       );
-                                     })()}
-                                   </div>
+                                   </section>
 
-                                   <div className="flex justify-between items-center mb-3">
-                                       <label className="text-xs text-slate-500 uppercase font-bold tracking-widest flex items-center gap-2"><BookOpen size={14}/> Cảm ngộ / Review</label>
-                                       <button onClick={async () => {
-                                           if (geminiApiKeys.length === 0) { showToast("Vui lòng nhập API Key (trong mục Cài Đặt) để dùng AI", "warning"); return; }
-                                           setIsGeneratingReview(true);
-                                           try {
-                                             const text = await generateReviewWithAI(activeNovelData, geminiApiKeys);
-                                             if (text) { setOverviewForm({...overviewForm, review: text}); updateActiveNovelData(n => n.review = text); showToast("Đã lĩnh ngộ thành công!"); }
-                                             else showToast("AI không trả về nội dung.", "warning");
-                                           } catch (e) { showToast(mapGeminiErrorToUserMessage(e), "error"); }
-                                           setIsGeneratingReview(false);
-                                       }} disabled={isGeneratingReview} className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 font-bold bg-amber-950/30 px-3 py-1.5 rounded-lg border border-amber-900/50 transition-colors disabled:opacity-50">
-                                           {isGeneratingReview ? <div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"/> : <Sparkles size={14} />}
-                                           {isGeneratingReview ? 'Đang tổng hợp...' : 'AI Tổng Hợp Đạo Tâm'}
-                                       </button>
-                                   </div>
-                                   <textarea className="w-full flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 text-slate-300 font-serif text-lg leading-relaxed focus:outline-none focus:border-amber-600/50 min-h-[200px] resize-none custom-scrollbar" value={safeString(overviewForm?.review)} onChange={(e) => setOverviewForm({...overviewForm, review: e.target.value})} onBlur={() => updateActiveNovelData(n => n.review = overviewForm.review)} placeholder="Hạ bút... (Hệ thống tự động lưu khi bạn nhấp chuột ra khỏi đây)" />
-                                   
-                                   <div className="mt-6 flex flex-wrap justify-between gap-4">
-                                      <button onClick={handleOpenEditNovel} className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-bold flex items-center gap-2 transition-colors border border-slate-700"><Settings size={18}/> Thiết Lập Truyện</button>
-                                      <button onClick={() => setConfirmDialog({
-                                         isOpen: true, title: 'Hủy Diệt Thư Tịch', message: `Xóa sổ vĩnh viễn <b>${safeString(activeNovelData.title)}</b> cùng toàn bộ ảnh của nó? Hành động này không thể vãn hồi!`, 
-                                         onConfirm: () => handleDeleteNovel(activeNovelData.id)
-                                      })} className="px-6 py-3 bg-slate-900 text-rose-500 rounded-lg font-bold flex items-center gap-2 transition-colors border border-slate-800 hover:border-rose-900/50 hover:bg-rose-950/30"><Trash2 size={18} /> Hủy Diệt</button>
-                                   </div>
-                                </div>
-                             </div>
+                                   <section className="rounded-2xl border border-slate-800/70 bg-slate-950/35 px-6 py-4">
+                                      <div className="flex justify-between items-center gap-4">
+                                         <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Quản lý thư tịch</p>
+                                         <div className="flex gap-3">
+                                            <button onClick={handleOpenEditNovel} className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-bold flex items-center gap-2 transition-colors border border-slate-700"><Settings size={17}/> Thiết Lập Truyện</button>
+                                            <button onClick={() => setConfirmDialog({
+                                               isOpen: true, title: 'Hủy Diệt Thư Tịch', message: `Xóa sổ vĩnh viễn <b>${safeString(activeNovelData.title)}</b> cùng toàn bộ ảnh của nó? Hành động này không thể vãn hồi!`, 
+                                               onConfirm: () => handleDeleteNovel(activeNovelData.id)
+                                            })} className="px-5 py-2.5 bg-slate-900 text-rose-500 rounded-xl font-bold flex items-center gap-2 transition-colors border border-slate-800 hover:border-rose-900/50 hover:bg-rose-950/30"><Trash2 size={17} /> Hủy Diệt</button>
+                                         </div>
+                                      </div>
+                                   </section>
                           </div>
-                       ) : (
+                       ); })() : (
                           <div className="animate-fade-in flex flex-col h-full">
                              <div className="mb-6 flex justify-between items-end border-b border-slate-800 pb-6">
                                 <div>
@@ -3853,118 +3371,18 @@ export default function App() {
         />
       )}
 
-      {/* LIGHTBOX */}
-      {lightboxSrc && (
-        <div
-          className="fixed inset-0 z-[500] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-fast cursor-zoom-out"
-          onClick={() => setLightboxSrc(null)}
-        >
-          <button
-            className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-full p-2 transition-colors z-10"
-            onClick={() => setLightboxSrc(null)}
-            title="Đóng (Esc)"
-          >
-            <X size={24} />
-          </button>
-          <div className="max-w-[90vw] max-h-[90vh] flex items-center justify-center" onClick={e => e.stopPropagation()}>
-            {lightboxSrc.startsWith('local_image:') ? (
-              <AsyncLocalImage
-                filename={lightboxSrc.replace('local_image:', '')}
-                alt="Xem ảnh"
-                dirHandle={currentContextDirHandle}
-                className="max-w-full max-h-[88vh] rounded-xl shadow-2xl object-contain border border-slate-700"
-              />
-            ) : (
-              <img
-                src={lightboxSrc}
-                alt="Xem ảnh"
-                className="max-w-full max-h-[88vh] rounded-xl shadow-2xl object-contain border border-slate-700"
-                onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }}
-              />
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* HOVER NOVEL TOOLTIP - render ở root level tránh bị clip */}
-      {hoveredNovelData && (
-        <div
-          className="fixed z-[500] w-60 bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-3 pointer-events-none animate-fade-fast"
-          style={{ left: tooltipPos.x + 'px', top: tooltipPos.y + 'px' }}
-        >
-          {hoveredNovelData.cover && !hoveredNovelData.cover.startsWith('local_image:') && (
-            <img src={hoveredNovelData.cover} className="w-full h-28 object-cover rounded-lg mb-2" alt="" onError={e=>{e.target.style.display='none'}}/>
-          )}
-          <p className="text-sm font-bold text-amber-400 font-serif leading-tight mb-1">{safeString(hoveredNovelData.title)}</p>
-          <p className="text-[10px] text-slate-500 mb-2">{safeString(hoveredNovelData.author)}</p>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${hoveredNovelData.status === 'Hoàn thành' ? 'bg-emerald-900/40 text-emerald-400 border-emerald-700/40' : hoveredNovelData.status === 'Tạm ngưng' ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-amber-900/30 text-amber-400 border-amber-700/40'}`}>
-              {hoveredNovelData.status || 'Đang đọc'}
-            </span>
-            {hoveredNovelData.chaptersRead > 0 && (
-              <span className="text-[10px] text-slate-500 font-serif">
-                Ch.{hoveredNovelData.chaptersRead}{hoveredNovelData.chaptersTotal && hoveredNovelData.chaptersTotal !== '???' ? `/${hoveredNovelData.chaptersTotal}` : ''}
-              </span>
-            )}
-          </div>
-          {hoveredNovelData.chaptersTotal && hoveredNovelData.chaptersTotal !== '???' && parseInt(hoveredNovelData.chaptersTotal) > 0 && (
-            <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-amber-500 rounded-full transition-all" style={{width:`${Math.min(100, Math.round((parseInt(hoveredNovelData.chaptersRead||0)/parseInt(hoveredNovelData.chaptersTotal))*100))}%`}}></div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {toastMessage && (
-        <div
-          role="alert"
-          aria-live="polite"
-          aria-atomic="true"
-          className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] animate-fade-fast px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border max-w-[min(96vw,520px)] ${
-          toastMessage.type === 'error' ? 'bg-rose-950 border-rose-700 text-rose-100' :
-          toastMessage.type === 'warning' ? 'bg-amber-950 border-amber-700 text-amber-100' :
-          'bg-slate-800 border-slate-700 text-slate-100'
-        }`}
-        >
-           <Sparkles size={18} className={`flex-shrink-0 animate-pulse ${toastMessage.type === 'error' ? 'text-rose-400' : toastMessage.type === 'warning' ? 'text-amber-400' : 'text-emerald-400'}`} />
-           <span className="font-serif text-sm flex-1 min-w-0">{safeString(toastMessage.msg)}</span>
-           {toastMessage.onUndo && (
-             <button
-               type="button"
-               onClick={() => {
-                 const fn = toastMessage.onUndo;
-                 if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-                 setToastMessage(null);
-                 toastTimerRef.current = null;
-                 try { fn(); } catch (_) {}
-               }}
-               className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-bold font-serif border border-indigo-500/50"
-             >
-               {safeString(toastMessage.undoLabel || 'Hoàn tác')}
-             </button>
-           )}
-           <button type="button" onClick={() => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); setToastMessage(null); toastTimerRef.current = null; }} className="flex-shrink-0 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors" aria-label="Đóng thông báo"><X size={16}/></button>
-        </div>
-      )}
-
-      {isUploading && (
-        <div className="fixed inset-0 z-[400] bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-fast">
-           <div className="w-16 h-16 border-4 border-amber-600 border-t-transparent rounded-full animate-spin mb-4 shadow-xl"></div>
-           <p className="text-amber-500 font-heading text-lg animate-pulse">Đang luân chuyển linh ảnh...</p>
-        </div>
-      )}
-
-      {importProgress && (
-        <div className="fixed inset-0 z-[400] bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-fast">
-          <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4 shadow-xl"></div>
-          <p className="text-emerald-400 font-heading text-lg animate-pulse mb-2">{importProgress.stage}</p>
-          {importProgress.total > 1 && (
-            <div className="w-64 h-2 bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}></div>
-            </div>
-          )}
-        </div>
-      )}
+      <AppShellOverlays
+        lightboxSrc={lightboxSrc}
+        setLightboxSrc={setLightboxSrc}
+        hoveredNovelData={hoveredNovelData}
+        tooltipPos={tooltipPos}
+        toastMessage={toastMessage}
+        toastTimerRef={toastTimerRef}
+        setToastMessage={setToastMessage}
+        isUploading={isUploading}
+        importProgress={importProgress}
+        currentContextDirHandle={currentContextDirHandle}
+      />
 
       <AppPhongChuVaTheme />
     </div>
