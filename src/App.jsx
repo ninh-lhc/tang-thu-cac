@@ -46,15 +46,9 @@ import {
   ModalEntity, ModalMilestone, ModalQuickCreate, ModalSettings,
   ModalConfirm, ModalInsertImage, ModalAddNovel, ModalDeepSearch, ModalInNovelSearch
 } from './MasterComponents.jsx';
-import { AppCollectionListContent } from './AppCollectionListContent.jsx';
-import { AppGalleryContent } from './AppGalleryContent.jsx';
-import { AppCollectionTrackTabs } from './AppCollectionTrackTabs.jsx';
-import { AppCollectionEmptyState } from './AppCollectionEmptyState.jsx';
-import { AppEntitySummaryBlocks } from './AppEntitySummaryBlocks.jsx';
-import { AppEntityDetailNotes } from './AppEntityDetailNotes.jsx';
-import { AppEntityTimelinePanel } from './AppEntityTimelinePanel.jsx';
 import { AppLibrarySidebar } from './AppLibrarySidebar.jsx';
-import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
+import { AppOverviewSection } from './AppOverviewSection.jsx';
+import { AppCollectionSection } from './AppCollectionSection.jsx';
 import {
   searchNovelData,
   dedupeDeepSearchResults,
@@ -235,6 +229,7 @@ export default function App() {
   
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchField, setSearchField] = useState('all'); // 'all' | 'title' | 'author' | 'tag'
   const deferredLibrarySearch = useDeferredValue(searchQuery);
   const sidebarListRef = useRef(null);
   const sidebarScrollRafRef = useRef(null);
@@ -795,9 +790,15 @@ export default function App() {
         if (Array.isArray(n.genres)) genres = n.genres;
         else if (typeof n.genres === 'string') genres = [n.genres];
         else if (n.genre) genres = [n.genre];
+        const titleText = safeString(n.title).toLowerCase();
+        const authorText = safeString(n.author).toLowerCase();
+        const tagText = (n.tags || []).map((t) => safeString(t)).join(' ').toLowerCase();
         return {
           id: n.id,
-          text: `${safeString(n.title)} ${safeString(n.author)} ${(n.tags || []).join(' ')}`.toLowerCase(),
+          text: `${titleText} ${authorText} ${tagText}`,
+          titleText,
+          authorText,
+          tagText,
           genres,
         };
       }),
@@ -809,13 +810,19 @@ export default function App() {
     const byId = new Map((novelsMetadata || []).map((n) => [n.id, n]));
     return librarySearchIndex
       .filter((row) => {
-        const matchSearch = !q || row.text.includes(q);
+        let matchSearch = true;
+        if (q) {
+          if (searchField === 'title') matchSearch = row.titleText.includes(q);
+          else if (searchField === 'author') matchSearch = row.authorText.includes(q);
+          else if (searchField === 'tag') matchSearch = row.tagText.includes(q);
+          else matchSearch = row.text.includes(q);
+        }
         const matchGenre = selected.length === 0 || selected.some((sg) => row.genres.includes(sg));
         return matchSearch && matchGenre;
       })
       .map((row) => byId.get(row.id))
       .filter(Boolean);
-  }, [librarySearchIndex, novelsMetadata, deferredLibrarySearch, selectedGenres]);
+  }, [librarySearchIndex, novelsMetadata, deferredLibrarySearch, selectedGenres, searchField]);
 
   useEffect(() => {
     if (window.self !== window.top) {
@@ -2396,6 +2403,8 @@ export default function App() {
           setSearchInput={setSearchInput}
           searchHistory={searchHistory}
           setSearchQuery={setSearchQuery}
+          searchField={searchField}
+          setSearchField={setSearchField}
           isGenreFilterOpen={isGenreFilterOpen}
           setIsGenreFilterOpen={setIsGenreFilterOpen}
           selectedGenres={selectedGenres}
@@ -2576,763 +2585,135 @@ export default function App() {
                            </div>
                        )}
                        
-                       {activeTabLon === 'tong-quan' ? (() => {
-                          const anchor = Math.max(0, parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) || 0);
-                          const lo = Math.max(0, anchor - 12);
-                          const hi = anchor + 30;
-                          const totalChapters = Math.max(0, parseInt(activeNovelData.chaptersTotal, 10) || 0);
-                          const readChapters = Math.max(0, parseInt(overviewForm?.chaptersRead, 10) || 0);
-                          const progressPercent = totalChapters > 0
-                            ? (readChapters >= totalChapters ? 100 : Math.max(0, Math.floor((readChapters / totalChapters) * 100)))
-                            : 0;
-                          const isReadingDone = totalChapters > 0 && readChapters === totalChapters;
-                          const hasPersonalTags = (activeNovelData.tags || []).length > 0;
-                          const xrefs = Array.isArray(activeNovelData.chapterCrossRefs) ? activeNovelData.chapterCrossRefs : [];
-                          return (
-                          <div className="space-y-7 animate-fade-in">
-                             <section className="rounded-[28px] border border-slate-800/70 bg-gradient-to-b from-slate-900/35 to-slate-950/60 p-8 shadow-xl">
-                             <div className="grid grid-cols-[260px_minmax(0,1fr)] gap-10 items-start">
-                             <aside className="w-[260px] flex-shrink-0">
-                                <div
-                                   className="rounded-2xl overflow-hidden shadow-2xl border border-slate-800 relative group cursor-zoom-in"
-                                   onClick={() => activeNovelData.cover && setLightboxSrc(activeNovelData.cover)}
-                                   title="Nhấp để xem ảnh đầy đủ"
-                                >
-                                   {activeNovelData.cover ? (
-                                      activeNovelData.cover.startsWith('local_image:') ? (
-                                         <AsyncLocalImage
-                                            filename={activeNovelData.cover.replace('local_image:', '')}
-                                            alt={activeNovelData.title}
-                                            dirHandle={currentContextDirHandle}
-                                            className="w-full h-auto block object-contain"
-                                         />
-                                      ) : (
-                                         <img
-                                            src={activeNovelData.cover}
-                                            className="w-full h-auto block object-contain"
-                                            alt={activeNovelData.title}
-                                            onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }}
-                                         />
-                                      )
-                                   ) : (
-                                      <div className="aspect-[2/3] flex items-center justify-center bg-slate-900 text-slate-600">
-                                         <BookOpen size={48} />
-                                      </div>
-                                   )}
-                                   {activeNovelData.cover && (
-                                      <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                         <span className="text-white text-xs font-bold bg-slate-900/80 px-3 py-1.5 rounded-full">Xem ảnh đầy đủ</span>
-                                      </div>
-                                   )}
-                                </div>
-                             </aside>
-                             <div className="min-w-0 flex flex-col gap-5">
-                                <header className="space-y-1">
-                                <h1 className="text-5xl font-heading font-bold text-slate-100 leading-tight">{safeString(activeNovelData.title)}</h1>
-                                <p className="text-xl text-slate-400 font-serif italic">Tác giả: {safeString(activeNovelData.author)}</p>
-                                </header>
-
-                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                                  <div className="rounded-xl bg-slate-950/60 border border-amber-900/30 px-3 py-2">
-                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Tiến độ</div>
-                                    <div className="text-sm font-bold text-amber-300 font-serif">{readChapters}/{totalChapters || '???'}</div>
-                                  </div>
-                                  <div className="rounded-xl bg-slate-950/60 border border-amber-900/30 px-3 py-2">
-                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Hoàn thành</div>
-                                    <div className="text-sm font-bold text-amber-400 font-serif">{progressPercent}%</div>
-                                  </div>
-                                  <div className="rounded-xl bg-slate-950/60 border border-amber-900/30 px-3 py-2">
-                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Đánh giá</div>
-                                    <div className="text-sm font-bold text-amber-400 font-serif">{Number(overviewForm?.rating || 0).toFixed(1)}/5</div>
-                                  </div>
-                                  <div className="rounded-xl bg-slate-950/60 border border-amber-900/30 px-3 py-2">
-                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Số tag</div>
-                                    <div className="text-sm font-bold text-amber-200 font-serif">{(activeNovelData.tags || []).length}</div>
-                                  </div>
-                                </div>
-
-                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                <div className="rounded-xl bg-slate-950/55 border border-slate-800/90 px-4 py-3">
-                                        <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest block mb-2 flex items-center gap-1.5"><BookOpen size={12}/> Tiến độ đọc</label>
-                                        <div className="flex flex-wrap items-center gap-2 mb-2">
-                                          <input type="number" min="0" className="w-24 bg-slate-900/50 border border-slate-800 rounded-lg p-2 text-slate-200 text-sm focus:outline-none focus:border-amber-600/50 font-serif" value={overviewForm?.chaptersRead || 0}
-                                            onChange={e => setOverviewForm({...overviewForm, chaptersRead: parseInt(e.target.value,10)||0})}
-                                            onBlur={() => updateActiveNovelData(n => n.chaptersRead = Math.max(0, parseInt(overviewForm?.chaptersRead, 10) || 0))} />
-                                          <span className="text-slate-600 font-serif text-sm">/</span>
-                                          <span className="text-slate-300 font-serif text-sm">{safeString(activeNovelData.chaptersTotal) || '???'}</span>
-                                          <span className="ml-1 text-xs text-amber-500 font-bold font-serif">{progressPercent}%</span>
-                                        </div>
-                                        <div className="h-2 rounded-full bg-slate-800 overflow-hidden mb-2">
-                                          <div className="h-full bg-gradient-to-r from-amber-700 to-amber-500 rounded-full transition-all" style={{ width: `${progressPercent}%` }} />
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const next = readChapters + 1;
-                                              setOverviewForm((prev) => ({ ...(prev || {}), chaptersRead: next }));
-                                              updateActiveNovelData((n) => { n.chaptersRead = next; });
-                                            }}
-                                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold border border-slate-700 text-slate-300 hover:text-slate-100 hover:border-slate-600 transition-colors"
-                                          >
-                                            +1 chương
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const next = readChapters + 5;
-                                              setOverviewForm((prev) => ({ ...(prev || {}), chaptersRead: next }));
-                                              updateActiveNovelData((n) => { n.chaptersRead = next; });
-                                            }}
-                                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold border border-slate-700 text-slate-300 hover:text-slate-100 hover:border-slate-600 transition-colors"
-                                          >
-                                            +5 chương
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const done = totalChapters > 0 ? totalChapters : readChapters;
-                                              setOverviewForm((prev) => ({ ...(prev || {}), chaptersRead: done }));
-                                              updateActiveNovelData((n) => { n.chaptersRead = done; });
-                                            }}
-                                            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${isReadingDone ? 'border-amber-500/70 bg-amber-500/15 text-amber-200' : 'border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600'}`}
-                                          >
-                                            {isReadingDone ? '✓ Đã xong' : 'Đánh dấu đã xong'}
-                                          </button>
-                                        </div>
-                                </div>
-                                <div className="rounded-xl bg-slate-950/55 border border-slate-800/90 px-4 py-3">
-                                  <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest block mb-2">Đánh giá 5 sao</label>
-                                  <div className="flex items-center gap-1 flex-wrap">
-                                    {[1, 2, 3, 4, 5].map((star) => {
-                                      const rating = Number(overviewForm?.rating || 0);
-                                      const fill = Math.max(0, Math.min(1, rating - (star - 1)));
-                                      return (
-                                        <div key={star} className="relative w-7 h-7 select-none">
-                                          <span className="absolute inset-0 text-2xl leading-7 text-slate-700">★</span>
-                                          <span className="absolute inset-0 text-2xl leading-7 text-amber-400 overflow-hidden" style={{ width: `${fill * 100}%` }}>★</span>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const half = star - 0.5;
-                                              setOverviewForm((prev) => ({ ...(prev || {}), rating: half }));
-                                              updateActiveNovelData((n) => { n.rating = half; });
-                                            }}
-                                            className="absolute left-0 top-0 h-full w-1/2"
-                                            aria-label={`Đánh giá ${star - 0.5} sao`}
-                                            title={`${star - 0.5} sao`}
-                                          />
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setOverviewForm((prev) => ({ ...(prev || {}), rating: star }));
-                                              updateActiveNovelData((n) => { n.rating = star; });
-                                            }}
-                                            className="absolute right-0 top-0 h-full w-1/2"
-                                            aria-label={`Đánh giá ${star} sao`}
-                                            title={`${star} sao`}
-                                          />
-                                        </div>
-                                      );
-                                    })}
-                                    <span className="ml-2 text-xs text-slate-400 font-serif">{Number(overviewForm?.rating || 0).toFixed(1)}/5</span>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setOverviewForm((prev) => ({ ...(prev || {}), rating: 0 }));
-                                        updateActiveNovelData((n) => { n.rating = 0; });
-                                      }}
-                                      className="ml-2 px-2 py-1 rounded-lg text-[10px] font-bold border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-colors"
-                                    >
-                                      Bỏ đánh giá
-                                    </button>
-                                  </div>
-                                  <textarea
-                                    className="mt-3 w-full bg-slate-900/50 border border-slate-800 rounded-xl p-3 text-slate-300 font-serif text-sm leading-relaxed focus:outline-none focus:border-amber-600/50 min-h-[80px] resize-none custom-scrollbar"
-                                    value={safeString(overviewForm?.ratingOpinion)}
-                                    onChange={(e) => setOverviewForm({ ...(overviewForm || {}), ratingOpinion: e.target.value })}
-                                    onBlur={() => updateActiveNovelData((n) => { n.ratingOpinion = safeString(overviewForm?.ratingOpinion); })}
-                                    placeholder="Ý kiến đánh giá của bạn về truyện này..."
-                                  />
-                                </div>
-                                </div>
-
-                                {hasPersonalTags || isAddingTag ? (
-                                  <div className="rounded-xl bg-slate-950/45 border border-amber-900/30 px-4 py-3 mb-6">
-                                    <label className="flex items-center gap-2 text-xs font-bold text-slate-500 mb-3 uppercase tracking-widest"><BookOpen size={14} /> Nhãn cá nhân</label>
-                                    <div className="flex flex-wrap gap-2.5 items-center">
-                                      {(activeNovelData.tags || []).map(tag => (
-                                        <span key={tag} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-md text-sm text-slate-300 font-serif flex items-center gap-2 group/tag">
-                                          {safeString(tag)}
-                                          <button onClick={() => handleRemoveTag(tag)} className="text-slate-500 hover:text-rose-400 opacity-50 group-hover/tag:opacity-100 transition-opacity"><X size={12}/></button>
-                                        </span>
-                                      ))}
-                                      {isAddingTag ? (
-                                        <input 
-                                          autoFocus type="text" placeholder="Nhập nhãn..."
-                                          className="px-3 py-1.5 bg-slate-950 border border-amber-600/50 rounded-md text-sm text-slate-200 focus:outline-none w-32 font-serif"
-                                          value={newTagValue} onChange={(e) => setNewTagValue(e.target.value)}
-                                          onKeyDown={(e) => { if(e.key === 'Enter') handleAddTag() }}
-                                          onBlur={() => { if(newTagValue.trim()) handleAddTag(); else setIsAddingTag(false); }}
-                                        />
-                                      ) : (
-                                        <button onClick={() => setIsAddingTag(true)} className="px-3 py-1.5 bg-transparent border border-dashed border-slate-700 rounded-md text-sm text-slate-500 hover:text-amber-400 hover:border-amber-500/50 transition-colors font-serif flex items-center gap-1">
-                                          <Plus size={14} /> Thêm nhãn
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="mb-6">
-                                    <button onClick={() => setIsAddingTag(true)} className="px-3 py-1.5 bg-slate-950/45 border border-dashed border-slate-700 rounded-md text-sm text-slate-500 hover:text-amber-400 hover:border-amber-500/50 transition-colors font-serif flex items-center gap-1">
-                                      <Plus size={14} /> Thêm nhãn cá nhân
-                                    </button>
-                                  </div>
-                                )}
-
-                                {novelQuickStats && (novelQuickStats.totalEnt > 0 || novelQuickStats.totalMs > 0) && (
-                                  <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/40 overflow-hidden">
-                                    <button
-                                      type="button"
-                                      onClick={() => setOverviewStatsOpen((o) => !o)}
-                                      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-800/30 transition-colors"
-                                    >
-                                      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                        <BarChart2 size={14} className="text-cyan-500/80" /> Thống kê truyện
-                                      </span>
-                                      <span className="text-[10px] text-slate-500 font-serif">
-                                        {novelQuickStats.totalEnt} thẻ · {novelQuickStats.totalMs} mốc
-                                        <ChevronDown size={14} className={`inline ml-1 transition-transform ${overviewStatsOpen ? 'rotate-180' : ''}`} />
-                                      </span>
-                                    </button>
-                                    {overviewStatsOpen && (
-                                      <div className="px-4 pb-4 pt-0 border-t border-slate-800/80 animate-fade-in space-y-4">
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-3">
-                                          <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 text-center">
-                                            <div className="text-xl font-heading font-bold text-indigo-300">{novelQuickStats.totalEnt}</div>
-                                            <div className="text-[9px] text-slate-500 uppercase">Tổng thẻ</div>
-                                          </div>
-                                          <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 text-center">
-                                            <div className="text-xl font-heading font-bold text-emerald-300">{novelQuickStats.totalMs}</div>
-                                            <div className="text-[9px] text-slate-500 uppercase">Tổng mốc</div>
-                                          </div>
-                                          <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 text-center col-span-2 sm:col-span-1">
-                                            <div className="text-sm font-bold text-amber-400/90">{novelQuickStats.byTab.length}</div>
-                                            <div className="text-[9px] text-slate-500 uppercase">Mục có dữ liệu</div>
-                                          </div>
-                                        </div>
-                                        {novelQuickStats.byTab.length > 0 && (
-                                          <div>
-                                            <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">Theo mục</p>
-                                            <div className="space-y-1.5 max-h-32 overflow-y-auto custom-scrollbar text-xs font-serif">
-                                              {novelQuickStats.byTab.map((row) => (
-                                                <div key={row.key} className="flex justify-between text-slate-400 border-b border-slate-800/50 pb-1">
-                                                  <span className="truncate pr-2">{row.label}</span>
-                                                  <span className="text-slate-500 flex-shrink-0">{row.entities} thẻ · {row.milestones} mốc</span>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        )}
-                                        {novelQuickStats.topChapters.length > 0 && (
-                                          <div>
-                                            <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">Chương có nhiều mốc nhất</p>
-                                            <div className="space-y-2">
-                                              {novelQuickStats.topChapters.map(({ ch, n }) => (
-                                                <div key={ch} className="flex items-center gap-2">
-                                                  <span className="text-[10px] text-slate-500 w-10 tabular-nums">ch.{ch}</span>
-                                                  <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
-                                                    <div
-                                                      className="h-full bg-gradient-to-r from-amber-700 to-amber-500 rounded-full"
-                                                      style={{ width: `${Math.max(8, Math.round((n / novelQuickStats.maxBar) * 100))}%` }}
-                                                    />
-                                                  </div>
-                                                  <span className="text-[10px] text-slate-400 w-6 text-right">{n}</span>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                             </div>
-                             </div>
-                             </section>
-
-                                   <section className="rounded-2xl border border-slate-800/70 bg-slate-900/25 p-6">
-                                   <div className="flex justify-between items-center mb-3">
-                                       <label className="text-xs text-slate-500 uppercase font-bold tracking-widest flex items-center gap-2"><BookOpen size={14}/> Giới thiệu truyện</label>
-                                       <button onClick={async () => {
-                                           if (geminiApiKeys.length === 0) { showToast("Vui lòng nhập API Key (trong mục Cài Đặt) để dùng AI", "warning"); return; }
-                                           setIsGeneratingReview(true);
-                                           try {
-                                             const text = await generateReviewWithAI(activeNovelData, geminiApiKeys);
-                                             if (text) { setOverviewForm({...overviewForm, review: text}); updateActiveNovelData(n => n.review = text); showToast("Đã lĩnh ngộ thành công!"); }
-                                             else showToast("AI không trả về nội dung.", "warning");
-                                           } catch (e) { showToast(mapGeminiErrorToUserMessage(e), "error"); }
-                                           setIsGeneratingReview(false);
-                                       }} disabled={isGeneratingReview} className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 font-bold bg-amber-950/30 px-3 py-1.5 rounded-lg border border-amber-900/50 transition-colors disabled:opacity-50">
-                                           {isGeneratingReview ? <div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"/> : <Sparkles size={14} />}
-                                           {isGeneratingReview ? 'Đang tổng hợp...' : 'AI Tổng Hợp Đạo Tâm'}
-                                       </button>
-                                   </div>
-                                   <textarea className="w-full flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 text-slate-300 font-serif text-lg leading-relaxed focus:outline-none focus:border-amber-600/50 min-h-[200px] resize-none custom-scrollbar" value={safeString(overviewForm?.review)} onChange={(e) => setOverviewForm({...overviewForm, review: e.target.value})} onBlur={() => updateActiveNovelData(n => n.review = overviewForm.review)} placeholder="Viết giới thiệu tổng quan về truyện... (Hệ thống tự động lưu khi bạn nhấp chuột ra khỏi đây)" />
-                                   </section>
-
-                                   <section className="rounded-2xl border border-slate-800/70 bg-slate-950/40 p-5">
-                                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-3">Công cụ nhanh</label>
-                                   <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
-                                               <button
-                                                 type="button"
-                                                 onClick={() => setOverviewNeoOpen((o) => !o)}
-                                                 className={`font-serif text-sm px-4 py-2.5 rounded-xl border flex items-center justify-center gap-2 transition-colors ${overviewNeoOpen ? 'bg-amber-950/50 border-amber-700/50 text-amber-200' : 'bg-slate-800/80 border-slate-600/50 text-slate-300 hover:border-amber-600/30'}`}
-                                               >
-                                                 <BookOpen size={15} className="opacity-80 flex-shrink-0" />
-                                                 Ghi theo chương
-                                                 <ChevronDown size={16} className={`opacity-60 transition-transform flex-shrink-0 ${overviewNeoOpen ? 'rotate-180' : ''}`} />
-                                               </button>
-                                               <button
-                                                 type="button"
-                                                 onClick={() => setIsInNovelSearchOpen(true)}
-                                                 className="font-serif text-sm px-4 py-2.5 rounded-xl bg-cyan-950/50 border border-cyan-800/45 text-cyan-300 hover:bg-cyan-900/35 flex items-center justify-center gap-2 transition-colors"
-                                               >
-                                                 <Search size={15} className="opacity-80" /> Tra trong truyện
-                                               </button>
-                                               <button
-                                                 type="button"
-                                                 onClick={openOverviewHub}
-                                                 className="font-serif text-sm px-4 py-2.5 rounded-xl bg-violet-950/55 border border-violet-700/40 text-violet-200 hover:bg-violet-900/40 flex items-center justify-center gap-2 transition-colors"
-                                               >
-                                                 <Layers size={15} className="opacity-90" /> Một cửa cập nhật
-                                               </button>
-                                               <button
-                                                 type="button"
-                                                 onClick={() => setNeoXrefSectionOpen((o) => !o)}
-                                                 className={`font-serif text-sm px-4 py-2.5 rounded-xl border flex items-center justify-center gap-2 transition-colors ${neoXrefSectionOpen ? 'bg-amber-950/40 border-amber-800/50 text-amber-200' : 'bg-slate-800/80 border-slate-600/50 text-slate-300 hover:border-amber-600/25'}`}
-                                               >
-                                                 <GitBranch size={15} className="text-amber-500/80 flex-shrink-0" />
-                                                 Nối tra cứu
-                                                 {xrefs.length > 0 && (
-                                                   <span className="font-sans text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-900/50 text-amber-400">{xrefs.length}</span>
-                                                 )}
-                                                 <ChevronDown size={16} className={`opacity-60 transition-transform flex-shrink-0 ${neoXrefSectionOpen ? 'rotate-180' : ''}`} />
-                                               </button>
-                                             </div>
-                                   </section>
-
-                                   <section className="rounded-2xl border border-amber-900/25 bg-gradient-to-br from-slate-950 via-slate-900/95 to-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] overflow-hidden">
-                                         <div className="border-l-[5px] border-amber-500/85 pl-4 pr-3 py-4 sm:pl-5 sm:pr-4">
-                                           <div className="min-w-0 mb-4">
-                                               <h3 className="font-heading text-lg sm:text-xl text-amber-50 tracking-tight">Theo chương & công cụ</h3>
-                                               <p className="font-serif text-xs text-slate-500 mt-1.5 max-w-3xl">
-                                                 Neo <span className="text-amber-400 font-bold tabular-nums">ch.{anchor}</span>
-                                                 <span className="text-slate-600"> · Mốc mới (khi tạo) theo chương neo. Cập nhật hàng loạt: «Một cửa» — dùng khối Công cụ nhanh phía trên.</span>
-                                               </p>
-                                           </div>
-
-                                           {overviewNeoOpen && (
-                                             <div className="mt-4 pt-4 border-t border-slate-800/80 animate-fade-in space-y-6">
-                                               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                                                 <div className="flex items-center justify-center sm:justify-start gap-2 sm:gap-4">
-                                                   <button type="button" aria-label="Giảm chương" onClick={() => updateActiveNovelData((n) => { const b = parseInt(n.readingAnchorChapter ?? n.chaptersRead ?? 0, 10) || 0; n.readingAnchorChapter = Math.max(0, b - 1); })} className="min-h-10 min-w-10 rounded-xl bg-slate-800/90 border border-slate-600/60 text-amber-400 text-lg font-medium hover:bg-slate-700 transition-all active:scale-95">−</button>
-                                                   <div className="min-w-[3.5rem] text-center">
-                                                     <span className="font-heading text-4xl sm:text-5xl text-amber-400 tabular-nums leading-none">{anchor}</span>
-                                                     <div className="font-serif text-[10px] text-slate-600 mt-0.5">chương neo</div>
-                                                    <input
-                                                      type="number"
-                                                      min="0"
-                                                      value={anchor}
-                                                      onChange={(e) => {
-                                                        const v = Math.max(0, parseInt(e.target.value, 10) || 0);
-                                                        updateActiveNovelData((n) => { n.readingAnchorChapter = v; });
-                                                      }}
-                                                      className="mt-2 w-20 mx-auto bg-slate-950/70 border border-slate-700 rounded-lg px-2 py-1 text-xs text-amber-200/90 font-serif text-center focus:outline-none focus:border-amber-600/50"
-                                                      aria-label="Nhập chương neo"
-                                                      title="Nhập số chương neo"
-                                                    />
-                                                   </div>
-                                                   <button type="button" aria-label="Tăng chương" onClick={() => updateActiveNovelData((n) => { const b = parseInt(n.readingAnchorChapter ?? n.chaptersRead ?? 0, 10) || 0; n.readingAnchorChapter = b + 1; })} className="min-h-10 min-w-10 rounded-xl bg-slate-800/90 border border-slate-600/60 text-amber-400 text-lg font-medium hover:bg-slate-700 transition-all active:scale-95">+</button>
-                                                 </div>
-                                                 <button type="button" onClick={() => updateActiveNovelData((n) => { n.readingAnchorChapter = parseInt(n.chaptersRead, 10) || 0; })} className="font-serif text-sm px-4 py-2 rounded-full bg-slate-800/80 border border-slate-600/50 text-cyan-300 hover:bg-slate-700/90 w-fit mx-auto sm:mx-0">
-                                                   Đồng bộ theo tiến độ đọc
-                                                 </button>
-                                               </div>
-                                               <div>
-                                                 <h4 className="font-heading text-[10px] font-semibold text-amber-200/70 uppercase tracking-widest flex items-center gap-2 mb-2">
-                                                   <Activity size={14} className="text-amber-500/90" /> Lối tắt ch.{lo}–{hi}
-                                                 </h4>
-                                                 <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar flex-nowrap -mx-1 px-1 snap-x">
-                                                   {nearChapterEntitiesGlobal.map((row) => (
-                                                     <button key={`${row.lonId}-${row.nhoId}-${row.ent.id}`} type="button" onClick={() => handleNavigate({ lonId: row.lonId, nhoId: row.nhoId, entityId: row.ent.id })} className="snap-start flex-shrink-0 text-left px-3 py-2.5 rounded-xl bg-slate-800/50 border border-slate-700/70 hover:border-amber-500/35 max-w-[200px] min-w-[120px]">
-                                                       <span className="font-serif text-sm text-slate-100 line-clamp-2">{safeString(row.ent.name)}</span>
-                                                       <span className="block font-sans text-[9px] uppercase text-slate-500 mt-1 truncate">{safeString(row.sectionLabel)}</span>
-                                                     </button>
-                                                   ))}
-                                                 </div>
-                                                 {nearChapterEntitiesGlobal.length === 0 && (
-                                                   <p className="font-serif text-xs text-slate-600 italic">Chưa có mốc trong vùng này.</p>
-                                                 )}
-                                               </div>
-                                             </div>
-                                           )}
-
-                                           {neoXrefSectionOpen && (
-                                             <div className="mt-4 pt-4 border-t border-slate-800/80 animate-fade-in">
-                                               <p className="font-serif text-xs text-slate-600 mb-3">Ch.X → Ch.Y + ghi chú. <Sparkles size={12} className="inline align-text-bottom text-amber-500/90" /> trên dòng để AI gợi ý.</p>
-                                               <div className="mt-4 space-y-3 animate-fade-in">
-                                                 <div className="flex flex-wrap gap-2 items-end">
-                                                   <div className="flex flex-col gap-1">
-                                                     <label className="font-sans text-[10px] uppercase tracking-wider text-slate-500">Đang đọc</label>
-                                                     <input type="number" placeholder="vd. 200" className="w-20 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 font-serif text-sm text-amber-100/90 focus:outline-none focus:border-amber-600/50" value={xrefDraft.from} onChange={(e) => setXrefDraft((d) => ({ ...d, from: e.target.value }))} />
-                                                   </div>
-                                                   <span className="text-slate-600 pb-2 font-serif">→</span>
-                                                   <div className="flex flex-col gap-1">
-                                                     <label className="font-sans text-[10px] uppercase tracking-wider text-slate-500">Nhắc chương</label>
-                                                     <input type="number" placeholder="vd. 15" className="w-20 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 font-serif text-sm text-cyan-200/90 focus:outline-none focus:border-cyan-700/50" value={xrefDraft.to} onChange={(e) => setXrefDraft((d) => ({ ...d, to: e.target.value }))} />
-                                                   </div>
-                                                   <input type="text" placeholder="Ghi chú (một dòng)" className="flex-1 min-w-[160px] bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 font-serif text-sm text-slate-200 focus:outline-none focus:border-amber-600/40" value={xrefDraft.note} onChange={(e) => setXrefDraft((d) => ({ ...d, note: e.target.value }))} />
-                                                   <button type="button" onClick={() => {
-                                                     const from = parseInt(xrefDraft.from, 10);
-                                                     const to = parseInt(xrefDraft.to, 10);
-                                                     if (isNaN(from) || isNaN(to) || !xrefDraft.note.trim()) { showToast('Nhập đủ hai chương và ghi chú.', 'warning'); return; }
-                                                     updateActiveNovelData((n) => { if (!n.chapterCrossRefs) n.chapterCrossRefs = []; n.chapterCrossRefs.push({ id: generateId('xref'), fromCh: from, toCh: to, note: xrefDraft.note.trim() }); });
-                                                     setXrefDraft({ from: '', to: '', note: '' });
-                                                     showToast('Đã lưu nối tra cứu.');
-                                                   }} className="font-heading text-sm px-5 py-2 rounded-full bg-amber-700 hover:bg-amber-600 text-white border border-amber-600/50 transition-colors">Thêm</button>
-                                                 </div>
-                                                 {xrefs.length > 0 ? (
-                                                   <ul className="space-y-2 max-h-36 overflow-y-auto custom-scrollbar">
-                                                     {xrefs.map((x) => (
-                                                       <li key={x.id} className="flex justify-between gap-2 items-start font-serif text-sm bg-slate-950/70 rounded-xl px-4 py-2.5 border border-slate-800/90">
-                                                         <span className="text-slate-300 leading-relaxed min-w-0"><span className="text-amber-500 font-semibold tabular-nums">Ch.{x.fromCh}</span>
-                                                           <span className="text-slate-600 mx-1">→</span>
-                                                           <span className="text-cyan-400/90 font-semibold tabular-nums">Ch.{x.toCh}</span>
-                                                           <span className="text-slate-500"> — </span>{safeString(x.note)}</span>
-                                                         <div className="flex items-start gap-0.5 flex-shrink-0">
-                                                           <button type="button" onClick={() => runXrefAiForRow(x)} className="text-amber-500/90 hover:text-amber-300 p-1.5 rounded-lg hover:bg-amber-950/40 transition-colors" title="AI: gợi ý thẻ mới / mốc / cập nhật" aria-label="Gợi ý AI"><Sparkles size={16} /></button>
-                                                           <button type="button" onClick={() => updateActiveNovelData((n) => { if (!n.chapterCrossRefs) return; n.chapterCrossRefs = n.chapterCrossRefs.filter((r) => r.id !== x.id); })} className="text-rose-400/90 hover:text-rose-300 text-lg leading-none px-1" aria-label="Xóa">×</button>
-                                                         </div>
-                                                       </li>
-                                                     ))}
-                                                   </ul>
-                                                 ) : (
-                                                   <p className="font-serif text-sm text-slate-600 italic pl-1">Chưa có ghi chú — ví dụ: ch.200 nhắc sự kiện ch.15.</p>
-                                                 )}
-                                               </div>
-                                             </div>
-                                           )}
-                                         </div>
-                                   </section>
-
-                                   <section className="rounded-2xl border border-slate-800/70 bg-slate-950/35 px-6 py-4">
-                                      <div className="flex justify-between items-center gap-4">
-                                         <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Quản lý thư tịch</p>
-                                         <div className="flex gap-3">
-                                            <button onClick={handleOpenEditNovel} className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-bold flex items-center gap-2 transition-colors border border-slate-700"><Settings size={17}/> Thiết Lập Truyện</button>
-                                            <button onClick={() => setConfirmDialog({
-                                               isOpen: true, title: 'Hủy Diệt Thư Tịch', message: `Xóa sổ vĩnh viễn <b>${safeString(activeNovelData.title)}</b> cùng toàn bộ ảnh của nó? Hành động này không thể vãn hồi!`, 
-                                               onConfirm: () => handleDeleteNovel(activeNovelData.id)
-                                            })} className="px-5 py-2.5 bg-slate-900 text-rose-500 rounded-xl font-bold flex items-center gap-2 transition-colors border border-slate-800 hover:border-rose-900/50 hover:bg-rose-950/30"><Trash2 size={17} /> Hủy Diệt</button>
-                                         </div>
-                                      </div>
-                                   </section>
-                          </div>
-                       ); })() : (
-                          <div className="animate-fade-in flex flex-col h-full">
-                             <div className="mb-6 flex justify-between items-end border-b border-slate-800 pb-6">
-                                <div>
-                                   <div className="text-[10px] text-amber-600 uppercase font-bold tracking-widest mb-1 flex items-center gap-2">
-                                      <span className="opacity-50 cursor-pointer hover:opacity-80" onClick={() => handleSelectTabLon(activeTabLon)}>{safeString(sortedTabs.find(t=>t.id===activeTabLon)?.label || activeTabLon)}</span>
-                                      {activeTabNho && <><ChevronRight size={10}/> {safeString(currentTabConfig?.label)}</>}
-                                      {activeTabCon && <><ChevronRight size={10}/> <span className="text-amber-400">{safeString(currentTabConfig?.tabCon?.find(c=>c.id===activeTabCon)?.label)}</span></>}
-                                   </div>
-                                   <h2 className="text-4xl font-heading font-bold text-slate-100">{activeTabCon ? safeString(currentTabConfig?.tabCon?.find(c=>c.id===activeTabCon)?.label) : safeString(currentTabConfig?.label)}</h2>
-                                </div>
-                                
-                                <div className="flex items-center gap-4">
-                                   {!activeTabNho && currentTabConfig?.subTabs?.length > 0 ? null : currentTabConfig?.viewType === 'collection-track' ? (
-                                      <div ref={entityAdvancedRef} className="flex flex-col items-end gap-2">
-                                        <div className="flex items-center gap-2 flex-wrap justify-end">
-                                         {/* Nút thêm mới cố định trên header */}
-                                         <button onClick={handleOpenCreateEntity} className="px-4 py-2 bg-amber-700/80 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-md flex-shrink-0">
-                                           <Plus size={13}/> {getTerms(activeTabLon).createNew}
-                                         </button>
-                                         <div className="relative">
-                                            <input type="text" placeholder="Tìm kiếm nhanh..." value={entitySearch} onChange={e=>setEntitySearch(e.target.value)} className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-10 pr-4 text-xs font-serif outline-none focus:border-amber-600/50 w-44" />
-                                            <Search size={14} className="absolute left-3 top-2.5 text-slate-600"/>
-                                         </div>
-                                         <select value={entitySortMode} onChange={e=>setEntitySortMode(e.target.value)} className="bg-slate-900 border border-slate-800 rounded-xl py-2 px-3 text-xs font-serif outline-none focus:border-amber-600/50 text-slate-300 cursor-pointer">
-                                            <option value="newest">Mới nhất</option>
-                                            <option value="name_asc">Tên (A-Z)</option>
-                                            <option value="milestones">Nhiều sự kiện</option>
-                                         </select>
-                                         <button
-                                           type="button"
-                                           onClick={() => setShowEntityAdvanced((v) => !v)}
-                                           className={`px-3 py-2 border rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors ${showEntityAdvanced ? 'bg-amber-900/30 border-amber-700/50 text-amber-300' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'}`}
-                                         >
-                                           <Filter size={13} />
-                                           Nâng cao
-                                         </button>
-                                         {isEntityAdvancedActive && (
-                                           <button type="button" onClick={clearEntityAdvanced} className="px-3 py-2 border rounded-xl text-xs font-bold bg-slate-900 border-slate-700 text-slate-300 hover:text-slate-100 transition-colors">
-                                             Xóa lọc
-                                           </button>
-                                         )}
-                                        </div>
-                                        {isEntityAdvancedActive && (
-                                          <div className="flex items-center gap-2 flex-wrap justify-end text-[11px]">
-                                            {entityFilterField !== 'none' && entityFilterValue.trim() ? (
-                                              <span className="px-2.5 py-1 rounded-full border border-cyan-700/50 bg-cyan-950/30 text-cyan-200">
-                                                Lọc: {safeString(entityFilterFields.find((f) => f.id === entityFilterField)?.label || entityFilterField)} = "{entityFilterValue.trim()}"
-                                              </span>
-                                            ) : null}
-                                            {entityGroupBy !== 'none' ? (
-                                              <span className="px-2.5 py-1 rounded-full border border-amber-700/50 bg-amber-950/30 text-amber-200">
-                                                Nhóm: {safeString(entityFilterFields.find((f) => f.id === entityGroupBy)?.label || entityGroupBy)}
-                                              </span>
-                                            ) : null}
-                                          </div>
-                                        )}
-                                        {showEntityAdvanced && (
-                                          <div className="w-full max-w-[760px] rounded-2xl border border-slate-800/90 bg-slate-950/90 p-3 shadow-xl space-y-2 animate-fade-in">
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                                              <AdvancedFieldSelect
-                                                value={entityFilterField}
-                                                onChange={setEntityFilterField}
-                                                options={entityFilterOptions}
-                                                active={entityFilterField !== 'none'}
-                                              />
-                                              <input type="text" placeholder={entityFilterField === 'none' ? 'Chọn trường rồi nhập giá trị lọc...' : 'Giá trị lọc theo trường...'} value={entityFilterValue} onChange={e=>setEntityFilterValue(e.target.value)} disabled={entityFilterField === 'none'} className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2 px-3 text-xs font-serif outline-none focus:border-cyan-600/50 disabled:opacity-50 disabled:cursor-not-allowed" />
-                                              <AdvancedFieldSelect
-                                                value={entityGroupBy}
-                                                onChange={setEntityGroupBy}
-                                                options={entityGroupOptions}
-                                                active={entityGroupBy !== 'none'}
-                                              />
-                                            </div>
-                                            <p className="text-[11px] text-slate-500 font-serif">
-                                              Lưu ý: <span className="text-slate-400">Tìm kiếm nhanh</span> và <span className="text-slate-400">Lọc theo trường</span> được áp dụng đồng thời.
-                                            </p>
-                                          </div>
-                                        )}
-                                      </div>
-                                   ) : (
-                                      <button id="save-standard-btn" onClick={() => { if(isEditingMode) { handleSaveStandardEditor(); } else setIsEditingMode(true); const s = safeString(currentStandardData); setLivePreviewText(s); setDebouncedMarkdownPreview(s); }} className={`px-5 py-2 rounded-xl text-xs font-bold transition-colors shadow-lg flex items-center gap-2 ${isEditingMode ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-800 border border-slate-700 text-slate-300 hover:text-slate-100 hover:bg-slate-700'}`}>
-                                         {isEditingMode ? <><Save size={16}/> Lưu (Ctrl+S)</> : <><Edit3 size={16}/> Chỉnh Sửa</>}
-                                      </button>
-                                   )}
-                                </div>
-                             </div>
-
-                             {!activeTabNho && currentTabConfig?.subTabs?.length > 0 ? (
-                                <div className="animate-fade-in mt-2">
-                                   <p className="text-xs text-slate-500 uppercase tracking-widest font-bold mb-6 flex items-center gap-2">
-                                      <span className="w-4 h-px bg-slate-700"></span>
-                                      Chọn chương mục để xem
-                                      <span className="w-4 h-px bg-slate-700"></span>
-                                   </p>
-                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                   {currentTabConfig.subTabs.map(sub => {
-                                      const subData = activeNovelData?.data?.[activeTabLon]?.[sub.id];
-                                      const entityCount = subData?.entities?.length || 0;
-                                      const isCollection = sub.viewType === 'collection-track';
-                                      return (
-                                         <button key={sub.id} onClick={(e) => handleSelectTabNho(e, activeTabLon, sub)}
-                                            className="bg-slate-900/60 border border-slate-800 hover:border-amber-600/40 rounded-2xl p-6 flex items-center gap-5 transition-all hover:shadow-[0_8px_24px_rgba(217,119,6,0.06)] group text-left">
-                                            <div className="w-14 h-14 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 group-hover:text-amber-500 group-hover:border-amber-500/30 transition-all flex-shrink-0 shadow-inner group-hover:shadow-[0_0_12px_rgba(217,119,6,0.1)]">
-                                               {isCollection ? <User size={26}/> : <BookOpen size={26}/>}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                               <div className="font-heading text-lg text-slate-200 group-hover:text-amber-400 transition-colors truncate">{safeString(sub.label)}</div>
-                                               <div className="text-xs text-slate-500 mt-1 font-serif flex items-center gap-2">
-                                                  {isCollection ? (
-                                                     <span className={`font-bold ${entityCount > 0 ? 'text-amber-600' : 'text-slate-600'}`}>{entityCount} thực thể</span>
-                                                  ) : (
-                                                     <span>{subData ? 'Có ghi chép' : 'Chưa có nội dung'}</span>
-                                                  )}
-                                               </div>
-                                            </div>
-                                            <ChevronRight size={18} className="text-slate-700 group-hover:text-amber-500 transition-colors flex-shrink-0" />
-                                         </button>
-                                      );
-                                   })}
-                                   </div>
-                                </div>
-                             ) : currentTabConfig?.viewType === 'collection-track' ? (
-                                <div className="flex flex-col flex-1 h-full animate-fade-in">
-                                  <AppCollectionTrackTabs
-                                    collectionSubTab={collectionSubTab}
-                                    setCollectionSubTab={setCollectionSubTab}
-                                    galleryCount={galleryPortraitEntries.length}
-                                    selectedEntityName={selectedEntity ? safeString(selectedEntity.name) : ''}
-                                    selectedEntityMilestoneCount={selectedEntity?.milestones?.length || 0}
-                                  />
-
-                                   <div id="collection-scroll-container" className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-10">
-                                      <AppGalleryContent
-                                        collectionSubTab={collectionSubTab}
-                                        galleryPortraitEntries={galleryPortraitEntries}
-                                        visibleGalleryEntries={visibleGalleryEntries}
-                                        galleryHasMore={galleryHasMore}
-                                        setGalleryVisiblePage={setGalleryVisiblePage}
-                                        handleOpenEntityFromGallery={handleOpenEntityFromGallery}
-                                        activeNovelDirHandle={activeNovelDirHandle}
-                                        dirHandle={dirHandle}
-                                      />
-                                      <AppCollectionListContent
-                                        collectionSubTab={collectionSubTab}
-                                        entitiesList={entitiesList}
-                                        entityPage={entityPage}
-                                        setEntityPage={setEntityPage}
-                                        entityGroupBy={entityGroupBy}
-                                        pagedEntitiesList={pagedEntitiesList}
-                                        groupedEntitiesList={groupedEntitiesList}
-                                        groupVisibleCount={groupVisibleCount}
-                                        setGroupVisibleCount={setGroupVisibleCount}
-                                        currentTabConfig={currentTabConfig}
-                                        onEntityCardSelect={onEntityCardSelect}
-                                        onEntityCardDelete={onEntityCardDelete}
-                                        onEntityCardAddMilestone={onEntityCardAddMilestone}
-                                        currentContextDirHandle={currentContextDirHandle}
-                                        activeTabLon={activeTabLon}
-                                        entityPageSize={ENTITY_PAGE_SIZE}
-                                      />
-
-                                      <AppCollectionEmptyState
-                                        show={(collectionSubTab === 'detail' || collectionSubTab === 'timeline') && !selectedEntity}
-                                        onBackToList={() => setCollectionSubTab('list')}
-                                      />
-
-                                      {collectionSubTab === 'detail' && selectedEntity && (
-                                         <div className="flex flex-col max-w-5xl mx-auto w-full animate-fade-in pb-10" onDragOver={e => e.preventDefault()} onDrop={e => handleImageDrop(e, 'entity-info-editor')}>
-                                            <div className="flex justify-between items-start mb-8 pb-8 border-b border-slate-800/80">
-                                               <div className="flex items-center gap-6">
-                                                  <div
-                                                     className="w-24 h-24 rounded-[40px] bg-slate-950 border-2 border-amber-500/40 overflow-hidden flex items-center justify-center text-4xl text-amber-500 font-bold shadow-[0_0_30px_rgba(245,158,11,0.15)] group cursor-zoom-in"
-                                                     onClick={() => selectedEntity.avatar && setLightboxSrc(selectedEntity.avatar)}
-                                                     title="Nhấp để xem ảnh đầy đủ"
-                                                  >
-                                                     {selectedEntity.avatar ? (
-                                                        selectedEntity.avatar.startsWith('local_image:') ? (
-                                                           <AsyncLocalImage filename={selectedEntity.avatar.replace('local_image:', '')} alt="avatar" dirHandle={currentContextDirHandle} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                                                        ) : <img src={selectedEntity.avatar} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt="" onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />
-                                                     ) : safeString(selectedEntity.name).charAt(0).toUpperCase()}
-                                                  </div>
-                                                  <div className="flex flex-col">
-                                                     <div className="flex items-center gap-3 mb-2">
-                                                        <h2 className="text-4xl font-heading font-bold text-slate-100">{safeString(selectedEntity.name)}</h2>
-                                                        <span className="px-3 py-1 bg-amber-900/30 text-amber-400 text-[10px] font-bold uppercase tracking-widest rounded-full border border-amber-700/30 shadow-inner">{safeString(selectedEntity.title) || 'Vô Danh'}</span>
-                                                     </div>
-                                                     <p className="text-slate-400 font-serif flex items-center gap-2"><Shield size={14} className="text-slate-500"/> {safeString(selectedEntity.status) || 'Chưa có trạng thái/cảnh giới'}</p>
-                                                  </div>
-                                               </div>
-                                               <div className="flex items-center gap-2">
-                                                 <button onClick={() => handleExportEntityPDF(selectedEntity, currentTabConfig)} className="px-4 py-2.5 bg-indigo-900/30 hover:bg-indigo-800/50 border border-indigo-700/40 text-indigo-300 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors shadow-md"><Download size={13}/> Xuất PDF</button>
-                                                 <button onClick={handleOpenEditEntity} className="px-5 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors shadow-md"><Settings size={14}/> Thiết Lập Form</button>
-                                               </div>
-                                            </div>
-
-                                            <AppEntitySummaryBlocks
-                                              selectedEntity={selectedEntity}
-                                              collectionSubTab={collectionSubTab}
-                                              isEntityEditing={isEntityEditing}
-                                              currentTabConfig={currentTabConfig}
-                                              recentlyMergedFields={recentlyMergedFields}
-                                              currentContextDirHandle={currentContextDirHandle}
-                                              entityMap={entityMap}
-                                              globalLinkRegex={globalLinkRegex}
-                                              relatedEntities={relatedEntities}
-                                              isCalculatingNetwork={isCalculatingNetwork}
-                                              expandedRelations={expandedRelations}
-                                              setExpandedRelations={setExpandedRelations}
-                                              onNavigate={(dest) => navFnRef.current?.(dest)}
-                                            />
-
-                                            <AppEntityDetailNotes
-                                              activeTabLon={activeTabLon}
-                                              getTerms={getTerms}
-                                              isEntityEditing={isEntityEditing}
-                                              isExtractingAI={isExtractingAI}
-                                              setIsExtractingAI={setIsExtractingAI}
-                                              geminiApiKeys={geminiApiKeys}
-                                              showToast={showToast}
-                                              currentTabConfig={currentTabConfig}
-                                              handleAIExtractSuccess={handleAIExtractSuccess}
-                                              aiMode={aiMode}
-                                              isSplitPreview={isSplitPreview}
-                                              setLivePreviewText={setLivePreviewText}
-                                              setDebouncedMarkdownPreview={setDebouncedMarkdownPreview}
-                                              setIsSplitPreview={setIsSplitPreview}
-                                              selectedEntity={selectedEntity}
-                                              handleUpdateEntityInfo={handleUpdateEntityInfo}
-                                              setIsEntityEditing={setIsEntityEditing}
-                                              setImageForm={setImageForm}
-                                              setIsInsertImageModalOpen={setIsInsertImageModalOpen}
-                                              handlePickLocalImage={handlePickLocalImage}
-                                              debouncedMarkdownPreview={debouncedMarkdownPreview}
-                                              currentContextDirHandle={currentContextDirHandle}
-                                              entityMap={entityMap}
-                                              globalLinkRegex={globalLinkRegex}
-                                              onNavigate={handleNavigate}
-                                              memoizedEntityInfo={memoizedEntityInfo}
-                                            />
-                                         </div>
-                                      )}
-
-                                      <AppEntityTimelinePanel
-                                        collectionSubTab={collectionSubTab}
-                                        selectedEntity={selectedEntity}
-                                        selectedMilestoneId={selectedMilestoneId}
-                                        setSelectedMilestoneId={setSelectedMilestoneId}
-                                        currentTabConfig={currentTabConfig}
-                                        currentContextDirHandle={currentContextDirHandle}
-                                        entityMap={entityMap}
-                                        globalLinkRegex={globalLinkRegex}
-                                        onNavigate={(dest) => navFnRef.current?.(dest)}
-                                        setEditingMilestoneData={setEditingMilestoneData}
-                                        setIsMilestoneModalOpen={setIsMilestoneModalOpen}
-                                        handleMergeSnapshotToProfile={handleMergeSnapshotToProfile}
-                                        handleDeleteMilestone={handleDeleteMilestone}
-                                        getFieldValue={getFieldValue}
-                                        setLightboxSrc={setLightboxSrc}
-                                      />
-                                   </div>
-                                </div>
-                             ) : (
-                                <div className="flex-1 flex flex-col bg-slate-900/30 p-8 rounded-[40px] backdrop-blur-md border border-slate-800 min-h-[500px]" onDragOver={e => e.preventDefault()} onDrop={e => handleImageDrop(e, 'standard-editor')}>
-                                   {isEditingMode ? (
-                                      <div className="flex flex-col flex-1 animate-fade-in">
-                                         <div className="flex items-center justify-between mb-1">
-                                           <MarkdownToolbar editorId="standard-editor" onInsertImage={(eid) => { setImageForm({ url: '', alt: '', editorId: eid }); setIsInsertImageModalOpen(true); }} onPickLocalImage={handlePickLocalImage} />
-                                           <button onClick={() => { const cur = document.getElementById('standard-editor')?.value; if(cur !== undefined) { setLivePreviewText(cur); setDebouncedMarkdownPreview(cur); } setIsSplitPreview(p => !p); }} className={`ml-2 px-3 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 transition-colors flex items-center gap-1.5 ${isSplitPreview ? 'bg-amber-700/30 text-amber-400 border border-amber-700/40' : 'bg-slate-800 text-slate-500 border border-slate-700 hover:text-slate-300'}`}>
-                                             <Eye size={12}/> Preview
-                                           </button>
-                                         </div>
-                                         <div className={`flex flex-1 gap-4 min-h-0 ${isSplitPreview ? 'flex-row' : 'flex-col'}`}>
-                                           <textarea key={`${activeTabLon}-${activeTabNho}-${activeTabCon}`} id="standard-editor" className={`bg-transparent text-slate-200 font-serif text-lg leading-loose outline-none resize-none custom-scrollbar ${isSplitPreview ? 'w-1/2 flex-shrink-0' : 'flex-1'}`} defaultValue={safeString(currentStandardData)} placeholder="Hạ bút tại đây..." onChange={(e) => { if(isSplitPreview) setLivePreviewText(e.target.value); }} onPaste={() => { if(isSplitPreview) { setTimeout(() => { const v = document.getElementById('standard-editor')?.value; if (v !== undefined) setLivePreviewText(v); }, 0); } }} />
-                                           {isSplitPreview && (
-                                             <MarkdownPreviewPane
-                                               text={debouncedMarkdownPreview}
-                                               dirHandle={currentContextDirHandle}
-                                               entityMap={entityMap}
-                                               linkRegex={globalLinkRegex}
-                                               onNavigate={handleNavigate}
-                                               className="w-1/2 overflow-y-auto custom-scrollbar border-l border-slate-700 pl-4 font-serif"
-                                             />
-                                           )}
-                                         </div>
-                                      </div>
-                                   ) : (
-                                      <div className="font-serif animate-fade-in flex-1">
-                                          {memoizedStandardData && <>{memoizedStandardData}</>}
-                                      </div>
-                                   )}
-                                </div>
-                             )}
-                          </div>
+                       {activeTabLon === 'tong-quan' ? (
+                          <AppOverviewSection
+                            activeNovelData={activeNovelData}
+                            overviewForm={overviewForm}
+                            setOverviewForm={setOverviewForm}
+                            updateActiveNovelData={updateActiveNovelData}
+                            nearChapterEntitiesGlobal={nearChapterEntitiesGlobal}
+                            novelQuickStats={novelQuickStats}
+                            geminiApiKeys={geminiApiKeys}
+                            currentContextDirHandle={currentContextDirHandle}
+                            isGeneratingReview={isGeneratingReview}
+                            setIsGeneratingReview={setIsGeneratingReview}
+                            overviewNeoOpen={overviewNeoOpen}
+                            setOverviewNeoOpen={setOverviewNeoOpen}
+                            neoXrefSectionOpen={neoXrefSectionOpen}
+                            setNeoXrefSectionOpen={setNeoXrefSectionOpen}
+                            overviewStatsOpen={overviewStatsOpen}
+                            setOverviewStatsOpen={setOverviewStatsOpen}
+                            xrefDraft={xrefDraft}
+                            setXrefDraft={setXrefDraft}
+                            setXrefAiPanel={setXrefAiPanel}
+                            showToast={showToast}
+                            setLightboxSrc={setLightboxSrc}
+                            setIsDeepSearchOpen={setIsDeepSearchOpen}
+                            setIsInNovelSearchOpen={setIsInNovelSearchOpen}
+                            handleOpenEditNovel={handleOpenEditNovel}
+                            handleDeleteNovel={handleDeleteNovel}
+                            openOverviewHub={openOverviewHub}
+                            handleNavigate={handleNavigate}
+                            runXrefAiForRow={runXrefAiForRow}
+                            setConfirmDialog={setConfirmDialog}
+                          />
+                       ) : (
+                          <AppCollectionSection
+                            activeTabLon={activeTabLon}
+                            activeTabNho={activeTabNho}
+                            activeTabCon={activeTabCon}
+                            sortedTabs={sortedTabs}
+                            currentTabConfig={currentTabConfig}
+                            handleSelectTabLon={handleSelectTabLon}
+                            handleSelectTabNho={handleSelectTabNho}
+                            activeNovelData={activeNovelData}
+                            currentContextDirHandle={currentContextDirHandle}
+                            activeNovelDirHandle={activeNovelDirHandle}
+                            dirHandle={dirHandle}
+                            entityAdvancedRef={entityAdvancedRef}
+                            entitySearch={entitySearch}
+                            setEntitySearch={setEntitySearch}
+                            entitySortMode={entitySortMode}
+                            setEntitySortMode={setEntitySortMode}
+                            showEntityAdvanced={showEntityAdvanced}
+                            setShowEntityAdvanced={setShowEntityAdvanced}
+                            isEntityAdvancedActive={isEntityAdvancedActive}
+                            clearEntityAdvanced={clearEntityAdvanced}
+                            entityFilterField={entityFilterField}
+                            setEntityFilterField={setEntityFilterField}
+                            entityFilterValue={entityFilterValue}
+                            setEntityFilterValue={setEntityFilterValue}
+                            entityGroupBy={entityGroupBy}
+                            setEntityGroupBy={setEntityGroupBy}
+                            entityFilterFields={entityFilterFields}
+                            entityFilterOptions={entityFilterOptions}
+                            entityGroupOptions={entityGroupOptions}
+                            AdvancedFieldSelect={AdvancedFieldSelect}
+                            getTerms={getTerms}
+                            handleOpenCreateEntity={handleOpenCreateEntity}
+                            collectionSubTab={collectionSubTab}
+                            setCollectionSubTab={setCollectionSubTab}
+                            entitiesList={entitiesList}
+                            entityPage={entityPage}
+                            setEntityPage={setEntityPage}
+                            pagedEntitiesList={pagedEntitiesList}
+                            groupedEntitiesList={groupedEntitiesList}
+                            groupVisibleCount={groupVisibleCount}
+                            setGroupVisibleCount={setGroupVisibleCount}
+                            entityPageSize={ENTITY_PAGE_SIZE}
+                            galleryPortraitEntries={galleryPortraitEntries}
+                            visibleGalleryEntries={visibleGalleryEntries}
+                            galleryHasMore={galleryHasMore}
+                            setGalleryVisiblePage={setGalleryVisiblePage}
+                            handleOpenEntityFromGallery={handleOpenEntityFromGallery}
+                            onEntityCardSelect={onEntityCardSelect}
+                            onEntityCardDelete={onEntityCardDelete}
+                            onEntityCardAddMilestone={onEntityCardAddMilestone}
+                            selectedEntity={selectedEntity}
+                            isEntityEditing={isEntityEditing}
+                            setIsEntityEditing={setIsEntityEditing}
+                            recentlyMergedFields={recentlyMergedFields}
+                            entityMap={entityMap}
+                            globalLinkRegex={globalLinkRegex}
+                            relatedEntities={relatedEntities}
+                            isCalculatingNetwork={isCalculatingNetwork}
+                            expandedRelations={expandedRelations}
+                            setExpandedRelations={setExpandedRelations}
+                            navFnRef={navFnRef}
+                            handleNavigate={handleNavigate}
+                            handleExportEntityPDF={handleExportEntityPDF}
+                            handleOpenEditEntity={handleOpenEditEntity}
+                            isExtractingAI={isExtractingAI}
+                            setIsExtractingAI={setIsExtractingAI}
+                            geminiApiKeys={geminiApiKeys}
+                            showToast={showToast}
+                            handleAIExtractSuccess={handleAIExtractSuccess}
+                            aiMode={aiMode}
+                            isSplitPreview={isSplitPreview}
+                            setLivePreviewText={setLivePreviewText}
+                            setDebouncedMarkdownPreview={setDebouncedMarkdownPreview}
+                            setIsSplitPreview={setIsSplitPreview}
+                            handleUpdateEntityInfo={handleUpdateEntityInfo}
+                            setImageForm={setImageForm}
+                            setIsInsertImageModalOpen={setIsInsertImageModalOpen}
+                            handlePickLocalImage={handlePickLocalImage}
+                            debouncedMarkdownPreview={debouncedMarkdownPreview}
+                            memoizedEntityInfo={memoizedEntityInfo}
+                            setLightboxSrc={setLightboxSrc}
+                            selectedMilestoneId={selectedMilestoneId}
+                            setSelectedMilestoneId={setSelectedMilestoneId}
+                            setEditingMilestoneData={setEditingMilestoneData}
+                            setIsMilestoneModalOpen={setIsMilestoneModalOpen}
+                            handleMergeSnapshotToProfile={handleMergeSnapshotToProfile}
+                            handleDeleteMilestone={handleDeleteMilestone}
+                            getFieldValue={getFieldValue}
+                            isEditingMode={isEditingMode}
+                            setIsEditingMode={setIsEditingMode}
+                            handleSaveStandardEditor={handleSaveStandardEditor}
+                            currentStandardData={currentStandardData}
+                            memoizedStandardData={memoizedStandardData}
+                            handleImageDrop={handleImageDrop}
+                          />
                        )}
                     </div>
                  </div>
