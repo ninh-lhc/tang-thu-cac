@@ -9,7 +9,7 @@ import { X, Sparkles } from 'lucide-react';
 import { AsyncLocalImage, safeString } from './MasterUtils.jsx';
 import { FALLBACK_IMG } from './MasterEngines.js';
 
-export function AppShellOverlays({
+export const AppShellOverlays = React.memo(function AppShellOverlays({
   lightboxSrc,
   setLightboxSrc,
   hoveredNovelData,
@@ -66,6 +66,7 @@ export function AppShellOverlays({
           {hoveredNovelData.cover && !hoveredNovelData.cover.startsWith('local_image:') && (
             <img
               src={hoveredNovelData.cover}
+              loading="lazy"
               className="w-full h-28 object-cover rounded-lg mb-2"
               alt=""
               onError={(e) => {
@@ -193,4 +194,4 @@ export function AppShellOverlays({
       )}
     </>
   );
-}
+});

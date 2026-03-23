@@ -15,8 +15,9 @@ const APP_GLOBAL_CSS = `
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.3); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.6); }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        /* MOTION: vẫn mượt nhưng “đẹp” hơn (độ rơi rõ ràng hơn) */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.34s cubic-bezier(0.22, 1, 0.36, 1) forwards; will-change: opacity, transform; }
         @keyframes fadeFast { from { opacity: 0; } to { opacity: 1; } }
         .animate-fade-fast { animation: fadeFast 0.15s ease-out forwards; }
         @keyframes spinSlow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -83,6 +84,36 @@ const APP_GLOBAL_CSS = `
         .theme-wrapper:not(.theme-tien-hiep) .shadow-\\[0_0_10px_var\\(--t-400\\)\\] { box-shadow: 0 0 10px var(--t-400) !important; }
         .theme-wrapper:not(.theme-tien-hiep) .shadow-\\[0_0_10px_\\#fbbf24\\] { box-shadow: 0 0 10px var(--t-400) !important; }
         .theme-wrapper:not(.theme-tien-hiep) .shadow-\\[0_0_15px_rgba\\(217\\,119\\,6\\,0\\.5\\)\\] { box-shadow: 0 0 15px rgba(var(--t-600-rgb), 0.5) !important; }
+
+        /* PERFORMANCE MODE: ưu tiên FPS hơn hiệu ứng */
+        .theme-wrapper.performance-mode * {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+          scroll-behavior: auto !important;
+        }
+        .theme-wrapper.performance-mode .backdrop-blur-md,
+        .theme-wrapper.performance-mode .backdrop-blur-sm {
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+        }
+        .theme-wrapper.performance-mode [class*="shadow-"] {
+          box-shadow: none !important;
+        }
+
+        /* Hệ điều hành yêu cầu giảm chuyển động */
+        @media (prefers-reduced-motion: reduce) {
+          .theme-wrapper .animate-fade-in,
+          .theme-wrapper .animate-fade-fast,
+          .theme-wrapper .animate-spin-slow,
+          .theme-wrapper .animate-spin {
+            animation: none !important;
+          }
+          .theme-wrapper * {
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+          }
+        }
       `;
 
 export function AppPhongChuVaTheme() {

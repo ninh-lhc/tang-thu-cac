@@ -19,13 +19,13 @@
 //   useAppMotCuaCapNhat.js, lib/hubBangDanhMucCacMucNhatKy — Hub một cửa + catalog nhật ký
 // ==========================================
 
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { Suspense, lazy, useDeferredValue, useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   Search, BookOpen, Filter, ChevronRight, ChevronLeft, ChevronDown,
-  User, Hexagon, Settings, Edit3, Network, Plus, Trash2, Edit2,
-  X, Save, Check, Library, Sparkles, Cloud, History, LayoutGrid, Clock,
+  User, Settings, Edit3, Network, Plus, Trash2, Edit2,
+  X, Save, Check, Sparkles, Cloud, History, LayoutGrid, Clock,
   AlignLeft, Shield, Link2, Download, Eye, TrendingUp, BarChart2, BookMarked, Users, Layers, Activity,
-  Images, GitBranch
+  GitBranch
 } from 'lucide-react';
 import {
   apiKey, FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
@@ -37,15 +37,23 @@ import {
 import {
   generateId, safeString, getTerms, sortTabsAlphabetically,
   AsyncLocalImage, processPlainTextWithLinks, renderMarkdown,
-  getIconComponent, handleToolbarClick, processInline,
+  getIconComponent, handleToolbarClick,
   extractEntityAttributesWithAI, analyzeTextWithAI, generateReviewWithAI,
   analyzeCrossRefNoteWithAI, truncateForAI, mapGeminiErrorToUserMessage
 } from './MasterUtils.jsx';
 import {
-  MarkdownToolbar, AppHeader, LandingScreen, DashboardScreen, EntityCard,
+  MarkdownToolbar, AppHeader, LandingScreen, DashboardScreen,
   ModalEntity, ModalMilestone, ModalQuickCreate, ModalSettings,
   ModalConfirm, ModalInsertImage, ModalAddNovel, ModalDeepSearch, ModalInNovelSearch
 } from './MasterComponents.jsx';
+import { AppCollectionListContent } from './AppCollectionListContent.jsx';
+import { AppGalleryContent } from './AppGalleryContent.jsx';
+import { AppCollectionTrackTabs } from './AppCollectionTrackTabs.jsx';
+import { AppCollectionEmptyState } from './AppCollectionEmptyState.jsx';
+import { AppEntitySummaryBlocks } from './AppEntitySummaryBlocks.jsx';
+import { AppEntityDetailNotes } from './AppEntityDetailNotes.jsx';
+import { AppEntityTimelinePanel } from './AppEntityTimelinePanel.jsx';
+import { AppLibrarySidebar } from './AppLibrarySidebar.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import {
   searchNovelData,
@@ -56,15 +64,10 @@ import {
 import { computeRelatedEntities } from './lib/computeRelatedEntities.js';
 import { findEntitiesByHintInNovel } from './appNhatKyVaGoiThe.js';
 import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
-import { AppModalMotCua } from './AppModalMotCua.jsx';
-import { AppModalQuanLyTab } from './AppModalQuanLyTab.jsx';
-import { AppModalLenhNhanh } from './AppModalLenhNhanh.jsx';
-import { AppModalGoiYNoiTraCuu } from './AppModalGoiYNoiTraCuu.jsx';
 import { migrateIndex, migrateBackup } from './dataMigration.js';
 import { buildTabGroups } from './lib/appTabGroups.js';
 import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
-import { filterNovelsForLibrary } from './lib/filterNovelsForLibrary.js';
 import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
 import { useAppPersistence } from './useAppPersistence.js';
 import { AppShellOverlays } from './AppShellOverlays.jsx';
@@ -75,6 +78,11 @@ import { buildCommandPaletteFiltered } from './lib/locLenhNhanhCommandPalette.js
 import { buildXrefEntityCatalogText } from './lib/xrefBangDanhMucThucThe.js';
 import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 
+const AppModalMotCua = lazy(() => import('./AppModalMotCua.jsx').then((m) => ({ default: m.AppModalMotCua })));
+const AppModalQuanLyTab = lazy(() => import('./AppModalQuanLyTab.jsx').then((m) => ({ default: m.AppModalQuanLyTab })));
+const AppModalLenhNhanh = lazy(() => import('./AppModalLenhNhanh.jsx').then((m) => ({ default: m.AppModalLenhNhanh })));
+const AppModalGoiYNoiTraCuu = lazy(() => import('./AppModalGoiYNoiTraCuu.jsx').then((m) => ({ default: m.AppModalGoiYNoiTraCuu })));
+
 export default function App() {
   const [novelsMetadata, setNovelsMetadata] = useState(MOCK_METADATA);
   const [activeNovelData, setActiveNovelData] = useState(null); 
@@ -83,8 +91,8 @@ export default function App() {
   
   const [menu1Visible, setMenu1Visible] = useState(false);
   const [hoveredNovelId, setHoveredNovelId] = useState(null);
-  const [hoveredNovelData, setHoveredNovelData] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const hoverTooltipRafRef = useRef(null);
   const [menu2Expanded, setMenu2Expanded] = useState(true);
   const [collapsedTabGroups, setCollapsedTabGroups] = useState(() => new Set());
   const [sidebarGrouped, setSidebarGrouped] = useState(true);
@@ -95,6 +103,7 @@ export default function App() {
   
   const [selectedEntityId, setSelectedEntityId] = useState(null);
   const [entitySearch, setEntitySearch] = useState('');
+  const deferredEntitySearch = useDeferredValue(entitySearch);
   const [entitySortMode, setEntitySortMode] = useState('newest');
   const [entityGroupBy, setEntityGroupBy] = useState('none'); // none | field_id
   const [entityPage, setEntityPage] = useState(1);
@@ -102,6 +111,7 @@ export default function App() {
   const ENTITY_PAGE_SIZE = 24; 
   
   const [collectionSubTab, setCollectionSubTab] = useState('list'); 
+  const [galleryVisiblePage, setGalleryVisiblePage] = useState(1);
   const [navHistory, setNavHistory] = useState([]);
   const [expandedRelations, setExpandedRelations] = useState(false);
   
@@ -153,6 +163,11 @@ export default function App() {
   
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredLibrarySearch = useDeferredValue(searchQuery);
+  const sidebarListRef = useRef(null);
+  const sidebarScrollRafRef = useRef(null);
+  const [sidebarScrollTop, setSidebarScrollTop] = useState(0);
+  const [sidebarViewportHeight, setSidebarViewportHeight] = useState(0);
   const [searchHistory, setSearchHistory] = useState(() => {
     try {
       const raw = localStorage.getItem('tangthu_lib_search_hist');
@@ -171,6 +186,7 @@ export default function App() {
   });
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
+  const deferredCommandPaletteQuery = useDeferredValue(commandPaletteQuery);
   const [overviewStatsOpen, setOverviewStatsOpen] = useState(false);
   const librarySearchInputRef = useRef(null);
   const commandPaletteOpenRef = useRef(false);
@@ -200,6 +216,8 @@ export default function App() {
   useEffect(
     () => () => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (hoverTooltipRafRef.current) cancelAnimationFrame(hoverTooltipRafRef.current);
+      if (sidebarScrollRafRef.current) cancelAnimationFrame(sidebarScrollRafRef.current);
     },
     []
   );
@@ -215,6 +233,8 @@ export default function App() {
   const [editingTab, setEditingTab] = useState(null);
   const [isGenreFilterOpen, setIsGenreFilterOpen] = useState(false);
   const [selectedGenres, setSelectedGenres] = useState([]);
+  const SIDEBAR_ITEM_HEIGHT = 78;
+  const SIDEBAR_OVERSCAN = 8;
 
   const [geminiApiKeys, setGeminiApiKeys] = useState(() => {
     try {
@@ -237,6 +257,13 @@ export default function App() {
       return saved === 'quick' ? 'quick' : 'standard';
     } catch {
       return 'standard';
+    }
+  });
+  const [performanceMode, setPerformanceMode] = useState(() => {
+    try {
+      return localStorage.getItem('tangthu_perf_mode') === '1';
+    } catch {
+      return false;
     }
   });
 
@@ -276,6 +303,15 @@ export default function App() {
   const dashboardStats = useMemo(
     () => computeDashboardStats(novelsMetadata, novelStatsById),
     [novelsMetadata, novelStatsById]
+  );
+  const novelMetaById = useMemo(() => {
+    const map = new Map();
+    (novelsMetadata || []).forEach((n) => map.set(n.id, n));
+    return map;
+  }, [novelsMetadata]);
+  const hoveredNovelData = useMemo(
+    () => (hoveredNovelId ? novelMetaById.get(hoveredNovelId) || null : null),
+    [hoveredNovelId, novelMetaById]
   );
 
   const activeThemeClass = useMemo(() => {
@@ -343,29 +379,68 @@ export default function App() {
     return typeof data === 'string' ? data : '';
   }, [activeNovelData, activeTabLon, activeTabNho, activeTabCon]);
 
-  const entitiesList = useMemo(() => {
+  const collectionEntitiesRaw = useMemo(() => {
     if (!activeNovelData || !activeTabLon || !currentTabConfig || currentTabConfig.viewType !== 'collection-track') return [];
     const tabData = activeNovelData.data?.[activeTabLon]?.[activeTabNho || 'default'];
     if (!tabData || typeof tabData === 'string') return [];
-    let list = tabData.entities ? [...tabData.entities] : [];
-    if (entitySearch.trim()) {
-        const q = entitySearch.toLowerCase();
-        list = list.filter(e => {
-            if (e.name?.toLowerCase().includes(q)) return true;
-            if (e.title?.toLowerCase().includes(q)) return true;
-            if (e.info?.toLowerCase().includes(q)) return true;
-            if (e.dynamicData && Object.values(e.dynamicData).some(v => typeof v === 'string' && v.toLowerCase().includes(q))) return true;
-            return false;
-        });
+    return tabData.entities ? [...tabData.entities] : [];
+  }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig]);
+  const entitySearchIndexById = useMemo(() => {
+    const map = new Map();
+    collectionEntitiesRaw.forEach((e) => {
+      const dynamicPart = e.dynamicData
+        ? Object.values(e.dynamicData).filter((v) => typeof v === 'string').join(' ')
+        : '';
+      map.set(
+        e.id,
+        `${safeString(e.name)} ${safeString(e.title)} ${safeString(e.info)} ${dynamicPart}`.toLowerCase()
+      );
+    });
+    return map;
+  }, [collectionEntitiesRaw]);
+  const entitiesList = useMemo(() => {
+    let list = [...collectionEntitiesRaw];
+    if (deferredEntitySearch.trim()) {
+      const q = deferredEntitySearch.toLowerCase();
+      list = list.filter((e) => {
+        const haystack = entitySearchIndexById.get(e.id) || '';
+        return haystack.includes(q);
+      });
     }
     if (entitySortMode === 'name_asc') list.sort((a,b) => a.name.localeCompare(b.name, 'vi'));
     else if (entitySortMode === 'milestones') list.sort((a,b) => (b.milestones?.length || 0) - (a.milestones?.length || 0));
     else if (entitySortMode === 'newest') list.reverse();
     return list;
-  }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig, entitySearch, entitySortMode]);
+  }, [collectionEntitiesRaw, entitySearchIndexById, deferredEntitySearch, entitySortMode]);
+  const pagedEntitiesList = useMemo(
+    () => entitiesList.slice((entityPage - 1) * ENTITY_PAGE_SIZE, entityPage * ENTITY_PAGE_SIZE),
+    [entitiesList, entityPage]
+  );
+  const groupedEntitiesList = useMemo(() => {
+    if (entityGroupBy === 'none') return [];
+    const getFieldVal = (ent, fieldId) => {
+      if (ent.dynamicData?.[fieldId]) return ent.dynamicData[fieldId];
+      if (fieldId === 'f_status') return ent.status || '';
+      if (fieldId === 'f_title') return ent.title || '';
+      if (fieldId === 'f_desc') return ent.description || '';
+      return '';
+    };
+    const groups = {};
+    entitiesList.forEach((ent) => {
+      const val = getFieldVal(ent, entityGroupBy).trim() || '— Chưa phân loại —';
+      if (!groups[val]) groups[val] = [];
+      groups[val].push(ent);
+    });
+    return Object.entries(groups).sort((a, b) => {
+      if (a[0] === '— Chưa phân loại —') return 1;
+      if (b[0] === '— Chưa phân loại —') return -1;
+      return a[0].localeCompare(b[0], 'vi');
+    });
+  }, [entitiesList, entityGroupBy]);
 
   const galleryPortraitEntries = useMemo(() => {
     if (!activeNovelData) return [];
+    if (currentTabConfig?.viewType !== 'collection-track') return [];
     const cfg = activeNovelData.tabsConfig || globalTabsConfig;
     const out = [];
     (cfg || []).forEach((lon) => {
@@ -380,11 +455,18 @@ export default function App() {
       });
     });
     return out;
-  }, [activeNovelData, globalTabsConfig]);
+  }, [activeNovelData, globalTabsConfig, currentTabConfig?.viewType]);
+  const GALLERY_PAGE_SIZE = 60;
+  const visibleGalleryEntries = useMemo(
+    () => galleryPortraitEntries.slice(0, galleryVisiblePage * GALLERY_PAGE_SIZE),
+    [galleryPortraitEntries, galleryVisiblePage]
+  );
+  const galleryHasMore = visibleGalleryEntries.length < galleryPortraitEntries.length;
 
   /** Thực thể có kỷ nguyên trong [neo−12, neo+30] — mọi mục sưu tập */
   const nearChapterEntitiesGlobal = useMemo(() => {
     if (!activeNovelData) return [];
+    if (!overviewNeoOpen) return [];
     const anchor = Math.max(0, parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) || 0);
     const lo = anchor - 12;
     const hi = anchor + 30;
@@ -409,7 +491,7 @@ export default function App() {
       });
     });
     return out;
-  }, [activeNovelData, globalTabsConfig]);
+  }, [activeNovelData, globalTabsConfig, overviewNeoOpen]);
 
   const handleOpenEntityFromGallery = useCallback(
     (entry) => {
@@ -431,6 +513,27 @@ export default function App() {
 
   // Reset page khi filter thay đổi
   useEffect(() => { setEntityPage(1); setGroupVisibleCount({}); }, [entitySearch, entitySortMode, entityGroupBy, activeTabLon, activeTabNho]);
+  useEffect(() => {
+    if (collectionSubTab === 'gallery') setGalleryVisiblePage(1);
+  }, [collectionSubTab, activeTabLon, activeTabNho, activeNovelData?.id]);
+  useEffect(() => {
+    const el = sidebarListRef.current;
+    if (!el) return;
+    const updateHeight = () => setSidebarViewportHeight(el.clientHeight || 0);
+    updateHeight();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(updateHeight);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener('resize', updateHeight);
+    return () => window.removeEventListener('resize', updateHeight);
+  }, []);
+  useEffect(() => {
+    const el = sidebarListRef.current;
+    if (el) el.scrollTop = 0;
+    setSidebarScrollTop(0);
+  }, [searchQuery, selectedGenres]);
 
   /** Luôn resolve từ toàn bộ entities tab — không dùng entitiesList đã lọc theo ô tìm (tránh mất thẻ đang xem). */
   const selectedEntity = useMemo(() => {
@@ -473,20 +576,38 @@ export default function App() {
   }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig, selectedEntityId]);
 
   const entityMap = useMemo(() => buildEntityLinkMap(activeNovelData), [activeNovelData]);
+  const deferredEntityMap = useDeferredValue(entityMap);
+  const shouldBuildGlobalRegex = useMemo(() => {
+    if (isSplitPreview) return true;
+    if (currentTabConfig?.viewType !== 'collection-track') return true;
+    return collectionSubTab === 'detail' || collectionSubTab === 'timeline';
+  }, [isSplitPreview, currentTabConfig?.viewType, collectionSubTab]);
 
   const globalLinkRegex = useMemo(() => {
-     if (!entityMap || entityMap.length === 0) return null;
-     const sortedNames = entityMap.map(e => e.name);
+     if (!shouldBuildGlobalRegex) return null;
+     if (!deferredEntityMap || deferredEntityMap.length === 0) return null;
+     const sortedNames = deferredEntityMap.map(e => e.name);
      if (sortedNames.length === 0) return null;
      const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
      return new RegExp(`(${sortedNames.map(escapeRegExp).join('|')})`, 'gi');
-  }, [entityMap]);
+  }, [deferredEntityMap, shouldBuildGlobalRegex]);
 
   const [relatedEntities, setRelatedEntities] = useState([]);
   const [isCalculatingNetwork, setIsCalculatingNetwork] = useState(false);
+  const handleSidebarNovelHover = useCallback((novelId, el) => {
+    setHoveredNovelId(novelId);
+    if (!el) return;
+    if (hoverTooltipRafRef.current) cancelAnimationFrame(hoverTooltipRafRef.current);
+    hoverTooltipRafRef.current = requestAnimationFrame(() => {
+      const rect = el.getBoundingClientRect();
+      setTooltipPos({ x: rect.right + 8, y: Math.min(rect.top, window.innerHeight - 260) });
+      hoverTooltipRafRef.current = null;
+    });
+  }, []);
+  const handleSelectNovelRef = useRef(null);
 
   useEffect(() => {
-    if (!activeNovelData || !selectedEntity) {
+    if (!activeNovelData || !selectedEntity || collectionSubTab !== 'detail') {
       setRelatedEntities([]);
       setIsCalculatingNetwork(false);
       return;
@@ -515,12 +636,36 @@ export default function App() {
       clearTimeout(timer);
       setIsCalculatingNetwork(false);
     };
-  }, [activeNovelData, selectedEntity, activeTabs, entityMap, wikiExactMatchOnly]);
+  }, [activeNovelData, selectedEntity, activeTabs, entityMap, wikiExactMatchOnly, collectionSubTab]);
 
-  const filteredNovelsList = useMemo(
-    () => filterNovelsForLibrary(novelsMetadata, searchQuery, selectedGenres, safeString),
-    [novelsMetadata, searchQuery, selectedGenres]
+  const librarySearchIndex = useMemo(
+    () =>
+      (novelsMetadata || []).map((n) => {
+        let genres = [];
+        if (Array.isArray(n.genres)) genres = n.genres;
+        else if (typeof n.genres === 'string') genres = [n.genres];
+        else if (n.genre) genres = [n.genre];
+        return {
+          id: n.id,
+          text: `${safeString(n.title)} ${safeString(n.author)}`.toLowerCase(),
+          genres,
+        };
+      }),
+    [novelsMetadata]
   );
+  const filteredNovelsList = useMemo(() => {
+    const q = safeString(deferredLibrarySearch).toLowerCase().trim();
+    const selected = selectedGenres || [];
+    const byId = new Map((novelsMetadata || []).map((n) => [n.id, n]));
+    return librarySearchIndex
+      .filter((row) => {
+        const matchSearch = !q || row.text.includes(q);
+        const matchGenre = selected.length === 0 || selected.some((sg) => row.genres.includes(sg));
+        return matchSearch && matchGenre;
+      })
+      .map((row) => byId.get(row.id))
+      .filter(Boolean);
+  }, [librarySearchIndex, novelsMetadata, deferredLibrarySearch, selectedGenres]);
 
   useEffect(() => {
     if (window.self !== window.top) {
@@ -556,6 +701,11 @@ export default function App() {
       localStorage.setItem('tangthu_ai_mode', aiMode);
     } catch {}
   }, [aiMode]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('tangthu_perf_mode', performanceMode ? '1' : '0');
+    } catch {}
+  }, [performanceMode]);
 
   useEffect(() => {
     const q = searchQuery.trim();
@@ -891,13 +1041,13 @@ export default function App() {
      setIsEditingMode(false); setIsEntityEditing(false); setExpandedRelations(false);
   };
 
-  const handleGoBack = () => {
+  const handleGoBack = useCallback(() => {
      if (navHistory.length === 0) return;
      const last = navHistory[navHistory.length - 1];
      setNavHistory(prev => prev.slice(0, -1));
      setActiveTabLon(last.lonId); setActiveTabNho(last.nhoId); setActiveTabCon(last.conId);
      setSelectedEntityId(last.entityId); setCollectionSubTab(last.subTab || 'list');
-  };
+  }, [navHistory]);
 
   const handleConfirmQuickCreate = (name, path) => {
       const [lonId, nhoId] = path.split('|');
@@ -1563,15 +1713,6 @@ export default function App() {
      return entityMap.find(e => e.name.toLowerCase() === query)?.dest || null;
   };
 
-  const renderSmartValue = (val) => {
-     if (!val) return <span className="text-slate-600 italic font-normal text-sm">Chưa có ghi chép</span>;
-     return (
-         <div className="font-serif text-[15px] leading-relaxed text-slate-300 mt-1.5 inline-block">
-             {processInline(val, currentContextDirHandle, entityMap, globalLinkRegex, dest => navFnRef.current?.(dest))}
-         </div>
-     );
-  };
-
   const getFieldValue = (fieldId, ent) => {
      if (!ent) return '';
      if (ent.dynamicData && ent.dynamicData[fieldId]) return ent.dynamicData[fieldId];
@@ -1580,10 +1721,6 @@ export default function App() {
      if (fieldId === 'f_desc') return ent.description;
      return '';
   };
-
-  const DISPLAY_LIMIT = 12;
-  const displayedRelations = expandedRelations ? relatedEntities : relatedEntities.slice(0, DISPLAY_LIMIT);
-  const hiddenCount = relatedEntities.length - DISPLAY_LIMIT;
 
   useEffect(() => {
       const handleKeyDown = (e) => {
@@ -1614,7 +1751,7 @@ export default function App() {
   // CÁC HÀM CÒN THIẾU (MISSING HANDLERS)
   // ==========================================
 
-  const handleGoHome = () => {
+  const handleGoHome = useCallback(() => {
     setActiveNovelData(null);
     setActiveNovelDirHandle(null);
     setActiveTabLon('tong-quan');
@@ -1623,7 +1760,7 @@ export default function App() {
     setSelectedEntityId(null);
     setNavHistory([]);
     setMenu1Visible(false);
-  };
+  }, []);
 
   // Migration: gộp fieldsTemplate — thêm trường mới, giữ nhãn tùy chỉnh của người dùng
   const migrateTabsFieldTemplates = (novelData) => {
@@ -1893,7 +2030,7 @@ export default function App() {
     setTabsConfig(current);
   };
 
-  const handleSelectTabLon = (tabId) => {
+  const handleSelectTabLon = useCallback((tabId) => {
     if (activeTabLon !== tabId) {
       if (isEditingMode || isEntityEditing) {
         setConfirmDialog({ isOpen: true, title: 'Chưa Lưu Thay Đổi',
@@ -1916,9 +2053,9 @@ export default function App() {
       setEntitySearch('');
     }
     setMenu2Expanded(true);
-  };
+  }, [activeTabLon, isEditingMode, isEntityEditing]);
 
-  const handleSelectTabNho = (e, lonId, sub) => {
+  const handleSelectTabNho = useCallback((e, lonId, sub) => {
     e.stopPropagation();
     setActiveTabLon(lonId);
     setActiveTabNho(sub.id);
@@ -1928,7 +2065,7 @@ export default function App() {
     setIsEditingMode(false);
     setIsEntityEditing(false);
     setEntitySearch('');
-  };
+  }, []);
 
   // ==========================================
 
@@ -2007,12 +2144,73 @@ export default function App() {
   }, []);
 
   const commandPaletteFiltered = useMemo(
-    () => buildCommandPaletteFiltered(commandPaletteQuery, novelsMetadata, activeNovelData, safeString),
-    [commandPaletteQuery, novelsMetadata, activeNovelData]
+    () => (isCommandPaletteOpen
+      ? buildCommandPaletteFiltered(deferredCommandPaletteQuery, novelsMetadata, activeNovelData, safeString)
+      : []),
+    [isCommandPaletteOpen, deferredCommandPaletteQuery, novelsMetadata, activeNovelData]
   );
+  useEffect(() => {
+    handleSelectNovelRef.current = handleSelectNovel;
+  }, [handleSelectNovel]);
+  const totalSidebarItems = filteredNovelsList.length;
+  const sidebarStartIndex = useMemo(
+    () => Math.max(0, Math.floor(sidebarScrollTop / SIDEBAR_ITEM_HEIGHT) - SIDEBAR_OVERSCAN),
+    [sidebarScrollTop]
+  );
+  const sidebarEndIndex = useMemo(() => {
+    const visibleCount = Math.max(1, Math.ceil((sidebarViewportHeight || 0) / SIDEBAR_ITEM_HEIGHT));
+    return Math.min(totalSidebarItems - 1, sidebarStartIndex + visibleCount + SIDEBAR_OVERSCAN * 2);
+  }, [sidebarViewportHeight, totalSidebarItems, sidebarStartIndex]);
+  const visibleSidebarNovels = useMemo(
+    () => filteredNovelsList.slice(sidebarStartIndex, sidebarEndIndex + 1),
+    [filteredNovelsList, sidebarStartIndex, sidebarEndIndex]
+  );
+  const handleSidebarScroll = useCallback((e) => {
+    const nextTop = e.currentTarget.scrollTop || 0;
+    if (sidebarScrollRafRef.current) cancelAnimationFrame(sidebarScrollRafRef.current);
+    sidebarScrollRafRef.current = requestAnimationFrame(() => {
+      setSidebarScrollTop(nextTop);
+      sidebarScrollRafRef.current = null;
+    });
+  }, []);
+  const sidebarNovelItems = useMemo(() => (
+    visibleSidebarNovels.map((novel, idx) => {
+      const realIndex = sidebarStartIndex + idx;
+      let nGenres = [];
+      if (Array.isArray(novel.genres)) nGenres = novel.genres;
+      else if (typeof novel.genres === 'string') nGenres = [novel.genres];
+      else if (novel.genre) nGenres = [novel.genre];
+      return (
+        <div
+          key={novel.id}
+          style={{ position: 'absolute', top: realIndex * SIDEBAR_ITEM_HEIGHT, left: 0, right: 0 }}
+          onClick={() => { void handleSelectNovelRef.current?.(novel); }}
+          onMouseEnter={(e) => {
+            handleSidebarNovelHover(novel.id, e.currentTarget);
+          }}
+          onMouseLeave={() => { setHoveredNovelId(null); }}
+          className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors relative overflow-visible ${activeNovelData?.id === novel.id ? 'bg-amber-900/20 border border-amber-800/50' : 'hover:bg-slate-800 border border-transparent'}`}
+        >
+          <div className="w-10 h-14 bg-slate-800 rounded overflow-hidden border border-slate-700 flex-shrink-0">
+            {novel.cover && (
+              novel.cover.startsWith('local_image:') ? (
+                <AsyncLocalImage filename={novel.cover.replace('local_image:', '')} alt="" dirHandle={dirHandle} className="w-full h-full object-cover" />
+              ) : (
+                <img src={novel.cover} loading="lazy" className="w-full h-full object-cover" alt="" onError={(e) => { e.target.onerror = null; }} />
+              )
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className={`text-sm font-bold truncate font-serif ${activeNovelData?.id === novel.id ? 'text-amber-400' : 'group-hover:text-amber-500'}`}>{safeString(novel.title)}</h3>
+            <p className="text-[10px] text-slate-500 uppercase truncate">{safeString(nGenres.join(', '))} • {safeString(novel.author)}</p>
+          </div>
+        </div>
+      );
+    })
+  ), [visibleSidebarNovels, sidebarStartIndex, activeNovelData?.id, dirHandle, handleSidebarNovelHover]);
 
   return (
-    <div className={`min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden relative theme-wrapper ${activeThemeClass}`}>
+    <div className={`min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden relative theme-wrapper ${activeThemeClass} ${performanceMode ? 'performance-mode' : ''}`}>
       <AppHeader
         menu1Visible={menu1Visible}
         setMenu1Visible={setMenu1Visible}
@@ -2023,6 +2221,8 @@ export default function App() {
         setIsDeepSearchOpen={() => setIsDeepSearchOpen(true)}
         showInNovelSearch={!!activeNovelData}
         onInNovelSearch={() => setIsInNovelSearchOpen(true)}
+        performanceMode={performanceMode}
+        setPerformanceMode={setPerformanceMode}
         onOpenCommandPalette={() => {
           setIsCommandPaletteOpen(true);
           setCommandPaletteQuery('');
@@ -2030,91 +2230,29 @@ export default function App() {
       />
 
       <div className="flex-1 flex overflow-hidden">
-        <div onMouseLeave={() => setMenu1Visible(false)} className={`absolute inset-y-0 left-0 z-40 bg-slate-900 border-r border-slate-800 shadow-2xl flex flex-col transition-transform duration-300 ease-out w-80 ${menu1Visible ? 'translate-x-0' : '-translate-x-full'}`}>
-           <div className="p-5 border-b border-slate-800 flex flex-col gap-4">
-              <div className="relative">
-                <input ref={librarySearchInputRef} type="text" placeholder="Tìm kiếm thư tịch… (/)" className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-10 text-sm font-serif outline-none focus:border-amber-600/50" value={searchInput} onChange={e=>setSearchInput(e.target.value)}/>
-                <Search className="absolute left-3 top-2.5 text-slate-600" size={16} />
-              </div>
-              {searchHistory.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  <span className="text-[9px] text-slate-600 uppercase tracking-wider w-full">Gần đây</span>
-                  {searchHistory.slice(0, 8).map((h) => (
-                    <button
-                      key={h}
-                      type="button"
-                      onClick={() => { setSearchInput(h); setSearchQuery(h); }}
-                      className="text-[10px] px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-amber-400 hover:border-amber-800/40 font-serif truncate max-w-full"
-                    >
-                      {safeString(h)}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <div className="relative">
-                <button onClick={() => setIsGenreFilterOpen(!isGenreFilterOpen)} className="w-full bg-slate-950/50 border border-slate-700/80 hover:border-amber-600/50 rounded-lg py-2 pl-3 pr-4 text-sm flex items-center justify-between text-slate-300 font-serif shadow-inner">
-                  <div className="flex items-center gap-2">
-                    <Filter size={15} className={selectedGenres.length > 0 ? "text-amber-500" : "text-slate-500"} />
-                    <span className={selectedGenres.length > 0 ? "text-amber-100" : "text-slate-400"}>{selectedGenres.length === 0 ? 'Tất cả thể loại' : `Đã chọn (${selectedGenres.length})`}</span>
-                  </div>
-                  <ChevronDown size={16} className={`text-slate-500 transition-transform ${isGenreFilterOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {isGenreFilterOpen && (
-                  <div className="absolute left-0 right-0 top-full mt-2 bg-slate-900 border border-slate-700/80 rounded-lg shadow-2xl z-30 p-2 max-h-56 overflow-y-auto custom-scrollbar animate-slide-down">
-                    {(GENRES || []).map(g => (
-                      <button key={g} onClick={() => toggleGenre(g)} className={`w-full text-left px-3 py-2 rounded-md text-sm font-serif flex items-center justify-between mb-1 ${selectedGenres.includes(g) ? 'bg-amber-900/40 text-amber-400 font-bold' : 'text-slate-300 hover:bg-slate-800'}`}>
-                        {g} {selectedGenres.includes(g) && <Check size={14} />}
-                      </button>
-                    ))}
-                    {selectedGenres.length > 0 && <button onClick={() => setSelectedGenres([])} className="w-full text-center mt-2 pt-2 border-t border-slate-800 text-xs text-rose-400">Xoá bộ lọc</button>}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-2">
-                 <button onClick={handleOpenCreateNovel} className="flex-1 py-2 bg-amber-700 text-white rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors hover:bg-amber-600 shadow-md">
-                    <Plus size={14}/> Thu Thập
-                 </button>
-                 <button onClick={() => setIsSettingsOpen(true)} className={`flex-1 py-2 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all shadow-md ${dirHandle && dirHandle !== 'LOCAL_STORAGE' ? 'bg-emerald-900/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 border border-slate-700 text-slate-300 hover:text-amber-400'}`}>
-                    <Cloud size={14}/> {dirHandle && dirHandle !== 'LOCAL_STORAGE' ? 'Đã Đồng Bộ' : 'Lưu Trữ'}
-                 </button>
-              </div>
-           </div>
-           
-           <div className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar overflow-x-visible">
-              {filteredNovelsList.length === 0 ? <div className="text-center text-slate-500 text-sm mt-10 font-serif italic">Không tìm thấy thư tịch...</div> : 
-               filteredNovelsList.map(novel => {
-                let nGenres = [];
-                if (Array.isArray(novel.genres)) nGenres = novel.genres;
-                else if (typeof novel.genres === 'string') nGenres = [novel.genres];
-                else if (novel.genre) nGenres = [novel.genre];
-                
-                return (
-                <div key={novel.id} onClick={() => handleSelectNovel(novel)} onMouseEnter={(e) => {
-                    setHoveredNovelId(novel.id);
-                    setHoveredNovelData(novel);
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setTooltipPos({ x: rect.right + 8, y: Math.min(rect.top, window.innerHeight - 260) });
-                  }} onMouseLeave={() => { setHoveredNovelId(null); setHoveredNovelData(null); }} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors relative overflow-visible ${activeNovelData?.id === novel.id ? 'bg-amber-900/20 border border-amber-800/50' : 'hover:bg-slate-800 border border-transparent'}`}>
-                   <div className="w-10 h-14 bg-slate-800 rounded overflow-hidden border border-slate-700 flex-shrink-0">
-                     {novel.cover && (
-                       novel.cover.startsWith('local_image:') ? (
-                         <AsyncLocalImage filename={novel.cover.replace('local_image:', '')} alt="" dirHandle={dirHandle} className="w-full h-full object-cover" />
-                       ) : (
-                         <img src={novel.cover} className="w-full h-full object-cover" alt="" onError={(e) => { e.target.onerror = null; }} />
-                       )
-                     )}
-                   </div>
-                   <div className="flex-1 min-w-0">
-                     <h3 className={`text-sm font-bold truncate font-serif ${activeNovelData?.id === novel.id ? 'text-amber-400' : 'group-hover:text-amber-500'}`}>{safeString(novel.title)}</h3>
-                     <p className="text-[10px] text-slate-500 uppercase truncate">{safeString(nGenres.join(', '))} • {safeString(novel.author)}</p>
-                   </div>
-
-                </div>
-               )})}
-           </div>
-        </div>
+        <AppLibrarySidebar
+          menu1Visible={menu1Visible}
+          setMenu1Visible={setMenu1Visible}
+          librarySearchInputRef={librarySearchInputRef}
+          searchInput={searchInput}
+          setSearchInput={setSearchInput}
+          searchHistory={searchHistory}
+          setSearchQuery={setSearchQuery}
+          isGenreFilterOpen={isGenreFilterOpen}
+          setIsGenreFilterOpen={setIsGenreFilterOpen}
+          selectedGenres={selectedGenres}
+          toggleGenre={toggleGenre}
+          setSelectedGenres={setSelectedGenres}
+          handleOpenCreateNovel={handleOpenCreateNovel}
+          setIsSettingsOpen={setIsSettingsOpen}
+          dirHandle={dirHandle}
+          filteredNovelsList={filteredNovelsList}
+          sidebarListRef={sidebarListRef}
+          handleSidebarScroll={handleSidebarScroll}
+          totalSidebarItems={totalSidebarItems}
+          SIDEBAR_ITEM_HEIGHT={SIDEBAR_ITEM_HEIGHT}
+          sidebarNovelItems={sidebarNovelItems}
+        />
 
         <div className={`flex-1 flex bg-slate-950 transition-opacity duration-300 ${menu1Visible ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
           {!activeNovelData ? (
@@ -2135,7 +2273,7 @@ export default function App() {
             <>
               <div className={`bg-slate-900 border-r border-slate-800 transition-[width] duration-200 ease-out flex flex-col z-20 flex-shrink-0 h-full ${menu2Expanded ? 'w-64' : 'w-12'}`}>
                 <div className="p-4 border-b border-slate-800 h-16 flex items-center justify-between overflow-hidden whitespace-nowrap"
-                  onMouseEnter={() => setMenu2Expanded(true)}>
+                  onMouseEnter={() => setMenu2Expanded((prev) => (prev ? prev : true))}>
                    {/* Nút toggle cho mobile/tap */}
                    <button
                      onClick={() => setMenu2Expanded(p => !p)}
@@ -2699,150 +2837,48 @@ export default function App() {
                                 </div>
                              ) : currentTabConfig?.viewType === 'collection-track' ? (
                                 <div className="flex flex-col flex-1 h-full animate-fade-in">
-                                   <div className="flex flex-wrap gap-6 border-b border-slate-800/80 mb-6 pb-3 items-end">
-                                      <button type="button" onClick={() => setCollectionSubTab('list')} className={`text-sm font-bold uppercase tracking-widest pb-3 -mb-[13px] transition-colors ${collectionSubTab === 'list' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>Danh Sách</button>
-                                      <button type="button" onClick={() => setCollectionSubTab('gallery')} className={`text-sm font-bold uppercase tracking-widest pb-3 -mb-[13px] transition-colors flex items-center gap-2 ${collectionSubTab === 'gallery' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>
-                                        <Images size={14} className="opacity-70" /> Ảnh
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${collectionSubTab === 'gallery' ? 'bg-amber-500 text-slate-900' : 'bg-slate-700 text-slate-300'}`}>{galleryPortraitEntries.length}</span>
-                                      </button>
-                                      <button type="button" onClick={() => setCollectionSubTab('detail')} className={`text-sm font-bold uppercase tracking-widest pb-3 -mb-[13px] transition-colors ${collectionSubTab === 'detail' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>Hồ Sơ {selectedEntity ? `(${safeString(selectedEntity.name)})` : ''}</button>
-                                      <button type="button" onClick={() => setCollectionSubTab('timeline')} className={`text-sm font-bold uppercase tracking-widest pb-3 -mb-[13px] transition-colors flex items-center gap-2 ${collectionSubTab === 'timeline' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>
-                                        Dòng Thời Gian
-                                        {selectedEntity && selectedEntity.milestones && selectedEntity.milestones.length > 0 && (
-                                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${collectionSubTab === 'timeline' ? 'bg-amber-500 text-slate-900' : 'bg-slate-700 text-slate-300'}`}>{selectedEntity.milestones.length}</span>
-                                        )}
-                                      </button>
-                                   </div>
+                                  <AppCollectionTrackTabs
+                                    collectionSubTab={collectionSubTab}
+                                    setCollectionSubTab={setCollectionSubTab}
+                                    galleryCount={galleryPortraitEntries.length}
+                                    selectedEntityName={selectedEntity ? safeString(selectedEntity.name) : ''}
+                                    selectedEntityMilestoneCount={selectedEntity?.milestones?.length || 0}
+                                  />
 
                                    <div id="collection-scroll-container" className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-10">
-                                      {collectionSubTab === 'gallery' && (
-                                        <div className="animate-fade-in pb-8">
-                                          {galleryPortraitEntries.length === 0 ? (
-                                            <div className="flex flex-col items-center justify-center py-16 text-slate-600">
-                                              <Images size={48} className="mb-4 opacity-30" />
-                                              <p className="font-serif italic text-center px-4">Chưa có ảnh đại diện nào trong các mục sưu tập.</p>
-                                            </div>
-                                          ) : (
-                                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                                              {galleryPortraitEntries.map((row) => (
-                                                <button type="button" key={`${row.lonId}-${row.nhoId}-${row.ent.id}`} onClick={() => handleOpenEntityFromGallery(row)} className="group flex flex-col items-center rounded-2xl border border-slate-800 bg-slate-900/50 p-3 hover:border-amber-600/40 hover:bg-slate-800/50 transition-all text-center">
-                                                  <div className="w-full aspect-square rounded-xl overflow-hidden border border-slate-700 bg-slate-950 mb-2 shadow-inner">
-                                                    {row.ent.avatar.startsWith('local_image:') ? (
-                                                      <AsyncLocalImage filename={row.ent.avatar.replace('local_image:', '')} alt="" dirHandle={activeNovelDirHandle || dirHandle} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                                                    ) : (
-                                                      <img src={row.ent.avatar} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />
-                                                    )}
-                                                  </div>
-                                                  <span className="text-sm font-bold text-slate-200 font-serif truncate w-full">{safeString(row.ent.name)}</span>
-                                                  <span className="text-[10px] text-slate-500 truncate w-full mt-0.5">{safeString(row.sectionLabel)}</span>
-                                                </button>
-                                              ))}
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                      {collectionSubTab === 'list' && (() => {
-                                         // === GROUP BY + PAGINATION ===
-                                         const getFieldVal = (ent, fieldId) => {
-                                           if (ent.dynamicData?.[fieldId]) return ent.dynamicData[fieldId];
-                                           if (fieldId === 'f_status') return ent.status || '';
-                                           if (fieldId === 'f_title') return ent.title || '';
-                                           if (fieldId === 'f_desc') return ent.description || '';
-                                           return '';
-                                         };
+                                      <AppGalleryContent
+                                        collectionSubTab={collectionSubTab}
+                                        galleryPortraitEntries={galleryPortraitEntries}
+                                        visibleGalleryEntries={visibleGalleryEntries}
+                                        galleryHasMore={galleryHasMore}
+                                        setGalleryVisiblePage={setGalleryVisiblePage}
+                                        handleOpenEntityFromGallery={handleOpenEntityFromGallery}
+                                        activeNovelDirHandle={activeNovelDirHandle}
+                                        dirHandle={dirHandle}
+                                      />
+                                      <AppCollectionListContent
+                                        collectionSubTab={collectionSubTab}
+                                        entitiesList={entitiesList}
+                                        entityPage={entityPage}
+                                        setEntityPage={setEntityPage}
+                                        entityGroupBy={entityGroupBy}
+                                        pagedEntitiesList={pagedEntitiesList}
+                                        groupedEntitiesList={groupedEntitiesList}
+                                        groupVisibleCount={groupVisibleCount}
+                                        setGroupVisibleCount={setGroupVisibleCount}
+                                        currentTabConfig={currentTabConfig}
+                                        onEntityCardSelect={onEntityCardSelect}
+                                        onEntityCardDelete={onEntityCardDelete}
+                                        onEntityCardAddMilestone={onEntityCardAddMilestone}
+                                        currentContextDirHandle={currentContextDirHandle}
+                                        activeTabLon={activeTabLon}
+                                        entityPageSize={ENTITY_PAGE_SIZE}
+                                      />
 
-                                         const renderGrid = (list) => (
-                                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 content-start">
-                                             {list.map(ent => (
-                                               <EntityCard key={ent.id} entity={ent} tabConfig={currentTabConfig}
-                                                onSelect={onEntityCardSelect}
-                                                onDelete={onEntityCardDelete}
-                                                onAddMilestone={onEntityCardAddMilestone}
-                                                dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} />
-                                             ))}
-
-                                           </div>
-                                         );
-
-                                         const renderPagination = (total, page, setPage) => {
-                                           const totalPages = Math.ceil(total / ENTITY_PAGE_SIZE);
-                                           if (totalPages <= 1) return null;
-                                           return (
-                                             <div className="flex items-center justify-center gap-2 mt-6 pt-4 border-t border-slate-800">
-                                               <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors">← Trước</button>
-                                               <div className="flex gap-1">
-                                                 {Array.from({length: Math.min(totalPages, 7)}, (_, i) => {
-                                                   const p = totalPages <= 7 ? i+1 : page <= 4 ? i+1 : page >= totalPages-3 ? totalPages-6+i : page-3+i;
-                                                   return (
-                                                     <button key={p} onClick={() => setPage(p)} className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${p === page ? 'bg-amber-700 text-white' : 'bg-slate-900 border border-slate-800 text-slate-500 hover:text-slate-200'}`}>{p}</button>
-                                                   );
-                                                 })}
-                                               </div>
-                                               <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page === totalPages} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors">Sau →</button>
-                                               <span className="text-xs text-slate-600 font-serif ml-2">{total} thực thể</span>
-                                             </div>
-                                           );
-                                         };
-
-                                         if (entityGroupBy === 'none') {
-                                           // Không nhóm - pagination đơn giản
-                                           const pagedList = entitiesList.slice((entityPage-1)*ENTITY_PAGE_SIZE, entityPage*ENTITY_PAGE_SIZE);
-                                           return (
-                                             <>
-                                               {renderGrid(pagedList)}
-                                               {renderPagination(entitiesList.length, entityPage, setEntityPage)}
-                                             </>
-                                           );
-                                         } else {
-                                           // Group by field
-                                           const groups = {};
-                                           entitiesList.forEach(ent => {
-                                             const val = getFieldVal(ent, entityGroupBy).trim() || '— Chưa phân loại —';
-                                             if (!groups[val]) groups[val] = [];
-                                             groups[val].push(ent);
-                                           });
-                                           const sortedGroups = Object.entries(groups).sort((a,b) => {
-                                             if (a[0] === '— Chưa phân loại —') return 1;
-                                             if (b[0] === '— Chưa phân loại —') return -1;
-                                             return a[0].localeCompare(b[0], 'vi');
-                                           });
-                                           return (
-                                             <div className="space-y-8">
-                                               {sortedGroups.map(([groupName, groupItems]) => {
-                                                 const visible = (groupVisibleCount[groupName] || 1) * ENTITY_PAGE_SIZE;
-                                                 const visibleItems = groupItems.slice(0, visible);
-                                                 const hasMore = groupItems.length > visible;
-                                                 const remaining = groupItems.length - visible;
-                                                 return (
-                                                 <div key={groupName} className="animate-fade-in">
-                                                   <div className="flex items-center gap-3 mb-4">
-                                                     <div className="flex items-center gap-2 bg-slate-900/80 border border-slate-700/60 rounded-full px-4 py-1.5">
-                                                       <div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
-                                                       <span className="text-sm font-bold text-amber-400 font-serif">{groupName}</span>
-                                                       <span className="text-xs text-slate-600 font-serif">({groupItems.length})</span>
-                                                     </div>
-                                                     <div className="flex-1 h-px bg-slate-800"></div>
-                                                   </div>
-                                                   {renderGrid(visibleItems)}
-                                                   {hasMore && (
-                                                     <div className="mt-4 flex justify-center">
-                                                       <button onClick={() => setGroupVisibleCount(prev => ({ ...prev, [groupName]: (prev[groupName] || 1) + 1 }))} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-sm text-slate-300 font-serif">Xem thêm ({remaining} còn lại)</button>
-                                                     </div>
-                                                   )}
-                                                 </div>
-                                               ); })}
-                                             </div>
-                                           );
-                                         }
-                                       })()}
-
-                                      {(collectionSubTab === 'detail' || collectionSubTab === 'timeline') && !selectedEntity && (
-                                         <div className="h-full flex flex-col items-center justify-center opacity-40">
-                                            <Library size={64} className="mb-4 text-slate-600" />
-                                            <p className="font-serif italic text-lg">Vui lòng chọn một đối tượng từ Danh Sách...</p>
-                                            <button onClick={() => setCollectionSubTab('list')} className="mt-4 px-4 py-2 bg-slate-800 rounded-lg text-sm hover:bg-slate-700">Quay lại danh sách</button>
-                                         </div>
-                                      )}
+                                      <AppCollectionEmptyState
+                                        show={(collectionSubTab === 'detail' || collectionSubTab === 'timeline') && !selectedEntity}
+                                        onBackToList={() => setCollectionSubTab('list')}
+                                      />
 
                                       {collectionSubTab === 'detail' && selectedEntity && (
                                          <div className="flex flex-col max-w-5xl mx-auto w-full animate-fade-in pb-10" onDragOver={e => e.preventDefault()} onDrop={e => handleImageDrop(e, 'entity-info-editor')}>
@@ -2873,364 +2909,70 @@ export default function App() {
                                                </div>
                                             </div>
 
-                                            <div className="mb-10">
-                                               <div className="flex items-center justify-between mb-6 pb-2 border-b border-slate-800/80">
-                                                  <div className="flex items-center gap-3">
-                                                     <div className="p-2 bg-amber-900/20 text-amber-500 rounded-lg border border-amber-700/30"><Hexagon size={18} /></div>
-                                                     <h3 className="text-xl font-heading font-bold text-amber-100">Nền Tảng Căn Cơ</h3>
-                                                  </div>
-                                               </div>
-                                               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                                                  {(currentTabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS).map((f) => {
-                                                     const val = safeString(getFieldValue(f.id, selectedEntity));
-                                                     const isLong = val.length > 50; 
-                                                     return (
-                                                        <div key={f.id} className={`bg-slate-900/60 backdrop-blur-md border transition-all duration-300 group shadow-lg rounded-[40px] p-6
-                                                          ${recentlyMergedFields.has(f.id)
-                                                            ? 'border-emerald-600/50 bg-emerald-900/10 hover:border-emerald-500/60'
-                                                            : 'border-slate-700/50 hover:bg-slate-800/80 hover:border-amber-500/40'}
-                                                          ${isLong ? 'col-span-1 md:col-span-2 lg:col-span-3' : ''}`}>
-                                                           <div className="flex items-center gap-2 mb-1.5 opacity-70 group-hover:opacity-100 transition-opacity">
-                                                              <div className={`w-1.5 h-1.5 rounded-full transition-colors ${recentlyMergedFields.has(f.id) ? 'bg-emerald-400' : 'bg-slate-500 group-hover:bg-amber-400'}`}></div>
-                                                              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{safeString(f.label)}</span>
-                                                           </div>
-                                                           {/* Pill "Hiện tại" khi vừa merge từ Timeline */}
-                                                           {recentlyMergedFields.has(f.id) && (
-                                                             <div className="inline-flex items-center px-2.5 py-1 rounded-full border border-emerald-700/50 bg-emerald-950/40 mb-2">
-                                                               <span className="text-[10px] font-serif italic text-emerald-400">● Vừa cập nhật từ dòng thời gian</span>
-                                                             </div>
-                                                           )}
-                                                           <div className="pl-3 border-l border-slate-700 group-hover:border-amber-500/50 transition-colors mt-2">
-                                                               {renderSmartValue(val)}
-                                                           </div>
-                                                        </div>
-                                                     )
-                                                  })}
-                                               </div>
-                                            </div>
+                                            <AppEntitySummaryBlocks
+                                              selectedEntity={selectedEntity}
+                                              collectionSubTab={collectionSubTab}
+                                              isEntityEditing={isEntityEditing}
+                                              currentTabConfig={currentTabConfig}
+                                              recentlyMergedFields={recentlyMergedFields}
+                                              currentContextDirHandle={currentContextDirHandle}
+                                              entityMap={entityMap}
+                                              globalLinkRegex={globalLinkRegex}
+                                              relatedEntities={relatedEntities}
+                                              isCalculatingNetwork={isCalculatingNetwork}
+                                              expandedRelations={expandedRelations}
+                                              setExpandedRelations={setExpandedRelations}
+                                              onNavigate={(dest) => navFnRef.current?.(dest)}
+                                            />
 
-                                            {(relatedEntities.length > 0 || isCalculatingNetwork) && (
-                                               <div className="mb-10 animate-fade-in relative">
-                                                  <div className="flex items-center justify-between mb-6 pb-2 border-b border-slate-800/80">
-                                                     <div className="flex items-center gap-3">
-                                                        <div className="p-2 bg-indigo-900/20 text-indigo-400 rounded-lg border border-indigo-700/30"><Network size={18} /></div>
-                                                        <div>
-                                                           <div className="flex items-center gap-3">
-                                                               <h3 className="text-xl font-heading font-bold text-indigo-100">Mạng Lưới Nhân Quả</h3>
-                                                               {isCalculatingNetwork && <div className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>}
-                                                           </div>
-                                                           <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">
-                                                               {isCalculatingNetwork ? 'Thần thức đang dò xét...' : `Có ${relatedEntities.length} thực thể liên kết với ${safeString(selectedEntity.name)}`}
-                                                           </p>
-                                                        </div>
-                                                     </div>
-                                                  </div>
-                                                  
-                                                  {!isCalculatingNetwork && (
-                                                      <div className="flex flex-wrap gap-4">
-                                                         {displayedRelations.map((rel) => (
-                                                             <button key={`${rel.lonId}|${rel.nhoId}|${rel.entity.id}`} onClick={() => handleNavigate({ lonId: rel.lonId, nhoId: rel.nhoId, entityId: rel.entity.id })} className="flex items-center gap-4 bg-slate-900/80 backdrop-blur-md border border-slate-700 hover:border-indigo-500/60 p-3 rounded-[24px] transition-all duration-300 shadow-md hover:shadow-[0_5px_20px_rgba(99,102,241,0.15)] hover:-translate-y-0.5 group w-full md:w-auto md:min-w-[280px]">
-                                                                <div className="w-12 h-12 rounded-[16px] bg-slate-950 overflow-hidden flex-shrink-0 border border-slate-800 group-hover:border-indigo-400/50 transition-colors relative">
-                                                                   {rel.entity.avatar ? (
-                                                                      rel.entity.avatar.startsWith('local_image:') ? (
-                                                                         <AsyncLocalImage filename={rel.entity.avatar.replace('local_image:', '')} alt="avatar" dirHandle={currentContextDirHandle} className="w-full h-full object-cover" />
-                                                                      ) : <img src={rel.entity.avatar} className="w-full h-full object-cover" alt="" onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />
-                                                                   ) : <span className="w-full h-full flex items-center justify-center text-slate-500 font-bold text-lg">{safeString(rel.entity.name).charAt(0)}</span>}
-                                                                   <div className="absolute inset-0 bg-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                                                </div>
-                                                                <div className="text-left pr-4">
-                                                                   <div className="text-base font-bold text-slate-200 group-hover:text-indigo-300 font-serif transition-colors">{safeString(rel.entity.name)}</div>
-                                                                   <div className="text-[10px] text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1.5">
-                                                                      <span className="text-indigo-500/70">{safeString(rel.tabLabel)}</span> 
-                                                                      <span className="w-1 h-1 bg-slate-700 rounded-full"></span> 
-                                                                      <span>{safeString(rel.context)}</span>
-                                                                   </div>
-                                                                </div>
-                                                             </button>
-                                                         ))}
-                                                         
-                                                         {!expandedRelations && hiddenCount > 0 && (
-                                                             <button onClick={() => setExpandedRelations(true)} className="flex items-center justify-center bg-slate-950/50 border border-dashed border-indigo-700/50 hover:border-indigo-400/80 p-3 rounded-[24px] transition-all duration-300 hover:bg-indigo-900/20 text-indigo-400/70 hover:text-indigo-300 text-sm font-serif group w-full md:w-auto md:px-8">
-                                                                 <span className="flex items-center gap-2"><Network size={16} className="group-hover:scale-110 transition-transform" /> + {hiddenCount} liên kết khác đang bị ẩn...</span>
-                                                             </button>
-                                                         )}
-                                                      </div>
-                                                  )}
-                                               </div>
-                                            )}
-
-                                            <div className="flex flex-col mt-4">
-                                               <div className="flex justify-between items-end mb-6 pb-2 border-b border-slate-800/80">
-                                                  <div className="flex items-center gap-3">
-                                                     <div className="p-2 bg-amber-900/20 text-amber-500 rounded-lg border border-amber-700/30"><BookOpen size={18}/></div>
-                                                     <div>
-                                                        <h3 className="text-xl font-heading font-bold text-amber-100">Ghi Chép Chi Tiết</h3>
-                                                        <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">{getTerms(activeTabLon).infoDesc}</p>
-                                                     </div>
-                                                  </div>
-                                                  <div className="flex items-center gap-3">
-                                                     {isEntityEditing && (
-                                                        <>
-                                                        <button 
-                                                           disabled={isExtractingAI}
-                                                           onClick={async () => {
-                                                              if (geminiApiKeys.length === 0) { showToast("Vui lòng thiết lập API Key (trong Cài Đặt) để dùng tính năng AI."); return; }
-                                                              const text = document.getElementById('entity-info-editor').value;
-                                                              if (!text.trim()) return;
-                                                              const { wasTruncated } = truncateForAI(text);
-                                                              if (wasTruncated) showToast("Đoạn quá dài — chỉ gửi ~12.000 ký tự đầu cho AI.", "warning");
-                                                              setIsExtractingAI(true);
-                                                              try {
-                                                                const res = await extractEntityAttributesWithAI(text, currentTabConfig?.fieldsTemplate || [], geminiApiKeys);
-                                                                if (res) handleAIExtractSuccess(res.existingData, res.newFields);
-                                                              } catch (e) { showToast(mapGeminiErrorToUserMessage(e), "error"); }
-                                                              setIsExtractingAI(false);
-                                                           }} 
-                                                           className="px-4 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 bg-amber-600 hover:bg-amber-500 text-slate-900 disabled:opacity-50"
-                                                        >
-                                                           {isExtractingAI ? <div className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" /> : <Sparkles size={16}/>}
-                                                           {isExtractingAI ? 'Đang trích xuất...' : 'AI Lọc Thuộc Tính'}
-                                                        </button>
-                                                        {/* AI Tạo Link [[...]] cho tên riêng */}
-                                                        <button
-                                                           disabled={isExtractingAI}
-                                                           onClick={async () => {
-                                                              if (geminiApiKeys.length === 0) { showToast("Vui lòng thiết lập API Key để dùng AI."); return; }
-                                                              const ta = document.getElementById('entity-info-editor');
-                                                              const text = ta?.value;
-                                                              if (!text?.trim()) return;
-                                                              const { wasTruncated } = truncateForAI(text);
-                                                              if (wasTruncated) showToast("Đoạn quá dài — chỉ gửi ~12.000 ký tự đầu cho AI.", "warning");
-                                                              setIsExtractingAI(true);
-                                                              try {
-                                                                const res = await analyzeTextWithAI(text, currentTabConfig?.fieldsTemplate || [], geminiApiKeys, aiMode);
-                                                                if (res?.processedText) {
-                                                                  ta.value = res.processedText;
-                                                                  if (isSplitPreview) {
-                                                                    setLivePreviewText(res.processedText);
-                                                                    setDebouncedMarkdownPreview(res.processedText);
-                                                                  }
-                                                                  showToast('AI đã tạo liên kết cho các tên riêng!');
-                                                                }
-                                                              } catch(e) { showToast(mapGeminiErrorToUserMessage(e), 'error'); }
-                                                              setIsExtractingAI(false);
-                                                           }}
-                                                           className="px-4 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 bg-indigo-700 hover:bg-indigo-600 text-white disabled:opacity-50"
-                                                           title="AI tự động bọc tên người, thế lực, công pháp... vào [[liên kết]]"
-                                                        >
-                                                           {isExtractingAI ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Link2 size={14}/>}
-                                                           {isExtractingAI ? 'Đang xử lý...' : 'AI Tạo Link'}
-                                                        </button>
-                                                        </>
-                                                     )}
-                                                     <button id="save-entity-btn" onClick={() => { if(isEntityEditing) { handleUpdateEntityInfo(document.getElementById('entity-info-editor').value); setIsSplitPreview(false); } else { const s = safeString(selectedEntity?.info || ''); setLivePreviewText(s); setDebouncedMarkdownPreview(s); } setIsEntityEditing(!isEntityEditing); }} className={`px-5 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 ${isEntityEditing ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'}`}>
-                                                        {isEntityEditing ? <><Save size={16}/> Lưu (Ctrl+S)</> : <><Edit3 size={16}/> Viết Ghi Chép</>}
-                                                     </button>
-                                                  </div>
-                                               </div>
-
-                                               <div className={`flex flex-col transition-all duration-300 backdrop-blur-md ${isEntityEditing ? 'bg-slate-900 border border-amber-700/50 shadow-[0_0_15px_rgba(217,119,6,0.1)] p-6 rounded-[40px]' : 'bg-slate-900/30 border border-slate-800/60 p-8 rounded-[40px]'}`}>
-                                                  {isEntityEditing ? (
-                                                     <div className="flex flex-col flex-1 animate-fade-in min-h-[400px]">
-                                                        <div className="flex items-center justify-between mb-1">
-                                                          <MarkdownToolbar editorId="entity-info-editor" onInsertImage={(eid) => { setImageForm({ url: '', alt: '', editorId: eid }); setIsInsertImageModalOpen(true); }} onPickLocalImage={handlePickLocalImage} />
-                                                          <button onClick={() => { const cur = document.getElementById('entity-info-editor')?.value; if(cur !== undefined) { setLivePreviewText(cur); setDebouncedMarkdownPreview(cur); } setIsSplitPreview(p => !p); }} className={`ml-2 px-3 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 transition-colors flex items-center gap-1.5 ${isSplitPreview ? 'bg-amber-700/30 text-amber-400 border border-amber-700/40' : 'bg-slate-800 text-slate-500 border border-slate-700 hover:text-slate-300'}`}>
-                                                            <Eye size={12}/> Preview
-                                                          </button>
-                                                        </div>
-                                                        <div className={`flex flex-1 gap-4 min-h-[300px] ${isSplitPreview ? 'flex-row' : 'flex-col'}`}>
-                                                          <textarea id="entity-info-editor" className={`bg-transparent text-slate-200 font-serif text-lg leading-loose outline-none resize-none custom-scrollbar ${isSplitPreview ? 'w-1/2 flex-shrink-0' : 'flex-1 min-h-[300px]'}`} defaultValue={safeString(selectedEntity.info)} placeholder="Hạ bút khắc ấn..." onChange={(e) => { if(isSplitPreview) setLivePreviewText(e.target.value); }} onPaste={() => { if(isSplitPreview) { setTimeout(() => { const v = document.getElementById('entity-info-editor')?.value; if (v !== undefined) setLivePreviewText(v); }, 0); } }} />
-                                                          {isSplitPreview && (
-                                                            <MarkdownPreviewPane
-                                                              text={debouncedMarkdownPreview}
-                                                              dirHandle={currentContextDirHandle}
-                                                              entityMap={entityMap}
-                                                              linkRegex={globalLinkRegex}
-                                                              onNavigate={handleNavigate}
-                                                              className="w-1/2 overflow-y-auto custom-scrollbar border-l border-slate-700 pl-4 font-serif min-h-[300px]"
-                                                            />
-                                                          )}
-                                                        </div>
-                                                     </div>
-                                                  ) : (
-                                                     <div className="font-serif prose prose-invert max-w-none animate-fade-in min-h-[200px]">
-                                                         {memoizedEntityInfo && <>{memoizedEntityInfo}</>}
-                                                     </div>
-                                                  )}
-                                               </div>
-                                            </div>
+                                            <AppEntityDetailNotes
+                                              activeTabLon={activeTabLon}
+                                              getTerms={getTerms}
+                                              isEntityEditing={isEntityEditing}
+                                              isExtractingAI={isExtractingAI}
+                                              setIsExtractingAI={setIsExtractingAI}
+                                              geminiApiKeys={geminiApiKeys}
+                                              showToast={showToast}
+                                              currentTabConfig={currentTabConfig}
+                                              handleAIExtractSuccess={handleAIExtractSuccess}
+                                              aiMode={aiMode}
+                                              isSplitPreview={isSplitPreview}
+                                              setLivePreviewText={setLivePreviewText}
+                                              setDebouncedMarkdownPreview={setDebouncedMarkdownPreview}
+                                              setIsSplitPreview={setIsSplitPreview}
+                                              selectedEntity={selectedEntity}
+                                              handleUpdateEntityInfo={handleUpdateEntityInfo}
+                                              setIsEntityEditing={setIsEntityEditing}
+                                              setImageForm={setImageForm}
+                                              setIsInsertImageModalOpen={setIsInsertImageModalOpen}
+                                              handlePickLocalImage={handlePickLocalImage}
+                                              debouncedMarkdownPreview={debouncedMarkdownPreview}
+                                              currentContextDirHandle={currentContextDirHandle}
+                                              entityMap={entityMap}
+                                              globalLinkRegex={globalLinkRegex}
+                                              onNavigate={handleNavigate}
+                                              memoizedEntityInfo={memoizedEntityInfo}
+                                            />
                                          </div>
                                       )}
 
-                                      {collectionSubTab === 'timeline' && selectedEntity && (
-                                         <div className="flex gap-8 overflow-hidden max-w-6xl mx-auto h-full flex-col md:flex-row pb-10">
-                                            <div className="w-full md:w-1/3 border-r border-slate-800/80 pr-6 overflow-y-auto custom-scrollbar relative min-h-[200px] flex-shrink-0">
-                                               <div className="flex justify-between items-center mb-6">
-                                                  <h3 className="text-lg font-heading font-bold text-amber-500">Mốc Sự Kiện</h3>
-                                                  <button onClick={() => { setEditingMilestoneData(null); setIsMilestoneModalOpen(true); }} className="p-2 bg-emerald-900/30 text-emerald-400 rounded-[40px] hover:bg-emerald-800/50 transition-colors" title="Thêm mốc mới"><Plus size={16}/></button>
-                                               </div>
-                                               
-                                               {(!selectedEntity.milestones || selectedEntity.milestones.length === 0) ? (
-                                                   <div className="flex flex-col items-center justify-center h-40 opacity-50 border border-dashed border-slate-700 rounded-[40px]">
-                                                      <History size={24} className="text-slate-600 mb-2"/>
-                                                      <p className="text-slate-500 italic font-serif text-xs">Chưa có Kỷ Nguyên nào...</p>
-                                                   </div>
-                                               ) : (
-                                                   <>
-                                                      <div className="absolute left-[15px] top-16 bottom-6 w-px bg-gradient-to-b from-amber-900/50 via-slate-700 to-transparent z-0"></div>
-                                                      <div className="space-y-4 relative z-10 py-2">
-                                                         {selectedEntity.milestones?.map(ms => {
-                                                            const isSelected = selectedMilestoneId === ms.id;
-                                                            return (
-                                                             <button key={ms.id} onClick={() => setSelectedMilestoneId(ms.id)} className={`w-full text-left p-4 rounded-2xl flex items-start gap-4 transition-all duration-300 group ${isSelected ? 'bg-gradient-to-r from-amber-900/40 to-slate-900 border border-amber-700/50 shadow-lg translate-x-2' : 'bg-transparent border border-transparent hover:bg-slate-900 hover:border-slate-800'}`}>
-                                                                 <div className={`mt-1 w-3 h-3 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-amber-400 border-amber-900 shadow-[0_0_10px_var(--t-400)]' : 'bg-slate-800 border-slate-950 group-hover:bg-slate-600'}`}></div>
-                                                                 <div className="flex-1 min-w-0">
-                                                                    <div className={`text-sm font-bold uppercase tracking-widest font-heading mb-1 transition-colors ${isSelected ? 'text-amber-400' : 'text-slate-400 group-hover:text-slate-300'}`}>Chương {safeString(ms.chapter)}</div>
-                                                                    <div className={`text-xs font-serif line-clamp-2 leading-relaxed ${isSelected ? 'text-slate-200' : 'text-slate-500 group-hover:text-slate-400'}`}>{safeString(ms.event)}</div>
-                                                                 </div>
-                                                             </button>
-                                                            )
-                                                         })}
-                                                      </div>
-                                                   </>
-                                               )}
-                                            </div>
-
-                                            <div className="w-full md:w-2/3 overflow-y-auto custom-scrollbar pl-2 pr-2">
-                                               {selectedMilestoneId && selectedEntity.milestones?.find(m => m.id === selectedMilestoneId) ? (() => {
-                                                  const selectedMs = selectedEntity.milestones.find(m => m.id === selectedMilestoneId);
-                                                  const fields = currentTabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS;
-                                                  const mergedAvatar = selectedMs.snapshot?.avatar || selectedEntity.avatar;
-                                                  
-                                                  return (
-                                                      <div className="animate-fade-in space-y-6">
-                                                         <div className="relative bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-[40px] p-8 shadow-2xl overflow-hidden group">
-                                                            <div className="absolute top-0 right-0 w-40 h-40 bg-amber-600/5 rounded-bl-[40px] pointer-events-none transition-transform duration-700 group-hover:scale-110"></div>
-                                                            <div className="flex justify-between items-start mb-6 relative z-10">
-                                                               <div className="flex-1 pr-6">
-                                                                  <div className="flex items-center gap-2 mb-2 text-amber-600/80">
-                                                                     <History size={14}/> <span className="text-[10px] uppercase font-bold tracking-widest">Kỷ Nguyên / Sự kiện</span>
-                                                                  </div>
-                                                                  <h3 className="text-3xl font-heading font-bold text-amber-500">Giai đoạn chương {safeString(selectedMs.chapter)}</h3>
-                                                               </div>
-                                                               <div className="flex gap-2">
-                                                                  {/* Nút merge snapshot → Hồ Sơ */}
-                                                                  {selectedMs.snapshot && (Object.values(selectedMs.snapshot.dynamicData || {}).some(v => v) || selectedMs.snapshot.avatar) && (
-                                                                    <button
-                                                                      onClick={() => handleMergeSnapshotToProfile(selectedMs.snapshot)}
-                                                                      className="px-3 py-2 bg-emerald-900/30 hover:bg-emerald-800/50 text-emerald-400 hover:text-emerald-300 rounded-xl transition-all border border-emerald-700/40 hover:border-emerald-500/60 shadow-sm text-xs font-bold flex items-center gap-1.5"
-                                                                      title="Áp dụng thông tin mốc này vào Hồ Sơ hiện tại"
-                                                                    >
-                                                                      <Check size={14}/> Áp dụng vào Hồ Sơ
-                                                                    </button>
-                                                                  )}
-                                                                  <button onClick={() => { setEditingMilestoneData(selectedMs); setIsMilestoneModalOpen(true); }} className="p-2.5 bg-slate-950/50 hover:bg-slate-800 hover:text-amber-400 text-slate-500 rounded-xl transition-all border border-slate-800 hover:border-amber-900/50 shadow-sm" title="Sửa lại nội dung"><Edit2 size={18}/></button>
-                                                                  <button onClick={() => handleDeleteMilestone(selectedMs.id)} className="p-2.5 bg-slate-950/50 hover:bg-rose-950 hover:text-rose-400 text-slate-500 rounded-xl transition-all border border-slate-800 hover:border-rose-900/50 shadow-sm" title="Xóa mốc thời gian này"><Trash2 size={18}/></button>
-                                                               </div>
-                                                            </div>
-                                                            <div className="prose prose-invert max-w-none relative z-10 text-[17px] text-slate-200 font-serif leading-loose whitespace-pre-wrap">
-                                                               {renderMarkdown(safeString(selectedMs.event), currentContextDirHandle, entityMap, globalLinkRegex, (dest) => { if(navFnRef.current) navFnRef.current(dest); })}
-                                                            </div>
-                                                         </div>
-
-                                                         <div className="relative mt-8 bg-amber-900/10 backdrop-blur-md border border-amber-700/30 rounded-[40px] p-8 pt-10 shadow-inner">
-                                                            <div className="absolute -top-4 left-8 bg-slate-950 px-4 py-1.5 text-[10px] text-amber-500 tracking-widest uppercase font-bold border border-amber-900/50 rounded-full shadow-lg flex items-center gap-2">
-                                                               <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></div> Hồ Sơ Thời Kỳ Này
-                                                            </div>
-                                                            
-                                                            <div className="flex flex-col md:flex-row gap-8 items-start mb-6 border-b border-amber-800/30 pb-6">
-                                                               <div
-                                                                  className="w-24 h-24 rounded-2xl bg-slate-950 border-2 border-amber-500/30 overflow-hidden flex-shrink-0 flex items-center justify-center shadow-xl relative group/avatar cursor-zoom-in"
-                                                                  onClick={() => mergedAvatar && setLightboxSrc(mergedAvatar)}
-                                                                  title="Nhấp để xem ảnh đầy đủ"
-                                                               >
-                                                                  {mergedAvatar ? (
-                                                                     mergedAvatar.startsWith('local_image:') ? (
-                                                                        <AsyncLocalImage filename={mergedAvatar.replace('local_image:', '')} alt="avatar" dirHandle={currentContextDirHandle} className="w-full h-full object-cover transition-transform duration-500 group-hover/avatar:scale-110" />
-                                                                     ) : <img src={mergedAvatar} className="w-full h-full object-cover transition-transform duration-500 group-hover/avatar:scale-110" alt="avatar" onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />
-                                                                  ) : (
-                                                                     <span className="text-3xl font-bold text-amber-500">{safeString(selectedEntity.name).charAt(0)}</span>
-                                                                  )}
-                                                               </div>
-                                                               <div>
-                                                                   <h4 className="text-2xl font-heading font-bold text-amber-100 mb-1">{safeString(selectedEntity.name)}</h4>
-                                                                   <p className="text-xs text-amber-600/80 font-serif italic mb-2">Trạng thái được ghi nhận lúc chương {safeString(selectedMs.chapter)}.</p>
-                                                                   {selectedMs.snapshot?.avatar && <span className="px-2 py-1 bg-amber-900/30 text-amber-400 text-[10px] rounded border border-amber-700/50">Có thay đổi hình dáng</span>}
-                                                               </div>
-                                                            </div>
-                                                            
-                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                               {fields.map(f => {
-                                                                  const baseVal = safeString(getFieldValue(f.id, selectedEntity));
-                                                                  const snapshotVal = safeString(selectedMs.snapshot?.dynamicData?.[f.id]);
-                                                                  const finalVal = snapshotVal || baseVal;
-                                                                  const isChanged = !!snapshotVal && snapshotVal !== baseVal;
-                                                                  const isNew = !!snapshotVal && !baseVal;
-                                                                  const isCurrent = !snapshotVal && !!baseVal;
-
-                                                                  // Nhãn chú thích trạng thái
-                                                                  const statusNote = isNew
-                                                                    ? { text: '✦ Lần đầu xuất hiện', color: 'text-emerald-400', border: 'border-emerald-700/40', bg: 'bg-emerald-950/30' }
-                                                                    : isChanged
-                                                                    ? { text: '↑ Tiến bộ / Thay đổi', color: 'text-amber-400', border: 'border-amber-700/40', bg: 'bg-amber-950/20' }
-                                                                    : isCurrent
-                                                                    ? { text: '● Trạng thái hiện tại', color: 'text-slate-500', border: 'border-slate-700/40', bg: 'bg-slate-900/20' }
-                                                                    : null;
-
-                                                                  return (
-                                                                     <div key={f.id} className={`rounded-2xl p-4 border transition-all ${
-                                                                       isNew ? 'bg-emerald-900/10 border-emerald-800/40' :
-                                                                       isChanged ? 'bg-amber-900/10 border-amber-800/40' :
-                                                                       'bg-slate-900/30 border-slate-800/50'
-                                                                     }`}>
-                                                                        {/* Label */}
-                                                                        <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500 block mb-2">{safeString(f.label)}</span>
-
-                                                                        {/* Chú thích trạng thái — dạng pill nhỏ italic phía trên giá trị */}
-                                                                        {statusNote && (
-                                                                          <div className={`inline-flex items-center px-2.5 py-1 rounded-full border mb-2.5 ${statusNote.bg} ${statusNote.border}`}>
-                                                                            <span className={`text-[10px] font-serif italic ${statusNote.color}`}>{statusNote.text}</span>
-                                                                          </div>
-                                                                        )}
-
-                                                                        {/* Giá trị */}
-                                                                        {isChanged && !isNew && baseVal ? (
-                                                                          <div className="space-y-1">
-                                                                            <div className="flex items-baseline gap-2">
-                                                                              <span className="text-[9px] text-slate-600 uppercase font-bold flex-shrink-0">Cũ</span>
-                                                                              <span className="text-sm font-serif text-slate-600 line-through leading-relaxed">{baseVal}</span>
-                                                                            </div>
-                                                                            <div className="flex items-baseline gap-2">
-                                                                              <span className="text-[9px] text-amber-600 uppercase font-bold flex-shrink-0">Mới</span>
-                                                                              <span className="text-sm font-serif text-amber-200 font-medium leading-relaxed">{snapshotVal}</span>
-                                                                            </div>
-                                                                          </div>
-                                                                        ) : isNew ? (
-                                                                          <span className="text-sm font-serif text-emerald-200 font-medium leading-relaxed">{snapshotVal}</span>
-                                                                        ) : finalVal ? (
-                                                                          <span className="text-sm font-serif text-slate-400 leading-relaxed">{finalVal}</span>
-                                                                        ) : (
-                                                                          <span className="text-sm font-serif text-slate-700 italic">Chưa ghi nhận</span>
-                                                                        )}
-                                                                     </div>
-                                                                  )
-                                                               })}
-                                                            </div>
-                                                         </div>
-                                                      </div>
-                                                  );
-                                               })() : (
-                                                   <div className="h-full flex flex-col items-center justify-center text-slate-600 font-serif italic pb-20">
-                                                      <div className="relative mb-6">
-                                                         <Clock size={64} className="text-slate-800" />
-                                                         <Sparkles size={24} className="absolute -top-2 -right-2 text-amber-900/50" />
-                                                      </div>
-                                                      Chọn một Kỷ nguyên bên trái để lật giở trang sử...
-                                                   </div>
-                                               )}
-                                            </div>
-                                         </div>
-                                      )}
+                                      <AppEntityTimelinePanel
+                                        collectionSubTab={collectionSubTab}
+                                        selectedEntity={selectedEntity}
+                                        selectedMilestoneId={selectedMilestoneId}
+                                        setSelectedMilestoneId={setSelectedMilestoneId}
+                                        currentTabConfig={currentTabConfig}
+                                        currentContextDirHandle={currentContextDirHandle}
+                                        entityMap={entityMap}
+                                        globalLinkRegex={globalLinkRegex}
+                                        onNavigate={(dest) => navFnRef.current?.(dest)}
+                                        setEditingMilestoneData={setEditingMilestoneData}
+                                        setIsMilestoneModalOpen={setIsMilestoneModalOpen}
+                                        handleMergeSnapshotToProfile={handleMergeSnapshotToProfile}
+                                        handleDeleteMilestone={handleDeleteMilestone}
+                                        getFieldValue={getFieldValue}
+                                        setLightboxSrc={setLightboxSrc}
+                                      />
                                    </div>
                                 </div>
                              ) : (
@@ -3274,102 +3016,106 @@ export default function App() {
         </div>
       </div>
 
-      <ModalEntity isOpen={isEntityModalOpen} onClose={() => setIsEntityModalOpen(false)} onSave={handleSaveEntity} initialData={editingEntityData} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} geminiMode={aiMode} />
-      <ModalMilestone isOpen={isMilestoneModalOpen} onClose={() => setIsMilestoneModalOpen(false)} onSave={handleSaveMilestone} initialData={editingMilestoneData} defaultChapterWhenNew={editingMilestoneData ? undefined : String(Math.max(0, parseInt(activeNovelData?.readingAnchorChapter ?? activeNovelData?.chaptersRead ?? 0, 10) || 0))} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} geminiMode={aiMode} />
-      <ModalSettings
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        handleConnectFolder={handleConnectFolder}
-        dirHandle={dirHandle}
-        dirName={dirName}
-        onExportBackup={handleExportBackup}
-        onExportIndexOnly={handleExportIndexOnly}
-        onImportBackup={handleImportBackup}
-        geminiApiKeys={geminiApiKeys}
-        setGeminiApiKeys={handleSaveApiKeys}
-        aiMode={aiMode}
-        setAiMode={setAiMode}
-        wikiExactMatchOnly={wikiExactMatchOnly}
-        setWikiExactMatchOnly={setWikiExactMatchOnly}
-      />
-      {isCommandPaletteOpen && (
-        <AppModalLenhNhanh
-          onClose={() => setIsCommandPaletteOpen(false)}
-          commandPaletteQuery={commandPaletteQuery}
-          setCommandPaletteQuery={setCommandPaletteQuery}
-          commandPaletteFiltered={commandPaletteFiltered}
-          onSelectCommand={(id) => {
-            if (id === 'set') runCommandPaletteAction(() => setIsSettingsOpen(true));
-            else if (id === 'deep') runCommandPaletteAction(() => setIsDeepSearchOpen(true));
-            else if (id === 'innov') runCommandPaletteAction(() => setIsInNovelSearchOpen(true));
-            else if (id === 'hub') runCommandPaletteAction(() => openOverviewHub());
-            else if (id === 'home') runCommandPaletteAction(() => handleGoHome());
-          }}
-          onSelectNovel={(n) => runCommandPaletteAction(() => { void handleSelectNovel(n); })}
+      <Suspense fallback={null}>
+        <ModalEntity isOpen={isEntityModalOpen} onClose={() => setIsEntityModalOpen(false)} onSave={handleSaveEntity} initialData={editingEntityData} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} geminiMode={aiMode} />
+        <ModalMilestone isOpen={isMilestoneModalOpen} onClose={() => setIsMilestoneModalOpen(false)} onSave={handleSaveMilestone} initialData={editingMilestoneData} defaultChapterWhenNew={editingMilestoneData ? undefined : String(Math.max(0, parseInt(activeNovelData?.readingAnchorChapter ?? activeNovelData?.chaptersRead ?? 0, 10) || 0))} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} geminiMode={aiMode} />
+        <ModalSettings
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          handleConnectFolder={handleConnectFolder}
+          dirHandle={dirHandle}
+          dirName={dirName}
+          onExportBackup={handleExportBackup}
+          onExportIndexOnly={handleExportIndexOnly}
+          onImportBackup={handleImportBackup}
+          geminiApiKeys={geminiApiKeys}
+          setGeminiApiKeys={handleSaveApiKeys}
+          aiMode={aiMode}
+          setAiMode={setAiMode}
+          wikiExactMatchOnly={wikiExactMatchOnly}
+          setWikiExactMatchOnly={setWikiExactMatchOnly}
+          performanceMode={performanceMode}
+          setPerformanceMode={setPerformanceMode}
         />
-      )}
+        {isCommandPaletteOpen && (
+          <AppModalLenhNhanh
+            onClose={() => setIsCommandPaletteOpen(false)}
+            commandPaletteQuery={commandPaletteQuery}
+            setCommandPaletteQuery={setCommandPaletteQuery}
+            commandPaletteFiltered={commandPaletteFiltered}
+            onSelectCommand={(id) => {
+              if (id === 'set') runCommandPaletteAction(() => setIsSettingsOpen(true));
+              else if (id === 'deep') runCommandPaletteAction(() => setIsDeepSearchOpen(true));
+              else if (id === 'innov') runCommandPaletteAction(() => setIsInNovelSearchOpen(true));
+              else if (id === 'hub') runCommandPaletteAction(() => openOverviewHub());
+              else if (id === 'home') runCommandPaletteAction(() => handleGoHome());
+            }}
+            onSelectNovel={(n) => runCommandPaletteAction(() => { void handleSelectNovel(n); })}
+          />
+        )}
 
-      <ModalConfirm isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onClose={() => setConfirmDialog({...confirmDialog, isOpen: false})} onConfirm={confirmDialog.onConfirm} />
-      <ModalInsertImage isOpen={isInsertImageModalOpen} onClose={() => setIsInsertImageModalOpen(false)} imageForm={imageForm} setImageForm={setImageForm} handleConfirmInsertImage={handleConfirmInsertImage} />
-      <ModalAddNovel isOpen={isAddNovelOpen} onClose={() => setIsAddNovelOpen(false)} formData={novelForm} setFormData={setNovelForm} onSave={handleSaveNovelModal} mode={novelModalMode} handlePickLocalImage={(cb) => handlePickCoverImage(cb, novelForm.title)} dirHandle={currentContextDirHandle} />
-      <ModalDeepSearch isOpen={isDeepSearchOpen} onClose={() => setIsDeepSearchOpen(false)} novelsMetadata={novelsMetadata} performDeepSearch={performDeepSearch} onSelectResult={handleDeepSearchResultSelect} />
-      {activeNovelData && <ModalInNovelSearch isOpen={isInNovelSearchOpen} onClose={() => setIsInNovelSearchOpen(false)} novel={activeNovelData} onSelectResult={handleDeepSearchResultSelect} />}
-      {xrefAiPanel && (
-        <AppModalGoiYNoiTraCuu
-          panel={xrefAiPanel}
-          onClose={() => setXrefAiPanel(null)}
-          findEntitiesByXrefHint={findEntitiesByXrefHint}
-          applyXrefSuggestionNewEntity={applyXrefSuggestionNewEntity}
-          applyXrefSuggestionMilestone={applyXrefSuggestionMilestone}
-          applyXrefSuggestionProfile={applyXrefSuggestionProfile}
-          activeNovelData={activeNovelData}
-        />
-      )}
-      {overviewHubOpen && activeNovelData && (
-        <AppModalMotCua
-          activeNovelData={activeNovelData}
-          onClose={() => setOverviewHubOpen(false)}
-          overviewHubTab={overviewHubTab}
-          setOverviewHubTab={setOverviewHubTab}
-          hubCreatePath={hubCreatePath}
-          setHubCreatePath={setHubCreatePath}
-          hubCreateInput={hubCreateInput}
-          setHubCreateInput={setHubCreateInput}
-          hubCreateBusy={hubCreateBusy}
-          hubCreatePreview={hubCreatePreview}
-          setHubCreatePreview={setHubCreatePreview}
-          hubUpdateChapter={hubUpdateChapter}
-          setHubUpdateChapter={setHubUpdateChapter}
-          hubUpdateText={hubUpdateText}
-          setHubUpdateText={setHubUpdateText}
-          hubUpdatePanel={hubUpdatePanel}
-          setHubUpdatePanel={setHubUpdatePanel}
-          activeTabs={activeTabs}
-          hubRunCreateAi={hubRunCreateAi}
-          hubSaveCreateEntity={hubSaveCreateEntity}
-          runHubUpdateAi={runHubUpdateAi}
-          applyHubUpdateSelected={applyHubUpdateSelected}
-          findEntitiesByXrefHint={findEntitiesByXrefHint}
-        />
-      )}
-      <ModalQuickCreate isOpen={!!quickCreateData} onClose={() => setQuickCreateData(null)} quickCreateName={quickCreateData} onConfirm={handleConfirmQuickCreate} activeTabs={activeTabs} />
+        <ModalConfirm isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onClose={() => setConfirmDialog({...confirmDialog, isOpen: false})} onConfirm={confirmDialog.onConfirm} />
+        <ModalInsertImage isOpen={isInsertImageModalOpen} onClose={() => setIsInsertImageModalOpen(false)} imageForm={imageForm} setImageForm={setImageForm} handleConfirmInsertImage={handleConfirmInsertImage} />
+        <ModalAddNovel isOpen={isAddNovelOpen} onClose={() => setIsAddNovelOpen(false)} formData={novelForm} setFormData={setNovelForm} onSave={handleSaveNovelModal} mode={novelModalMode} handlePickLocalImage={(cb) => handlePickCoverImage(cb, novelForm.title)} dirHandle={currentContextDirHandle} />
+        <ModalDeepSearch isOpen={isDeepSearchOpen} onClose={() => setIsDeepSearchOpen(false)} novelsMetadata={novelsMetadata} performDeepSearch={performDeepSearch} onSelectResult={handleDeepSearchResultSelect} />
+        {activeNovelData && <ModalInNovelSearch isOpen={isInNovelSearchOpen} onClose={() => setIsInNovelSearchOpen(false)} novel={activeNovelData} onSelectResult={handleDeepSearchResultSelect} />}
+        {xrefAiPanel && (
+          <AppModalGoiYNoiTraCuu
+            panel={xrefAiPanel}
+            onClose={() => setXrefAiPanel(null)}
+            findEntitiesByXrefHint={findEntitiesByXrefHint}
+            applyXrefSuggestionNewEntity={applyXrefSuggestionNewEntity}
+            applyXrefSuggestionMilestone={applyXrefSuggestionMilestone}
+            applyXrefSuggestionProfile={applyXrefSuggestionProfile}
+            activeNovelData={activeNovelData}
+          />
+        )}
+        {overviewHubOpen && activeNovelData && (
+          <AppModalMotCua
+            activeNovelData={activeNovelData}
+            onClose={() => setOverviewHubOpen(false)}
+            overviewHubTab={overviewHubTab}
+            setOverviewHubTab={setOverviewHubTab}
+            hubCreatePath={hubCreatePath}
+            setHubCreatePath={setHubCreatePath}
+            hubCreateInput={hubCreateInput}
+            setHubCreateInput={setHubCreateInput}
+            hubCreateBusy={hubCreateBusy}
+            hubCreatePreview={hubCreatePreview}
+            setHubCreatePreview={setHubCreatePreview}
+            hubUpdateChapter={hubUpdateChapter}
+            setHubUpdateChapter={setHubUpdateChapter}
+            hubUpdateText={hubUpdateText}
+            setHubUpdateText={setHubUpdateText}
+            hubUpdatePanel={hubUpdatePanel}
+            setHubUpdatePanel={setHubUpdatePanel}
+            activeTabs={activeTabs}
+            hubRunCreateAi={hubRunCreateAi}
+            hubSaveCreateEntity={hubSaveCreateEntity}
+            runHubUpdateAi={runHubUpdateAi}
+            applyHubUpdateSelected={applyHubUpdateSelected}
+            findEntitiesByXrefHint={findEntitiesByXrefHint}
+          />
+        )}
+        <ModalQuickCreate isOpen={!!quickCreateData} onClose={() => setQuickCreateData(null)} quickCreateName={quickCreateData} onConfirm={handleConfirmQuickCreate} activeTabs={activeTabs} />
 
-      {isManageTabsOpen && (
-        <AppModalQuanLyTab
-          activeNovelData={activeNovelData}
-          onClose={() => setIsManageTabsOpen(false)}
-          sortedTabs={sortedTabs}
-          editingTab={editingTab}
-          setEditingTab={setEditingTab}
-          handleAddTabLon={handleAddTabLon}
-          handleSaveEditLabel={handleSaveEditLabel}
-          handleToggleViewType={handleToggleViewType}
-          handleDeleteTab={handleDeleteTab}
-          handleAddTabNho={handleAddTabNho}
-          handleAddTabCon={handleAddTabCon}
-          setConfirmDialog={setConfirmDialog}
-        />
-      )}
+        {isManageTabsOpen && (
+          <AppModalQuanLyTab
+            activeNovelData={activeNovelData}
+            onClose={() => setIsManageTabsOpen(false)}
+            sortedTabs={sortedTabs}
+            editingTab={editingTab}
+            setEditingTab={setEditingTab}
+            handleAddTabLon={handleAddTabLon}
+            handleSaveEditLabel={handleSaveEditLabel}
+            handleToggleViewType={handleToggleViewType}
+            handleDeleteTab={handleDeleteTab}
+            handleAddTabNho={handleAddTabNho}
+            handleAddTabCon={handleAddTabCon}
+            setConfirmDialog={setConfirmDialog}
+          />
+        )}
+      </Suspense>
 
       <AppShellOverlays
         lightboxSrc={lightboxSrc}

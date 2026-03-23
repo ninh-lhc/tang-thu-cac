@@ -49,7 +49,20 @@ export const MarkdownToolbar = ({ editorId, onInsertImage, onPickLocalImage }) =
   </div>
 );
 
-export const AppHeader = ({ menu1Visible, setMenu1Visible, handleGoHome, setIsSettingsOpen, hasDirectory, dirName, setIsDeepSearchOpen, onInNovelSearch, showInNovelSearch, onOpenCommandPalette }) => (
+export const AppHeader = ({
+  menu1Visible,
+  setMenu1Visible,
+  handleGoHome,
+  setIsSettingsOpen,
+  hasDirectory,
+  dirName,
+  setIsDeepSearchOpen,
+  onInNovelSearch,
+  showInNovelSearch,
+  onOpenCommandPalette,
+  performanceMode,
+  setPerformanceMode,
+}) => (
   <header className="h-16 bg-slate-950 border-b border-slate-900 flex items-center justify-between px-5 z-30 relative shadow-md">
     <div className="flex items-center gap-5">
       {!menu1Visible && <button onClick={() => setMenu1Visible(true)} className="p-2 hover:bg-slate-800 rounded-lg text-amber-500 transition-colors"><Menu size={24} /></button>}
@@ -65,6 +78,17 @@ export const AppHeader = ({ menu1Visible, setMenu1Visible, handleGoHome, setIsSe
       <div className={`hidden md:block px-3 py-1 rounded-full border text-[10px] font-serif ${hasDirectory ? 'border-emerald-500/50 text-emerald-400 bg-emerald-950/20' : 'border-slate-800 text-slate-500'}`}>
         {hasDirectory ? safeString(dirName).toUpperCase() : "CHƯA LIÊN KẾT"}
       </div>
+      <button
+        type="button"
+        onClick={() => setPerformanceMode && setPerformanceMode(!performanceMode)}
+        className={`hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-mono transition-colors ${
+          performanceMode ? 'border-emerald-500/60 bg-emerald-950/20 text-emerald-400' : 'border-slate-800 text-slate-500 hover:border-amber-800/50 hover:text-amber-400'
+        }`}
+        title="Performance Mode: giảm animation/blur/shadow cho mượt hơn"
+      >
+        <Activity size={14} />
+        Perf
+      </button>
       {onOpenCommandPalette && (
         <button type="button" onClick={onOpenCommandPalette} className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg border border-slate-700 text-[10px] text-slate-500 hover:text-amber-400 hover:border-amber-800/50 font-mono" title="Lệnh nhanh (Ctrl+K)">
           <Command size={14} /> <span>Ctrl+K</span>
@@ -867,6 +891,8 @@ export const ModalSettings = ({
   setAiMode,
   wikiExactMatchOnly,
   setWikiExactMatchOnly,
+  performanceMode,
+  setPerformanceMode,
 }) => {
   const [newKey, setNewKey] = useState('');
   const [testStatus, setTestStatus] = useState({}); // idx -> 'testing'|'ok'|'fail'
@@ -1015,6 +1041,26 @@ export const ModalSettings = ({
                  </div>
                </label>
              </div>
+
+            <div className="h-px bg-slate-800 w-full"></div>
+
+            <div>
+              <h3 className="text-sm font-bold text-emerald-400 mb-3 uppercase tracking-widest flex items-center gap-2"><Activity size={16}/> Chế độ hiệu năng</h3>
+              <label className="flex items-start gap-3 cursor-pointer group p-3 rounded-xl border border-slate-800 bg-slate-950/40 hover:border-emerald-800/50">
+                <input
+                  type="checkbox"
+                  className="mt-1 rounded border-slate-600 text-emerald-600 focus:ring-emerald-500"
+                  checked={!!performanceMode}
+                  onChange={(e) => setPerformanceMode && setPerformanceMode(e.target.checked)}
+                />
+                <div>
+                  <span className="text-sm font-bold text-slate-200">Bật Performance Mode</span>
+                  <p className="text-xs text-slate-500 font-serif mt-1 leading-relaxed">
+                    Giảm animation, blur và bóng đổ để UI mượt hơn trên máy yếu hoặc dữ liệu lớn.
+                  </p>
+                </div>
+              </label>
+            </div>
 
              <div className="h-px bg-slate-800 w-full"></div>
 
