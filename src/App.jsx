@@ -78,6 +78,73 @@ import { buildCommandPaletteFiltered } from './lib/locLenhNhanhCommandPalette.js
 import { buildXrefEntityCatalogText } from './lib/xrefBangDanhMucThucThe.js';
 import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 
+const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
+  value,
+  onChange,
+  options,
+  placeholder = 'Chọn',
+  active = false,
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const selected = options.find((opt) => opt.value === value);
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleOutside = (event) => {
+      if (!rootRef.current) return;
+      if (!rootRef.current.contains(event.target)) setOpen(false);
+    };
+    const handleEsc = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('mousedown', handleOutside);
+    window.addEventListener('touchstart', handleOutside);
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      window.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('touchstart', handleOutside);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [open]);
+  return (
+    <div ref={rootRef} className="relative min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`w-full border rounded-xl py-2 pl-3 pr-8 text-xs font-serif outline-none cursor-pointer transition-colors text-left truncate ${
+          active
+            ? 'bg-amber-900/30 border-amber-700/50 text-amber-100'
+            : 'bg-slate-900 border-slate-800 text-slate-200 hover:border-slate-700'
+        }`}
+      >
+        {selected?.label || placeholder}
+        <ChevronDown size={12} className={`absolute right-3 top-1/2 -translate-y-1/2 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute z-40 mt-1 w-full max-h-64 overflow-auto rounded-xl border border-slate-700 bg-slate-950 shadow-2xl custom-scrollbar animate-fade-in origin-top">
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => {
+                onChange(opt.value);
+                setOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 text-xs font-serif transition-colors ${
+                opt.value === value
+                  ? 'bg-amber-700/30 text-amber-100'
+                  : 'text-slate-200 hover:bg-slate-800'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
 const AppModalMotCua = lazy(() => import('./AppModalMotCua.jsx').then((m) => ({ default: m.AppModalMotCua })));
 const AppModalQuanLyTab = lazy(() => import('./AppModalQuanLyTab.jsx').then((m) => ({ default: m.AppModalQuanLyTab })));
 const AppModalLenhNhanh = lazy(() => import('./AppModalLenhNhanh.jsx').then((m) => ({ default: m.AppModalLenhNhanh })));
@@ -104,8 +171,13 @@ export default function App() {
   const [selectedEntityId, setSelectedEntityId] = useState(null);
   const [entitySearch, setEntitySearch] = useState('');
   const deferredEntitySearch = useDeferredValue(entitySearch);
+  const [entityFilterField, setEntityFilterField] = useState('none'); // none | field_id
+  const [entityFilterValue, setEntityFilterValue] = useState('');
+  const deferredEntityFilterValue = useDeferredValue(entityFilterValue);
   const [entitySortMode, setEntitySortMode] = useState('newest');
   const [entityGroupBy, setEntityGroupBy] = useState('none'); // none | field_id
+  const [showEntityAdvanced, setShowEntityAdvanced] = useState(false);
+  const entityAdvancedRef = useRef(null);
   const [entityPage, setEntityPage] = useState(1);
   const [groupVisibleCount, setGroupVisibleCount] = useState({});
   const ENTITY_PAGE_SIZE = 24; 
@@ -385,11 +457,51 @@ export default function App() {
     if (!tabData || typeof tabData === 'string') return [];
     return tabData.entities ? [...tabData.entities] : [];
   }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig]);
+  const entityFilterFields = useMemo(() => {
+    const templateFields = currentTabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS;
+    const labelMap = new Map(
+      templateFields
+        .filter((f) => f && f.id)
+        .map((f) => [f.id, safeString(f.label || f.id)])
+    );
+    const templateEntity = collectionEntitiesRaw.find((ent) => ent?.isTemplate);
+    const firstEntityWithDynamicData =
+      templateEntity ||
+      collectionEntitiesRaw.find((ent) => ent?.dynamicData && Object.keys(ent.dynamicData).length > 0);
+    const dynamicKeys = firstEntityWithDynamicData?.dynamicData
+      ? Object.keys(firstEntityWithDynamicData.dynamicData).filter(Boolean)
+      : [];
+    if (dynamicKeys.length > 0) {
+      return dynamicKeys.map((id) => ({
+        id,
+        label: labelMap.get(id) || safeString(id),
+      }));
+    }
+    return templateFields;
+  }, [collectionEntitiesRaw, currentTabConfig]);
+  useEffect(() => {
+    if (entityGroupBy === 'none') return;
+    const valid = entityFilterFields.some((f) => f?.id === entityGroupBy);
+    if (!valid) setEntityGroupBy('none');
+  }, [entityFilterFields, entityGroupBy]);
+  useEffect(() => {
+    if (entityFilterField === 'none') return;
+    const valid = entityFilterFields.some((f) => f?.id === entityFilterField);
+    if (!valid) setEntityFilterField('none');
+  }, [entityFilterFields, entityFilterField]);
+  const getEntityFieldValue = useCallback((ent, fieldId) => {
+    if (!ent || !fieldId) return '';
+    if (ent.dynamicData?.[fieldId]) return safeString(ent.dynamicData[fieldId]);
+    if (fieldId === 'f_status') return safeString(ent.status || '');
+    if (fieldId === 'f_title') return safeString(ent.title || ent.name || '');
+    if (fieldId === 'f_desc') return safeString(ent.description || ent.info || '');
+    return '';
+  }, []);
   const entitySearchIndexById = useMemo(() => {
     const map = new Map();
     collectionEntitiesRaw.forEach((e) => {
       const dynamicPart = e.dynamicData
-        ? Object.values(e.dynamicData).filter((v) => typeof v === 'string').join(' ')
+        ? Object.values(e.dynamicData).map((v) => safeString(v)).filter(Boolean).join(' ')
         : '';
       map.set(
         e.id,
@@ -400,6 +512,12 @@ export default function App() {
   }, [collectionEntitiesRaw]);
   const entitiesList = useMemo(() => {
     let list = [...collectionEntitiesRaw];
+    if (entityFilterField !== 'none' && deferredEntityFilterValue.trim()) {
+      const q = deferredEntityFilterValue.toLowerCase();
+      list = list.filter((e) =>
+        getEntityFieldValue(e, entityFilterField).toLowerCase().includes(q)
+      );
+    }
     if (deferredEntitySearch.trim()) {
       const q = deferredEntitySearch.toLowerCase();
       list = list.filter((e) => {
@@ -411,23 +529,16 @@ export default function App() {
     else if (entitySortMode === 'milestones') list.sort((a,b) => (b.milestones?.length || 0) - (a.milestones?.length || 0));
     else if (entitySortMode === 'newest') list.reverse();
     return list;
-  }, [collectionEntitiesRaw, entitySearchIndexById, deferredEntitySearch, entitySortMode]);
+  }, [collectionEntitiesRaw, entitySearchIndexById, deferredEntitySearch, deferredEntityFilterValue, entityFilterField, entitySortMode, getEntityFieldValue]);
   const pagedEntitiesList = useMemo(
     () => entitiesList.slice((entityPage - 1) * ENTITY_PAGE_SIZE, entityPage * ENTITY_PAGE_SIZE),
     [entitiesList, entityPage]
   );
   const groupedEntitiesList = useMemo(() => {
     if (entityGroupBy === 'none') return [];
-    const getFieldVal = (ent, fieldId) => {
-      if (ent.dynamicData?.[fieldId]) return ent.dynamicData[fieldId];
-      if (fieldId === 'f_status') return ent.status || '';
-      if (fieldId === 'f_title') return ent.title || '';
-      if (fieldId === 'f_desc') return ent.description || '';
-      return '';
-    };
     const groups = {};
     entitiesList.forEach((ent) => {
-      const val = getFieldVal(ent, entityGroupBy).trim() || '— Chưa phân loại —';
+      const val = getEntityFieldValue(ent, entityGroupBy).trim() || '— Chưa phân loại —';
       if (!groups[val]) groups[val] = [];
       groups[val].push(ent);
     });
@@ -436,7 +547,27 @@ export default function App() {
       if (b[0] === '— Chưa phân loại —') return -1;
       return a[0].localeCompare(b[0], 'vi');
     });
-  }, [entitiesList, entityGroupBy]);
+  }, [entitiesList, entityGroupBy, getEntityFieldValue]);
+  const isEntityAdvancedActive = entityGroupBy !== 'none' || (entityFilterField !== 'none' && entityFilterValue.trim());
+  const entityFilterOptions = useMemo(
+    () => [
+      { value: 'none', label: 'Không lọc theo trường' },
+      ...entityFilterFields.map((f) => ({ value: f.id, label: `Lọc: ${f.label}` })),
+    ],
+    [entityFilterFields]
+  );
+  const entityGroupOptions = useMemo(
+    () => [
+      { value: 'none', label: 'Không nhóm' },
+      ...entityFilterFields.map((f) => ({ value: f.id, label: `Nhóm: ${f.label}` })),
+    ],
+    [entityFilterFields]
+  );
+  const clearEntityAdvanced = useCallback(() => {
+    setEntityGroupBy('none');
+    setEntityFilterField('none');
+    setEntityFilterValue('');
+  }, []);
 
   const galleryPortraitEntries = useMemo(() => {
     if (!activeNovelData) return [];
@@ -512,7 +643,26 @@ export default function App() {
   );
 
   // Reset page khi filter thay đổi
-  useEffect(() => { setEntityPage(1); setGroupVisibleCount({}); }, [entitySearch, entitySortMode, entityGroupBy, activeTabLon, activeTabNho]);
+  useEffect(() => { setEntityPage(1); setGroupVisibleCount({}); }, [entitySearch, entityFilterField, entityFilterValue, entitySortMode, entityGroupBy, activeTabLon, activeTabNho]);
+  useEffect(() => { setShowEntityAdvanced(false); }, [activeTabLon, activeTabNho, activeNovelData?.id]);
+  useEffect(() => {
+    if (!showEntityAdvanced) return undefined;
+    const handleOutside = (event) => {
+      if (!entityAdvancedRef.current) return;
+      if (!entityAdvancedRef.current.contains(event.target)) setShowEntityAdvanced(false);
+    };
+    const handleEsc = (event) => {
+      if (event.key === 'Escape') setShowEntityAdvanced(false);
+    };
+    window.addEventListener('mousedown', handleOutside);
+    window.addEventListener('touchstart', handleOutside);
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      window.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('touchstart', handleOutside);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [showEntityAdvanced]);
   useEffect(() => {
     if (collectionSubTab === 'gallery') setGalleryVisiblePage(1);
   }, [collectionSubTab, activeTabLon, activeTabNho, activeNovelData?.id]);
@@ -647,7 +797,7 @@ export default function App() {
         else if (n.genre) genres = [n.genre];
         return {
           id: n.id,
-          text: `${safeString(n.title)} ${safeString(n.author)}`.toLowerCase(),
+          text: `${safeString(n.title)} ${safeString(n.author)} ${(n.tags || []).join(' ')}`.toLowerCase(),
           genres,
         };
       }),
@@ -722,7 +872,14 @@ export default function App() {
 
   useEffect(() => {
     if (activeNovelData) {
-      setOverviewForm({ status: activeNovelData.status, chaptersRead: activeNovelData.chaptersRead, chaptersTotal: activeNovelData.chaptersTotal, rating: activeNovelData.rating, review: activeNovelData.review });
+      setOverviewForm({
+        status: activeNovelData.status,
+        chaptersRead: activeNovelData.chaptersRead,
+        chaptersTotal: activeNovelData.chaptersTotal,
+        rating: activeNovelData.rating,
+        review: activeNovelData.review,
+        ratingOpinion: safeString(activeNovelData.ratingOpinion),
+      });
       setIsAddingTag(false); setNewTagValue('');
     }
   }, [activeNovelData]); 
@@ -1253,7 +1410,7 @@ export default function App() {
         id: newId, title: novelForm.title, author: novelForm.author || 'Vô Danh',
         genres: novelForm.genres || [], theme: novelForm.theme || 'theme-tien-hiep',
         tags: [], chaptersRead: 0, chaptersTotal: novelForm.chaptersTotal || '???', status: novelForm.status,
-        rating: 0, review: '', cover: novelForm.cover, folderName: folderName 
+        rating: 0, review: '', ratingOpinion: '', cover: novelForm.cover, folderName: folderName
       };
       
       const tabsToUse = Array.isArray(novelForm.tabsConfig) && novelForm.tabsConfig.length > 0
@@ -1845,9 +2002,10 @@ export default function App() {
 
   const handleAddTag = () => {
     if (!newTagValue.trim() || !activeNovelData) return;
+    const nextTag = newTagValue.trim();
     updateActiveNovelData(nov => {
       if (!nov.tags) nov.tags = [];
-      if (!nov.tags.includes(newTagValue.trim())) nov.tags.push(newTagValue.trim());
+      if (!nov.tags.includes(nextTag)) nov.tags.push(nextTag);
     });
     setNewTagValue('');
     setIsAddingTag(false);
@@ -2422,6 +2580,13 @@ export default function App() {
                           const anchor = Math.max(0, parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) || 0);
                           const lo = Math.max(0, anchor - 12);
                           const hi = anchor + 30;
+                          const totalChapters = Math.max(0, parseInt(activeNovelData.chaptersTotal, 10) || 0);
+                          const readChapters = Math.max(0, parseInt(overviewForm?.chaptersRead, 10) || 0);
+                          const progressPercent = totalChapters > 0
+                            ? (readChapters >= totalChapters ? 100 : Math.max(0, Math.floor((readChapters / totalChapters) * 100)))
+                            : 0;
+                          const isReadingDone = totalChapters > 0 && readChapters === totalChapters;
+                          const hasPersonalTags = (activeNovelData.tags || []).length > 0;
                           const xrefs = Array.isArray(activeNovelData.chapterCrossRefs) ? activeNovelData.chapterCrossRefs : [];
                           return (
                           <div className="space-y-7 animate-fade-in">
@@ -2467,46 +2632,163 @@ export default function App() {
                                 <p className="text-xl text-slate-400 font-serif italic">Tác giả: {safeString(activeNovelData.author)}</p>
                                 </header>
 
-                                <div className="rounded-xl bg-slate-950/55 border border-slate-800/90 px-4 py-3">
-                                        <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest block mb-2 flex items-center gap-1.5"><BookOpen size={12}/> Tiến độ đọc</label>
-                                        <div className="flex flex-wrap items-center gap-2">
-                                          <input type="number" min="0" className="w-24 bg-slate-900/50 border border-slate-800 rounded-lg p-2 text-slate-200 text-sm focus:outline-none focus:border-amber-600/50 font-serif" value={overviewForm?.chaptersRead || 0}
-                                            onChange={e => setOverviewForm({...overviewForm, chaptersRead: parseInt(e.target.value,10)||0})}
-                                            onBlur={() => updateActiveNovelData(n => n.chaptersRead = overviewForm?.chaptersRead || 0)} />
-                                          <span className="text-slate-600 font-serif text-sm">/</span>
-                                          <span className="text-slate-400 font-serif text-sm">{safeString(activeNovelData.chaptersTotal) || '???'}</span>
-                                          {activeNovelData.chaptersTotal && parseInt(activeNovelData.chaptersTotal) > 0 && (
-                                            <span className="ml-1 text-xs text-amber-600 font-bold font-serif">
-                                              {Math.round(((overviewForm?.chaptersRead||0)/parseInt(activeNovelData.chaptersTotal))*100)}%
-                                            </span>
-                                          )}
-                                        </div>
-                                </div>
-
-                                <div className="pt-1 mb-6">
-                                  <label className="flex items-center gap-2 text-xs font-bold text-slate-500 mb-3 uppercase tracking-widest"><BookOpen size={14} /> Đặc Trưng (Tags)</label>
-                                  <div className="flex flex-wrap gap-2.5 items-center">
-                                    {activeNovelData.tags?.map(tag => (
-                                      <span key={tag} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-md text-sm text-slate-300 font-serif flex items-center gap-2 group/tag">
-                                        {safeString(tag)}
-                                        <button onClick={() => handleRemoveTag(tag)} className="text-slate-500 hover:text-rose-400 opacity-50 group-hover/tag:opacity-100 transition-opacity"><X size={12}/></button>
-                                      </span>
-                                    ))}
-                                    {isAddingTag ? (
-                                      <input 
-                                        autoFocus type="text" placeholder="Nhập tên tag..."
-                                        className="px-3 py-1.5 bg-slate-950 border border-amber-600/50 rounded-md text-sm text-slate-200 focus:outline-none w-32 font-serif"
-                                        value={newTagValue} onChange={(e) => setNewTagValue(e.target.value)}
-                                        onKeyDown={(e) => { if(e.key === 'Enter') handleAddTag() }}
-                                        onBlur={() => { if(newTagValue.trim()) handleAddTag(); else setIsAddingTag(false); }}
-                                      />
-                                    ) : (
-                                      <button onClick={() => setIsAddingTag(true)} className="px-3 py-1.5 bg-transparent border border-dashed border-slate-700 rounded-md text-sm text-slate-500 hover:text-amber-400 hover:border-amber-500/50 transition-colors font-serif flex items-center gap-1">
-                                        <Plus size={14} /> Thêm Tag
-                                      </button>
-                                    )}
+                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                                  <div className="rounded-xl bg-slate-950/60 border border-amber-900/30 px-3 py-2">
+                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Tiến độ</div>
+                                    <div className="text-sm font-bold text-amber-300 font-serif">{readChapters}/{totalChapters || '???'}</div>
+                                  </div>
+                                  <div className="rounded-xl bg-slate-950/60 border border-amber-900/30 px-3 py-2">
+                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Hoàn thành</div>
+                                    <div className="text-sm font-bold text-amber-400 font-serif">{progressPercent}%</div>
+                                  </div>
+                                  <div className="rounded-xl bg-slate-950/60 border border-amber-900/30 px-3 py-2">
+                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Đánh giá</div>
+                                    <div className="text-sm font-bold text-amber-400 font-serif">{Number(overviewForm?.rating || 0).toFixed(1)}/5</div>
+                                  </div>
+                                  <div className="rounded-xl bg-slate-950/60 border border-amber-900/30 px-3 py-2">
+                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Số tag</div>
+                                    <div className="text-sm font-bold text-amber-200 font-serif">{(activeNovelData.tags || []).length}</div>
                                   </div>
                                 </div>
+
+                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                <div className="rounded-xl bg-slate-950/55 border border-slate-800/90 px-4 py-3">
+                                        <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest block mb-2 flex items-center gap-1.5"><BookOpen size={12}/> Tiến độ đọc</label>
+                                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                                          <input type="number" min="0" className="w-24 bg-slate-900/50 border border-slate-800 rounded-lg p-2 text-slate-200 text-sm focus:outline-none focus:border-amber-600/50 font-serif" value={overviewForm?.chaptersRead || 0}
+                                            onChange={e => setOverviewForm({...overviewForm, chaptersRead: parseInt(e.target.value,10)||0})}
+                                            onBlur={() => updateActiveNovelData(n => n.chaptersRead = Math.max(0, parseInt(overviewForm?.chaptersRead, 10) || 0))} />
+                                          <span className="text-slate-600 font-serif text-sm">/</span>
+                                          <span className="text-slate-300 font-serif text-sm">{safeString(activeNovelData.chaptersTotal) || '???'}</span>
+                                          <span className="ml-1 text-xs text-amber-500 font-bold font-serif">{progressPercent}%</span>
+                                        </div>
+                                        <div className="h-2 rounded-full bg-slate-800 overflow-hidden mb-2">
+                                          <div className="h-full bg-gradient-to-r from-amber-700 to-amber-500 rounded-full transition-all" style={{ width: `${progressPercent}%` }} />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const next = readChapters + 1;
+                                              setOverviewForm((prev) => ({ ...(prev || {}), chaptersRead: next }));
+                                              updateActiveNovelData((n) => { n.chaptersRead = next; });
+                                            }}
+                                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold border border-slate-700 text-slate-300 hover:text-slate-100 hover:border-slate-600 transition-colors"
+                                          >
+                                            +1 chương
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const next = readChapters + 5;
+                                              setOverviewForm((prev) => ({ ...(prev || {}), chaptersRead: next }));
+                                              updateActiveNovelData((n) => { n.chaptersRead = next; });
+                                            }}
+                                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold border border-slate-700 text-slate-300 hover:text-slate-100 hover:border-slate-600 transition-colors"
+                                          >
+                                            +5 chương
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const done = totalChapters > 0 ? totalChapters : readChapters;
+                                              setOverviewForm((prev) => ({ ...(prev || {}), chaptersRead: done }));
+                                              updateActiveNovelData((n) => { n.chaptersRead = done; });
+                                            }}
+                                            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${isReadingDone ? 'border-amber-500/70 bg-amber-500/15 text-amber-200' : 'border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600'}`}
+                                          >
+                                            {isReadingDone ? '✓ Đã xong' : 'Đánh dấu đã xong'}
+                                          </button>
+                                        </div>
+                                </div>
+                                <div className="rounded-xl bg-slate-950/55 border border-slate-800/90 px-4 py-3">
+                                  <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest block mb-2">Đánh giá 5 sao</label>
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {[1, 2, 3, 4, 5].map((star) => {
+                                      const rating = Number(overviewForm?.rating || 0);
+                                      const fill = Math.max(0, Math.min(1, rating - (star - 1)));
+                                      return (
+                                        <div key={star} className="relative w-7 h-7 select-none">
+                                          <span className="absolute inset-0 text-2xl leading-7 text-slate-700">★</span>
+                                          <span className="absolute inset-0 text-2xl leading-7 text-amber-400 overflow-hidden" style={{ width: `${fill * 100}%` }}>★</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const half = star - 0.5;
+                                              setOverviewForm((prev) => ({ ...(prev || {}), rating: half }));
+                                              updateActiveNovelData((n) => { n.rating = half; });
+                                            }}
+                                            className="absolute left-0 top-0 h-full w-1/2"
+                                            aria-label={`Đánh giá ${star - 0.5} sao`}
+                                            title={`${star - 0.5} sao`}
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setOverviewForm((prev) => ({ ...(prev || {}), rating: star }));
+                                              updateActiveNovelData((n) => { n.rating = star; });
+                                            }}
+                                            className="absolute right-0 top-0 h-full w-1/2"
+                                            aria-label={`Đánh giá ${star} sao`}
+                                            title={`${star} sao`}
+                                          />
+                                        </div>
+                                      );
+                                    })}
+                                    <span className="ml-2 text-xs text-slate-400 font-serif">{Number(overviewForm?.rating || 0).toFixed(1)}/5</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setOverviewForm((prev) => ({ ...(prev || {}), rating: 0 }));
+                                        updateActiveNovelData((n) => { n.rating = 0; });
+                                      }}
+                                      className="ml-2 px-2 py-1 rounded-lg text-[10px] font-bold border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-colors"
+                                    >
+                                      Bỏ đánh giá
+                                    </button>
+                                  </div>
+                                  <textarea
+                                    className="mt-3 w-full bg-slate-900/50 border border-slate-800 rounded-xl p-3 text-slate-300 font-serif text-sm leading-relaxed focus:outline-none focus:border-amber-600/50 min-h-[80px] resize-none custom-scrollbar"
+                                    value={safeString(overviewForm?.ratingOpinion)}
+                                    onChange={(e) => setOverviewForm({ ...(overviewForm || {}), ratingOpinion: e.target.value })}
+                                    onBlur={() => updateActiveNovelData((n) => { n.ratingOpinion = safeString(overviewForm?.ratingOpinion); })}
+                                    placeholder="Ý kiến đánh giá của bạn về truyện này..."
+                                  />
+                                </div>
+                                </div>
+
+                                {hasPersonalTags || isAddingTag ? (
+                                  <div className="rounded-xl bg-slate-950/45 border border-amber-900/30 px-4 py-3 mb-6">
+                                    <label className="flex items-center gap-2 text-xs font-bold text-slate-500 mb-3 uppercase tracking-widest"><BookOpen size={14} /> Nhãn cá nhân</label>
+                                    <div className="flex flex-wrap gap-2.5 items-center">
+                                      {(activeNovelData.tags || []).map(tag => (
+                                        <span key={tag} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-md text-sm text-slate-300 font-serif flex items-center gap-2 group/tag">
+                                          {safeString(tag)}
+                                          <button onClick={() => handleRemoveTag(tag)} className="text-slate-500 hover:text-rose-400 opacity-50 group-hover/tag:opacity-100 transition-opacity"><X size={12}/></button>
+                                        </span>
+                                      ))}
+                                      {isAddingTag ? (
+                                        <input 
+                                          autoFocus type="text" placeholder="Nhập nhãn..."
+                                          className="px-3 py-1.5 bg-slate-950 border border-amber-600/50 rounded-md text-sm text-slate-200 focus:outline-none w-32 font-serif"
+                                          value={newTagValue} onChange={(e) => setNewTagValue(e.target.value)}
+                                          onKeyDown={(e) => { if(e.key === 'Enter') handleAddTag() }}
+                                          onBlur={() => { if(newTagValue.trim()) handleAddTag(); else setIsAddingTag(false); }}
+                                        />
+                                      ) : (
+                                        <button onClick={() => setIsAddingTag(true)} className="px-3 py-1.5 bg-transparent border border-dashed border-slate-700 rounded-md text-sm text-slate-500 hover:text-amber-400 hover:border-amber-500/50 transition-colors font-serif flex items-center gap-1">
+                                          <Plus size={14} /> Thêm nhãn
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="mb-6">
+                                    <button onClick={() => setIsAddingTag(true)} className="px-3 py-1.5 bg-slate-950/45 border border-dashed border-slate-700 rounded-md text-sm text-slate-500 hover:text-amber-400 hover:border-amber-500/50 transition-colors font-serif flex items-center gap-1">
+                                      <Plus size={14} /> Thêm nhãn cá nhân
+                                    </button>
+                                  </div>
+                                )}
 
                                 {novelQuickStats && (novelQuickStats.totalEnt > 0 || novelQuickStats.totalMs > 0) && (
                                   <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/40 overflow-hidden">
@@ -2581,7 +2863,7 @@ export default function App() {
 
                                    <section className="rounded-2xl border border-slate-800/70 bg-slate-900/25 p-6">
                                    <div className="flex justify-between items-center mb-3">
-                                       <label className="text-xs text-slate-500 uppercase font-bold tracking-widest flex items-center gap-2"><BookOpen size={14}/> Cảm ngộ / Review</label>
+                                       <label className="text-xs text-slate-500 uppercase font-bold tracking-widest flex items-center gap-2"><BookOpen size={14}/> Giới thiệu truyện</label>
                                        <button onClick={async () => {
                                            if (geminiApiKeys.length === 0) { showToast("Vui lòng nhập API Key (trong mục Cài Đặt) để dùng AI", "warning"); return; }
                                            setIsGeneratingReview(true);
@@ -2596,7 +2878,7 @@ export default function App() {
                                            {isGeneratingReview ? 'Đang tổng hợp...' : 'AI Tổng Hợp Đạo Tâm'}
                                        </button>
                                    </div>
-                                   <textarea className="w-full flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 text-slate-300 font-serif text-lg leading-relaxed focus:outline-none focus:border-amber-600/50 min-h-[200px] resize-none custom-scrollbar" value={safeString(overviewForm?.review)} onChange={(e) => setOverviewForm({...overviewForm, review: e.target.value})} onBlur={() => updateActiveNovelData(n => n.review = overviewForm.review)} placeholder="Hạ bút... (Hệ thống tự động lưu khi bạn nhấp chuột ra khỏi đây)" />
+                                   <textarea className="w-full flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 text-slate-300 font-serif text-lg leading-relaxed focus:outline-none focus:border-amber-600/50 min-h-[200px] resize-none custom-scrollbar" value={safeString(overviewForm?.review)} onChange={(e) => setOverviewForm({...overviewForm, review: e.target.value})} onBlur={() => updateActiveNovelData(n => n.review = overviewForm.review)} placeholder="Viết giới thiệu tổng quan về truyện... (Hệ thống tự động lưu khi bạn nhấp chuột ra khỏi đây)" />
                                    </section>
 
                                    <section className="rounded-2xl border border-slate-800/70 bg-slate-950/40 p-5">
@@ -2771,7 +3053,8 @@ export default function App() {
                                 
                                 <div className="flex items-center gap-4">
                                    {!activeTabNho && currentTabConfig?.subTabs?.length > 0 ? null : currentTabConfig?.viewType === 'collection-track' ? (
-                                      <div className="flex items-center gap-2 flex-wrap">
+                                      <div ref={entityAdvancedRef} className="flex flex-col items-end gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap justify-end">
                                          {/* Nút thêm mới cố định trên header */}
                                          <button onClick={handleOpenCreateEntity} className="px-4 py-2 bg-amber-700/80 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-md flex-shrink-0">
                                            <Plus size={13}/> {getTerms(activeTabLon).createNew}
@@ -2785,13 +3068,56 @@ export default function App() {
                                             <option value="name_asc">Tên (A-Z)</option>
                                             <option value="milestones">Nhiều sự kiện</option>
                                          </select>
-                                         {/* Group by */}
-                                         <select value={entityGroupBy} onChange={e=>setEntityGroupBy(e.target.value)} className={`border rounded-xl py-2 px-3 text-xs font-serif outline-none cursor-pointer transition-colors ${entityGroupBy !== 'none' ? 'bg-amber-900/30 border-amber-700/50 text-amber-300' : 'bg-slate-900 border-slate-800 text-slate-400 focus:border-amber-600/50'}`}>
-                                            <option value="none">Không nhóm</option>
-                                            {(currentTabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS).map(f => (
-                                              <option key={f.id} value={f.id}>Nhóm: {f.label}</option>
-                                            ))}
-                                         </select>
+                                         <button
+                                           type="button"
+                                           onClick={() => setShowEntityAdvanced((v) => !v)}
+                                           className={`px-3 py-2 border rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors ${showEntityAdvanced ? 'bg-amber-900/30 border-amber-700/50 text-amber-300' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'}`}
+                                         >
+                                           <Filter size={13} />
+                                           Nâng cao
+                                         </button>
+                                         {isEntityAdvancedActive && (
+                                           <button type="button" onClick={clearEntityAdvanced} className="px-3 py-2 border rounded-xl text-xs font-bold bg-slate-900 border-slate-700 text-slate-300 hover:text-slate-100 transition-colors">
+                                             Xóa lọc
+                                           </button>
+                                         )}
+                                        </div>
+                                        {isEntityAdvancedActive && (
+                                          <div className="flex items-center gap-2 flex-wrap justify-end text-[11px]">
+                                            {entityFilterField !== 'none' && entityFilterValue.trim() ? (
+                                              <span className="px-2.5 py-1 rounded-full border border-cyan-700/50 bg-cyan-950/30 text-cyan-200">
+                                                Lọc: {safeString(entityFilterFields.find((f) => f.id === entityFilterField)?.label || entityFilterField)} = "{entityFilterValue.trim()}"
+                                              </span>
+                                            ) : null}
+                                            {entityGroupBy !== 'none' ? (
+                                              <span className="px-2.5 py-1 rounded-full border border-amber-700/50 bg-amber-950/30 text-amber-200">
+                                                Nhóm: {safeString(entityFilterFields.find((f) => f.id === entityGroupBy)?.label || entityGroupBy)}
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                        )}
+                                        {showEntityAdvanced && (
+                                          <div className="w-full max-w-[760px] rounded-2xl border border-slate-800/90 bg-slate-950/90 p-3 shadow-xl space-y-2 animate-fade-in">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                              <AdvancedFieldSelect
+                                                value={entityFilterField}
+                                                onChange={setEntityFilterField}
+                                                options={entityFilterOptions}
+                                                active={entityFilterField !== 'none'}
+                                              />
+                                              <input type="text" placeholder={entityFilterField === 'none' ? 'Chọn trường rồi nhập giá trị lọc...' : 'Giá trị lọc theo trường...'} value={entityFilterValue} onChange={e=>setEntityFilterValue(e.target.value)} disabled={entityFilterField === 'none'} className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2 px-3 text-xs font-serif outline-none focus:border-cyan-600/50 disabled:opacity-50 disabled:cursor-not-allowed" />
+                                              <AdvancedFieldSelect
+                                                value={entityGroupBy}
+                                                onChange={setEntityGroupBy}
+                                                options={entityGroupOptions}
+                                                active={entityGroupBy !== 'none'}
+                                              />
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 font-serif">
+                                              Lưu ý: <span className="text-slate-400">Tìm kiếm nhanh</span> và <span className="text-slate-400">Lọc theo trường</span> được áp dụng đồng thời.
+                                            </p>
+                                          </div>
+                                        )}
                                       </div>
                                    ) : (
                                       <button id="save-standard-btn" onClick={() => { if(isEditingMode) { handleSaveStandardEditor(); } else setIsEditingMode(true); const s = safeString(currentStandardData); setLivePreviewText(s); setDebouncedMarkdownPreview(s); }} className={`px-5 py-2 rounded-xl text-xs font-bold transition-colors shadow-lg flex items-center gap-2 ${isEditingMode ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-800 border border-slate-700 text-slate-300 hover:text-slate-100 hover:bg-slate-700'}`}>
