@@ -77,6 +77,8 @@ export function AppCollectionSection({
   visibleGalleryEntries,
   galleryHasMore,
   setGalleryVisiblePage,
+  galleryScope,
+  setGalleryScope,
   handleOpenEntityFromGallery,
   onEntityCardSelect,
   onEntityCardDelete,
@@ -382,6 +384,8 @@ export function AppCollectionSection({
               visibleGalleryEntries={visibleGalleryEntries}
               galleryHasMore={galleryHasMore}
               setGalleryVisiblePage={setGalleryVisiblePage}
+              galleryScope={galleryScope}
+              setGalleryScope={setGalleryScope}
               handleOpenEntityFromGallery={handleOpenEntityFromGallery}
               activeNovelDirHandle={activeNovelDirHandle}
               dirHandle={dirHandle}

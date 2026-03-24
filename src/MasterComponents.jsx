@@ -675,12 +675,26 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
   const fieldsTemplate = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const [editingFieldId, setEditingFieldId] = useState(null);
   const [editingFieldLabel, setEditingFieldLabel] = useState('');
+  const [linkSuggestField, setLinkSuggestField] = useState(null);
   const terms = getTerms(parentTabId);
   const [formData, setFormData] = useState({ id: null, chapter: '', event: '' });
   const [snapshotData, setSnapshotData] = useState({ avatar: '', dynamicData: {} });
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [newFieldLabel, setNewFieldLabel] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const dynamicFieldInputRefs = useRef({});
+  const pendingWikiCaretRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const p = pendingWikiCaretRef.current;
+    if (!p) return;
+    pendingWikiCaretRef.current = null;
+    const el = dynamicFieldInputRefs.current[p.fieldId];
+    if (el) {
+      el.focus();
+      el.setSelectionRange(p.selStart, p.selEnd);
+    }
+  }, [snapshotData.dynamicData]);
   
   useEffect(() => { 
     if(isOpen) {
@@ -817,7 +831,57 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
                              </>
                            )}
                          </div>
-                         <input value={safeString(snapshotData.dynamicData[field.id])} onChange={e=>setSnapshotData(prev => ({...prev, dynamicData: {...prev.dynamicData, [field.id]: e.target.value}}))} className="w-full bg-slate-950/80 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 font-serif focus:border-amber-500 outline-none" placeholder="..." />
+                        <div className="relative">
+                          <input
+                            ref={(el) => { if (el) dynamicFieldInputRefs.current[field.id] = el; else delete dynamicFieldInputRefs.current[field.id]; }}
+                            value={safeString(snapshotData.dynamicData[field.id])}
+                            onChange={e=>setSnapshotData(prev => ({...prev, dynamicData: {...prev.dynamicData, [field.id]: e.target.value}}))}
+                            onFocus={() => setLinkSuggestField(field.id)}
+                            onBlur={() => setTimeout(() => setLinkSuggestField(null), 200)}
+                            className="w-full bg-slate-950/80 border border-slate-700 rounded-lg p-2.5 pr-20 text-sm text-slate-200 font-serif focus:border-amber-500 outline-none"
+                            placeholder="Nhập giá trị hoặc [[Tên]] để liên kết..."
+                          />
+                          {linkSuggestField === field.id && (
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  const cur = safeString(snapshotData.dynamicData[field.id]);
+                                  const input = dynamicFieldInputRefs.current[field.id];
+                                  let a = cur.length; let b = cur.length;
+                                  if (input && document.activeElement === input) {
+                                    a = input.selectionStart ?? 0;
+                                    b = input.selectionEnd ?? a;
+                                  }
+                                  const { newText, selStart, selEnd } = applyWikiLinkWrap(cur, a, b);
+                                  pendingWikiCaretRef.current = { fieldId: field.id, selStart, selEnd };
+                                  setSnapshotData(prev => ({ ...prev, dynamicData: { ...prev.dynamicData, [field.id]: newText } }));
+                                }}
+                                className="text-[10px] font-bold text-amber-500 hover:text-amber-300 bg-amber-900/30 px-1.5 py-0.5 rounded border border-amber-700/40"
+                                title="Chèn [[ ]] tại con trỏ hoặc bọc đoạn đang chọn"
+                              >[[]]</button>
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  const cur = safeString(snapshotData.dynamicData[field.id]);
+                                  const input = dynamicFieldInputRefs.current[field.id];
+                                  let a = cur.length; let b = cur.length;
+                                  if (input && document.activeElement === input) {
+                                    a = input.selectionStart ?? 0;
+                                    b = input.selectionEnd ?? a;
+                                  }
+                                  const { newText, selStart, selEnd } = applyWikiLinkUnwrap(cur, a, b);
+                                  pendingWikiCaretRef.current = { fieldId: field.id, selStart, selEnd };
+                                  setSnapshotData(prev => ({ ...prev, dynamicData: { ...prev.dynamicData, [field.id]: newText } }));
+                                }}
+                                className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-900/20 px-1.5 py-0.5 rounded border border-cyan-700/35"
+                                title="Gỡ [[ ]] ở vùng chọn hoặc đoạn chứa con trỏ"
+                              >Bỏ</button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                    ))}
                 </div>

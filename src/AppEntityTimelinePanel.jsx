@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { History, Plus, Check, Edit2, Trash2, Clock, Sparkles } from 'lucide-react';
 import { DEFAULT_ENTITY_FIELDS, FALLBACK_IMG } from './MasterEngines.js';
 import { AsyncLocalImage, renderMarkdown, safeString } from './MasterUtils.jsx';
@@ -20,6 +20,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   getFieldValue,
   setLightboxSrc,
 }) {
+  const [showEmptyTimelineFields, setShowEmptyTimelineFields] = useState(false);
   if (collectionSubTab !== 'timeline' || !selectedEntity) return null;
 
   return (
@@ -117,8 +118,29 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                   </div>
                 </div>
 
+                <div className="flex justify-end mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowEmptyTimelineFields((v) => !v)}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
+                      showEmptyTimelineFields
+                        ? 'bg-amber-900/30 border-amber-700/50 text-amber-200'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {showEmptyTimelineFields ? 'Đang hiện field trống' : 'Ẩn field trống'}
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {fields.map((f) => {
+                  {fields
+                  .filter((f) => {
+                    if (showEmptyTimelineFields) return true;
+                    const baseVal = safeString(getFieldValue(f.id, selectedEntity));
+                    const snapshotVal = safeString(selectedMs.snapshot?.dynamicData?.[f.id]);
+                    const finalVal = snapshotVal || baseVal;
+                    return !!finalVal.trim();
+                  })
+                  .map((f) => {
                     const baseVal = safeString(getFieldValue(f.id, selectedEntity));
                     const snapshotVal = safeString(selectedMs.snapshot?.dynamicData?.[f.id]);
                     const finalVal = snapshotVal || baseVal;

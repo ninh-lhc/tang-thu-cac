@@ -213,6 +213,14 @@ export default function App() {
   
   const [collectionSubTab, setCollectionSubTab] = useState('list'); 
   const [galleryVisiblePage, setGalleryVisiblePage] = useState(1);
+  const [galleryScope, setGalleryScope] = useState(() => {
+    try {
+      const saved = localStorage.getItem('tangthu_gallery_scope');
+      return saved === 'tab_lon' || saved === 'tab_nho' ? saved : 'all';
+    } catch {
+      return 'all';
+    }
+  }); // all | tab_lon | tab_nho
   const [navHistory, setNavHistory] = useState([]);
   const [expandedRelations, setExpandedRelations] = useState(false);
   
@@ -577,8 +585,13 @@ export default function App() {
     const cfg = activeNovelData.tabsConfig || globalTabsConfig;
     const out = [];
     (cfg || []).forEach((lon) => {
+      if (galleryScope === 'tab_lon' && lon.id !== activeTabLon) return;
       (lon.subTabs || []).forEach((nho) => {
         if (nho.viewType !== 'collection-track') return;
+        if (galleryScope === 'tab_nho') {
+          if (!activeTabNho) return;
+          if (lon.id !== activeTabLon || nho.id !== activeTabNho) return;
+        }
         const tabData = activeNovelData.data?.[lon.id]?.[nho.id];
         (tabData?.entities || []).forEach((ent) => {
           if (ent.avatar && String(ent.avatar).trim()) {
@@ -588,7 +601,7 @@ export default function App() {
       });
     });
     return out;
-  }, [activeNovelData, globalTabsConfig, currentTabConfig?.viewType]);
+  }, [activeNovelData, globalTabsConfig, currentTabConfig?.viewType, galleryScope, activeTabLon, activeTabNho]);
   const GALLERY_PAGE_SIZE = 60;
   const visibleGalleryEntries = useMemo(
     () => galleryPortraitEntries.slice(0, galleryVisiblePage * GALLERY_PAGE_SIZE),
@@ -867,6 +880,11 @@ export default function App() {
       localStorage.setItem('tangthu_perf_mode', performanceMode ? '1' : '0');
     } catch { void 0; }
   }, [performanceMode]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('tangthu_gallery_scope', galleryScope);
+    } catch { void 0; }
+  }, [galleryScope]);
 
   useEffect(() => {
     const q = searchQuery.trim();
@@ -2662,6 +2680,8 @@ export default function App() {
                             visibleGalleryEntries={visibleGalleryEntries}
                             galleryHasMore={galleryHasMore}
                             setGalleryVisiblePage={setGalleryVisiblePage}
+                            galleryScope={galleryScope}
+                            setGalleryScope={setGalleryScope}
                             handleOpenEntityFromGallery={handleOpenEntityFromGallery}
                             onEntityCardSelect={onEntityCardSelect}
                             onEntityCardDelete={onEntityCardDelete}
