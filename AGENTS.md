@@ -16,6 +16,8 @@ npm run lint     # ESLint
 
 Cài dependency: repo có **`.npmrc`** (`legacy-peer-deps=true`) vì peer Vite 8 / Tailwind.
 
+**Mục tiêu UX:** ưu tiên **laptop / máy bàn** (bàn phím + chuột); design tokens `--tt-*` và class **`tt-kbd-focus`** trong `AppPhongChuVaTheme.jsx`.
+
 ## Bản đồ mã nguồn (đừng mở cả repo khi không cần)
 
 | Khu vực | File / thư mục |
@@ -24,7 +26,8 @@ Cài dependency: repo có **`.npmrc`** (`legacy-peer-deps=true`) vì peer Vite 8
 | Modal tách riêng | `src/AppModalMotCua.jsx`, `AppModalQuanLyTab.jsx`, `AppModalLenhNhanh.jsx`, `AppModalGoiYNoiTraCuu.jsx` |
 | CSS/font/theme toàn cục | `src/AppPhongChuVaTheme.jsx` |
 | Nhật ký / áp gợi ý AI vào novel | `src/appNhatKyVaGoiThe.js` |
-| Logic thuần nhỏ | `src/lib/*.js` (vd. `stripWikiBrackets`, `computeRelatedEntities`) |
+| Logic thuần nhỏ | `src/lib/*.js` (vd. `stripWikiBrackets`, `computeRelatedEntities`, `entityCollectionQuery`, `readingProgress`) |
+| Tab Tổng quan (tiến độ/sao) | `src/AppOverviewSection.jsx`, `src/AppOverviewRatingStars.jsx` |
 | Worker / tìm kiếm | `src/deepSearchCore.js`, `deepSearch.worker.js` |
 
 ## Quy ước khi sửa

@@ -2,6 +2,7 @@
 // TRỤ 2: HÀM TIỆN ÍCH & RENDER
 // File: MasterUtils.jsx
 // ==========================================
+/* eslint-disable react-refresh/only-export-components */
 
 import React, { useState, useEffect, memo } from 'react';
 import {
@@ -23,7 +24,7 @@ export const getTerms = (tabId) => TERMINOLOGY[tabId] || TERMINOLOGY['default'];
 // CẢI TIẾN: Bóp nát chữ "null" hoặc "undefined"
 export const safeString = (val) => {
   if (val == null || val === 'null' || val === 'undefined') return '';
-  if (typeof val === 'object') { try { return JSON.stringify(val); } catch(e) { return '[Object]'; } }
+  if (typeof val === 'object') { try { return JSON.stringify(val); } catch { return '[Object]'; } }
   return String(val);
 };
 
@@ -63,7 +64,7 @@ async function readGeminiErrorDetail(res) {
     const j = await res.json();
     const g = j?.error?.message;
     if (g) detail = String(g).slice(0, 220);
-  } catch (_) {}
+  } catch { void 0; }
   return detail;
 }
 
@@ -454,6 +455,11 @@ export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className }) =>
   useEffect(() => {
     let objectUrl = null;
     let isMounted = true;
+    const queueState = (fn) => {
+      Promise.resolve().then(() => {
+        if (isMounted) fn();
+      });
+    };
     if (dirHandle && dirHandle !== 'LOCAL_STORAGE') {
       let byName = localImageUrlCache.get(dirHandle);
       if (!byName) {
@@ -462,8 +468,10 @@ export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className }) =>
       }
       const cached = byName.get(filename);
       if (cached) {
-        setSrc(cached);
-        setErr(false);
+        queueState(() => {
+          setSrc(cached);
+          setErr(false);
+        });
         return;
       }
       const fetchImage = async () => {
@@ -474,10 +482,12 @@ export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className }) =>
           objectUrl = URL.createObjectURL(file);
           byName.set(filename, objectUrl);
           if (isMounted) { setSrc(objectUrl); setErr(false); }
-        } catch(e) { if(isMounted) setErr(true); }
+        } catch { if (isMounted) setErr(true); }
       };
       fetchImage();
-    } else { setErr(true); }
+    } else {
+      queueState(() => setErr(true));
+    }
     return () => { isMounted = false; };
   }, [filename, dirHandle]);
 

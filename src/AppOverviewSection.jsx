@@ -2,10 +2,17 @@
 // AppOverviewSection.jsx
 // Mục đích: Toàn bộ nội dung tab Tổng Quan (tong-quan)
 // Import bởi: App.jsx (lazy không cần vì luôn hiển thị khi mở truyện)
-// Lưu ý: State isAddingTag / newTagValue là nội bộ; còn lại truyền từ App.jsx
+// Lưu ý: State isAddingTag / newTagValue là nội bộ; ưu tiên laptop/desktop (layout ≥720px hai cột)
 // ==========================================
 
 import React, { useState } from 'react';
+import {
+  parseTotalChapters,
+  computeProgressPercent,
+  isReadingDone as checkNovelReadingDone,
+  bumpReadChapters,
+} from './lib/readingProgress.js';
+import { AppOverviewRatingStars } from './AppOverviewRatingStars.jsx';
 import {
   BookOpen, Settings, Trash2, Plus, X, ChevronDown, Search,
   Sparkles, Layers, GitBranch, Activity, BarChart2,
@@ -35,11 +42,9 @@ export function AppOverviewSection({
   setOverviewStatsOpen,
   xrefDraft,
   setXrefDraft,
-  setXrefAiPanel,
   // action callbacks
   showToast,
   setLightboxSrc,
-  setIsDeepSearchOpen,
   setIsInNovelSearchOpen,
   handleOpenEditNovel,
   handleDeleteNovel,
@@ -54,12 +59,10 @@ export function AppOverviewSection({
   const anchor = Math.max(0, parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) || 0);
   const lo = Math.max(0, anchor - 12);
   const hi = anchor + 30;
-  const totalChapters = Math.max(0, parseInt(activeNovelData.chaptersTotal, 10) || 0);
+  const totalChapters = parseTotalChapters(activeNovelData.chaptersTotal);
   const readChapters = Math.max(0, parseInt(overviewForm?.chaptersRead, 10) || 0);
-  const progressPercent = totalChapters > 0
-    ? (readChapters >= totalChapters ? 100 : Math.max(0, Math.floor((readChapters / totalChapters) * 100)))
-    : 0;
-  const isReadingDone = totalChapters > 0 && readChapters === totalChapters;
+  const progressPercent = computeProgressPercent(readChapters, totalChapters);
+  const isReadingDone = checkNovelReadingDone(readChapters, totalChapters);
   const hasPersonalTags = (activeNovelData.tags || []).length > 0;
   const xrefs = Array.isArray(activeNovelData.chapterCrossRefs) ? activeNovelData.chapterCrossRefs : [];
 
@@ -83,13 +86,20 @@ export function AppOverviewSection({
   return (
     <div className="space-y-7 animate-fade-in">
       {/* ===== HERO: cover + thông tin chính ===== */}
-      <section className="rounded-[28px] border border-slate-800/70 bg-gradient-to-b from-slate-900/35 to-slate-950/60 p-8 shadow-xl">
+      <section
+        className="rounded-[var(--tt-r-panel,1.75rem)] border border-slate-800/70 bg-gradient-to-b from-slate-900/35 to-slate-950/60 p-8"
+        style={{ boxShadow: 'var(--tt-shadow-panel)' }}
+      >
         <div className="grid grid-cols-[260px_minmax(0,1fr)] gap-10 items-start">
           <aside className="w-[260px] flex-shrink-0">
             <div
-              className="rounded-2xl overflow-hidden shadow-2xl border border-slate-800 relative group cursor-zoom-in"
+              className={`rounded-[var(--tt-r-card,1rem)] overflow-hidden shadow-2xl border border-slate-800 relative group ${activeNovelData.cover ? 'cursor-zoom-in tt-kbd-focus' : ''}`}
+              role={activeNovelData.cover ? 'button' : undefined}
+              tabIndex={activeNovelData.cover ? 0 : undefined}
+              aria-label={activeNovelData.cover ? 'Mở xem ảnh bìa đầy đủ' : undefined}
+              onKeyDown={(e) => { if (!activeNovelData.cover) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLightboxSrc(activeNovelData.cover); } }}
               onClick={() => activeNovelData.cover && setLightboxSrc(activeNovelData.cover)}
-              title="Nhấp để xem ảnh đầy đủ"
+              title={activeNovelData.cover ? 'Nhấp để xem ảnh đầy đủ' : undefined}
             >
               {activeNovelData.cover ? (
                 activeNovelData.cover.startsWith('local_image:') ? (
@@ -127,7 +137,7 @@ export function AppOverviewSection({
             </header>
 
             {/* Quick stats grid */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2" aria-label="Thông số nhanh">
               <StatCard label="Tiến độ" value={`${readChapters}/${totalChapters || '???'}`} color="amber" />
               <StatCard label="Hoàn thành" value={`${progressPercent}%`} color="amber" />
               <StatCard label="Đánh giá" value={`${Number(overviewForm?.rating || 0).toFixed(1)}/5`} color="amber" />
@@ -137,7 +147,11 @@ export function AppOverviewSection({
             {/* Progress + Rating grid */}
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {/* Tiến độ đọc */}
-              <div className="rounded-xl bg-slate-950/55 border border-slate-800/90 px-4 py-3">
+              <div
+                className="rounded-[var(--tt-r-md,0.75rem)] border px-4 py-3"
+                style={{ backgroundColor: 'var(--tt-surface-2)', borderColor: 'var(--tt-border)' }}
+                data-testid="reading-progress-panel"
+              >
                 <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest block mb-2 flex items-center gap-1.5">
                   <BookOpen size={12}/> Tiến độ đọc
                 </label>
@@ -151,80 +165,96 @@ export function AppOverviewSection({
                   />
                   <span className="text-slate-600 font-serif text-sm">/</span>
                   <span className="text-slate-300 font-serif text-sm">{safeString(activeNovelData.chaptersTotal) || '???'}</span>
-                  <span className="ml-1 text-xs text-amber-500 font-bold font-serif">{progressPercent}%</span>
+                  <span data-testid="reading-progress-percent" className="ml-1 text-xs text-amber-500 font-bold font-serif">{progressPercent}%</span>
                 </div>
                 <div className="h-2 rounded-full bg-slate-800 overflow-hidden mb-2">
                   <div className="h-full bg-gradient-to-r from-amber-700 to-amber-500 rounded-full transition-all" style={{ width: `${progressPercent}%` }} />
                 </div>
-                <div className="flex items-center gap-2">
-                  <ActionBtn onClick={() => { const next = readChapters + 1; setOverviewForm((prev) => ({ ...(prev || {}), chaptersRead: next })); updateActiveNovelData((n) => { n.chaptersRead = next; }); }}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <ActionBtn
+                    data-testid="reading-minus-one"
+                    onClick={() => {
+                      const next = bumpReadChapters(readChapters, -1, totalChapters);
+                      setOverviewForm((prev) => ({ ...(prev || {}), chaptersRead: next }));
+                      updateActiveNovelData((n) => { n.chaptersRead = next; });
+                    }}
+                  >
+                    −1 chương
+                  </ActionBtn>
+                  <ActionBtn
+                    data-testid="reading-plus-one"
+                    onClick={() => {
+                      const next = bumpReadChapters(readChapters, 1, totalChapters);
+                      setOverviewForm((prev) => ({ ...(prev || {}), chaptersRead: next }));
+                      updateActiveNovelData((n) => { n.chaptersRead = next; });
+                    }}
+                  >
                     +1 chương
                   </ActionBtn>
-                  <ActionBtn onClick={() => { const next = readChapters + 5; setOverviewForm((prev) => ({ ...(prev || {}), chaptersRead: next })); updateActiveNovelData((n) => { n.chaptersRead = next; }); }}>
+                  <ActionBtn
+                    data-testid="reading-plus-five"
+                    onClick={() => {
+                      const next = bumpReadChapters(readChapters, 5, totalChapters);
+                      setOverviewForm((prev) => ({ ...(prev || {}), chaptersRead: next }));
+                      updateActiveNovelData((n) => { n.chaptersRead = next; });
+                    }}
+                  >
                     +5 chương
                   </ActionBtn>
                   <ActionBtn
+                    data-testid="reading-mark-done"
                     variant={isReadingDone ? 'active' : 'default'}
-                    onClick={() => { const done = totalChapters > 0 ? totalChapters : readChapters; setOverviewForm((prev) => ({ ...(prev || {}), chaptersRead: done })); updateActiveNovelData((n) => { n.chaptersRead = done; }); }}
+                    onClick={() => {
+                      if (totalChapters > 0) {
+                        const done = totalChapters;
+                        setOverviewForm((prev) => ({ ...(prev || {}), chaptersRead: done }));
+                        updateActiveNovelData((n) => { n.chaptersRead = done; });
+                        return;
+                      }
+                      setConfirmDialog({
+                        isOpen: true,
+                        title: 'Chưa có tổng số chương',
+                        message: '«Đánh dấu đã xong» cần biết tổng chương. Mở <b>Thiết lập truyện</b> để nhập tổng chương?',
+                        onConfirm: () => { handleOpenEditNovel(); },
+                      });
+                    }}
                   >
                     {isReadingDone ? '✓ Đã xong' : 'Đánh dấu đã xong'}
                   </ActionBtn>
                 </div>
               </div>
 
-              {/* Đánh giá 5 sao */}
-              <div className="rounded-xl bg-slate-950/55 border border-slate-800/90 px-4 py-3">
-                <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest block mb-2">Đánh giá 5 sao</label>
-                <div className="flex items-center gap-1 flex-wrap">
-                  {[1, 2, 3, 4, 5].map((star) => {
-                    const rating = Number(overviewForm?.rating || 0);
-                    const fill = Math.max(0, Math.min(1, rating - (star - 1)));
-                    return (
-                      <div key={star} className="relative w-7 h-7 select-none">
-                        <span className="absolute inset-0 text-2xl leading-7 text-slate-700">★</span>
-                        <span className="absolute inset-0 text-2xl leading-7 text-amber-400 overflow-hidden" style={{ width: `${fill * 100}%` }}>★</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const half = star - 0.5;
-                            setOverviewForm((prev) => ({ ...(prev || {}), rating: half }));
-                            updateActiveNovelData((n) => { n.rating = half; });
-                          }}
-                          className="absolute left-0 top-0 h-full w-1/2"
-                          aria-label={`Đánh giá ${star - 0.5} sao`}
-                          title={`${star - 0.5} sao`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOverviewForm((prev) => ({ ...(prev || {}), rating: star }));
-                            updateActiveNovelData((n) => { n.rating = star; });
-                          }}
-                          className="absolute right-0 top-0 h-full w-1/2"
-                          aria-label={`Đánh giá ${star} sao`}
-                          title={`${star} sao`}
-                        />
-                      </div>
-                    );
-                  })}
-                  <span className="ml-2 text-xs text-slate-400 font-serif">{Number(overviewForm?.rating || 0).toFixed(1)}/5</span>
+              {/* Đánh giá sao + ý kiến cá nhân */}
+              <div
+                className="rounded-[var(--tt-r-md,0.75rem)] border px-4 py-3"
+                style={{ backgroundColor: 'var(--tt-surface-2)', borderColor: 'var(--tt-border)' }}
+              >
+                <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest block mb-2">
+                  Đánh giá sao cá nhân
+                </label>
+                <AppOverviewRatingStars
+                  rating={overviewForm?.rating || 0}
+                  onChange={(r) => {
+                    setOverviewForm((prev) => ({ ...(prev || {}), rating: r }));
+                    updateActiveNovelData((n) => { n.rating = r; });
+                  }}
+                />
                   <button
                     type="button"
                     onClick={() => {
                       setOverviewForm((prev) => ({ ...(prev || {}), rating: 0 }));
                       updateActiveNovelData((n) => { n.rating = 0; });
                     }}
-                    className="ml-2 px-2 py-1 rounded-lg text-[10px] font-bold border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-colors"
+                    className="mt-2 px-2 py-1 rounded-lg text-[10px] font-bold border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-colors"
                   >
                     Bỏ đánh giá
                   </button>
-                </div>
                 <textarea
                   className="mt-3 w-full bg-slate-900/50 border border-slate-800 rounded-xl p-3 text-slate-300 font-serif text-sm leading-relaxed focus:outline-none focus:border-amber-600/50 min-h-[80px] resize-none custom-scrollbar"
                   value={safeString(overviewForm?.ratingOpinion)}
                   onChange={(e) => setOverviewForm({ ...(overviewForm || {}), ratingOpinion: e.target.value })}
                   onBlur={() => updateActiveNovelData((n) => { n.ratingOpinion = safeString(overviewForm?.ratingOpinion); })}
-                  placeholder="Ý kiến đánh giá của bạn về truyện này..."
+                  placeholder="Ghi ý kiến / bình luận cá nhân về truyện (khác với phần giới thiệu phía dưới)..."
                 />
               </div>
             </div>
@@ -347,10 +377,13 @@ export function AppOverviewSection({
       </section>
 
       {/* ===== Giới thiệu truyện ===== */}
-      <section className="rounded-2xl border border-slate-800/70 bg-slate-900/25 p-6">
+      <section
+        className="rounded-[var(--tt-r-card,1rem)] border border-slate-800/70 bg-slate-900/25 p-6"
+        style={{ boxShadow: 'var(--tt-shadow-card)' }}
+      >
         <div className="flex justify-between items-center mb-3">
           <label className="text-xs text-slate-500 uppercase font-bold tracking-widest flex items-center gap-2">
-            <BookOpen size={14}/> Giới thiệu truyện
+            <BookOpen size={14}/> Giới thiệu / Tóm tắt truyện
           </label>
           <button
             onClick={async () => {
@@ -371,18 +404,21 @@ export function AppOverviewSection({
           </button>
         </div>
         <textarea
-          className="w-full flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 text-slate-300 font-serif text-lg leading-relaxed focus:outline-none focus:border-amber-600/50 min-h-[200px] resize-none custom-scrollbar"
+          className="w-full flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 text-slate-300 font-serif text-lg leading-relaxed focus:outline-none focus:border-amber-600/50 min-h-[200px] resize-none custom-scrollbar tt-kbd-focus"
           value={safeString(overviewForm?.review)}
           onChange={(e) => setOverviewForm({ ...overviewForm, review: e.target.value })}
           onBlur={() => updateActiveNovelData((n) => { n.review = overviewForm.review; })}
-          placeholder="Viết giới thiệu tổng quan về truyện... (Hệ thống tự động lưu khi bạn nhấp chuột ra khỏi đây)"
+          placeholder="Viết giới thiệu / tóm tắt nội dung truyện (AI có thể tổng hợp hộ). Tự động lưu khi nhấp ra ngoài."
         />
       </section>
 
       {/* ===== Công cụ nhanh ===== */}
-      <section className="rounded-2xl border border-slate-800/70 bg-slate-950/40 p-5">
+      <section
+        className="rounded-[var(--tt-r-card,1rem)] border border-slate-800/70 bg-slate-950/40 p-5"
+        style={{ boxShadow: 'var(--tt-shadow-card)' }}
+      >
         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-3">Công cụ nhanh</label>
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
           <button
             type="button"
             onClick={() => setOverviewNeoOpen((o) => !o)}
@@ -422,7 +458,10 @@ export function AppOverviewSection({
       </section>
 
       {/* ===== Theo chương & công cụ ===== */}
-      <section className="rounded-2xl border border-amber-900/25 bg-gradient-to-br from-slate-950 via-slate-900/95 to-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] overflow-hidden">
+      <section
+        className="rounded-[var(--tt-r-card,1rem)] border border-amber-900/25 bg-gradient-to-br from-slate-950 via-slate-900/95 to-slate-950 overflow-hidden"
+        style={{ boxShadow: 'var(--tt-shadow-card), inset 0 1px 0 rgba(255,255,255,0.03)' }}
+      >
         <div className="border-l-[5px] border-amber-500/85 pl-4 pr-3 py-4 sm:pl-5 sm:pr-4">
           <div className="min-w-0 mb-4">
             <h3 className="font-heading text-lg sm:text-xl text-amber-50 tracking-tight">Theo chương & công cụ</h3>
@@ -581,13 +620,16 @@ export function AppOverviewSection({
       </section>
 
       {/* ===== Quản lý thư tịch ===== */}
-      <section className="rounded-2xl border border-slate-800/70 bg-slate-950/35 px-6 py-4">
-        <div className="flex justify-between items-center gap-4">
+      <section
+        className="rounded-[var(--tt-r-card,1rem)] border border-slate-800/70 bg-slate-950/35 px-6 py-4"
+        style={{ boxShadow: 'var(--tt-shadow-card)' }}
+      >
+        <div className="flex flex-wrap justify-between items-center gap-4">
           <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Quản lý thư tịch</p>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <button
               onClick={handleOpenEditNovel}
-              className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-bold flex items-center gap-2 transition-colors border border-slate-700"
+              className="px-4 sm:px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-bold flex items-center gap-2 transition-colors border border-slate-700"
             >
               <Settings size={17}/> Thiết Lập Truyện
             </button>

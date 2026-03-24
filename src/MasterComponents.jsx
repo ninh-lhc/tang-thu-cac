@@ -20,7 +20,7 @@ import {
 } from './MasterEngines.js';
 import {
   generateId, safeString, getTerms, AsyncLocalImage,
-  handleToolbarClick, applyWikiLinkWrap, applyWikiLinkUnwrap, renderMarkdown, analyzeTextWithAI,
+  handleToolbarClick, applyWikiLinkWrap, applyWikiLinkUnwrap, analyzeTextWithAI,
   truncateForAI, mapGeminiErrorToUserMessage
 } from './MasterUtils.jsx';
 import { mergeTabsByGenres } from './genreTabsMap.js';
@@ -923,7 +923,7 @@ export const ModalSettings = ({
           body: JSON.stringify({ contents: [{ parts: [{ text: 'test' }] }] }) }
       );
       setTestStatus(prev => ({ ...prev, [idx]: res.ok ? 'ok' : 'fail' }));
-    } catch(e) {
+    } catch {
       setTestStatus(prev => ({ ...prev, [idx]: 'fail' }));
     }
   };
@@ -1284,7 +1284,7 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, performDeepSe
     if (!isOpen) {
       searchSeqRef.current += 1;
       if (abortRef.current) {
-        try { abortRef.current.abort(); } catch (_) {}
+        try { abortRef.current.abort(); } catch { void 0; }
         abortRef.current = null;
       }
       setResults([]);
@@ -1303,7 +1303,7 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, performDeepSe
     }
     const runId = ++searchSeqRef.current;
     if (abortRef.current) {
-      try { abortRef.current.abort(); } catch (_) {}
+      try { abortRef.current.abort(); } catch { void 0; }
     }
     const ac = new AbortController();
     abortRef.current = ac;
@@ -1318,7 +1318,7 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, performDeepSe
         if (!cancelled && runId === searchSeqRef.current && !ac.signal.aborted) {
           setResults(Array.isArray(final) ? final : []);
         }
-      } catch (_) {
+      } catch {
         if (!cancelled && runId === searchSeqRef.current) setResults([]);
       } finally {
         if (!cancelled && runId === searchSeqRef.current) setSearchPending(false);
@@ -1326,7 +1326,7 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, performDeepSe
     })();
     return () => {
       cancelled = true;
-      try { ac.abort(); } catch (_) {}
+      try { ac.abort(); } catch { void 0; }
     };
   }, [isOpen, debouncedQuery, performDeepSearch, novelsMetadata]);
 
@@ -1339,11 +1339,11 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, performDeepSe
   const flatResults = useMemo(() => grouped.flatMap(g => g.items), [grouped]);
   const [highlightIdx, setHighlightIdx] = useState(0);
   const resultRefs = useRef([]);
-  useEffect(() => { setHighlightIdx(0); }, [flatResults.length]);
+  const safeHighlightIdx = flatResults.length > 0 ? Math.min(highlightIdx, flatResults.length - 1) : 0;
   useEffect(() => {
-    const el = resultRefs.current[highlightIdx];
+    const el = resultRefs.current[safeHighlightIdx];
     if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [highlightIdx]);
+  }, [safeHighlightIdx]);
 
   const handleResultKeyDown = (e) => {
     if (e.key === 'Escape') { onClose(); return; }
@@ -1433,6 +1433,10 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, performDeepSe
 export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) => {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
+  const handleCloseInNovel = React.useCallback(() => {
+    setQuery('');
+    onClose();
+  }, [onClose]);
   const results = useMemo(() => {
     const q = String(debouncedQuery || '').trim().toLowerCase();
     if (!q || !novel) return [];
@@ -1453,10 +1457,6 @@ export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) =
     return () => clearTimeout(id);
   }, [query]);
 
-  useEffect(() => {
-    if (!isOpen) setQuery('');
-  }, [isOpen]);
-
   const grouped = useMemo(() => {
     const map = {};
     results.forEach((r) => {
@@ -1469,14 +1469,16 @@ export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) =
   const flatResultsInNovel = useMemo(() => grouped.flatMap(g => g.items), [grouped]);
   const [highlightIdxInNovel, setHighlightIdxInNovel] = useState(0);
   const resultRefsInNovel = useRef([]);
-  useEffect(() => { setHighlightIdxInNovel(0); }, [flatResultsInNovel.length]);
+  const safeHighlightIdxInNovel = flatResultsInNovel.length > 0
+    ? Math.min(highlightIdxInNovel, flatResultsInNovel.length - 1)
+    : 0;
   useEffect(() => {
-    const el = resultRefsInNovel.current[highlightIdxInNovel];
+    const el = resultRefsInNovel.current[safeHighlightIdxInNovel];
     if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [highlightIdxInNovel]);
+  }, [safeHighlightIdxInNovel]);
 
   const handleInNovelKeyDown = (e) => {
-    if (e.key === 'Escape') { onClose(); return; }
+    if (e.key === 'Escape') { handleCloseInNovel(); return; }
     if (flatResultsInNovel.length === 0) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -1486,8 +1488,8 @@ export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) =
       setHighlightIdxInNovel((i) => Math.max(0, i - 1));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const r = flatResultsInNovel[highlightIdxInNovel];
-      if (r) { onSelectResult(r); onClose(); }
+      const r = flatResultsInNovel[safeHighlightIdxInNovel];
+      if (r) { onSelectResult(r); handleCloseInNovel(); }
     }
   };
 
@@ -1509,7 +1511,7 @@ export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) =
             />
             <p className="text-[10px] text-slate-500 font-serif mt-0.5">Chỉ truyện này — gõ tên, sự kiện, ghi chép...</p>
           </div>
-          <button type="button" onClick={onClose} className="p-1.5 text-slate-500 hover:text-white rounded-lg flex-shrink-0">
+          <button type="button" onClick={handleCloseInNovel} className="p-1.5 text-slate-500 hover:text-white rounded-lg flex-shrink-0">
             <X size={18} />
           </button>
         </div>
@@ -1536,14 +1538,14 @@ export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) =
                   <div className="space-y-1">
                     {group.items.map((r, i) => {
                       const globalIdx = grouped.slice(0, gi).reduce((acc, g) => acc + g.items.length, 0) + i;
-                      const isHighlight = highlightIdxInNovel === globalIdx;
+                      const isHighlight = safeHighlightIdxInNovel === globalIdx;
                       return (
                       <div
                         key={`${r.tabLonId}-${r.tabNhoId}-${r.entityId}-${i}`}
                         ref={(el) => { resultRefsInNovel.current[globalIdx] = el; }}
                         onClick={() => {
                           onSelectResult(r);
-                          onClose();
+                          handleCloseInNovel();
                         }}
                         className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all ${isHighlight ? 'bg-cyan-950/40 border-2 border-cyan-600/50' : 'bg-slate-950/70 border border-slate-800/80 hover:border-cyan-600/35 hover:bg-slate-800/40'}`}
                       >

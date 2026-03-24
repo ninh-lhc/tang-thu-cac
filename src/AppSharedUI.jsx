@@ -3,6 +3,7 @@
 // Mục đích: Các component UI dùng lại: StatCard, SectionCard, ActionChip, Btn
 // Import bởi: AppOverviewSection, AppCollectionSection và các component khác
 // Lưu ý: Không có state nội bộ — tất cả là presentational
+// Design tokens: dùng var(--tt-*) từ AppPhongChuVaTheme.jsx khi thêm style mới
 // ==========================================
 
 import React from 'react';
@@ -25,7 +26,10 @@ export function StatCard({ label, value, color = 'amber', icon, className = '' }
   };
   const cls = colorMap[color] || colorMap.amber;
   return (
-    <div className={`rounded-xl bg-slate-950/60 border ${cls.split(' ')[0]} px-3 py-2 ${className}`}>
+    <div
+      className={`rounded-[var(--tt-r-md,0.75rem)] bg-slate-950/60 border ${cls.split(' ')[0]} px-3 py-2 ${className}`}
+      style={{ boxShadow: 'var(--tt-shadow-card)' }}
+    >
       <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold flex items-center gap-1">
         {icon && <span className="opacity-70">{icon}</span>}
         {label}
@@ -50,7 +54,10 @@ export function SectionCard({ title, children, action, variant = 'default', icon
   };
   const cls = variantMap[variant] || variantMap.default;
   return (
-    <section className={`rounded-2xl border ${cls} p-6 ${className}`}>
+    <section
+      className={`rounded-[var(--tt-r-card,1rem)] border ${cls} p-6 ${className}`}
+      style={{ boxShadow: 'var(--tt-shadow-card)' }}
+    >
       {(title || action) && (
         <div className="flex justify-between items-center mb-3">
           {title && (
@@ -94,7 +101,7 @@ export function ActiveChip({ label, type = 'filter', onRemove }) {
  * Button nhỏ dạng action (ví dụ: +1 chương, thêm nhãn)
  * @param {'default'|'amber'|'emerald'|'rose'|'ghost'} variant
  */
-export function ActionBtn({ children, onClick, variant = 'default', disabled = false, className = '' }) {
+export function ActionBtn({ children, onClick, variant = 'default', disabled = false, className = '', ...rest }) {
   const variantMap = {
     default: 'border-slate-700 text-slate-300 hover:text-slate-100 hover:border-slate-600',
     amber:   'border-amber-700/60 bg-amber-700/80 hover:bg-amber-600 text-white',
@@ -109,7 +116,8 @@ export function ActionBtn({ children, onClick, variant = 'default', disabled = f
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${cls} ${className}`}
+      className={`tt-kbd-focus px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${cls} ${className}`}
+      {...rest}
     >
       {children}
     </button>

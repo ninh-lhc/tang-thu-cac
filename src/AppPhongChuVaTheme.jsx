@@ -1,14 +1,65 @@
 /**
- * Font Google + animation + biến theme (override amber).
+ * Font Google + animation + biến theme (override amber) + design tokens.
  * Tên: phông chữ + theme màu toàn app.
  *
  * Ai dùng: App.jsx (cuối cây JSX, một lần).
  * Không chứa logic — chỉnh class theme ở đây hoặc Tailwind config.
+ *
+ * DESIGN TOKENS (dùng trong toàn app, không phụ thuộc vào theme màu):
+ *   --tt-surface-1   : bg panel ngoài (slate-900/25)
+ *   --tt-surface-2   : bg panel trong / card nhỏ (slate-950/55)
+ *   --tt-surface-3   : bg sâu nhất (slate-950/90)
+ *   --tt-border      : viền chuẩn (rgba slate-800, 70%)
+ *   --tt-border-muted: viền mờ (rgba slate-800, 40%)
+ *   --tt-text-base   : chữ chính (slate-200)
+ *   --tt-text-muted  : chữ phụ (slate-400)
+ *   --tt-text-dim    : nhãn/meta nhỏ (slate-500)
+ *   --tt-r-sm        : border-radius nhỏ (0.5rem)
+ *   --tt-r-md        : border-radius vừa (0.75rem / rounded-xl)
+ *   --tt-r-card      : border-radius card (1rem / rounded-2xl)
+ *   --tt-r-panel     : border-radius panel lớn (1.75rem / rounded-[28px])
+ *   --tt-shadow-card : shadow card chuẩn
+ *   --tt-shadow-panel: shadow panel lớn
+ *   --tt-prose-max   : chiều rộng tối đa khối văn bản dài (desktop, tránh dòng quá dài trên màn ultrawide)
  */
 import React from 'react';
 
 const APP_GLOBAL_CSS = `
         @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400&family=Playfair+Display:wght@700&display=swap');
+
+        /* ============================================================
+           DESIGN TOKENS — nguồn duy nhất cho màu/khoảng/bo góc/shadow
+           Dùng: var(--tt-surface-1), var(--tt-r-card), ...
+           Cập nhật tại đây để tác động toàn app.
+           ============================================================ */
+        :root {
+          /* Surface */
+          --tt-surface-1   : rgba(15, 23, 42, 0.25);
+          --tt-surface-2   : rgba(2, 6, 23, 0.55);
+          --tt-surface-3   : rgba(2, 6, 23, 0.90);
+          /* Border */
+          --tt-border      : rgba(30, 41, 59, 0.70);
+          --tt-border-muted: rgba(30, 41, 59, 0.40);
+          /* Text */
+          --tt-text-base   : #e2e8f0;
+          --tt-text-muted  : #94a3b8;
+          --tt-text-dim    : #64748b;
+          /* Border-radius */
+          --tt-r-sm        : 0.5rem;
+          --tt-r-md        : 0.75rem;
+          --tt-r-card      : 1rem;
+          --tt-r-panel     : 1.75rem;
+          /* Shadow */
+          --tt-shadow-card : 0 4px 20px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.03) inset;
+          --tt-shadow-panel: 0 8px 40px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.04) inset;
+          --tt-prose-max   : 65rem;
+        }
+
+        /* Desktop / laptop: vòng focus bàn phím thống nhất (gắn class tt-kbd-focus) */
+        .theme-wrapper .tt-kbd-focus:focus-visible {
+          outline: 2px solid rgba(217, 119, 6, 0.55);
+          outline-offset: 2px;
+        }
         .font-serif { font-family: 'Lora', serif; }
         .font-heading { font-family: 'Playfair Display', serif; }
         .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }

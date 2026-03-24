@@ -10,7 +10,7 @@
 //   AppModalQuanLyTab.jsx    — Trận pháp / quản lý tab
 //   AppModalLenhNhanh.jsx    — Command palette
 //   AppModalGoiYNoiTraCuu.jsx — Gợi ý AI nối tra cứu
-//   lib/stripWikiBrackets.js, lib/computeRelatedEntities.js
+//   lib/stripWikiBrackets.js, lib/computeRelatedEntities.js, lib/entityFieldValue.js, lib/entityCollectionQuery.js
 //   useAppPersistence.js      — sync index + file truyện
 //   AppShellOverlays.jsx      — lightbox, toast, spinner
 //   lib/appTabGroups, appDashboardStats, buildEntityLinkMap, filterNovelsForLibrary, buildCurrentContextDirHandle
@@ -28,18 +28,16 @@ import {
   GitBranch
 } from 'lucide-react';
 import {
-  apiKey, FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
+  FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
   INITIAL_TABS_CONFIG, MOCK_METADATA, MOCK_NOVEL_DATA,
   DEFAULT_FIELDS_MAP, DEFAULT_FIELDS_BY_PARENT,
   guessFieldsByLabel, isStockTemplate, mergeFieldsTemplate, lockFieldsTemplateIfFirstEntity,
-  resolveFieldsTemplate
 } from './MasterEngines.js';
 import {
   generateId, safeString, getTerms, sortTabsAlphabetically,
-  AsyncLocalImage, processPlainTextWithLinks, renderMarkdown,
+  AsyncLocalImage, renderMarkdown,
   getIconComponent, handleToolbarClick,
-  extractEntityAttributesWithAI, analyzeTextWithAI, generateReviewWithAI,
-  analyzeCrossRefNoteWithAI, truncateForAI, mapGeminiErrorToUserMessage
+  analyzeCrossRefNoteWithAI, mapGeminiErrorToUserMessage
 } from './MasterUtils.jsx';
 import {
   MarkdownToolbar, AppHeader, LandingScreen, DashboardScreen,
@@ -48,6 +46,8 @@ import {
 } from './MasterComponents.jsx';
 import { AppLibrarySidebar } from './AppLibrarySidebar.jsx';
 import { AppOverviewSection } from './AppOverviewSection.jsx';
+import { getEntityFieldValue } from './lib/entityFieldValue.js';
+import { buildEntitySearchIndexMap, applyEntityCollectionFilters } from './lib/entityCollectionQuery.js';
 import { AppCollectionSection } from './AppCollectionSection.jsx';
 import {
   searchNovelData,
@@ -81,7 +81,9 @@ const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
+  const optionRefs = useRef([]);
   const selected = options.find((opt) => opt.value === value);
+  const selectedIndex = Math.max(0, options.findIndex((opt) => opt.value === value));
   useEffect(() => {
     if (!open) return undefined;
     const handleOutside = (event) => {
@@ -100,11 +102,33 @@ const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
       window.removeEventListener('keydown', handleEsc);
     };
   }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const next = optionRefs.current[selectedIndex] || optionRefs.current[0];
+    if (next) next.focus();
+  }, [open, selectedIndex]);
+
+  const focusOptionByIndex = (idx) => {
+    const max = options.length - 1;
+    if (max < 0) return;
+    const clamped = Math.max(0, Math.min(max, idx));
+    optionRefs.current[clamped]?.focus();
+  };
   return (
-    <div ref={rootRef} className="relative min-w-0">
+    <div ref={rootRef} className="relative min-w-0 z-40">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setOpen(true);
+          } else if (event.key === 'Escape' || event.key === 'Tab') {
+            setOpen(false);
+          }
+        }}
+        aria-expanded={open}
+        aria-haspopup="listbox"
         className={`w-full border rounded-xl py-2 pl-3 pr-8 text-xs font-serif outline-none cursor-pointer transition-colors text-left truncate ${
           active
             ? 'bg-amber-900/30 border-amber-700/50 text-amber-100'
@@ -115,15 +139,35 @@ const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
         <ChevronDown size={12} className={`absolute right-3 top-1/2 -translate-y-1/2 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute z-40 mt-1 w-full max-h-64 overflow-auto rounded-xl border border-slate-700 bg-slate-950 shadow-2xl custom-scrollbar animate-fade-in origin-top">
-          {options.map((opt) => (
+        <div role="listbox" className="absolute z-[60] mt-1 w-full max-h-64 overflow-auto rounded-xl border border-slate-700 bg-slate-950 shadow-2xl custom-scrollbar animate-fade-in origin-top">
+          {options.map((opt, idx) => (
             <button
               key={opt.value}
+              ref={(el) => { optionRefs.current[idx] = el; }}
               type="button"
               onClick={() => {
                 onChange(opt.value);
                 setOpen(false);
               }}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault();
+                  focusOptionByIndex(idx + 1);
+                } else if (event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  focusOptionByIndex(idx - 1);
+                } else if (event.key === 'Home') {
+                  event.preventDefault();
+                  focusOptionByIndex(0);
+                } else if (event.key === 'End') {
+                  event.preventDefault();
+                  focusOptionByIndex(options.length - 1);
+                } else if (event.key === 'Escape' || event.key === 'Tab') {
+                  setOpen(false);
+                }
+              }}
+              role="option"
+              aria-selected={opt.value === value}
               className={`w-full text-left px-3 py-2 text-xs font-serif transition-colors ${
                 opt.value === value
                   ? 'bg-amber-700/30 text-amber-100'
@@ -292,8 +336,6 @@ export default function App() {
   const [lightboxSrc, setLightboxSrc] = useState(null); // null = đóng, string = URL/local_image
   const [isUploading, setIsUploading] = useState(false);
   const [importProgress, setImportProgress] = useState(null);
-  const [isAddingTag, setIsAddingTag] = useState(false);
-  const [newTagValue, setNewTagValue] = useState('');
   const [isInsertImageModalOpen, setIsInsertImageModalOpen] = useState(false);
   const [imageForm, setImageForm] = useState({ url: '', alt: '', editorId: 'standard-editor' });
   
@@ -307,7 +349,7 @@ export default function App() {
     try {
       const stored = localStorage.getItem('tangthu_apikeys');
       if (stored) { const arr = JSON.parse(stored); if (Array.isArray(arr) && arr.length > 0) return arr; }
-    } catch(e) {}
+    } catch { void 0; }
     // Backward compat: migrate old single-key
     const oldKey = localStorage.getItem('tangthu_apikey');
     return oldKey ? [oldKey] : [];
@@ -400,7 +442,7 @@ export default function App() {
     const labels = tabGroups.filter(g => g.groupLabel).map(g => g.groupLabel);
     setCollapsedTabGroups(new Set(labels));
     lastSyncedActiveTabRef.current = null;
-  }, [activeNovelData?.id]);
+  }, [activeNovelData?.id, tabGroups]);
 
   useEffect(() => {
     if (activeTabLon === lastSyncedActiveTabRef.current) return;
@@ -484,47 +526,28 @@ export default function App() {
     const valid = entityFilterFields.some((f) => f?.id === entityFilterField);
     if (!valid) setEntityFilterField('none');
   }, [entityFilterFields, entityFilterField]);
-  const getEntityFieldValue = useCallback((ent, fieldId) => {
-    if (!ent || !fieldId) return '';
-    if (ent.dynamicData?.[fieldId]) return safeString(ent.dynamicData[fieldId]);
-    if (fieldId === 'f_status') return safeString(ent.status || '');
-    if (fieldId === 'f_title') return safeString(ent.title || ent.name || '');
-    if (fieldId === 'f_desc') return safeString(ent.description || ent.info || '');
-    return '';
-  }, []);
-  const entitySearchIndexById = useMemo(() => {
-    const map = new Map();
-    collectionEntitiesRaw.forEach((e) => {
-      const dynamicPart = e.dynamicData
-        ? Object.values(e.dynamicData).map((v) => safeString(v)).filter(Boolean).join(' ')
-        : '';
-      map.set(
-        e.id,
-        `${safeString(e.name)} ${safeString(e.title)} ${safeString(e.info)} ${dynamicPart}`.toLowerCase()
-      );
-    });
-    return map;
-  }, [collectionEntitiesRaw]);
-  const entitiesList = useMemo(() => {
-    let list = [...collectionEntitiesRaw];
-    if (entityFilterField !== 'none' && deferredEntityFilterValue.trim()) {
-      const q = deferredEntityFilterValue.toLowerCase();
-      list = list.filter((e) =>
-        getEntityFieldValue(e, entityFilterField).toLowerCase().includes(q)
-      );
-    }
-    if (deferredEntitySearch.trim()) {
-      const q = deferredEntitySearch.toLowerCase();
-      list = list.filter((e) => {
-        const haystack = entitySearchIndexById.get(e.id) || '';
-        return haystack.includes(q);
-      });
-    }
-    if (entitySortMode === 'name_asc') list.sort((a,b) => a.name.localeCompare(b.name, 'vi'));
-    else if (entitySortMode === 'milestones') list.sort((a,b) => (b.milestones?.length || 0) - (a.milestones?.length || 0));
-    else if (entitySortMode === 'newest') list.reverse();
-    return list;
-  }, [collectionEntitiesRaw, entitySearchIndexById, deferredEntitySearch, deferredEntityFilterValue, entityFilterField, entitySortMode, getEntityFieldValue]);
+  const entitySearchIndexById = useMemo(
+    () => buildEntitySearchIndexMap(collectionEntitiesRaw),
+    [collectionEntitiesRaw]
+  );
+  const entitiesList = useMemo(
+    () =>
+      applyEntityCollectionFilters(collectionEntitiesRaw, {
+        entityFilterField,
+        entityFilterValue: deferredEntityFilterValue,
+        entitySearchQuery: deferredEntitySearch,
+        entitySearchIndexById,
+        entitySortMode,
+      }),
+    [
+      collectionEntitiesRaw,
+      entitySearchIndexById,
+      deferredEntitySearch,
+      deferredEntityFilterValue,
+      entityFilterField,
+      entitySortMode,
+    ]
+  );
   const pagedEntitiesList = useMemo(
     () => entitiesList.slice((entityPage - 1) * ENTITY_PAGE_SIZE, entityPage * ENTITY_PAGE_SIZE),
     [entitiesList, entityPage]
@@ -542,7 +565,7 @@ export default function App() {
       if (b[0] === '— Chưa phân loại —') return -1;
       return a[0].localeCompare(b[0], 'vi');
     });
-  }, [entitiesList, entityGroupBy, getEntityFieldValue]);
+  }, [entitiesList, entityGroupBy]);
   const isEntityAdvancedActive = entityGroupBy !== 'none' || (entityFilterField !== 'none' && entityFilterValue.trim());
   const entityFilterOptions = useMemo(
     () => [
@@ -639,6 +662,10 @@ export default function App() {
 
   // Reset page khi filter thay đổi
   useEffect(() => { setEntityPage(1); setGroupVisibleCount({}); }, [entitySearch, entityFilterField, entityFilterValue, entitySortMode, entityGroupBy, activeTabLon, activeTabNho]);
+  /** Đổi tab / truyện: nhóm theo trường có thể không còn hợp lệ — về «Không nhóm». */
+  useEffect(() => {
+    setEntityGroupBy('none');
+  }, [activeTabLon, activeTabNho, activeNovelData?.id]);
   useEffect(() => { setShowEntityAdvanced(false); }, [activeTabLon, activeTabNho, activeNovelData?.id]);
   useEffect(() => {
     if (!showEntityAdvanced) return undefined;
@@ -838,7 +865,7 @@ export default function App() {
                setNovelStatsById(index.novelStats);
              }
              setDirHandle("LOCAL_STORAGE");
-          } catch(e) {}
+          } catch { void 0; }
        }
     }
   }, []);
@@ -851,17 +878,17 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem('tangthu_wiki_exact', wikiExactMatchOnly ? '1' : '0');
-    } catch {}
+    } catch { void 0; }
   }, [wikiExactMatchOnly]);
   useEffect(() => {
     try {
       localStorage.setItem('tangthu_ai_mode', aiMode);
-    } catch {}
+    } catch { void 0; }
   }, [aiMode]);
   useEffect(() => {
     try {
       localStorage.setItem('tangthu_perf_mode', performanceMode ? '1' : '0');
-    } catch {}
+    } catch { void 0; }
   }, [performanceMode]);
 
   useEffect(() => {
@@ -874,7 +901,7 @@ export default function App() {
       arr = [q, ...arr.filter((x) => safeString(x).toLowerCase() !== q.toLowerCase())].slice(0, 12);
       localStorage.setItem('tangthu_lib_search_hist', JSON.stringify(arr));
       setSearchHistory(arr);
-    } catch {}
+    } catch { void 0; }
   }, [searchQuery]);
 
   useEffect(() => {
@@ -887,7 +914,6 @@ export default function App() {
         review: activeNovelData.review,
         ratingOpinion: safeString(activeNovelData.ratingOpinion),
       });
-      setIsAddingTag(false); setNewTagValue('');
     }
   }, [activeNovelData]); 
 
@@ -1064,10 +1090,10 @@ export default function App() {
     }
     return () => {
       cancelled = true;
-      if (typeof cancelIdleCallback === 'function') try { cancelIdleCallback(idleId); } catch (_) {}
+      if (typeof cancelIdleCallback === 'function') try { cancelIdleCallback(idleId); } catch { void 0; }
       clearTimeout(idleId);
     };
-  }, [novelsMetadata, dirHandle]);
+  }, [novelsMetadata, dirHandle, activeNovelData?.id, loadNovelData, syncIndex]);
 
   const performDeepSearch = useCallback(
     async (query, signal, onProgress) => {
@@ -1192,9 +1218,13 @@ export default function App() {
     dirHandleRef,
   });
 
-  const handleNavigate = (dest) => {
+  const handleNavigate = useCallback((dest) => {
      if (dest.type === 'QUICK_CREATE') { setQuickCreateData(dest.name); return; }
-     setNavHistory(prev => [...prev, { lonId: activeTabLon, nhoId: activeTabNho, conId: activeTabCon, entityId: selectedEntityId, subTab: collectionSubTab }]);
+     setNavHistory(prev => {
+       const next = [...prev, { lonId: activeTabLon, nhoId: activeTabNho, conId: activeTabCon, entityId: selectedEntityId, subTab: collectionSubTab }];
+       // Giữ lịch sử trong ngưỡng an toàn để tránh phình bộ nhớ khi điều hướng liên tục.
+       return next.length > 120 ? next.slice(next.length - 120) : next;
+     });
      setEntitySearch('');
      setRecentlyMergedFields(new Set());
      setActiveTabLon(dest.lonId);
@@ -1203,7 +1233,7 @@ export default function App() {
      if (dest.entityId) { setSelectedEntityId(dest.entityId); setCollectionSubTab('detail'); } 
      else { setSelectedEntityId(null); setCollectionSubTab('list'); }
      setIsEditingMode(false); setIsEntityEditing(false); setExpandedRelations(false);
-  };
+  }, [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab]);
 
   const handleGoBack = useCallback(() => {
      if (navHistory.length === 0) return;
@@ -1242,7 +1272,7 @@ export default function App() {
     if (window.self !== window.top) {
        setDirHandle("LOCAL_STORAGE"); showToast("Preview: Đã chuyển sang Local Storage.");
        const local = localStorage.getItem('tangthu_index');
-       if (local) { try { const p = migrateIndex(JSON.parse(local)); if (p.metadata) setNovelsMetadata(p.metadata); if (p.config) setGlobalTabsConfig(p.config); if (p.novelStats && typeof p.novelStats === 'object') { novelStatsByIdRef.current = p.novelStats; setNovelStatsById(p.novelStats); } } catch(e) {} }
+      if (local) { try { const p = migrateIndex(JSON.parse(local)); if (p.metadata) setNovelsMetadata(p.metadata); if (p.config) setGlobalTabsConfig(p.config); if (p.novelStats && typeof p.novelStats === 'object') { novelStatsByIdRef.current = p.novelStats; setNovelStatsById(p.novelStats); } } catch { void 0; } }
        return;
     }
     try {
@@ -1251,7 +1281,7 @@ export default function App() {
       try {
         fileHandle = await h.getFileHandle('index.json');
         file = await fileHandle.getFile(); content = await file.text();
-      } catch (readErr) {
+      } catch {
          try {
              const oldHandle = await h.getFileHandle('db.json'); const oldFile = await oldHandle.getFile(); const oldContent = await oldFile.text(); const parsedOld = JSON.parse(oldContent);
              if (parsedOld.novels) {
@@ -1267,7 +1297,7 @@ export default function App() {
                  setNovelsMetadata(newMeta); if (parsedOld.config) setGlobalTabsConfig(parsedOld.config);
                  setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Độ kiếp thành công! Cấu trúc mới đã sẵn sàng."); return;
              }
-         } catch(e) { setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Thư mục trống. Đã kết nối Mệnh Bàn!"); return; }
+         } catch { setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Thư mục trống. Đã kết nối Mệnh Bàn!"); return; }
       }
       if (content) {
         try {
@@ -1286,11 +1316,11 @@ export default function App() {
           setActiveNovelData(null);
           setActiveNovelDirHandle(null);
           showToast("Đã tải Mệnh Bàn (Index) thành công!");
-        } catch (parseErr) {
+        } catch {
           showToast("LỖI CHÍ MẠNG: File index.json bị hỏng cấu trúc.", "error");
         }
       }
-    } catch (e) {}
+    } catch { void 0; }
   };
 
   const handleExportBackup = async () => {
@@ -1316,7 +1346,7 @@ export default function App() {
       a.click();
       URL.revokeObjectURL(url);
       showToast("Đã xuất backup đầy đủ (index + thống kê + từng truyện).");
-    } catch (e) {
+    } catch {
       showToast("Lỗi khi xuất backup!", "error");
     }
   };
@@ -1340,7 +1370,7 @@ export default function App() {
       a.click();
       URL.revokeObjectURL(url);
       showToast("Đã xuất file index (mệnh bàn + thống kê).");
-    } catch (e) {
+    } catch {
       showToast("Lỗi xuất index!", "error");
     }
   };
@@ -1376,7 +1406,7 @@ export default function App() {
           setImportProgress(null);
           showToast("File không đúng cấu trúc Tàng Thư Các.", "error");
         }
-      } catch (err) {
+      } catch {
         setImportProgress(null);
         showToast("Lỗi đọc file backup!", "error");
       }
@@ -1433,7 +1463,7 @@ export default function App() {
       setIsAddNovelOpen(false); setMenu1Visible(false); setActiveTabLon('tong-quan'); setActiveTabNho(null); setActiveTabCon(null);
       
       if (dirHandle && dirHandle !== 'LOCAL_STORAGE') {
-          try { const nHandle = await dirHandle.getDirectoryHandle(folderName, { create: true }); setActiveNovelDirHandle(nHandle); } catch(e) {}
+          try { const nHandle = await dirHandle.getDirectoryHandle(folderName, { create: true }); setActiveNovelDirHandle(nHandle); } catch { void 0; }
       }
       await syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
       await syncNovel(newFullData, dirHandle);
@@ -1467,7 +1497,7 @@ export default function App() {
          const writable = await imageFileHandle.createWritable();
          await writable.write(file); await writable.close();
          handleToolbarClick(`\n\n![${file.name}](local_image:${fileName})\n\n`, '', editorId); showToast("Linh ảnh đã được khảm vào local!");
-      } catch (err) { showToast("Thất bại khi lưu ảnh!", "error"); } finally { setIsUploading(false); }
+      } catch { showToast("Thất bại khi lưu ảnh!", "error"); } finally { setIsUploading(false); }
     }
   };
 
@@ -1489,12 +1519,12 @@ export default function App() {
          const writable = await imageFileHandle.createWritable();
          await writable.write(file); await writable.close();
          setAvatarCallback(`local_image:${fileName}`); showToast("Linh ảnh đã được khảm vào local!");
-      } catch (err) { showToast("Thất bại khi lưu ảnh!", "error"); } finally { setIsUploading(false); }
+      } catch { showToast("Thất bại khi lưu ảnh!", "error"); } finally { setIsUploading(false); }
     }
   };
 
   // Ảnh bìa luôn lưu vào ROOT/images/ vì cần hiển thị ngoài context truyện (sidebar, dashboard)
-  const handlePickCoverImage = async (setAvatarCallback, novelTitle) => {
+  const handlePickCoverImage = async (setAvatarCallback) => {
     try {
       const [fileHandle] = await window.showOpenFilePicker({
         types: [{ description: 'Images', accept: { 'image/*': ['.png', '.gif', '.jpeg', '.jpg', '.webp'] } }],
@@ -1713,8 +1743,10 @@ export default function App() {
 
   const onEntityCardSelect = useCallback((ent) => {
     handleNavigate({ lonId: activeTabLon, nhoId: activeTabNho, entityId: ent.id });
-  }, [activeTabLon, activeTabNho]);
-  const onEntityCardDelete = useCallback((ent) => handleDeleteEntity(ent.id), []);
+  }, [activeTabLon, activeTabNho, handleNavigate]);
+  const onEntityCardDelete = (ent) => {
+    handleDeleteEntity(ent.id);
+  };
   const onEntityCardAddMilestone = useCallback((ent) => {
     setSelectedEntityId(ent.id);
     setCollectionSubTab('timeline');
@@ -1871,12 +1903,6 @@ export default function App() {
     printWindow.document.close();
   };
 
-    const findDestination = (partName) => {
-     if (!activeNovelData || !partName || partName.length < 2) return null;
-     const query = partName.toLowerCase().trim();
-     return entityMap.find(e => e.name.toLowerCase() === query)?.dest || null;
-  };
-
   const getFieldValue = (fieldId, ent) => {
      if (!ent) return '';
      if (ent.dynamicData && ent.dynamicData[fieldId]) return ent.dynamicData[fieldId];
@@ -1906,7 +1932,9 @@ export default function App() {
   useEffect(() => {
       const timer = setTimeout(() => {
           const mainScroller = document.getElementById('main-scroll-container'); const colScroller = document.getElementById('collection-scroll-container');
-          if (mainScroller) mainScroller.scrollTo({ top: 0, behavior: 'smooth' }); if (colScroller) colScroller.scrollTo({ top: 0, behavior: 'smooth' });
+          // Tránh tích lũy nhiều animation "smooth" khi người dùng chuyển tab nhanh.
+          if (mainScroller) mainScroller.scrollTo({ top: 0, behavior: 'auto' });
+          if (colScroller) colScroller.scrollTo({ top: 0, behavior: 'auto' });
       }, 50);
       return () => clearTimeout(timer);
   }, [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab]);
@@ -1969,7 +1997,7 @@ export default function App() {
       try {
         const folderName = meta.folderName || meta.title.replace(/[\\/:*?"<>|]/g, '').trim() || meta.id;
         novelDir = await dirHandle.getDirectoryHandle(folderName);
-      } catch (e) {}
+      } catch { void 0; }
     }
     setActiveNovelDirHandle(novelDir);
 
@@ -2005,23 +2033,6 @@ export default function App() {
     setSelectedGenres(prev =>
       prev.includes(genre) ? prev.filter(g => g !== genre) : [...prev, genre]
     );
-  };
-
-  const handleAddTag = () => {
-    if (!newTagValue.trim() || !activeNovelData) return;
-    const nextTag = newTagValue.trim();
-    updateActiveNovelData(nov => {
-      if (!nov.tags) nov.tags = [];
-      if (!nov.tags.includes(nextTag)) nov.tags.push(nextTag);
-    });
-    setNewTagValue('');
-    setIsAddingTag(false);
-  };
-
-  const handleRemoveTag = (tag) => {
-    updateActiveNovelData(nov => {
-      nov.tags = (nov.tags || []).filter(t => t !== tag);
-    });
   };
 
   const handleDeleteNovel = async (id) => {
@@ -2243,6 +2254,11 @@ export default function App() {
     if (currentTabConfig.viewType !== 'collection-track') return;
     const targetTemplate = DEFAULT_FIELDS_MAP[activeTabNho] || DEFAULT_FIELDS_BY_PARENT[activeTabLon];
     if (!targetTemplate) return;
+    const curTemplate = Array.isArray(currentTabConfig.fieldsTemplate) ? currentTabConfig.fieldsTemplate : [];
+    const needsUpgradeNow =
+      curTemplate.length === 0 ||
+      (curTemplate.every((f) => /^f_/.test(f.id)) && curTemplate.length < targetTemplate.length);
+    if (!needsUpgradeNow) return;
     updateActiveNovelData(nov => {
       if (!nov.tabsConfig) return;
       const lon = nov.tabsConfig.find(t => t.id === activeTabLon);
@@ -2253,7 +2269,7 @@ export default function App() {
         (cur.every(f => /^f_/.test(f.id)) && cur.length < targetTemplate.length);
       if (needsUpgrade) nho.fieldsTemplate = mergeFieldsTemplate(cur, targetTemplate);
     });
-  }, [activeTabLon, activeTabNho, activeNovelData?.id]);
+  }, [activeTabLon, activeTabNho, activeNovelData?.id, activeNovelData, currentTabConfig, updateActiveNovelData]);
 
   const pendingNavRef = useRef(null);
   useEffect(() => {
@@ -2262,12 +2278,12 @@ export default function App() {
       pendingNavRef.current = null;
       handleNavigate(dest);
     }
-  }, [activeNovelData]);
+  }, [activeNovelData, handleNavigate]);
 
   const memoizedEntityInfo = useMemo(() => {
       if (!selectedEntity || collectionSubTab !== 'detail' || isEntityEditing) return null;
       return <div className="font-serif prose prose-invert max-w-none animate-fade-in min-h-[200px]">{renderMarkdown(safeString(selectedEntity.info), currentContextDirHandle, entityMap, globalLinkRegex, (dest) => { if(navFnRef.current) navFnRef.current(dest); })}</div>;
-  }, [selectedEntity?.info, collectionSubTab, isEntityEditing, currentContextDirHandle, entityMap, globalLinkRegex]);
+  }, [selectedEntity, collectionSubTab, isEntityEditing, currentContextDirHandle, entityMap, globalLinkRegex]);
 
   const memoizedStandardData = useMemo(() => {
       if (isEditingMode || currentTabConfig?.viewType === 'collection-track') return null;
@@ -2314,9 +2330,7 @@ export default function App() {
       : []),
     [isCommandPaletteOpen, deferredCommandPaletteQuery, novelsMetadata, activeNovelData]
   );
-  useEffect(() => {
-    handleSelectNovelRef.current = handleSelectNovel;
-  }, [handleSelectNovel]);
+  handleSelectNovelRef.current = handleSelectNovel;
   const totalSidebarItems = filteredNovelsList.length;
   const sidebarStartIndex = useMemo(
     () => Math.max(0, Math.floor(sidebarScrollTop / SIDEBAR_ITEM_HEIGHT) - SIDEBAR_OVERSCAN),
@@ -2763,7 +2777,7 @@ export default function App() {
 
         <ModalConfirm isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onClose={() => setConfirmDialog({...confirmDialog, isOpen: false})} onConfirm={confirmDialog.onConfirm} />
         <ModalInsertImage isOpen={isInsertImageModalOpen} onClose={() => setIsInsertImageModalOpen(false)} imageForm={imageForm} setImageForm={setImageForm} handleConfirmInsertImage={handleConfirmInsertImage} />
-        <ModalAddNovel isOpen={isAddNovelOpen} onClose={() => setIsAddNovelOpen(false)} formData={novelForm} setFormData={setNovelForm} onSave={handleSaveNovelModal} mode={novelModalMode} handlePickLocalImage={(cb) => handlePickCoverImage(cb, novelForm.title)} dirHandle={currentContextDirHandle} />
+        <ModalAddNovel isOpen={isAddNovelOpen} onClose={() => setIsAddNovelOpen(false)} formData={novelForm} setFormData={setNovelForm} onSave={handleSaveNovelModal} mode={novelModalMode} handlePickLocalImage={(cb) => handlePickCoverImage(cb)} dirHandle={currentContextDirHandle} />
         <ModalDeepSearch isOpen={isDeepSearchOpen} onClose={() => setIsDeepSearchOpen(false)} novelsMetadata={novelsMetadata} performDeepSearch={performDeepSearch} onSelectResult={handleDeepSearchResultSelect} />
         {activeNovelData && <ModalInNovelSearch isOpen={isInNovelSearchOpen} onClose={() => setIsInNovelSearchOpen(false)} novel={activeNovelData} onSelectResult={handleDeepSearchResultSelect} />}
         {xrefAiPanel && (

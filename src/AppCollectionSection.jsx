@@ -4,6 +4,7 @@
 //   (standard editor + collection-track view)
 // Import bởi: App.jsx
 // Lưu ý: AdvancedFieldSelect được import cùng file vì nó nhỏ và chỉ dùng ở đây
+// Ưu tiên laptop/desktop: header xếp chồng khi hẹp, toolbar Nâng cao + focus bàn phím
 // ==========================================
 
 import React from 'react';
@@ -125,137 +126,170 @@ export function AppCollectionSection({
   memoizedStandardData,
   handleImageDrop,
 }) {
+  void AdvancedFieldSelect;
+  const [isCollectionSwitching, setIsCollectionSwitching] = React.useState(false);
+  React.useEffect(() => {
+    if (currentTabConfig?.viewType !== 'collection-track') return undefined;
+    setIsCollectionSwitching(true);
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setIsCollectionSwitching(false));
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+    };
+  }, [collectionSubTab, activeTabLon, activeTabNho, activeTabCon, currentTabConfig?.viewType]);
+
+  const toolbarCtrlBase = 'tt-kbd-focus h-9 rounded-xl text-[12px] font-semibold';
+  const toolbarInputBase = 'tt-kbd-focus h-9 rounded-xl text-[12px] font-serif';
   return (
     <div className="animate-fade-in flex flex-col h-full">
-      {/* ===== HEADER: breadcrumb + toolbar ===== */}
-      <div className="mb-6 flex justify-between items-end border-b border-slate-800 pb-6">
-        <div>
-          <div className="text-[10px] text-amber-600 uppercase font-bold tracking-widest mb-1 flex items-center gap-2">
-            <span className="opacity-50 cursor-pointer hover:opacity-80" onClick={() => handleSelectTabLon(activeTabLon)}>
-              {safeString(sortedTabs.find((t) => t.id === activeTabLon)?.label || activeTabLon)}
-            </span>
-            {activeTabNho && <><ChevronRight size={10}/> {safeString(currentTabConfig?.label)}</>}
-            {activeTabCon && (
-              <><ChevronRight size={10}/>
-              <span className="text-amber-400">
-                {safeString(currentTabConfig?.tabCon?.find((c) => c.id === activeTabCon)?.label)}
-              </span></>
-            )}
-          </div>
-          <h2 className="text-4xl font-heading font-bold text-slate-100">
-            {activeTabCon
-              ? safeString(currentTabConfig?.tabCon?.find((c) => c.id === activeTabCon)?.label)
-              : safeString(currentTabConfig?.label)}
-          </h2>
-        </div>
-
-        <div className="flex items-center gap-4">
-          {!activeTabNho && currentTabConfig?.subTabs?.length > 0 ? null : currentTabConfig?.viewType === 'collection-track' ? (
-            <div ref={entityAdvancedRef} className="flex flex-col items-end gap-2">
-              <div className="flex items-center gap-2 flex-wrap justify-end">
-                <button
-                  onClick={handleOpenCreateEntity}
-                  className="px-4 py-2 bg-amber-700/80 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-md flex-shrink-0"
-                >
-                  <Plus size={13}/> {getTerms(activeTabLon).createNew}
-                </button>
-                <div className="relative">
-                  <input
-                    type="text" placeholder="Tìm kiếm nhanh..."
-                    value={entitySearch}
-                    onChange={(e) => setEntitySearch(e.target.value)}
-                    className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-10 pr-4 text-xs font-serif outline-none focus:border-amber-600/50 w-44"
-                  />
-                  <Search size={14} className="absolute left-3 top-2.5 text-slate-600"/>
-                </div>
-                <select
-                  value={entitySortMode}
-                  onChange={(e) => setEntitySortMode(e.target.value)}
-                  className="bg-slate-900 border border-slate-800 rounded-xl py-2 px-3 text-xs font-serif outline-none focus:border-amber-600/50 text-slate-300 cursor-pointer"
-                >
-                  <option value="newest">Mới nhất</option>
-                  <option value="name_asc">Tên (A-Z)</option>
-                  <option value="milestones">Nhiều sự kiện</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setShowEntityAdvanced((v) => !v)}
-                  className={`px-3 py-2 border rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors ${showEntityAdvanced ? 'bg-amber-900/30 border-amber-700/50 text-amber-300' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'}`}
-                >
-                  <Filter size={13} />
-                  Nâng cao
-                </button>
-                {isEntityAdvancedActive && (
-                  <button
-                    type="button"
-                    onClick={clearEntityAdvanced}
-                    className="px-3 py-2 border rounded-xl text-xs font-bold bg-slate-900 border-slate-700 text-slate-300 hover:text-slate-100 transition-colors"
-                  >
-                    Xóa lọc
-                  </button>
-                )}
-              </div>
-              {isEntityAdvancedActive && (
-                <div className="flex items-center gap-2 flex-wrap justify-end text-[11px]">
-                  {entityFilterField !== 'none' && entityFilterValue.trim() ? (
-                    <span className="px-2.5 py-1 rounded-full border border-cyan-700/50 bg-cyan-950/30 text-cyan-200">
-                      Lọc: {safeString(entityFilterFields.find((f) => f.id === entityFilterField)?.label || entityFilterField)} = &quot;{entityFilterValue.trim()}&quot;
-                    </span>
-                  ) : null}
-                  {entityGroupBy !== 'none' ? (
-                    <span className="px-2.5 py-1 rounded-full border border-amber-700/50 bg-amber-950/30 text-amber-200">
-                      Nhóm: {safeString(entityFilterFields.find((f) => f.id === entityGroupBy)?.label || entityGroupBy)}
-                    </span>
-                  ) : null}
-                </div>
-              )}
-              {showEntityAdvanced && (
-                <div className="w-full max-w-[760px] rounded-2xl border border-slate-800/90 bg-slate-950/90 p-3 shadow-xl space-y-2 animate-fade-in">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                    <AdvancedFieldSelect
-                      value={entityFilterField}
-                      onChange={setEntityFilterField}
-                      options={entityFilterOptions}
-                      active={entityFilterField !== 'none'}
-                    />
-                    <input
-                      type="text"
-                      placeholder={entityFilterField === 'none' ? 'Chọn trường rồi nhập giá trị lọc...' : 'Giá trị lọc theo trường...'}
-                      value={entityFilterValue}
-                      onChange={(e) => setEntityFilterValue(e.target.value)}
-                      disabled={entityFilterField === 'none'}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2 px-3 text-xs font-serif outline-none focus:border-cyan-600/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    />
-                    <AdvancedFieldSelect
-                      value={entityGroupBy}
-                      onChange={setEntityGroupBy}
-                      options={entityGroupOptions}
-                      active={entityGroupBy !== 'none'}
-                    />
-                  </div>
-                  <p className="text-[11px] text-slate-500 font-serif">
-                    Lưu ý: <span className="text-slate-400">Tìm kiếm nhanh</span> và{' '}
-                    <span className="text-slate-400">Lọc theo trường</span> được áp dụng đồng thời.
-                  </p>
-                </div>
+      {/* ===== HEADER: breadcrumb + tiêu đề + toolbar (một hàng cố định) ===== */}
+      <div
+        className="mb-4 border-b border-slate-800 pb-5 relative z-30"
+        ref={entityAdvancedRef}
+      >
+        {/* Hàng 1: tiêu đề (trái) + toolbar buttons (phải) — không đổi chiều cao */}
+        <div className="flex justify-between items-end">
+          <div className="min-w-0 pr-4">
+            <div className="text-[10px] text-amber-600 uppercase font-bold tracking-widest mb-1 flex items-center gap-2 flex-wrap">
+              <span className="opacity-50 cursor-pointer hover:opacity-80" onClick={() => handleSelectTabLon(activeTabLon)}>
+                {safeString(sortedTabs.find((t) => t.id === activeTabLon)?.label || activeTabLon)}
+              </span>
+              {activeTabNho && <><ChevronRight size={10}/> {safeString(currentTabConfig?.label)}</>}
+              {activeTabCon && (
+                <><ChevronRight size={10}/>
+                <span className="text-amber-400">
+                  {safeString(currentTabConfig?.tabCon?.find((c) => c.id === activeTabCon)?.label)}
+                </span></>
               )}
             </div>
-          ) : (
-            <button
-              id="save-standard-btn"
-              onClick={() => {
-                if (isEditingMode) { handleSaveStandardEditor(); }
-                else setIsEditingMode(true);
-                const s = safeString(currentStandardData);
-                setLivePreviewText(s);
-                setDebouncedMarkdownPreview(s);
-              }}
-              className={`px-5 py-2 rounded-xl text-xs font-bold transition-colors shadow-lg flex items-center gap-2 ${isEditingMode ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-800 border border-slate-700 text-slate-300 hover:text-slate-100 hover:bg-slate-700'}`}
-            >
-              {isEditingMode ? <><Save size={16}/> Lưu (Ctrl+S)</> : <><Edit3 size={16}/> Chỉnh Sửa</>}
-            </button>
-          )}
+            <h2 className="text-4xl font-heading font-bold text-slate-100">
+              {activeTabCon
+                ? safeString(currentTabConfig?.tabCon?.find((c) => c.id === activeTabCon)?.label)
+                : safeString(currentTabConfig?.label)}
+            </h2>
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-shrink-0 flex-wrap justify-end">
+            {!activeTabNho && currentTabConfig?.subTabs?.length > 0 ? null : currentTabConfig?.viewType === 'collection-track' ? (<>
+              <button
+                type="button"
+                onClick={handleOpenCreateEntity}
+                className={`${toolbarCtrlBase} px-4 bg-amber-700/80 hover:bg-amber-600 text-white flex items-center gap-1.5 transition-colors shadow-md flex-shrink-0`}
+              >
+                <Plus size={13}/> {getTerms(activeTabLon).createNew}
+              </button>
+              <div className="relative flex-shrink-0">
+                <input
+                  type="search"
+                  placeholder="Tìm kiếm nhanh..."
+                  value={entitySearch}
+                  onChange={(e) => setEntitySearch(e.target.value)}
+                  className={`${toolbarInputBase} bg-slate-900 border border-slate-800 pl-10 pr-4 outline-none focus:border-amber-600/50 w-48`}
+                  aria-label="Tìm kiếm nhanh trong danh sách thẻ"
+                />
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
+              </div>
+              <select
+                value={entitySortMode}
+                onChange={(e) => setEntitySortMode(e.target.value)}
+                className={`${toolbarInputBase} bg-slate-900 border border-slate-800 px-3 outline-none focus:border-amber-600/50 text-slate-300 cursor-pointer flex-shrink-0`}
+                aria-label="Sắp xếp danh sách thẻ"
+              >
+                <option value="newest">Mới nhất</option>
+                <option value="name_asc">Tên (A-Z)</option>
+                <option value="milestones">Nhiều sự kiện</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => setShowEntityAdvanced((v) => !v)}
+                aria-expanded={showEntityAdvanced}
+                aria-controls="entity-advanced-panel"
+                className={`${toolbarCtrlBase} px-3 border flex items-center gap-1.5 transition-colors flex-shrink-0 ${showEntityAdvanced ? 'bg-amber-900/30 border-amber-700/50 text-amber-300' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'}`}
+              >
+                <Filter size={13} />
+                Nâng cao
+              </button>
+              {isEntityAdvancedActive && (
+                <button
+                  type="button"
+                  onClick={clearEntityAdvanced}
+                  className={`${toolbarCtrlBase} px-3 border bg-slate-900 border-slate-700 text-slate-300 hover:text-slate-100 transition-colors flex-shrink-0`}
+                >
+                  Xóa lọc
+                </button>
+              )}
+            </>) : (
+              <button
+                id="save-standard-btn"
+                type="button"
+                onClick={() => {
+                  if (isEditingMode) { handleSaveStandardEditor(); }
+                  else setIsEditingMode(true);
+                  const s = safeString(currentStandardData);
+                  setLivePreviewText(s);
+                  setDebouncedMarkdownPreview(s);
+                }}
+              className={`tt-kbd-focus h-9 px-5 rounded-xl text-[12px] font-semibold transition-colors shadow-lg flex items-center gap-2 ${isEditingMode ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-800 border border-slate-700 text-slate-300 hover:text-slate-100 hover:bg-slate-700'}`}
+              >
+                {isEditingMode ? <><Save size={16}/> Lưu (Ctrl+S)</> : <><Edit3 size={16}/> Chỉnh Sửa</>}
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Hàng 2 (chỉ collection-track): chip lọc đang active + panel Nâng cao — tách riêng để không làm lệch hàng tiêu đề */}
+        {currentTabConfig?.viewType === 'collection-track' && (<>
+          {isEntityAdvancedActive && (
+            <div className="flex items-center gap-2 flex-wrap mt-3 text-[11px]">
+              {entityFilterField !== 'none' && entityFilterValue.trim() ? (
+                <span className="px-2.5 py-1 rounded-full border border-cyan-700/50 bg-cyan-950/30 text-cyan-200">
+                  Lọc: {safeString(entityFilterFields.find((f) => f.id === entityFilterField)?.label || entityFilterField)} = &quot;{entityFilterValue.trim()}&quot;
+                </span>
+              ) : null}
+              {entityGroupBy !== 'none' ? (
+                <span className="px-2.5 py-1 rounded-full border border-amber-700/50 bg-amber-950/30 text-amber-200">
+                  Nhóm: {safeString(entityFilterFields.find((f) => f.id === entityGroupBy)?.label || entityGroupBy)}
+                </span>
+              ) : null}
+            </div>
+          )}
+          {showEntityAdvanced && (
+            <div
+              id="entity-advanced-panel"
+              className="mt-3 rounded-2xl border border-slate-800/90 bg-slate-950/90 p-3.5 shadow-xl space-y-2.5 animate-fade-in"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                <AdvancedFieldSelect
+                  value={entityFilterField}
+                  onChange={setEntityFilterField}
+                  options={entityFilterOptions}
+                  active={entityFilterField !== 'none'}
+                />
+                <input
+                  type="text"
+                  placeholder={entityFilterField === 'none' ? 'Chọn trường rồi nhập giá trị lọc...' : 'Giá trị lọc theo trường...'}
+                  value={entityFilterValue}
+                  onChange={(e) => setEntityFilterValue(e.target.value)}
+                  disabled={entityFilterField === 'none'}
+                  className="tt-kbd-focus h-9 w-full bg-slate-900 border border-slate-800 rounded-xl px-3 text-[12px] font-serif outline-none focus:border-cyan-600/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <AdvancedFieldSelect
+                  value={entityGroupBy}
+                  onChange={setEntityGroupBy}
+                  options={entityGroupOptions}
+                  active={entityGroupBy !== 'none'}
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
+                Lưu ý: <span className="text-slate-400">Tìm kiếm nhanh</span> và{' '}
+                <span className="text-slate-400">Lọc theo trường</span> được áp dụng đồng thời.
+              </p>
+            </div>
+          )}
+        </>)}
       </div>
 
       {/* ===== BODY ===== */}
@@ -299,16 +333,20 @@ export function AppCollectionSection({
         </div>
       ) : currentTabConfig?.viewType === 'collection-track' ? (
         /* Collection-track view */
-        <div className="flex flex-col flex-1 h-full animate-fade-in">
+        <div className="flex flex-col flex-1 h-full animate-fade-in relative z-0">
           <AppCollectionTrackTabs
             collectionSubTab={collectionSubTab}
             setCollectionSubTab={setCollectionSubTab}
             galleryCount={galleryPortraitEntries.length}
             selectedEntityName={selectedEntity ? safeString(selectedEntity.name) : ''}
             selectedEntityMilestoneCount={selectedEntity?.milestones?.length || 0}
+            isSwitching={isCollectionSwitching}
           />
 
-          <div id="collection-scroll-container" className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-10">
+          <div id="collection-scroll-container" className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-10 relative">
+            {isCollectionSwitching && (
+              <div className="absolute inset-0 z-10 pointer-events-none bg-slate-950/20 backdrop-blur-[1px] animate-fade-in" />
+            )}
             <AppGalleryContent
               collectionSubTab={collectionSubTab}
               galleryPortraitEntries={galleryPortraitEntries}

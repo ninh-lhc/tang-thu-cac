@@ -30,11 +30,13 @@ export function AppModalLenhNhanh({
   }, [commandPaletteFiltered.actions, commandPaletteFiltered.novels]);
   const trapRef = useFocusTrap(true);
 
-  useEffect(() => { setHighlightIndex(0); }, [flatItems.length]);
+  const safeHighlightIndex = flatItems.length > 0
+    ? Math.min(highlightIndex, flatItems.length - 1)
+    : 0;
   useEffect(() => {
-    const el = itemRefs.current[highlightIndex];
+    const el = itemRefs.current[safeHighlightIndex];
     if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [highlightIndex]);
+  }, [safeHighlightIndex]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') { onClose(); return; }
@@ -47,7 +49,7 @@ export function AppModalLenhNhanh({
       setHighlightIndex((i) => (i - 1 + flatItems.length) % flatItems.length);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const item = flatItems[highlightIndex];
+      const item = flatItems[safeHighlightIndex];
       if (!item) return;
       if (item.type === 'action') onSelectCommand(item.data.id);
       else onSelectNovel(item.data);
@@ -85,7 +87,7 @@ export function AppModalLenhNhanh({
           )}
           {commandPaletteFiltered.actions.map((a, i) => {
             const idx = i;
-            const isHighlight = flatItems[idx] && highlightIndex === idx;
+            const isHighlight = flatItems[idx] && safeHighlightIndex === idx;
             return (
               <button
                 key={a.id}
@@ -104,7 +106,7 @@ export function AppModalLenhNhanh({
           )}
           {commandPaletteFiltered.novels.map((n, i) => {
             const idx = commandPaletteFiltered.actions.length + i;
-            const isHighlight = highlightIndex === idx;
+            const isHighlight = safeHighlightIndex === idx;
             return (
               <button
                 key={n.id}

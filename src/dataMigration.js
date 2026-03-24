@@ -20,7 +20,30 @@ function clone(v) {
   }
 }
 
-/** Chuẩn hóa metadata mục truyện (thiếu field → default). */
+/**
+ * Schema metadata một truyện (tangthu_index > metadata[]):
+ *
+ * id            : string  — UUID duy nhất
+ * title         : string  — Tên truyện
+ * author        : string  — Tác giả
+ * genres        : string[] — Thể loại (array kể từ v2, cũ có thể là string "genre")
+ * theme         : string  — Mã theme màu (vd. 'theme-tien-hiep')
+ * status        : string  — Trạng thái đọc ('Đang đọc' | 'Đã đọc' | 'Tạm dừng' | …)
+ * rating        : number  — Sao 0–5 (bước 0.5); 0 = chưa đánh giá
+ * tags          : string[] — Nhãn cá nhân
+ * chaptersRead  : number  — Chương đã đọc (>= 0)
+ * chaptersTotal : string  — Tổng chương; '???' = chưa biết
+ * cover         : string  — URL ảnh bìa hoặc 'local_image:<tên file>'
+ * review        : string  — Giới thiệu / tóm tắt truyện (plain text hoặc markdown)
+ *                           → KHÔNG phải ý kiến đánh giá cá nhân
+ * ratingOpinion : string  — Ý kiến / bình luận kèm đánh giá sao (plain text)
+ *                           → Phân biệt với `review`; không AI sinh
+ * folderName    : string  — Thư mục lưu dữ liệu truyện
+ *
+ * Trường chỉ có trong novel file (tangthu_novel_*), không ở metadata:
+ *   readingAnchorChapter, data (entities/milestones), tabsConfig,
+ *   chapterCrossRefs, readingJournal
+ */
 function sanitizeMetadataItem(m) {
   if (!isObj(m)) return null;
   return {
@@ -36,6 +59,7 @@ function sanitizeMetadataItem(m) {
     chaptersTotal: m.chaptersTotal ?? '???',
     cover: m.cover ?? '',
     review: m.review ?? '',
+    ratingOpinion: m.ratingOpinion ?? '',
     folderName: m.folderName ?? m.title?.replace(/[\\/:*?"<>|]/g, '').trim() ?? m.id,
     ...m,
   };
@@ -122,6 +146,8 @@ export function migrateNovel(raw) {
   nov.chaptersRead = Number(nov.chaptersRead) || 0;
   nov.chaptersTotal = nov.chaptersTotal ?? '???';
   nov.readingAnchorChapter = Number(nov.readingAnchorChapter) || 0;
+  nov.review = nov.review ?? '';
+  nov.ratingOpinion = nov.ratingOpinion ?? '';
   nov.tabsConfig = Array.isArray(nov.tabsConfig) ? nov.tabsConfig.map(sanitizeTabConfig).filter(Boolean) : [];
   nov.data = isObj(nov.data) ? nov.data : {};
   nov.chapterCrossRefs = Array.isArray(nov.chapterCrossRefs) ? nov.chapterCrossRefs : [];
