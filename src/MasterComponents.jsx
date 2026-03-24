@@ -682,6 +682,7 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [newFieldLabel, setNewFieldLabel] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const EVENT_WIKI_FIELD_ID = '__milestone_event__';
   const dynamicFieldInputRefs = useRef({});
   const pendingWikiCaretRef = useRef(null);
 
@@ -694,7 +695,7 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
       el.focus();
       el.setSelectionRange(p.selStart, p.selEnd);
     }
-  }, [snapshotData.dynamicData]);
+  }, [snapshotData.dynamicData, formData.event]);
   
   useEffect(() => { 
     if(isOpen) {
@@ -765,9 +766,57 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
                    <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-widest">Mốc Chương *</label>
                    <input type="number" autoFocus value={safeString(formData.chapter)} onChange={e=>setFormData({...formData, chapter: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-amber-300 font-bold focus:border-amber-500 outline-none" placeholder="VD: 150" />
                 </div>
-                <div className="flex flex-col flex-1">
-                   <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-widest">{terms.msEvent}</label>
-                   <textarea value={safeString(formData.event)} onChange={e=>setFormData({...formData, event: e.target.value})} className="w-full flex-1 bg-slate-900 border border-slate-700 rounded-lg p-4 text-sm text-slate-300 font-serif focus:border-amber-500 outline-none resize-none custom-scrollbar" placeholder="..." />
+                <div className="flex flex-col flex-1 min-h-0">
+                   <div className="flex items-center justify-between gap-2 mb-1">
+                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">{terms.msEvent}</label>
+                     <div className="flex items-center gap-1 flex-shrink-0">
+                       <button
+                         type="button"
+                         onMouseDown={preventToolbarFocusSteal}
+                         onClick={() => {
+                           const cur = safeString(formData.event);
+                           const input = dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID];
+                           let a = cur.length; let b = cur.length;
+                           if (input && document.activeElement === input) {
+                             a = input.selectionStart ?? 0;
+                             b = input.selectionEnd ?? a;
+                           }
+                           const { newText, selStart, selEnd } = applyWikiLinkWrap(cur, a, b);
+                           pendingWikiCaretRef.current = { fieldId: EVENT_WIKI_FIELD_ID, selStart, selEnd };
+                           setFormData((p) => ({ ...p, event: newText }));
+                         }}
+                         className="text-[10px] font-bold text-amber-500 hover:text-amber-300 bg-amber-900/30 px-2 py-1 rounded border border-amber-700/40"
+                         title="Chèn [[ ]] tại con trỏ hoặc bọc đoạn đang chọn"
+                       >[[]]</button>
+                       <button
+                         type="button"
+                         onMouseDown={preventToolbarFocusSteal}
+                         onClick={() => {
+                           const cur = safeString(formData.event);
+                           const input = dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID];
+                           let a = cur.length; let b = cur.length;
+                           if (input && document.activeElement === input) {
+                             a = input.selectionStart ?? 0;
+                             b = input.selectionEnd ?? a;
+                           }
+                           const { newText, selStart, selEnd } = applyWikiLinkUnwrap(cur, a, b);
+                           pendingWikiCaretRef.current = { fieldId: EVENT_WIKI_FIELD_ID, selStart, selEnd };
+                           setFormData((p) => ({ ...p, event: newText }));
+                         }}
+                         className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-900/20 px-2 py-1 rounded border border-cyan-700/35"
+                         title="Gỡ [[ ]] ở vùng chọn hoặc đoạn chứa con trỏ"
+                       >Bỏ</button>
+                     </div>
+                   </div>
+                   <div className="relative flex-1 min-h-[120px]">
+                     <textarea
+                       ref={(el) => { if (el) dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID] = el; else delete dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID]; }}
+                       value={safeString(formData.event)}
+                       onChange={e=>setFormData({...formData, event: e.target.value})}
+                       className="w-full h-full min-h-[120px] bg-slate-900 border border-slate-700 rounded-lg p-4 text-sm text-slate-300 font-serif focus:border-amber-500 outline-none resize-none custom-scrollbar"
+                       placeholder="Nhập sự kiện… Dùng [[Tên]] để liên kết wiki; [[]] / Bỏ để bọc hoặc gỡ link tại con trỏ."
+                     />
+                   </div>
                 </div>
                 <button onClick={handleAI} disabled={isAnalyzing || !formData.event.trim()} className="w-full py-3 bg-gradient-to-r from-emerald-800 to-emerald-600 hover:from-emerald-700 text-white rounded-xl font-bold flex items-center justify-center gap-2">
                    {isAnalyzing ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Sparkles size={18} />}
