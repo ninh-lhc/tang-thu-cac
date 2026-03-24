@@ -57,6 +57,8 @@ export function AppCollectionSection({
   entityFilterFields,
   entityFilterOptions,
   entityGroupOptions,
+  entityContextPresets,
+  applyEntityPreset,
   AdvancedFieldSelect,
   getTerms,
   handleOpenCreateEntity,
@@ -127,7 +129,19 @@ export function AppCollectionSection({
   handleImageDrop,
 }) {
   void AdvancedFieldSelect;
+  const [entitySearchDraft, setEntitySearchDraft] = React.useState(entitySearch || '');
+  const [entityFilterValueDraft, setEntityFilterValueDraft] = React.useState(entityFilterValue || '');
   const [isCollectionSwitching, setIsCollectionSwitching] = React.useState(false);
+  React.useEffect(() => { setEntitySearchDraft(entitySearch || ''); }, [entitySearch]);
+  React.useEffect(() => { setEntityFilterValueDraft(entityFilterValue || ''); }, [entityFilterValue]);
+  React.useEffect(() => {
+    const t = setTimeout(() => setEntitySearch(entitySearchDraft), 220);
+    return () => clearTimeout(t);
+  }, [entitySearchDraft, setEntitySearch]);
+  React.useEffect(() => {
+    const t = setTimeout(() => setEntityFilterValue(entityFilterValueDraft), 260);
+    return () => clearTimeout(t);
+  }, [entityFilterValueDraft, setEntityFilterValue]);
   React.useEffect(() => {
     if (currentTabConfig?.viewType !== 'collection-track') return undefined;
     setIsCollectionSwitching(true);
@@ -185,8 +199,8 @@ export function AppCollectionSection({
                 <input
                   type="search"
                   placeholder="Tìm kiếm nhanh..."
-                  value={entitySearch}
-                  onChange={(e) => setEntitySearch(e.target.value)}
+                  value={entitySearchDraft}
+                  onChange={(e) => setEntitySearchDraft(e.target.value)}
                   className={`${toolbarInputBase} bg-slate-900 border border-slate-800 pl-10 pr-4 outline-none focus:border-amber-600/50 w-48`}
                   aria-label="Tìm kiếm nhanh trong danh sách thẻ"
                 />
@@ -271,8 +285,8 @@ export function AppCollectionSection({
                 <input
                   type="text"
                   placeholder={entityFilterField === 'none' ? 'Chọn trường rồi nhập giá trị lọc...' : 'Giá trị lọc theo trường...'}
-                  value={entityFilterValue}
-                  onChange={(e) => setEntityFilterValue(e.target.value)}
+                  value={entityFilterValueDraft}
+                  onChange={(e) => setEntityFilterValueDraft(e.target.value)}
                   disabled={entityFilterField === 'none'}
                   className="tt-kbd-focus h-9 w-full bg-slate-900 border border-slate-800 rounded-xl px-3 text-[12px] font-serif outline-none focus:border-cyan-600/50 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
@@ -283,6 +297,21 @@ export function AppCollectionSection({
                   active={entityGroupBy !== 'none'}
                 />
               </div>
+              {entityContextPresets?.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="text-[10px] uppercase tracking-widest text-slate-600 font-bold">Preset:</span>
+                  {entityContextPresets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyEntityPreset(preset)}
+                      className="tt-kbd-focus h-8 px-2.5 rounded-lg border border-amber-700/40 bg-amber-950/20 text-amber-300 text-[11px] font-semibold hover:bg-amber-900/30 transition-colors"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
                 Lưu ý: <span className="text-slate-400">Tìm kiếm nhanh</span> và{' '}
                 <span className="text-slate-400">Lọc theo trường</span> được áp dụng đồng thời.
@@ -415,9 +444,11 @@ export function AppCollectionSection({
                     <div className="flex flex-col">
                       <div className="flex items-center gap-3 mb-2">
                         <h2 className="text-4xl font-heading font-bold text-slate-100">{safeString(selectedEntity.name)}</h2>
-                        <span className="px-3 py-1 bg-amber-900/30 text-amber-400 text-[10px] font-bold uppercase tracking-widest rounded-full border border-amber-700/30 shadow-inner">
-                          {safeString(selectedEntity.title) || 'Vô Danh'}
-                        </span>
+                        {safeString(selectedEntity.title).trim() && (
+                          <span className="px-3 py-1 bg-amber-900/30 text-amber-400 text-[10px] font-bold uppercase tracking-widest rounded-full border border-amber-700/30 shadow-inner">
+                            {safeString(selectedEntity.title)}
+                          </span>
+                        )}
                       </div>
                       <p className="text-slate-400 font-serif flex items-center gap-2">
                         <Shield size={14} className="text-slate-500"/>

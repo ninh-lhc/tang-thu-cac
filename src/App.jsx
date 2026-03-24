@@ -48,6 +48,7 @@ import { AppLibrarySidebar } from './AppLibrarySidebar.jsx';
 import { AppOverviewSection } from './AppOverviewSection.jsx';
 import { getEntityFieldValue } from './lib/entityFieldValue.js';
 import { buildEntitySearchIndexMap, applyEntityCollectionFilters } from './lib/entityCollectionQuery.js';
+import { useEntityCollectionQueryState } from './useEntityCollectionQueryState.js';
 import { AppCollectionSection } from './AppCollectionSection.jsx';
 import {
   searchNovelData,
@@ -207,17 +208,7 @@ export default function App() {
   const [activeTabCon, setActiveTabCon] = useState(null);
   
   const [selectedEntityId, setSelectedEntityId] = useState(null);
-  const [entitySearch, setEntitySearch] = useState('');
-  const deferredEntitySearch = useDeferredValue(entitySearch);
-  const [entityFilterField, setEntityFilterField] = useState('none'); // none | field_id
-  const [entityFilterValue, setEntityFilterValue] = useState('');
-  const deferredEntityFilterValue = useDeferredValue(entityFilterValue);
-  const [entitySortMode, setEntitySortMode] = useState('newest');
-  const [entityGroupBy, setEntityGroupBy] = useState('none'); // none | field_id
-  const [showEntityAdvanced, setShowEntityAdvanced] = useState(false);
   const entityAdvancedRef = useRef(null);
-  const [entityPage, setEntityPage] = useState(1);
-  const [groupVisibleCount, setGroupVisibleCount] = useState({});
   const ENTITY_PAGE_SIZE = 24; 
   
   const [collectionSubTab, setCollectionSubTab] = useState('list'); 
@@ -516,16 +507,29 @@ export default function App() {
     }
     return templateFields;
   }, [collectionEntitiesRaw, currentTabConfig]);
-  useEffect(() => {
-    if (entityGroupBy === 'none') return;
-    const valid = entityFilterFields.some((f) => f?.id === entityGroupBy);
-    if (!valid) setEntityGroupBy('none');
-  }, [entityFilterFields, entityGroupBy]);
-  useEffect(() => {
-    if (entityFilterField === 'none') return;
-    const valid = entityFilterFields.some((f) => f?.id === entityFilterField);
-    if (!valid) setEntityFilterField('none');
-  }, [entityFilterFields, entityFilterField]);
+  const {
+    entitySearch, setEntitySearch,
+    entityFilterField, setEntityFilterField,
+    entityFilterValue, setEntityFilterValue,
+    entitySortMode, setEntitySortMode,
+    entityGroupBy, setEntityGroupBy,
+    showEntityAdvanced, setShowEntityAdvanced,
+    entityPage, setEntityPage,
+    groupVisibleCount, setGroupVisibleCount,
+    isEntityAdvancedActive,
+    entityFilterOptions,
+    entityGroupOptions,
+    clearEntityAdvanced,
+    entityContextPresets,
+    applyEntityPreset,
+  } = useEntityCollectionQueryState({
+    activeNovelId: activeNovelData?.id,
+    activeTabLon,
+    activeTabNho,
+    entityFilterFields,
+  });
+  const deferredEntitySearch = useDeferredValue(entitySearch);
+  const deferredEntityFilterValue = useDeferredValue(entityFilterValue);
   const entitySearchIndexById = useMemo(
     () => buildEntitySearchIndexMap(collectionEntitiesRaw),
     [collectionEntitiesRaw]
@@ -566,26 +570,6 @@ export default function App() {
       return a[0].localeCompare(b[0], 'vi');
     });
   }, [entitiesList, entityGroupBy]);
-  const isEntityAdvancedActive = entityGroupBy !== 'none' || (entityFilterField !== 'none' && entityFilterValue.trim());
-  const entityFilterOptions = useMemo(
-    () => [
-      { value: 'none', label: 'Không lọc theo trường' },
-      ...entityFilterFields.map((f) => ({ value: f.id, label: `Lọc: ${f.label}` })),
-    ],
-    [entityFilterFields]
-  );
-  const entityGroupOptions = useMemo(
-    () => [
-      { value: 'none', label: 'Không nhóm' },
-      ...entityFilterFields.map((f) => ({ value: f.id, label: `Nhóm: ${f.label}` })),
-    ],
-    [entityFilterFields]
-  );
-  const clearEntityAdvanced = useCallback(() => {
-    setEntityGroupBy('none');
-    setEntityFilterField('none');
-    setEntityFilterValue('');
-  }, []);
 
   const galleryPortraitEntries = useMemo(() => {
     if (!activeNovelData) return [];
@@ -660,13 +644,6 @@ export default function App() {
     [activeNovelData, globalTabsConfig]
   );
 
-  // Reset page khi filter thay đổi
-  useEffect(() => { setEntityPage(1); setGroupVisibleCount({}); }, [entitySearch, entityFilterField, entityFilterValue, entitySortMode, entityGroupBy, activeTabLon, activeTabNho]);
-  /** Đổi tab / truyện: nhóm theo trường có thể không còn hợp lệ — về «Không nhóm». */
-  useEffect(() => {
-    setEntityGroupBy('none');
-  }, [activeTabLon, activeTabNho, activeNovelData?.id]);
-  useEffect(() => { setShowEntityAdvanced(false); }, [activeTabLon, activeTabNho, activeNovelData?.id]);
   useEffect(() => {
     if (!showEntityAdvanced) return undefined;
     const handleOutside = (event) => {
@@ -903,7 +880,6 @@ export default function App() {
       setSearchHistory(arr);
     } catch { void 0; }
   }, [searchQuery]);
-
   useEffect(() => {
     if (activeNovelData) {
       setOverviewForm({
@@ -1670,6 +1646,7 @@ export default function App() {
        isOpen: true, title: 'Xóa Kỷ Nguyên', message: 'Xóa mốc thời gian này? Có thể hoàn tác ngay sau khi xóa.',
        onConfirm: () => {
           const prev = activeNovelData ? structuredClone(activeNovelData) : null;
+          const prevMilestoneId = selectedMilestoneId;
           updateActiveNovelData(nov => {
              if (!nov.data?.[activeTabLon]) return;
              const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
@@ -1679,8 +1656,10 @@ export default function App() {
           setSelectedMilestoneId(null);
           if (prev) {
             showToast('Đã xóa mốc.', 'success', {
+              undoLabel: 'Hoàn tác xóa',
               onUndo: () => {
                 setActiveNovelData(structuredClone(prev));
+                setSelectedMilestoneId(prevMilestoneId || null);
                 void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
               },
             });
@@ -1721,8 +1700,10 @@ export default function App() {
         syncNovelRef.current?.(updated, dirHandleRef.current);
         if (prevSelectedId === entityIdToDelete) setSelectedEntityId(null);
         showToast('Đã xóa thẻ.', 'success', {
+          undoLabel: 'Hoàn tác xóa',
           onUndo: () => {
             setActiveNovelData(prev);
+            if (prevSelectedId) setSelectedEntityId(prevSelectedId);
             void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
           },
         });
@@ -2662,6 +2643,8 @@ export default function App() {
                             entityFilterFields={entityFilterFields}
                             entityFilterOptions={entityFilterOptions}
                             entityGroupOptions={entityGroupOptions}
+                            entityContextPresets={entityContextPresets}
+                            applyEntityPreset={applyEntityPreset}
                             AdvancedFieldSelect={AdvancedFieldSelect}
                             getTerms={getTerms}
                             handleOpenCreateEntity={handleOpenCreateEntity}

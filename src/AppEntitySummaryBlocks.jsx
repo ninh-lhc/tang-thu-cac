@@ -1,9 +1,107 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useState } from 'react';
 import { Hexagon, Network } from 'lucide-react';
 import { DEFAULT_ENTITY_FIELDS, FALLBACK_IMG } from './MasterEngines.js';
 import { AsyncLocalImage, processInline, safeString } from './MasterUtils.jsx';
 
 const DISPLAY_LIMIT = 12;
+const CORE_GROUPS = [
+  { id: 'power', title: 'Trụ cột sức mạnh' },
+  { id: 'identity', title: 'Định danh & hồ sơ' },
+  { id: 'context', title: 'Bối cảnh & tổ chức' },
+  { id: 'relation', title: 'Quan hệ chính' },
+  { id: 'other', title: 'Thông tin khác' },
+];
+
+function normalizeLabel(label) {
+  return safeString(label)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function resolveGroupByLabel(label) {
+  const t = normalizeLabel(label);
+  if (
+    t.includes('canh gioi') ||
+    t.includes('tu vi') ||
+    t.includes('linh can') ||
+    t.includes('thien phu') ||
+    t.includes('the chat') ||
+    t.includes('cong phap') ||
+    t.includes('phap bao') ||
+    t.includes('ky nang') ||
+    t.includes('thuat') ||
+    t.includes('pham')
+  ) return 'power';
+  if (
+    t.includes('danh hieu') ||
+    t.includes('danh xung') ||
+    t.includes('ten goi') ||
+    t.includes('ten khac') ||
+    t.includes('tuoi') ||
+    t.includes('chieu cao') ||
+    t.includes('gioi tinh') ||
+    t.includes('tieu su') ||
+    t.includes('tom tat')
+  ) return 'identity';
+  if (
+    t.includes('the luc') ||
+    t.includes('tong mon') ||
+    t.includes('to chuc') ||
+    t.includes('tran doanh') ||
+    t.includes('gia toc') ||
+    t.includes('xuat than') ||
+    t.includes('chuc vu') ||
+    t.includes('vi tri')
+  ) return 'context';
+  if (
+    t.includes('quan he') ||
+    t.includes('phu than') ||
+    t.includes('mau than') ||
+    t.includes('huynh de') ||
+    t.includes('ty muoi') ||
+    t.includes('dao lu') ||
+    t.includes('dong minh') ||
+    t.includes('ke thu') ||
+    t.includes('sư ton') ||
+    t.includes('su ton')
+  ) return 'relation';
+  return 'other';
+}
+
+function rankWithinGroup(label, groupId) {
+  const t = normalizeLabel(label);
+  if (groupId === 'power') {
+    if (t.includes('canh gioi') || t.includes('tu vi')) return 1;
+    if (t.includes('linh can') || t.includes('thien phu')) return 2;
+    if (t.includes('the chat')) return 3;
+    if (t.includes('cong phap')) return 4;
+    if (t.includes('phap bao') || t.includes('ban menh')) return 5;
+    return 99;
+  }
+  if (groupId === 'identity') {
+    if (t.includes('danh hieu') || t.includes('danh xung')) return 1;
+    if (t.includes('tuoi')) return 2;
+    if (t.includes('chieu cao')) return 3;
+    if (t.includes('gioi tinh')) return 4;
+    if (t.includes('tieu su') || t.includes('tom tat')) return 5;
+    return 99;
+  }
+  if (groupId === 'context') {
+    if (t.includes('the luc') || t.includes('tong mon') || t.includes('to chuc')) return 1;
+    if (t.includes('chuc vu') || t.includes('tran doanh')) return 2;
+    if (t.includes('vi tri')) return 3;
+    return 99;
+  }
+  if (groupId === 'relation') {
+    if (t.includes('quan he')) return 1;
+    if (t.includes('dao lu')) return 2;
+    if (t.includes('dong minh')) return 3;
+    if (t.includes('ke thu')) return 4;
+    return 99;
+  }
+  return 99;
+}
 
 function getFieldValue(fieldId, ent) {
   if (!ent) return '';
@@ -29,13 +127,17 @@ export const AppEntitySummaryBlocks = memo(function AppEntitySummaryBlocks({
   setExpandedRelations,
   onNavigate,
 }) {
+  const [showOnlyFilled, setShowOnlyFilled] = useState(false);
   const memoizedFieldsGrid = useMemo(() => {
     if (!selectedEntity || collectionSubTab !== 'detail' || isEntityEditing) return null;
-    return (currentTabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS).map((f) => {
+    const allCards = (currentTabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS).map((f) => {
       const val = safeString(getFieldValue(f.id, selectedEntity));
       const isLong = val.length > 50;
+      const hasValue = !!val.trim();
+      const groupId = resolveGroupByLabel(f.label || f.id);
+      const orderInGroup = rankWithinGroup(f.label || f.id, groupId);
       return (
-        <div key={f.id} className={`bg-slate-900/60 backdrop-blur-md border transition-all duration-300 group shadow-lg rounded-[40px] p-6
+        <div key={f.id} data-group={groupId} data-has-value={hasValue ? '1' : '0'} data-order={orderInGroup} data-label={safeString(f.label || f.id)} className={`bg-slate-900/60 backdrop-blur-md border transition-all duration-300 group shadow-lg rounded-[40px] p-6
           ${recentlyMergedFields.has(f.id)
             ? 'border-emerald-600/50 bg-emerald-900/10 hover:border-emerald-500/60'
             : 'border-slate-700/50 hover:bg-slate-800/80 hover:border-amber-500/40'}
@@ -60,7 +162,40 @@ export const AppEntitySummaryBlocks = memo(function AppEntitySummaryBlocks({
         </div>
       );
     });
-  }, [selectedEntity, collectionSubTab, isEntityEditing, currentTabConfig?.fieldsTemplate, recentlyMergedFields, currentContextDirHandle, entityMap, globalLinkRegex, onNavigate]);
+    const cardsForDisplay = showOnlyFilled
+      ? allCards.filter((node) => node.props['data-has-value'] === '1')
+      : allCards;
+    const grouped = CORE_GROUPS.map((g) => ({ ...g, cards: [] }));
+    cardsForDisplay.forEach((node) => {
+      const gid = node.props['data-group'] || 'other';
+      const bucket = grouped.find((x) => x.id === gid) || grouped[grouped.length - 1];
+      bucket.cards.push(node);
+    });
+    grouped.forEach((g) => {
+      g.cards.sort((a, b) => {
+        const av = a.props['data-has-value'] === '1' ? 1 : 0;
+        const bv = b.props['data-has-value'] === '1' ? 1 : 0;
+        if (av !== bv) return bv - av; // có dữ liệu lên trước
+        const ao = Number(a.props['data-order'] || 99);
+        const bo = Number(b.props['data-order'] || 99);
+        if (ao !== bo) return ao - bo;
+        const al = normalizeLabel(a.props['data-label'] || '');
+        const bl = normalizeLabel(b.props['data-label'] || '');
+        return al.localeCompare(bl, 'vi');
+      });
+    });
+    return grouped.filter((g) => g.cards.length > 0).map((g) => (
+      <section key={g.id} className="space-y-3">
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">{g.title}</span>
+          <span className="h-px flex-1 bg-slate-800/80" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {g.cards}
+        </div>
+      </section>
+    ));
+  }, [selectedEntity, collectionSubTab, isEntityEditing, currentTabConfig?.fieldsTemplate, recentlyMergedFields, currentContextDirHandle, entityMap, globalLinkRegex, onNavigate, showOnlyFilled]);
 
   const memoizedRelatedEntities = useMemo(() => {
     if (relatedEntities.length === 0 && !isCalculatingNetwork) return null;
@@ -125,10 +260,19 @@ export const AppEntitySummaryBlocks = memo(function AppEntitySummaryBlocks({
             <div className="p-2 bg-amber-900/20 text-amber-500 rounded-lg border border-amber-700/30"><Hexagon size={18} /></div>
             <h3 className="text-xl font-heading font-bold text-amber-100">Nền Tảng Căn Cơ</h3>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowOnlyFilled((v) => !v)}
+            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
+              showOnlyFilled
+                ? 'bg-amber-900/30 border-amber-700/50 text-amber-200'
+                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {showOnlyFilled ? 'Đang: chỉ hiện có dữ liệu' : 'Hiện cả field trống'}
+          </button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {memoizedFieldsGrid}
-        </div>
+        <div className="space-y-6">{memoizedFieldsGrid}</div>
       </div>
       {memoizedRelatedEntities}
     </>

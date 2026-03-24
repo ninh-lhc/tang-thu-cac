@@ -19,6 +19,62 @@ export const AppCollectionListContent = memo(function AppCollectionListContent({
   activeTabLon,
   entityPageSize,
 }) {
+  const [virtualVisibleCount, setVirtualVisibleCount] = React.useState(80);
+  const virtualSentinelRef = React.useRef(null);
+  const groupSentinelNodesRef = React.useRef(new Map());
+  const groupObserverRef = React.useRef(null);
+  const shouldVirtualize = entityGroupBy === 'none' && entitiesList.length > 200;
+  const shouldVirtualizeGrouped = entityGroupBy !== 'none' && entitiesList.length > 200;
+
+  React.useEffect(() => {
+    if (!shouldVirtualize) return;
+    setVirtualVisibleCount(80);
+  }, [shouldVirtualize, entitiesList.length, activeTabLon, currentTabConfig?.id]);
+
+  React.useEffect(() => {
+    if (!shouldVirtualize) return undefined;
+    const node = virtualSentinelRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[0];
+      if (!entry?.isIntersecting) return;
+      setVirtualVisibleCount((prev) => Math.min(entitiesList.length, prev + 80));
+    }, { root: null, rootMargin: '220px 0px', threshold: 0.01 });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [shouldVirtualize, entitiesList.length]);
+
+  React.useEffect(() => {
+    if (!shouldVirtualizeGrouped) {
+      if (groupObserverRef.current) {
+        groupObserverRef.current.disconnect();
+        groupObserverRef.current = null;
+      }
+      return undefined;
+    }
+    if (typeof IntersectionObserver === 'undefined') return undefined;
+    if (groupObserverRef.current) groupObserverRef.current.disconnect();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          const groupName = entry.target.getAttribute('data-group-name');
+          if (!groupName) return;
+          setGroupVisibleCount((prev) => ({ ...prev, [groupName]: (prev[groupName] || 1) + 1 }));
+        });
+      },
+      { root: null, rootMargin: '260px 0px', threshold: 0.01 }
+    );
+    groupObserverRef.current = observer;
+    groupSentinelNodesRef.current.forEach((node) => {
+      if (node) observer.observe(node);
+    });
+    return () => {
+      observer.disconnect();
+      if (groupObserverRef.current === observer) groupObserverRef.current = null;
+    };
+  }, [shouldVirtualizeGrouped, groupedEntitiesList, setGroupVisibleCount]);
+
   if (collectionSubTab !== 'list') return null;
 
   const renderGrid = (list) => (
@@ -58,6 +114,30 @@ export const AppCollectionListContent = memo(function AppCollectionListContent({
     );
 
   if (entityGroupBy === 'none') {
+    if (shouldVirtualize) {
+      const virtualItems = entitiesList.slice(0, virtualVisibleCount);
+      const hasMoreVirtual = virtualVisibleCount < entitiesList.length;
+      return (
+        <>
+          {renderGrid(virtualItems)}
+          {hasMoreVirtual && (
+            <div className="mt-6 flex flex-col items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setVirtualVisibleCount((prev) => Math.min(entitiesList.length, prev + 80))}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-sm text-slate-300 font-serif"
+              >
+                Tải thêm ({entitiesList.length - virtualVisibleCount} còn lại)
+              </button>
+              <div ref={virtualSentinelRef} className="h-1 w-full" />
+              <span className="text-[11px] text-slate-600 font-serif">
+                Đang hiển thị {virtualItems.length}/{entitiesList.length} thực thể (chế độ tối ưu hiệu năng)
+              </span>
+            </div>
+          )}
+        </>
+      );
+    }
     return (
       <>
         {renderGrid(pagedEntitiesList)}
@@ -88,6 +168,16 @@ export const AppCollectionListContent = memo(function AppCollectionListContent({
               <div className="mt-4 flex justify-center">
                 <button onClick={() => setGroupVisibleCount((prev) => ({ ...prev, [groupName]: (prev[groupName] || 1) + 1 }))} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-sm text-slate-300 font-serif">Xem thêm ({remaining} còn lại)</button>
               </div>
+            )}
+            {hasMore && shouldVirtualizeGrouped && (
+              <div
+                data-group-name={groupName}
+                ref={(node) => {
+                  if (node) groupSentinelNodesRef.current.set(groupName, node);
+                  else groupSentinelNodesRef.current.delete(groupName);
+                }}
+                className="h-1 w-full"
+              />
             )}
           </div>
         );
