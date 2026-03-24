@@ -3,6 +3,29 @@ import { History, Plus, Check, Edit2, Trash2, Clock, Sparkles } from 'lucide-rea
 import { DEFAULT_ENTITY_FIELDS, FALLBACK_IMG } from './MasterEngines.js';
 import { AsyncLocalImage, renderMarkdown, safeString } from './MasterUtils.jsx';
 
+function isMeaningfulTimelineValue(value) {
+  const v = safeString(value).trim().toLowerCase();
+  if (!v) return false;
+  const emptyTokens = new Set([
+    'khong',
+    'không',
+    'none',
+    'n/a',
+    'na',
+    'null',
+    'undefined',
+    '---',
+    '...',
+    'chua ghi nhan',
+    'chưa ghi nhận',
+    'chua co',
+    'chưa có',
+    'chua co ghi chep',
+    'chưa có ghi chép',
+  ]);
+  return !emptyTokens.has(v);
+}
+
 export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   collectionSubTab,
   selectedEntity,
@@ -138,7 +161,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                     const baseVal = safeString(getFieldValue(f.id, selectedEntity));
                     const snapshotVal = safeString(selectedMs.snapshot?.dynamicData?.[f.id]);
                     const finalVal = snapshotVal || baseVal;
-                    return !!finalVal.trim();
+                    return isMeaningfulTimelineValue(finalVal);
                   })
                   .map((f) => {
                     const baseVal = safeString(getFieldValue(f.id, selectedEntity));
@@ -176,7 +199,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                           </div>
                         ) : isNew ? (
                           <span className="text-sm font-serif text-emerald-200 font-medium leading-relaxed">{snapshotVal}</span>
-                        ) : finalVal ? (
+                        ) : isMeaningfulTimelineValue(finalVal) ? (
                           <span className="text-sm font-serif text-slate-400 leading-relaxed">{finalVal}</span>
                         ) : (
                           <span className="text-sm font-serif text-slate-700 italic">Chưa ghi nhận</span>
