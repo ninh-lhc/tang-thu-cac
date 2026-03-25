@@ -37,6 +37,10 @@ Cài dependency: repo có **`.npmrc`** (`legacy-peer-deps=true`) vì peer Vite 8
 3. Modal mới: ưu tiên file `AppModal*.jsx` + props từ `App.jsx`, tránh nhồi thêm nghìn dòng vào `App.jsx`.
 4. Comment đầu file: 3–6 dòng (mục đích, ai import, lưu ý) — đủ cho AI định vị, không lặp lại tên biến.
 
+## Hiệu năng (truyện lớn)
+
+- Lộ trình P0–P2: **`PERFORMANCE_ROADMAP.md`** (timeline virtual list, regex/wiki, mạng nhân quả, lazy data, v.v.).
+
 ## Gợi ý prompt ngắn (tiết kiệm context)
 
 - Ghi **file** + **hành vi mong đợi** + **bước tái hiện** (nếu bug).

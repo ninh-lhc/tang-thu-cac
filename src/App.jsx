@@ -1601,7 +1601,8 @@ export default function App() {
   const handleOpenCreateEntity = () => { setEditingEntityData(null); setIsEntityModalOpen(true); };
   const handleOpenEditEntity = () => { if(selectedEntity) { setEditingEntityData({...selectedEntity}); setIsEntityModalOpen(true); } };
 
-  const handleSaveEntity = (formData, dynamicData) => {
+  const handleSaveEntity = (formData, dynamicData, opts = null) => {
+    const copyRawToInfo = Boolean(opts && opts.copyRawToInfo);
     const prev = activeNovelData ? structuredClone(activeNovelData) : null;
     updateActiveNovelData(nov => {
        if (!nov.data) nov.data = {}; if (!nov.data[activeTabLon]) nov.data[activeTabLon] = {};
@@ -1612,9 +1613,16 @@ export default function App() {
           const idx = tabData.entities.findIndex(e => e.id === formData.id);
           if (idx > -1) { tabData.entities[idx] = { ...tabData.entities[idx], name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData }; }
        } else {
-          tabData.entities.push({ id: generateId('ent'), name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData, info: '', milestones: [] });
+          tabData.entities.push({ id: generateId('ent'), name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData, info: copyRawToInfo ? formData.rawText : '', milestones: [] });
           lockFieldsTemplateIfFirstEntity(nov, activeTabLon, activeTabNho || 'default');
        }
+
+        // Nếu user bật tùy chọn copy: thay thế info để hiển thị wiki link đầy đủ ở tab Ghi Chép Chi Tiết.
+        if (copyRawToInfo && formData.id) {
+          const idx2 = tabData.entities.findIndex(e => e.id === formData.id);
+          if (idx2 > -1) tabData.entities[idx2].info = formData.rawText;
+        }
+
        nov.data[activeTabLon][activeTabNho || 'default'] = tabData;
     });
     showToast(formData.id ? "Đã tu bổ lại Thực Thể!" : "Đã ngưng tụ Thực Thể mới!", "success", prev ? {

@@ -5,6 +5,12 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { migrateNovel } from './dataMigration.js';
 import { countEntitiesInNovel } from './deepSearchCore.js';
+import {
+  NOVEL_STORAGE_SHARDED,
+  buildDiskManifest,
+  loadShardsFromNovelDir,
+  writeShardTree,
+} from './lib/novelDiskLayout.js';
 
 export function useAppPersistence({
   novelStatsByIdRef,
@@ -92,11 +98,13 @@ export function useAppPersistence({
         return;
       }
       const folderName = novelData.folderName || novelData.title.replace(/[\\/:*?"<>|]/g, '').trim() || novelData.id;
-      const jsonStr = JSON.stringify(novelData, null, 2);
+      const manifest = buildDiskManifest(novelData);
+      const jsonStr = JSON.stringify(manifest, null, 2);
       const mainFile = `${folderName}.json`;
       const tmpFile = `${folderName}.json.tmp`;
       const tryAtomic = async () => {
         const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
+        await writeShardTree(novelDir, novelData);
         const tw = await novelDir.getFileHandle(tmpFile, { create: true });
         const w = await tw.createWritable();
         await w.write(jsonStr);
@@ -122,6 +130,7 @@ export function useAppPersistence({
       };
       const tryDirect = async () => {
         const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
+        await writeShardTree(novelDir, novelData);
         const f = await novelDir.getFileHandle(mainFile, { create: true });
         const w = await f.createWritable();
         await w.write(jsonStr);
@@ -167,7 +176,12 @@ export function useAppPersistence({
       const file = await f.getFile();
       const text = await file.text();
       try {
-        return migrateNovel(JSON.parse(text));
+        const parsed = JSON.parse(text);
+        if (parsed.storageLayout === NOVEL_STORAGE_SHARDED) {
+          const shardData = await loadShardsFromNovelDir(novelDir);
+          parsed.data = shardData;
+        }
+        return migrateNovel(parsed);
       } catch (pe) {
         console.warn(`[TTC] File JSON bị hỏng: ${folderName}.json`, pe);
         return null;

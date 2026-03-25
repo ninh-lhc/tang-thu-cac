@@ -43,6 +43,10 @@ function clone(v) {
  * Trường chỉ có trong novel file (tangthu_novel_*), không ở metadata:
  *   readingAnchorChapter, data (entities/milestones), tabsConfig,
  *   chapterCrossRefs, readingJournal
+ *
+ * Lưu ổ đĩa (thư mục truyện): có thể dùng storageLayout 'sharded' — file .json gốc là manifest
+ * (data rỗng), nội dung tab nằm trong data/<lonId>/<nhoId>.json. Khi load vào memory, data được
+ * ghép lại; trường storageLayout không giữ trong object sau migrateNovel.
  */
 function sanitizeMetadataItem(m) {
   if (!isObj(m)) return null;
@@ -159,6 +163,8 @@ export function migrateNovel(raw) {
       nov.data[lonId][nhoId] = sanitizeTabData(nov.data[lonId][nhoId]);
     }
   }
+
+  delete nov.storageLayout;
 
   nov.dataVersion = NOVEL_DATA_VERSION;
   return nov;

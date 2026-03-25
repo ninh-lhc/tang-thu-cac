@@ -1,4 +1,10 @@
-import React, { memo, useState } from 'react';
+/**
+ * Panel timeline thẻ: danh sách mốc (cột trái) + chi tiết mốc (cột phải).
+ * Cột mốc dùng @tanstack/react-virtual — tránh render hàng nghìn nút DOM (P0 roadmap).
+ * Ai import: AppCollectionSection / luồng collection.
+ */
+import React, { memo, useState, useRef, useEffect } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { History, Plus, Check, Edit2, Trash2, Clock, Sparkles } from 'lucide-react';
 import { DEFAULT_ENTITY_FIELDS, FALLBACK_IMG } from './MasterEngines.js';
 import { AsyncLocalImage, renderMarkdown, safeString } from './MasterUtils.jsx';
@@ -26,6 +32,9 @@ function isMeaningfulTimelineValue(value) {
   return !emptyTokens.has(v);
 }
 
+/** Chiều cao ước lượng mỗi hàng mốc (p-4 + 2 dòng + gap); virtualizer dùng làm mặc định. */
+const MILESTONE_LIST_ROW_ESTIMATE_PX = 96;
+
 export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   collectionSubTab,
   selectedEntity,
@@ -44,39 +53,83 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   setLightboxSrc,
 }) {
   const [showEmptyTimelineFields, setShowEmptyTimelineFields] = useState(false);
+  const milestoneListScrollRef = useRef(null);
+  const milestones = selectedEntity?.milestones ?? [];
+
+  const rowVirtualizer = useVirtualizer({
+    count: milestones.length,
+    getScrollElement: () => milestoneListScrollRef.current,
+    estimateSize: () => MILESTONE_LIST_ROW_ESTIMATE_PX,
+    overscan: 8,
+    getItemKey: (index) => milestones[index]?.id ?? index,
+  });
+
+  useEffect(() => {
+    if (collectionSubTab !== 'timeline' || !selectedMilestoneId || milestones.length === 0) return;
+    const idx = milestones.findIndex((m) => m.id === selectedMilestoneId);
+    if (idx < 0) return;
+    const raf = requestAnimationFrame(() => {
+      try {
+        rowVirtualizer.scrollToIndex(idx, { align: 'nearest' });
+      } catch {
+        /* ignore */
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- milestones trong closure; rowVirtualizer (TanStack) không khuyến nghị gắn deps
+  }, [selectedMilestoneId, selectedEntity?.id, milestones.length, collectionSubTab]);
+
   if (collectionSubTab !== 'timeline' || !selectedEntity) return null;
 
   return (
     <div className="flex gap-8 overflow-hidden max-w-6xl mx-auto h-full flex-col md:flex-row pb-10">
-      <div className="w-full md:w-1/3 border-r border-slate-800/80 pr-6 overflow-y-auto custom-scrollbar relative min-h-[200px] flex-shrink-0">
-        <div className="flex justify-between items-center mb-6">
+      <div className="w-full md:w-1/3 border-r border-slate-800/80 pr-6 flex flex-col flex-shrink-0 min-h-0 md:max-h-[min(85vh,720px)]">
+        <div className="flex justify-between items-center mb-4 shrink-0">
           <h3 className="text-lg font-heading font-bold text-amber-500">Mốc Sự Kiện</h3>
           <button onClick={() => { setEditingMilestoneData(null); setIsMilestoneModalOpen(true); }} className="p-2 bg-emerald-900/30 text-emerald-400 rounded-[40px] hover:bg-emerald-800/50 transition-colors" title="Thêm mốc mới"><Plus size={16}/></button>
         </div>
 
-        {(!selectedEntity.milestones || selectedEntity.milestones.length === 0) ? (
-          <div className="flex flex-col items-center justify-center h-40 opacity-50 border border-dashed border-slate-700 rounded-[40px]">
+        {milestones.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 opacity-50 border border-dashed border-slate-700 rounded-[40px] shrink-0">
             <History size={24} className="text-slate-600 mb-2"/>
             <p className="text-slate-500 italic font-serif text-xs">Chưa có Kỷ Nguyên nào...</p>
           </div>
         ) : (
-          <>
-            <div className="absolute left-[15px] top-16 bottom-6 w-px bg-gradient-to-b from-amber-900/50 via-slate-700 to-transparent z-0"></div>
-            <div className="space-y-4 relative z-10 py-2">
-              {selectedEntity.milestones?.map((ms) => {
+          <div ref={milestoneListScrollRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative pl-1">
+            <div
+              className="absolute left-[14px] top-0 w-px bg-gradient-to-b from-amber-900/50 via-slate-700 to-transparent z-0 pointer-events-none"
+              style={{ height: `${Math.max(rowVirtualizer.getTotalSize(), 120)}px` }}
+              aria-hidden
+            />
+            <div className="relative z-10" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
+              {rowVirtualizer.getVirtualItems().map((vi) => {
+                const ms = milestones[vi.index];
+                if (!ms) return null;
                 const isSelected = selectedMilestoneId === ms.id;
                 return (
-                  <button key={ms.id} onClick={() => setSelectedMilestoneId(ms.id)} className={`w-full text-left p-4 rounded-2xl flex items-start gap-4 transition-all duration-300 group ${isSelected ? 'bg-gradient-to-r from-amber-900/40 to-slate-900 border border-amber-700/50 shadow-lg translate-x-2' : 'bg-transparent border border-transparent hover:bg-slate-900 hover:border-slate-800'}`}>
-                    <div className={`mt-1 w-3 h-3 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-amber-400 border-amber-900 shadow-[0_0_10px_var(--t-400)]' : 'bg-slate-800 border-slate-950 group-hover:bg-slate-600'}`}></div>
-                    <div className="flex-1 min-w-0">
-                      <div className={`text-sm font-bold uppercase tracking-widest font-heading mb-1 transition-colors ${isSelected ? 'text-amber-400' : 'text-slate-400 group-hover:text-slate-300'}`}>Chương {safeString(ms.chapter)}</div>
-                      <div className={`text-xs font-serif line-clamp-2 leading-relaxed ${isSelected ? 'text-slate-200' : 'text-slate-500 group-hover:text-slate-400'}`}>{safeString(ms.event)}</div>
-                    </div>
-                  </button>
+                  <div
+                    key={ms.id}
+                    ref={rowVirtualizer.measureElement}
+                    data-index={vi.index}
+                    className="absolute top-0 left-0 w-full pb-4"
+                    style={{ transform: `translateY(${vi.start}px)` }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMilestoneId(ms.id)}
+                      className={`w-full text-left p-4 rounded-2xl flex items-start gap-4 transition-all duration-300 group ${isSelected ? 'bg-gradient-to-r from-amber-900/40 to-slate-900 border border-amber-700/50 shadow-lg translate-x-2' : 'bg-transparent border border-transparent hover:bg-slate-900 hover:border-slate-800'}`}
+                    >
+                      <div className={`mt-1 w-3 h-3 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-amber-400 border-amber-900 shadow-[0_0_10px_var(--t-400)]' : 'bg-slate-800 border-slate-950 group-hover:bg-slate-600'}`}></div>
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-sm font-bold uppercase tracking-widest font-heading mb-1 transition-colors ${isSelected ? 'text-amber-400' : 'text-slate-400 group-hover:text-slate-300'}`}>Chương {safeString(ms.chapter)}</div>
+                        <div className={`text-xs font-serif line-clamp-2 leading-relaxed ${isSelected ? 'text-slate-200' : 'text-slate-500 group-hover:text-slate-400'}`}>{safeString(ms.event)}</div>
+                      </div>
+                    </button>
+                  </div>
                 );
               })}
             </div>
-          </>
+          </div>
         )}
       </div>
 

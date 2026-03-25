@@ -433,6 +433,8 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   const terms = getTerms(parentTabId);
   const [formData, setFormData] = useState({ id: null, name: '', avatar: '', rawText: '' });
   const [dynamicData, setDynamicData] = useState({});
+  // Hướng B: người dùng chủ động nhấn nút để dùng rawText có [[...]] này làm "Ghi Chép Chi Tiết" (entity.info).
+  const [copyRawToInfo, setCopyRawToInfo] = useState(false);
   const [newFieldLabel, setNewFieldLabel] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -453,6 +455,7 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   useEffect(() => { 
      if(isOpen) {
          setErrorMsg('');
+        setCopyRawToInfo(false);
          if (initialData) {
              setFormData({ id: initialData.id, name: initialData.name, avatar: initialData.avatar, rawText: initialData.rawText || '' });
              const initialDyn = initialData.dynamicData ? { ...initialData.dynamicData } : {};
@@ -469,11 +472,11 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
 
   useEffect(() => {
     const handler = () => {
-      if (isOpen && formData.name.trim()) { onSave(formData, dynamicData); onClose(); }
+      if (isOpen && formData.name.trim()) { onSave(formData, dynamicData, { copyRawToInfo }); onClose(); }
     };
     window.addEventListener('ttc-save', handler);
     return () => window.removeEventListener('ttc-save', handler);
-  }, [isOpen, formData, dynamicData, onSave, onClose]);
+  }, [isOpen, formData, dynamicData, copyRawToInfo, onSave, onClose]);
 
   const handleAI = async () => {
      const keys = Array.isArray(geminiApiKey) ? geminiApiKey : (geminiApiKey ? [geminiApiKey] : []);
@@ -486,7 +489,11 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
          if (result) {
              if (result.name) setFormData(prev => ({ ...prev, name: safeString(result.name) }));
              if (result.avatar) setFormData(prev => ({ ...prev, avatar: safeString(result.avatar) }));
-             if (result.processedText) setFormData(prev => ({ ...prev, rawText: safeString(result.processedText) }));
+            if (result.processedText) {
+              // B: rawText có thể có [[...]]; chỉ copy vào entity.info khi user bấm nút.
+              setCopyRawToInfo(false);
+              setFormData(prev => ({ ...prev, rawText: safeString(result.processedText) }));
+            }
              const newDyn = { ...dynamicData };
              fieldsTemplate.forEach(f => { if (result[f.id]) newDyn[f.id] = safeString(result[f.id]); });
              setDynamicData(newDyn);
@@ -503,6 +510,7 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
 
   const trapRef = useFocusTrap(isOpen);
   if (!isOpen) return null;
+  const hasWikiInRawText = safeString(formData.rawText).includes('[[');
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in">
        <div ref={trapRef} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-5xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col md:flex-row h-[85vh]">
@@ -663,7 +671,27 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
 
              <div className="pt-6 mt-4 border-t border-slate-800 flex justify-end gap-3">
                 <button onClick={onClose} className="px-6 py-2.5 text-slate-400 hover:text-white font-serif transition-colors rounded-xl">Hủy bỏ</button>
-                <button onClick={() => { if(formData.name.trim()) { onSave(formData, dynamicData); onClose(); } }} disabled={!formData.name.trim()} className="px-8 py-2.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl font-bold font-serif shadow-lg transition-all flex items-center gap-2"><Save size={18}/> Lưu Thông Tin</button>
+                {hasWikiInRawText && (
+                  <button
+                    type="button"
+                    onClick={() => setCopyRawToInfo((v) => !v)}
+                    className={`px-4 py-2.5 rounded-xl font-bold font-serif shadow-sm transition-all border ${
+                      copyRawToInfo
+                        ? 'bg-emerald-900/35 border-emerald-700/50 text-emerald-200 hover:bg-emerald-900/50'
+                        : 'bg-slate-950/40 border-slate-800 text-slate-300 hover:text-white hover:bg-slate-900/60'
+                    }`}
+                    title="Nếu bật: rawText (đã có [[...]]) sẽ được đưa vào entity.info để hiển thị markdown/wikilink đầy đủ ở tab Ghi Chép Chi Tiết."
+                  >
+                    {copyRawToInfo ? 'Đang dùng cho Ghi Chép Chi Tiết' : 'Chuyển vào Ghi Chép Chi Tiết'}
+                  </button>
+                )}
+                <button
+                  onClick={() => { if(formData.name.trim()) { onSave(formData, dynamicData, { copyRawToInfo }); onClose(); } }}
+                  disabled={!formData.name.trim()}
+                  className="px-8 py-2.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl font-bold font-serif shadow-lg transition-all flex items-center gap-2"
+                >
+                  <Save size={18}/> Lưu Thông Tin
+                </button>
              </div>
           </div>
        </div>

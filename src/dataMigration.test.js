@@ -73,6 +73,15 @@ describe('dataMigration', () => {
       expect(out.data.lon1.sub1.overview).toBe('chỉ overview');
       expect(out.data.lon1.sub1.entities).toEqual([]);
     });
+
+    it('strips storageLayout (chỉ dùng trên file manifest đĩa)', () => {
+      const out = migrateNovel({
+        id: 'n1',
+        storageLayout: 'sharded',
+        data: {},
+      });
+      expect(out.storageLayout).toBeUndefined();
+    });
   });
 
   describe('migrateBackup', () => {
