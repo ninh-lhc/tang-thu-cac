@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useEffect } from 'react';
 import { BookOpen, Sparkles, Link2, Save, Edit3, Eye } from 'lucide-react';
 import { MarkdownToolbar } from './MasterComponents.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
@@ -32,6 +32,13 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   onNavigate,
   memoizedEntityInfo,
 }) {
+  useEffect(() => {
+    if (!isEntityEditing) return;
+    // Focus ngay textarea để người dùng bắt đầu gõ ghi chép sau khi tạo thẻ.
+    const el = document.getElementById('entity-info-editor');
+    if (el && typeof el.focus === 'function') el.focus();
+  }, [isEntityEditing, selectedEntity?.id]);
+
   return (
     <div className="flex flex-col mt-4">
       <div className="flex justify-between items-end mb-6 pb-2 border-b border-slate-800/80">

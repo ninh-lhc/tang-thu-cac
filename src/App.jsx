@@ -1604,6 +1604,8 @@ export default function App() {
   const handleSaveEntity = (formData, dynamicData, opts = null) => {
     const copyRawToInfo = Boolean(opts && opts.copyRawToInfo);
     const prev = activeNovelData ? structuredClone(activeNovelData) : null;
+    const isCreate = !formData.id;
+    const newEntityId = isCreate ? generateId('ent') : formData.id;
     updateActiveNovelData(nov => {
        if (!nov.data) nov.data = {}; if (!nov.data[activeTabLon]) nov.data[activeTabLon] = {};
        let tabData = nov.data[activeTabLon][activeTabNho || 'default'];
@@ -1613,7 +1615,7 @@ export default function App() {
           const idx = tabData.entities.findIndex(e => e.id === formData.id);
           if (idx > -1) { tabData.entities[idx] = { ...tabData.entities[idx], name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData }; }
        } else {
-          tabData.entities.push({ id: generateId('ent'), name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData, info: copyRawToInfo ? formData.rawText : '', milestones: [] });
+          tabData.entities.push({ id: newEntityId, name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData, info: copyRawToInfo ? formData.rawText : '', milestones: [] });
           lockFieldsTemplateIfFirstEntity(nov, activeTabLon, activeTabNho || 'default');
        }
 
@@ -1625,6 +1627,17 @@ export default function App() {
 
        nov.data[activeTabLon][activeTabNho || 'default'] = tabData;
     });
+
+    // UX: tạo thẻ xong thì tự vào tab Hồ Sơ + bật chế độ ghi chép chi tiết.
+    if (isCreate && newEntityId) {
+      setSelectedEntityId(newEntityId);
+      setSelectedMilestoneId(null);
+      setEditingMilestoneData(null);
+      setCollectionSubTab('detail');
+      setIsEditingMode(false);
+      setIsEntityEditing(true);
+    }
+
     showToast(formData.id ? "Đã tu bổ lại Thực Thể!" : "Đã ngưng tụ Thực Thể mới!", "success", prev ? {
       undoLabel: "Hoàn tác", onUndo: () => {
         setActiveNovelData(structuredClone(prev));
@@ -1638,7 +1651,12 @@ export default function App() {
        if (!nov.data?.[activeTabLon]) return;
        const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
        const ent = tabData?.entities?.find(e => e.id === selectedEntityId);
-       if(ent) ent.info = content;
+       if(ent) {
+         ent.info = content;
+         // Network “Mạng Lưới Nhân Quả” đang đọc [[...]] từ rawText của thẻ.
+         // Đồng bộ để network vẫn tròn khi bạn viết ở “Ghi Chép Chi Tiết”.
+         ent.rawText = content;
+       }
     });
     showToast("Ghi chép hồ sơ thành công!");
   };

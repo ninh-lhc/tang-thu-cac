@@ -513,57 +513,66 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   const hasWikiInRawText = safeString(formData.rawText).includes('[[');
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in">
-       <div ref={trapRef} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-5xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col md:flex-row h-[85vh]">
-          <div className="w-full md:w-5/12 bg-slate-950 border-r border-slate-800 p-6 flex flex-col relative">
-             <h2 className="text-xl font-heading font-bold text-amber-500 mb-4 flex items-center gap-2"><Sparkles size={20}/> Tinh Luyện Khí Tức (AI)</h2>
-             <div className="flex gap-4 mb-4">
-                <div
-                   onDragOver={e => e.preventDefault()}
-                   onDrop={e => handleAvatarDrop && handleAvatarDrop(e, url => setFormData({...formData, avatar: url}))}
-                   onClick={() => handlePickLocalImage && handlePickLocalImage(url => setFormData({...formData, avatar: url}), null, 'avatar')}
-                   className="w-16 h-16 rounded-xl bg-slate-900 border border-dashed border-slate-600 flex items-center justify-center overflow-hidden flex-shrink-0 group cursor-pointer hover:border-amber-500 transition-colors"
-                   title="Nhấp hoặc kéo thả ảnh vào đây"
-                >
-                   {formData.avatar ? (
-                      formData.avatar.startsWith('local_image:') ? (
-                         <AsyncLocalImage filename={formData.avatar.replace('local_image:', '')} alt="avatar" dirHandle={dirHandle} className="w-full h-full object-cover" />
-                      ) : <img src={formData.avatar} className="w-full h-full object-cover" alt="avatar" onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />
-                   ) : <ImageIcon className="text-slate-600 group-hover:text-amber-500 transition-colors" />}
-                </div>
-                <div className="flex-1 flex flex-col justify-center">
-                   <label className="block text-[10px] font-bold text-emerald-500 mb-1 uppercase tracking-widest flex items-center justify-between">
-                      <span className="flex items-center gap-1"><Upload size={12}/> {terms.image}</span>
-                   </label>
-                   <div className="flex gap-2">
-                      <input value={safeString(formData.avatar)} onChange={e=>setFormData({...formData, avatar: e.target.value})} className="flex-1 w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:border-amber-500 outline-none" placeholder="https://..." />
-                      <button onClick={() => handlePickLocalImage && handlePickLocalImage(url => setFormData({...formData, avatar: url}), null, 'avatar')} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 text-xs font-bold">Chọn File</button>
-                   </div>
-                </div>
-             </div>
-
-             <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-widest">Bản Thảo Nguyên Thủy (Raw Text)</label>
-             <textarea value={safeString(formData.rawText)} onChange={e=>setFormData({...formData, rawText: e.target.value})} className="flex-1 w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-sm text-slate-300 font-serif focus:border-amber-500 outline-none resize-none custom-scrollbar mb-4" placeholder="Dán đoạn văn bản mô tả... Sau đó dùng AI để điền form tự động." />
-             
-             <button onClick={handleAI} disabled={isAnalyzing || !formData.rawText.trim()} className="w-full py-3 bg-gradient-to-r from-emerald-800 to-emerald-600 hover:from-emerald-700 hover:to-emerald-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50">
-                {isAnalyzing ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Sparkles size={18} />}
-                {isAnalyzing ? 'Đang dung hợp...' : 'Nhờ AI Bọc Link & Điền Form'}
-             </button>
-             {errorMsg && <p className="text-rose-400 text-xs mt-2 text-center">{safeString(errorMsg)}</p>}
-          </div>
-
-          <div className="w-full md:w-7/12 p-6 md:p-8 flex flex-col bg-slate-900 relative">
+       <div ref={trapRef} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-2xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col max-h-[85vh]">
+          <div className="w-full p-6 flex flex-col bg-slate-900 relative">
              <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
                 <h2 className="text-2xl font-heading font-bold text-slate-100">{initialData ? `Tu Bổ ${terms.entity}` : `Khởi Tạo ${terms.entity}`}</h2>
                 <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={20}/></button>
              </div>
 
-             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-5">
+             <div className="overflow-y-auto custom-scrollbar pr-2 space-y-5">
                 <div>
-                   <label className="block text-xs font-bold text-amber-500 mb-1 uppercase tracking-widest">Danh xưng / Tên gọi *</label>
-                   <input autoFocus value={safeString(formData.name)} onChange={e=>setFormData({...formData, name: e.target.value})} className="w-full bg-slate-950 border border-amber-600/50 rounded-xl p-3 text-amber-100 font-serif focus:border-amber-500 outline-none shadow-inner" placeholder="Bắt buộc nhập..." />
+                  <label className="block text-xs font-bold text-amber-500 mb-1 uppercase tracking-widest">Danh xưng / Tên gọi *</label>
+                  <input autoFocus value={safeString(formData.name)} onChange={e=>setFormData({...formData, name: e.target.value})} className="w-full bg-slate-950 border border-amber-600/50 rounded-xl p-3 text-amber-100 font-serif focus:border-amber-500 outline-none shadow-inner" placeholder="Bắt buộc nhập..." />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="h-px bg-slate-800/80" />
+
+                <div>
+                  <label className="block text-[10px] font-bold text-emerald-500 mb-2 uppercase tracking-widest flex items-center gap-2">
+                    <Upload size={12}/> {terms.image}
+                  </label>
+                  <div className="flex gap-4 items-center">
+                    <div
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => handleAvatarDrop && handleAvatarDrop(e, (url) => setFormData({ ...formData, avatar: url }))}
+                      onClick={() => handlePickLocalImage && handlePickLocalImage((url) => setFormData({ ...formData, avatar: url }), null, 'avatar')}
+                      className="w-16 h-16 rounded-xl bg-slate-950 border border-dashed border-slate-700 flex items-center justify-center overflow-hidden flex-shrink-0 group cursor-pointer hover:border-amber-500 transition-colors"
+                      title="Nhấp hoặc kéo thả ảnh vào đây"
+                    >
+                      {formData.avatar ? (
+                        formData.avatar.startsWith('local_image:') ? (
+                          <AsyncLocalImage filename={formData.avatar.replace('local_image:', '')} alt="avatar" dirHandle={dirHandle} className="w-full h-full object-cover" />
+                        ) : (
+                          <img src={formData.avatar} className="w-full h-full object-cover" alt="avatar" onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />
+                        )
+                      ) : (
+                        <ImageIcon className="text-slate-600 group-hover:text-amber-500 transition-colors" />
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex gap-2">
+                        <input
+                          value={safeString(formData.avatar)}
+                          onChange={(e) => setFormData({ ...formData, avatar: e.target.value })}
+                          className="flex-1 w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:border-amber-500 outline-none"
+                          placeholder="https://..."
+                        />
+                        <button
+                          onClick={() => handlePickLocalImage && handlePickLocalImage((url) => setFormData({ ...formData, avatar: url }), null, 'avatar')}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 text-xs font-bold"
+                          type="button"
+                        >
+                          Chọn File
+                        </button>
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-500 font-serif">Mẹo: có thể kéo thả ảnh vào ô vuông bên trái.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="hidden"><div className="grid grid-cols-2 gap-4">
                    {fieldsTemplate.map(field => (
                       <div key={field.id} className="group/field">
                          {/* Label row: tên + nút sửa/xóa */}
@@ -669,32 +678,22 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
                 </div>
              </div>
 
-             <div className="pt-6 mt-4 border-t border-slate-800 flex justify-end gap-3">
-                <button onClick={onClose} className="px-6 py-2.5 text-slate-400 hover:text-white font-serif transition-colors rounded-xl">Hủy bỏ</button>
-                {hasWikiInRawText && (
-                  <button
-                    type="button"
-                    onClick={() => setCopyRawToInfo((v) => !v)}
-                    className={`px-4 py-2.5 rounded-xl font-bold font-serif shadow-sm transition-all border ${
-                      copyRawToInfo
-                        ? 'bg-emerald-900/35 border-emerald-700/50 text-emerald-200 hover:bg-emerald-900/50'
-                        : 'bg-slate-950/40 border-slate-800 text-slate-300 hover:text-white hover:bg-slate-900/60'
-                    }`}
-                    title="Nếu bật: rawText (đã có [[...]]) sẽ được đưa vào entity.info để hiển thị markdown/wikilink đầy đủ ở tab Ghi Chép Chi Tiết."
-                  >
-                    {copyRawToInfo ? 'Đang dùng cho Ghi Chép Chi Tiết' : 'Chuyển vào Ghi Chép Chi Tiết'}
-                  </button>
-                )}
-                <button
-                  onClick={() => { if(formData.name.trim()) { onSave(formData, dynamicData, { copyRawToInfo }); onClose(); } }}
-                  disabled={!formData.name.trim()}
-                  className="px-8 py-2.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl font-bold font-serif shadow-lg transition-all flex items-center gap-2"
-                >
-                  <Save size={18}/> Lưu Thông Tin
-                </button>
-             </div>
+          </div>
+
+          {/* Footer: nút Hủy / Lưu (đặt sau khu vực thêm ảnh) */}
+          <div className="p-6 pt-4 border-t border-slate-800 flex justify-end gap-3">
+            <button onClick={onClose} className="px-6 py-2.5 text-slate-400 hover:text-white font-serif transition-colors rounded-xl" type="button">Hủy bỏ</button>
+            <button
+              onClick={() => { if(formData.name.trim()) { onSave(formData, dynamicData, { copyRawToInfo }); onClose(); } }}
+              disabled={!formData.name.trim()}
+              className="px-8 py-2.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl font-bold font-serif shadow-lg transition-all flex items-center gap-2"
+              type="button"
+            >
+              <Save size={18}/> Lưu Thông Tin
+            </button>
           </div>
        </div>
+    </div>
     </div>
   );
 };

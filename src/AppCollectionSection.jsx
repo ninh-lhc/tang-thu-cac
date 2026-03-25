@@ -474,20 +474,6 @@ export function AppCollectionSection({
                   </div>
                 </div>
 
-                <AppEntitySummaryBlocks
-                  selectedEntity={selectedEntity}
-                  collectionSubTab={collectionSubTab}
-                  isEntityEditing={isEntityEditing}
-                  currentTabConfig={currentTabConfig}
-                  recentlyMergedFields={recentlyMergedFields}
-                  currentContextDirHandle={currentContextDirHandle}
-                  entityMap={entityMap}
-                  globalLinkRegex={globalLinkRegex}
-                  relatedEntities={relatedEntities}
-                  isCalculatingNetwork={isCalculatingNetwork}
-                  onNavigate={(dest) => navFnRef.current?.(dest)}
-                />
-
                 <AppEntityDetailNotes
                   activeTabLon={activeTabLon}
                   getTerms={getTerms}
@@ -515,6 +501,20 @@ export function AppCollectionSection({
                   globalLinkRegex={globalLinkRegex}
                   onNavigate={handleNavigate}
                   memoizedEntityInfo={memoizedEntityInfo}
+                />
+
+                <AppEntitySummaryBlocks
+                  selectedEntity={selectedEntity}
+                  collectionSubTab={collectionSubTab}
+                  isEntityEditing={isEntityEditing}
+                  currentTabConfig={currentTabConfig}
+                  recentlyMergedFields={recentlyMergedFields}
+                  currentContextDirHandle={currentContextDirHandle}
+                  entityMap={entityMap}
+                  globalLinkRegex={globalLinkRegex}
+                  relatedEntities={relatedEntities}
+                  isCalculatingNetwork={isCalculatingNetwork}
+                  onNavigate={(dest) => navFnRef.current?.(dest)}
                 />
               </div>
             )}
