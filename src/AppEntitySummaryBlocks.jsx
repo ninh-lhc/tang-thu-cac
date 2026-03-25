@@ -38,8 +38,9 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
   if (relatedEntities.length === 0 && !isCalculatingNetwork) return null;
 
   return (
-    <div className="mb-10 animate-fade-in relative">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6 pb-2 border-b border-slate-800/80">
+    <div className="mt-8 mb-10 animate-fade-in relative">
+      <div className="bg-slate-900/30 border border-slate-800/80 rounded-[24px] p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6 pb-2 border-b border-slate-800/80">
         <div className="flex items-center gap-3 min-w-0">
           <div className="p-2 bg-indigo-900/20 text-indigo-400 rounded-lg border border-indigo-700/30 shrink-0">
             <Network size={18} />
@@ -79,10 +80,10 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
             />
           </div>
         )}
-      </div>
+        </div>
 
-      {!isCalculatingNetwork && relatedEntities.length > 0 && tabOptions.length > 1 && (
-        <div className="flex flex-wrap gap-2 mb-4">
+        {!isCalculatingNetwork && relatedEntities.length > 0 && tabOptions.length > 1 && (
+          <div className="flex flex-wrap gap-2 mb-6">
           <button
             type="button"
             onClick={() => {
@@ -115,11 +116,11 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
               {tab}
             </button>
           ))}
-        </div>
-      )}
+          </div>
+        )}
 
-      {!isCalculatingNetwork && (
-        <div className="space-y-8">
+        {!isCalculatingNetwork && (
+          <div className="space-y-8">
           {sections.map((sec) => (
             <div key={sec.tabLabel}>
               <div className="flex items-center gap-2 px-1 mb-3">
@@ -132,7 +133,7 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
                     key={`${rel.lonId}|${rel.nhoId}|${rel.entity.id}`}
                     type="button"
                     onClick={() => onNavigate({ lonId: rel.lonId, nhoId: rel.nhoId, entityId: rel.entity.id })}
-                    className="flex items-center gap-4 bg-slate-900/80 backdrop-blur-md border border-slate-700 hover:border-indigo-500/60 p-3 rounded-[24px] transition-all duration-300 shadow-md hover:shadow-[0_5px_20px_rgba(99,102,241,0.15)] hover:-translate-y-0.5 group w-full md:w-auto md:min-w-[280px]"
+                    className="flex items-start gap-4 bg-slate-900/80 backdrop-blur-md border border-slate-700 hover:border-indigo-500/60 p-4 rounded-2xl transition-all duration-300 shadow-md hover:shadow-[0_5px_20px_rgba(99,102,241,0.15)] hover:-translate-y-0.5 group w-full md:w-auto md:min-w-[320px] min-h-[78px]"
                   >
                     <div className="w-12 h-12 rounded-[16px] bg-slate-950 overflow-hidden flex-shrink-0 border border-slate-800 group-hover:border-indigo-400/50 transition-colors relative">
                       {rel.entity.avatar ? (
@@ -161,14 +162,17 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
                       )}
                       <div className="absolute inset-0 bg-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
-                    <div className="text-left pr-4 min-w-0">
-                      <div className="text-base font-bold text-slate-200 group-hover:text-indigo-300 font-serif transition-colors truncate">
+                    <div className="text-left min-w-0">
+                      <div className="text-[15px] font-bold text-slate-200 group-hover:text-indigo-300 font-serif transition-colors truncate leading-tight">
                         {safeString(rel.entity.name)}
                       </div>
-                      <div className="text-[10px] text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1.5 flex-wrap">
-                        <span className="text-indigo-500/70">{safeString(rel.tabLabel)}</span>
-                        <span className="w-1 h-1 bg-slate-700 rounded-full shrink-0" />
-                        <span className="break-words">{safeString(rel.context)}</span>
+                      <div className="mt-2 flex flex-col gap-1 min-w-0">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-900/20 border border-indigo-700/30 text-indigo-200 text-[10px] font-bold uppercase tracking-widest w-fit">
+                          {safeString(rel.tabLabel)}
+                        </span>
+                        <div className="text-[10px] text-slate-400 font-serif line-clamp-2 leading-relaxed">
+                          {safeString(rel.context)}
+                        </div>
                       </div>
                     </div>
                   </button>
@@ -190,8 +194,9 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
           {totalFiltered === 0 && relatedEntities.length > 0 && (
             <p className="text-center text-slate-500 text-sm py-6">Không có mục nào khớp bộ lọc hiện tại.</p>
           )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 });
