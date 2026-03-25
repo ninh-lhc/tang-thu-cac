@@ -92,8 +92,6 @@ export function AppCollectionSection({
   globalLinkRegex,
   relatedEntities,
   isCalculatingNetwork,
-  expandedRelations,
-  setExpandedRelations,
   navFnRef,
   handleNavigate,
   handleExportEntityPDF,
@@ -487,8 +485,6 @@ export function AppCollectionSection({
                   globalLinkRegex={globalLinkRegex}
                   relatedEntities={relatedEntities}
                   isCalculatingNetwork={isCalculatingNetwork}
-                  expandedRelations={expandedRelations}
-                  setExpandedRelations={setExpandedRelations}
                   onNavigate={(dest) => navFnRef.current?.(dest)}
                 />
 

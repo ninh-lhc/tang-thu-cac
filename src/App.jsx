@@ -222,8 +222,7 @@ export default function App() {
     }
   }); // all | tab_lon | tab_nho
   const [navHistory, setNavHistory] = useState([]);
-  const [expandedRelations, setExpandedRelations] = useState(false);
-  
+
   const [selectedMilestoneId, setSelectedMilestoneId] = useState(null);
   const [editingMilestoneData, setEditingMilestoneData] = useState(null);
 
@@ -1226,7 +1225,7 @@ export default function App() {
      if (dest.conId) setActiveTabCon(dest.conId); else setActiveTabCon(null);
      if (dest.entityId) { setSelectedEntityId(dest.entityId); setCollectionSubTab('detail'); } 
      else { setSelectedEntityId(null); setCollectionSubTab('list'); }
-     setIsEditingMode(false); setIsEntityEditing(false); setExpandedRelations(false);
+     setIsEditingMode(false); setIsEntityEditing(false);
   }, [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab]);
 
   const handleGoBack = useCallback(() => {
@@ -2694,8 +2693,6 @@ export default function App() {
                             globalLinkRegex={globalLinkRegex}
                             relatedEntities={relatedEntities}
                             isCalculatingNetwork={isCalculatingNetwork}
-                            expandedRelations={expandedRelations}
-                            setExpandedRelations={setExpandedRelations}
                             navFnRef={navFnRef}
                             handleNavigate={handleNavigate}
                             handleExportEntityPDF={handleExportEntityPDF}
