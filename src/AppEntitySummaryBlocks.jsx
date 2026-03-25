@@ -272,7 +272,7 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
                   </div>
                 );
               })()}
-              <div className="flex flex-wrap gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {sec.items.map((rel) => {
                   const tabStyles = getNetworkTabStyles(sec.tabLabel);
                   return (
@@ -280,10 +280,10 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
                       key={`${rel.lonId}|${rel.nhoId}|${rel.entity.id}`}
                       type="button"
                       onClick={() => onNavigate({ lonId: rel.lonId, nhoId: rel.nhoId, entityId: rel.entity.id })}
-                      className={`flex items-start gap-4 bg-slate-900/80 backdrop-blur-md border border-slate-700 hover:-translate-y-0.5 p-4 rounded-2xl transition-all duration-300 shadow-md hover:shadow-md group w-full md:w-auto md:min-w-[320px] min-h-[78px] relative overflow-hidden ${tabStyles.itemGlow} ${tabStyles.itemHoverBorder}`}
+                      className={`flex items-start gap-3 bg-slate-900/80 backdrop-blur-md border border-slate-700 hover:-translate-y-0.5 p-3 rounded-2xl transition-all duration-300 shadow-md hover:shadow-md group w-full min-h-[72px] relative overflow-hidden ${tabStyles.itemGlow} ${tabStyles.itemHoverBorder}`}
                     >
                       <div className={`absolute inset-0 bg-gradient-to-r ${tabStyles.itemHoverGradient} via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none`} />
-                      <div className={`w-12 h-12 rounded-[16px] bg-slate-950 overflow-hidden flex-shrink-0 border border-slate-800 ${tabStyles.itemIconBorder} transition-colors relative`}>
+                      <div className={`w-10 h-10 rounded-[14px] bg-slate-950 overflow-hidden flex-shrink-0 border border-slate-800 ${tabStyles.itemIconBorder} transition-colors relative`}>
                         {rel.entity.avatar ? (
                           rel.entity.avatar.startsWith('local_image:') ? (
                             <AsyncLocalImage
@@ -304,21 +304,21 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
                             />
                           )
                         ) : (
-                          <span className="w-full h-full flex items-center justify-center text-slate-500 font-bold text-lg">
+                          <span className="w-full h-full flex items-center justify-center text-slate-500 font-bold text-base">
                             {safeString(rel.entity.name).charAt(0)}
                           </span>
                         )}
                         <div className={`absolute inset-0 ${tabStyles.itemIconOverlayBg} opacity-0 group-hover:opacity-100 transition-opacity`} />
                       </div>
                       <div className="text-left min-w-0">
-                        <div className={`text-[15px] font-bold text-slate-200 ${tabStyles.itemNameHoverText} font-serif transition-colors truncate leading-tight relative z-10`}>
+                        <div className={`text-[14px] font-bold text-slate-200 ${tabStyles.itemNameHoverText} font-serif transition-colors truncate leading-tight relative z-10`}>
                           {renderHighlightedText(rel.entity.name, networkSearch)}
                         </div>
                         <div className="mt-2 flex flex-col gap-1 min-w-0">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full ${tabStyles.itemBadgeBg} border ${tabStyles.itemBadgeBorder} ${tabStyles.itemBadgeText} text-[10px] font-bold uppercase tracking-widest w-fit relative z-10`}>
                             {safeString(rel.tabLabel)}
                           </span>
-                          <div className="text-[10px] text-slate-400 font-serif line-clamp-2 leading-relaxed relative z-10">
+                          <div className="text-[9px] text-slate-400 font-serif line-clamp-1 leading-relaxed relative z-10">
                             {renderHighlightedText(rel.context, networkSearch)}
                           </div>
                         </div>

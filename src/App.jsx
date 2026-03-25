@@ -200,6 +200,7 @@ export default function App() {
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const hoverTooltipRafRef = useRef(null);
   const [menu2Expanded, setMenu2Expanded] = useState(true);
+  const menu2LeaveCollapseTimeoutRef = useRef(null);
   const [collapsedTabGroups, setCollapsedTabGroups] = useState(() => new Set());
   const [sidebarGrouped, setSidebarGrouped] = useState(true);
   const lastSyncedActiveTabRef = useRef(null);
@@ -267,6 +268,32 @@ export default function App() {
   const [quickCreateData, setQuickCreateData] = useState(null); 
   
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+
+  const handleMenu2MouseEnter = () => {
+    if (menu2LeaveCollapseTimeoutRef.current) {
+      clearTimeout(menu2LeaveCollapseTimeoutRef.current);
+      menu2LeaveCollapseTimeoutRef.current = null;
+    }
+    setMenu2Expanded(true);
+  };
+
+  const handleMenu2MouseLeave = () => {
+    if (menu2LeaveCollapseTimeoutRef.current) clearTimeout(menu2LeaveCollapseTimeoutRef.current);
+    // Hysteresis để chuyển qua lại mượt hơn (giảm jitter khi hit-area đổi do transition)
+    menu2LeaveCollapseTimeoutRef.current = setTimeout(() => {
+      setMenu2Expanded(false);
+      menu2LeaveCollapseTimeoutRef.current = null;
+    }, 140);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (menu2LeaveCollapseTimeoutRef.current) {
+        clearTimeout(menu2LeaveCollapseTimeoutRef.current);
+        menu2LeaveCollapseTimeoutRef.current = null;
+      }
+    };
+  }, []);
   const [overviewForm, setOverviewForm] = useState(null);
   
   const [searchInput, setSearchInput] = useState('');
@@ -2476,9 +2503,13 @@ export default function App() {
             )
           ) : (
             <>
-              <div className={`bg-slate-900 border-r border-slate-800 transition-[width] duration-200 ease-out flex flex-col z-20 flex-shrink-0 h-full ${menu2Expanded ? 'w-64' : 'w-12'}`}>
+              <div
+                className={`bg-slate-900 border-r border-slate-800 transition-[width] duration-200 ease-out flex flex-col z-20 flex-shrink-0 h-full ${menu2Expanded ? 'w-64' : 'w-12'}`}
+                onMouseEnter={handleMenu2MouseEnter}
+                onMouseLeave={handleMenu2MouseLeave}
+              >
                 <div className="p-4 border-b border-slate-800 h-16 flex items-center justify-between overflow-hidden whitespace-nowrap"
-                  onMouseEnter={() => setMenu2Expanded((prev) => (prev ? prev : true))}>
+                >
                    {/* Nút toggle cho mobile/tap */}
                    <button
                      onClick={() => setMenu2Expanded(p => !p)}
@@ -2510,7 +2541,10 @@ export default function App() {
                          tabGroups.filter(grp => grp.tabs.length > 0).map((grp) => {
                            const isCollapsed = grp.groupLabel && collapsedTabGroups.has(grp.groupLabel);
                            return (
-                             <div key={grp.groupLabel || 'tong-quan'} className="px-3 mb-1">
+                            <div
+                              key={grp.groupLabel || 'tong-quan'}
+                              className={`${menu2Expanded ? 'px-3' : 'px-1'} mb-1`}
+                            >
                                {grp.groupLabel ? (
                                  <button
                                    onClick={() => setCollapsedTabGroups(prev => {
@@ -2522,17 +2556,42 @@ export default function App() {
                                    className="w-full flex items-center gap-2 py-2 px-2 rounded-md text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-amber-500 hover:bg-slate-800/50 transition-colors"
                                  >
                                    {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                                   <span className="flex-1 text-left truncate">{grp.groupLabel}</span>
-                                   <span className="text-slate-600">({grp.tabs.length})</span>
+                                   <span
+                                     className={`flex-1 min-w-0 text-left truncate transition-[opacity,max-width] duration-150 ${
+                                       menu2Expanded ? 'opacity-100 max-w-[999px]' : 'opacity-0 max-w-0 overflow-hidden'
+                                     }`}
+                                   >
+                                     {grp.groupLabel}
+                                   </span>
+                                   <span
+                                     className={`text-slate-600 transition-[opacity,max-width] duration-150 ${
+                                       menu2Expanded ? 'opacity-100 max-w-[999px]' : 'opacity-0 max-w-0 overflow-hidden'
+                                     }`}
+                                   >
+                                     ({grp.tabs.length})
+                                   </span>
                                  </button>
                                ) : null}
                                {(!grp.groupLabel || !isCollapsed) && grp.tabs.map(tab => {
                                  const isActive = activeTabLon === tab.id;
                                  return (
                                    <div key={tab.id} className="mb-1">
-                                     <button onClick={() => handleSelectTabLon(tab.id)} className={`w-full flex items-center p-3 rounded-lg transition-colors overflow-hidden whitespace-nowrap ${isActive && !activeTabNho ? 'bg-amber-900/20 text-amber-400 border-l-2 border-amber-500' : 'text-slate-500 hover:bg-slate-800 border-l-2 border-transparent'}`}>
+                                    <button
+                                      onClick={() => handleSelectTabLon(tab.id)}
+                                      className={`w-full flex items-center rounded-lg transition-colors overflow-hidden whitespace-nowrap ${
+                                        menu2Expanded ? 'p-3 justify-start' : 'p-2 justify-center'
+                                      } ${isActive && !activeTabNho ? 'bg-amber-900/20 text-amber-400 border-l-2 border-amber-500' : 'text-slate-500 hover:bg-slate-800 border-l-2 border-transparent'}`}
+                                    >
                                        <div className="w-5 flex justify-center flex-shrink-0">{getIconComponent(tab.iconName)}</div>
-                                       <span className={`ml-3 font-serif text-sm transition-opacity duration-200 ${menu2Expanded ? 'opacity-100' : 'opacity-0'}`}>{safeString(tab.label)}</span>
+                                       <span
+                                         className={`font-serif text-sm transition-[opacity,max-width,margin-left] duration-200 ${
+                                           menu2Expanded
+                                             ? 'ml-3 opacity-100 max-w-[999px]'
+                                             : 'ml-0 opacity-0 max-w-0 overflow-hidden'
+                                         }`}
+                                       >
+                                         {safeString(tab.label)}
+                                       </span>
                                      </button>
                                      {isActive && tab.subTabs?.length > 0 && menu2Expanded && (
                                        <div className="mt-1 ml-6 border-l border-slate-700/50 pl-2 space-y-1 animate-fade-in">
@@ -2572,10 +2631,23 @@ export default function App() {
                          sortedTabs.map(tab => {
                            const isActive = activeTabLon === tab.id;
                            return (
-                             <div key={tab.id} className="px-3 mb-1">
-                               <button onClick={() => handleSelectTabLon(tab.id)} className={`w-full flex items-center p-3 rounded-lg transition-colors overflow-hidden whitespace-nowrap ${isActive && !activeTabNho ? 'bg-amber-900/20 text-amber-400 border-l-2 border-amber-500' : 'text-slate-500 hover:bg-slate-800 border-l-2 border-transparent'}`}>
+                            <div key={tab.id} className={`${menu2Expanded ? 'px-3' : 'px-1'} mb-1`}>
+                              <button
+                                onClick={() => handleSelectTabLon(tab.id)}
+                                className={`w-full flex items-center rounded-lg transition-colors overflow-hidden whitespace-nowrap ${
+                                  menu2Expanded ? 'p-3 justify-start' : 'p-2 justify-center'
+                                } ${isActive && !activeTabNho ? 'bg-amber-900/20 text-amber-400 border-l-2 border-amber-500' : 'text-slate-500 hover:bg-slate-800 border-l-2 border-transparent'}`}
+                              >
                                  <div className="w-5 flex justify-center flex-shrink-0">{getIconComponent(tab.iconName)}</div>
-                                 <span className={`ml-3 font-serif text-sm transition-opacity duration-200 ${menu2Expanded ? 'opacity-100' : 'opacity-0'}`}>{safeString(tab.label)}</span>
+                                 <span
+                                   className={`font-serif text-sm transition-[opacity,max-width,margin-left] duration-200 ${
+                                     menu2Expanded
+                                       ? 'ml-3 opacity-100 max-w-[999px]'
+                                       : 'ml-0 opacity-0 max-w-0 overflow-hidden'
+                                   }`}
+                                 >
+                                   {safeString(tab.label)}
+                                 </span>
                                </button>
                                {isActive && tab.subTabs?.length > 0 && menu2Expanded && (
                                  <div className="mt-1 ml-6 border-l border-slate-700/50 pl-2 space-y-1 animate-fade-in">
@@ -2615,7 +2687,7 @@ export default function App() {
 
               <div className="flex-1 flex flex-col overflow-hidden relative bg-slate-950">
                  <div id="main-scroll-container" className="flex-1 overflow-y-auto custom-scrollbar p-8">
-                    <div className="max-w-6xl mx-auto h-full flex flex-col">
+                    <div className="max-w-7xl mx-auto h-full flex flex-col">
                        
                        {navHistory.length > 0 && (
                            <div className="mb-4">

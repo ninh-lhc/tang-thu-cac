@@ -53,6 +53,8 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
 }) {
   const [milestonesPage, setMilestonesPage] = useState(0);
   const milestoneListScrollRef = useRef(null);
+  const eventColumnRef = useRef(null);
+  const leaveCollapseTimeoutRef = useRef(null);
   const milestonesAll = selectedEntity?.milestones ?? [];
   const PAGE_SIZE = 10;
   const milestonesSorted = React.useMemo(() => {
@@ -69,6 +71,11 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   const totalPages = Math.max(1, Math.ceil(milestonesSorted.length / PAGE_SIZE));
   const safePage = Math.min(milestonesPage, totalPages - 1);
   const milestones = milestonesSorted.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+  // Thu gọn sau khi đã chọn mốc. Mở rộng lại sẽ làm bằng CSS hover (không setState theo chuột để tránh lag).
+  const isEventColumnCollapsed = !!selectedMilestoneId;
+  const [isEventColumnHovered, setIsEventColumnHovered] = useState(false);
+  const isEventColumnExpanded = !isEventColumnCollapsed || isEventColumnHovered;
+  const isEventColumnContentHidden = isEventColumnCollapsed && !isEventColumnExpanded;
 
   const rowVirtualizer = useVirtualizer({
     count: milestones.length,
@@ -82,6 +89,27 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
     // Clamp page khi đổi entity hoặc khi tổng số page giảm.
     setMilestonesPage((p) => Math.min(p, totalPages - 1));
   }, [selectedEntity?.id, totalPages]);
+
+  // Nếu user đã hover vào cột trái ngay thời điểm vừa chọn milestone (đổi state),
+  // thì onMouseEnter có thể không chạy lại. Dùng :hover để đồng bộ ngay lập tức.
+  useEffect(() => {
+    if (!isEventColumnCollapsed) {
+      setIsEventColumnHovered(false);
+      return;
+    }
+    const el = eventColumnRef.current;
+    if (!el) return;
+    if (el.matches(':hover')) setIsEventColumnHovered(true);
+  }, [isEventColumnCollapsed]);
+
+  useEffect(() => {
+    return () => {
+      if (leaveCollapseTimeoutRef.current) {
+        clearTimeout(leaveCollapseTimeoutRef.current);
+        leaveCollapseTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     // Khi đang bật tab timeline và milestone được chọn nằm ở page khác,
@@ -111,10 +139,37 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   if (collectionSubTab !== 'timeline' || !selectedEntity) return null;
 
   return (
-    <div className="flex gap-8 overflow-hidden max-w-6xl mx-auto h-full flex-col md:flex-row pb-10">
-      <div className="w-full md:w-1/3 border-r border-slate-800/80 pr-6 flex flex-col flex-shrink-0 min-h-0 md:max-h-[min(85vh,720px)]">
+    <div className={`flex overflow-hidden w-full h-full flex-col md:flex-row pb-10`}>
+      <div
+        className={`group w-full border-r border-slate-800/80 flex flex-col flex-shrink-0 min-h-0 md:max-h-[min(85vh,720px)] transition-[width,padding] duration-200 ease-out ${
+          isEventColumnCollapsed
+            ? isEventColumnExpanded
+              ? 'md:w-1/3 md:pr-6'
+              : 'md:w-[92px] md:pr-2'
+            : 'md:w-1/3 md:pr-6'
+        }`}
+        ref={eventColumnRef}
+        onMouseEnter={() => {
+          if (leaveCollapseTimeoutRef.current) {
+            clearTimeout(leaveCollapseTimeoutRef.current);
+            leaveCollapseTimeoutRef.current = null;
+          }
+          setIsEventColumnHovered(true);
+        }}
+        onMouseLeave={() => {
+          if (leaveCollapseTimeoutRef.current) clearTimeout(leaveCollapseTimeoutRef.current);
+          // Hysteresis để tránh "giật" khi transition làm hit-area thay đổi.
+          leaveCollapseTimeoutRef.current = setTimeout(() => {
+            setIsEventColumnHovered(false);
+          }, 140);
+        }}
+      >
         <div className="flex justify-between items-center mb-4 shrink-0">
-          <h3 className="text-lg font-heading font-bold text-amber-500">Mốc Sự Kiện</h3>
+          <h3 className={`text-lg font-heading font-bold text-amber-500 transition-opacity duration-150 ${
+            isEventColumnContentHidden
+              ? 'opacity-0 pointer-events-none'
+              : 'opacity-100'
+          }`}>Mốc Sự Kiện</h3>
           <button onClick={() => { setEditingMilestoneData(null); setIsMilestoneModalOpen(true); }} className="p-2 bg-emerald-900/30 text-emerald-400 rounded-[40px] hover:bg-emerald-800/50 transition-colors" title="Thêm mốc mới"><Plus size={16}/></button>
         </div>
 
@@ -146,11 +201,17 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                     >
                       <button
                         type="button"
-                        onClick={() => setSelectedMilestoneId(ms.id)}
-                        className={`w-full text-left p-4 rounded-2xl flex items-start gap-4 transition-all duration-300 group ${isSelected ? 'bg-gradient-to-r from-amber-900/40 to-slate-900 border border-amber-700/50 shadow-lg translate-x-2' : 'bg-transparent border border-transparent hover:bg-slate-900 hover:border-slate-800'}`}
+                        onClick={() => { setSelectedMilestoneId(ms.id); }}
+                      className={`w-full text-left p-4 rounded-2xl flex items-start gap-4 transition-all duration-300 ${isSelected ? 'bg-gradient-to-r from-amber-900/40 to-slate-900 border border-amber-700/50 shadow-lg translate-x-2' : 'bg-transparent border border-transparent hover:bg-slate-900 hover:border-slate-800'}`}
                       >
                         <div className={`mt-1 w-3 h-3 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-amber-400 border-amber-900 shadow-[0_0_10px_var(--t-400)]' : 'bg-slate-800 border-slate-950 group-hover:bg-slate-600'}`}></div>
-                        <div className="flex-1 min-w-0">
+                        <div
+                          className={`flex-1 min-w-0 transition-[opacity,max-width] duration-150 overflow-hidden ${
+                            isEventColumnContentHidden
+                              ? 'opacity-0 max-w-0 pointer-events-none'
+                              : 'opacity-100 max-w-[9999px]'
+                          }`}
+                        >
                           <div className={`text-sm font-bold uppercase tracking-widest font-heading mb-1 transition-colors ${isSelected ? 'text-amber-400' : 'text-slate-400 group-hover:text-slate-300'}`}>Chương {safeString(ms.chapter)}</div>
                           <div className={`text-xs font-serif line-clamp-2 leading-relaxed ${isSelected ? 'text-slate-200' : 'text-slate-500 group-hover:text-slate-400'}`}>{safeString(ms.event)}</div>
                         </div>
@@ -162,7 +223,13 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
             </div>
 
             {totalPages > 1 && (
-              <div className="mt-3 shrink-0 flex items-center justify-between gap-3 px-1">
+              <div
+                className={`mt-3 shrink-0 flex items-center justify-between gap-3 px-1 transition-all duration-150 ${
+                  isEventColumnContentHidden
+                    ? 'opacity-0 max-h-0 overflow-hidden pointer-events-none'
+                    : 'opacity-100 max-h-[60px]'
+                }`}
+              >
                 <button
                   type="button"
                   disabled={safePage <= 0}
@@ -196,7 +263,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
         )}
       </div>
 
-      <div className="w-full md:w-2/3 overflow-y-auto custom-scrollbar pl-2 pr-2">
+      <div className="flex-1 min-w-0 overflow-y-auto custom-scrollbar pl-2 pr-2">
         {selectedMilestoneId && selectedEntity.milestones?.find((m) => m.id === selectedMilestoneId) ? (() => {
           const selectedMs = selectedEntity.milestones.find((m) => m.id === selectedMilestoneId);
           const fields = currentTabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS;
