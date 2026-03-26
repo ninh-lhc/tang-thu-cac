@@ -646,7 +646,7 @@ export default function App() {
       window.removeEventListener('touchstart', handleOutside);
       window.removeEventListener('keydown', handleEsc);
     };
-  }, [showEntityAdvanced]);
+  }, [showEntityAdvanced, setShowEntityAdvanced]);
   useEffect(() => {
     const el = sidebarListRef.current;
     if (!el) return;
@@ -974,7 +974,7 @@ export default function App() {
       setXrefAiPanel(null);
       showToast('Đã mở form tạo thẻ — kiểm tra rồi Lưu.');
     },
-    [activeNovelData?.tabsConfig, globalTabsConfig, activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, showToast]
+    [activeNovelData?.tabsConfig, globalTabsConfig, activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, showToast, setEntitySearch]
   );
 
   const applyXrefSuggestionMilestone = useCallback(
@@ -1223,7 +1223,7 @@ export default function App() {
      if (dest.entityId) { setSelectedEntityId(dest.entityId); setCollectionSubTab('detail'); } 
      else { setSelectedEntityId(null); setCollectionSubTab('list'); }
      setIsEditingMode(false); setIsEntityEditing(false);
-  }, [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab]);
+  }, [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, setEntitySearch]);
 
   const handleGoBack = useCallback(() => {
      if (navHistory.length === 0) return;
@@ -2290,7 +2290,7 @@ export default function App() {
       setEntitySearch('');
     }
     setMenu2Expanded(true);
-  }, [activeTabLon, isEditingMode, isEntityEditing]);
+  }, [activeTabLon, isEditingMode, isEntityEditing, setEntitySearch]);
 
   const handleSelectTabNho = useCallback((e, lonId, sub) => {
     e.stopPropagation();
@@ -2302,7 +2302,7 @@ export default function App() {
     setIsEditingMode(false);
     setIsEntityEditing(false);
     setEntitySearch('');
-  }, []);
+  }, [setEntitySearch]);
 
   // ==========================================
 

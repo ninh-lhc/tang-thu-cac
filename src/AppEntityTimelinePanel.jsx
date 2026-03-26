@@ -36,6 +36,9 @@ function isMeaningfulTimelineValue(value) {
 /** Chiều cao ước lượng mỗi hàng mốc (p-4 + 2 dòng + gap); virtualizer dùng làm mặc định. */
 const MILESTONE_LIST_ROW_ESTIMATE_PX = 96;
 
+/** Cùng reference khi không có milestones — tránh dependency useMemo đổi mỗi render. */
+const EMPTY_MILESTONES = [];
+
 export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   collectionSubTab,
   selectedEntity,
@@ -56,7 +59,9 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   const milestoneListScrollRef = useRef(null);
   const eventColumnRef = useRef(null);
   const leaveCollapseTimeoutRef = useRef(null);
-  const milestonesAll = selectedEntity?.milestones ?? [];
+  const milestonesAll = Array.isArray(selectedEntity?.milestones)
+    ? selectedEntity.milestones
+    : EMPTY_MILESTONES;
   const PAGE_SIZE = 10;
   const milestonesSorted = React.useMemo(() => {
     if (!milestonesAll) return [];
