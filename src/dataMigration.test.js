@@ -63,6 +63,27 @@ describe('dataMigration', () => {
       });
       expect(out.data.lon1.sub1.entities[0].name).toBe('Nhân vật');
       expect(out.data.lon1.sub1.overview).toBe('x');
+      expect(out.data.lon1.sub1.entities[0].images).toEqual([]);
+    });
+
+    it('normalizes images list in legacy entities', () => {
+      const out = migrateNovel({
+        id: 'n1',
+        data: {
+          lon1: {
+            sub1: {
+              entities: [
+                {
+                  id: 'e1',
+                  name: 'A',
+                  images: [' local_image:a.png ', '', null, 'https://x/y.jpg'],
+                },
+              ],
+            },
+          },
+        },
+      });
+      expect(out.data.lon1.sub1.entities[0].images).toEqual(['local_image:a.png', 'https://x/y.jpg']);
     });
 
     it('handles string tabData (legacy)', () => {

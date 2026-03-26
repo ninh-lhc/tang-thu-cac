@@ -1,5 +1,6 @@
 // Quản lý state + prefs cho truy vấn collection entity (search/filter/sort/group).
 // Tách từ App.jsx để giảm churn render toàn cục.
+/* eslint-disable react-hooks/set-state-in-effect -- đây là hook stateful điều phối UI; setState trong effect là chủ ý */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { safeString } from './MasterUtils.jsx';

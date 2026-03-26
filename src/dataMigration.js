@@ -114,7 +114,11 @@ function sanitizeSubTab(s) {
 /** Chuẩn hóa entity trong collection-track. */
 function sanitizeEntity(e) {
   if (!isObj(e)) return null;
+  const images = Array.isArray(e.images)
+    ? e.images.map((x) => String(x || '').trim()).filter(Boolean)
+    : [];
   return {
+    ...e,
     id: e.id ?? '',
     name: e.name ?? '',
     avatar: e.avatar ?? '',
@@ -122,7 +126,7 @@ function sanitizeEntity(e) {
     dynamicData: isObj(e.dynamicData) ? e.dynamicData : {},
     info: e.info ?? '',
     milestones: Array.isArray(e.milestones) ? e.milestones.filter(isObj) : [],
-    ...e,
+    images,
   };
 }
 
@@ -133,9 +137,9 @@ function sanitizeTabData(td) {
   if (!isObj(td)) return { overview: '', entities: [] };
   const entities = Array.isArray(td.entities) ? td.entities.map(sanitizeEntity).filter(Boolean) : [];
   return {
+    ...td,
     overview: td.overview ?? '',
     entities,
-    ...td,
   };
 }
 

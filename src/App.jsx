@@ -59,7 +59,7 @@ import {
 import { computeRelatedEntities } from './lib/computeRelatedEntities.js';
 import { findEntitiesByHintInNovel } from './appNhatKyVaGoiThe.js';
 import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
-import { migrateIndex, migrateBackup } from './dataMigration.js';
+import { migrateIndex, migrateBackup, migrateNovel } from './dataMigration.js';
 import { buildTabGroups } from './lib/appTabGroups.js';
 import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
@@ -1278,9 +1278,10 @@ export default function App() {
                  showToast("Đang thực hiện độ kiếp (Migrate) cấu trúc thư mục...");
                  const newMeta = parsedOld.novels.map(n => ({ id: n.id, title: n.title, author: n.author, genres: n.genres || (n.genre ? [n.genre] : []), theme: n.theme || 'theme-tien-hiep', status: n.status, rating: n.rating, tags: n.tags || [], chaptersRead: n.chaptersRead, chaptersTotal: n.chaptersTotal, cover: n.cover, review: n.review }));
                  const novelsDir = await h.getDirectoryHandle('novels', { create: true });
-                 for (const n of parsedOld.novels) {
+                for (const n of parsedOld.novels) {
+                    const migratedNovel = migrateNovel(n);
                      const fh = await novelsDir.getFileHandle(`${n.id}.json`, { create: true }); const wr = await fh.createWritable();
-                     await wr.write(JSON.stringify(n, null, 2)); await wr.close();
+                    await wr.write(JSON.stringify(migratedNovel, null, 2)); await wr.close();
                  }
                  const ih = await h.getFileHandle('index.json', { create: true }); const iw = await ih.createWritable();
                  await iw.write(JSON.stringify({ metadata: newMeta, config: parsedOld.config || globalTabsConfig, novelStats: {} }, null, 2)); await iw.close();

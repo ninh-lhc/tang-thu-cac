@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useState, useDeferredValue, useEffect } from 'react';
+import React, { memo, useMemo, useState, useDeferredValue } from 'react';
 import { Network, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { FALLBACK_IMG } from './MasterEngines.js';
 import { AsyncLocalImage, safeString } from './MasterUtils.jsx';
@@ -168,30 +168,11 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
   const grouped = useMemo(() => groupByTabLabel(sorted), [sorted]);
   const totalFiltered = filtered.length;
 
-  useEffect(() => {
-    setPageByGroup({});
-  }, [deferredSearch, networkTabKey]);
-
-  useEffect(() => {
-    setPageByGroup((prev) => {
-      const next = { ...prev };
-      let dirty = false;
-      for (const g of grouped) {
-        const maxPage = Math.max(1, Math.ceil(g.items.length / NETWORK_GROUP_PAGE_SIZE));
-        const cur = next[g.tabLabel] ?? 1;
-        if (cur > maxPage) {
-          next[g.tabLabel] = maxPage;
-          dirty = true;
-        }
-      }
-      return dirty ? next : prev;
-    });
-  }, [grouped]);
-
   const renderedCount = useMemo(() => {
     let n = 0;
     for (const sec of grouped) {
-      const page = pageByGroup[sec.tabLabel] ?? 1;
+      const maxPage = Math.max(1, Math.ceil(sec.items.length / NETWORK_GROUP_PAGE_SIZE));
+      const page = Math.min(pageByGroup[sec.tabLabel] ?? 1, maxPage);
       const start = (page - 1) * NETWORK_GROUP_PAGE_SIZE;
       n += Math.min(NETWORK_GROUP_PAGE_SIZE, Math.max(0, sec.items.length - start));
     }
@@ -234,6 +215,7 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
               value={networkSearch}
               onChange={(e) => {
                 setNetworkSearch(e.target.value);
+                setPageByGroup({});
               }}
               placeholder="Lọc tên, ngữ cảnh, nhãn tab…"
               autoComplete="off"
@@ -255,6 +237,7 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
             type="button"
             onClick={() => {
               setNetworkTabKey('all');
+              setPageByGroup({});
             }}
             className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-colors shadow-sm ${
               networkTabKey === 'all'
@@ -270,6 +253,7 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
               type="button"
               onClick={() => {
                 setNetworkTabKey(tab);
+                setPageByGroup({});
               }}
               className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-colors max-w-[200px] truncate shadow-sm ${
                 networkTabKey === tab
@@ -287,8 +271,8 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
         {!isCalculatingNetwork && (
           <div className="space-y-8">
           {grouped.map((sec) => {
-            const page = pageByGroup[sec.tabLabel] ?? 1;
             const totalPages = Math.max(1, Math.ceil(sec.items.length / NETWORK_GROUP_PAGE_SIZE));
+            const page = Math.min(pageByGroup[sec.tabLabel] ?? 1, totalPages);
             const start = (page - 1) * NETWORK_GROUP_PAGE_SIZE;
             const pageSlice = sec.items.slice(start, start + NETWORK_GROUP_PAGE_SIZE);
             return (

@@ -436,8 +436,8 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   // Hướng B: người dùng chủ động nhấn nút để dùng rawText có [[...]] này làm "Ghi Chép Chi Tiết" (entity.info).
   const [copyRawToInfo, setCopyRawToInfo] = useState(false);
   const [newFieldLabel, setNewFieldLabel] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [_isAnalyzing, setIsAnalyzing] = useState(false);
+  const [_errorMsg, setErrorMsg] = useState('');
   const dynamicFieldInputRefs = useRef({});
   const pendingWikiCaretRef = useRef(null);
 
@@ -478,7 +478,7 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
     return () => window.removeEventListener('ttc-save', handler);
   }, [isOpen, formData, dynamicData, copyRawToInfo, onSave, onClose]);
 
-  const handleAI = async () => {
+  const _handleAI = async () => {
      const keys = Array.isArray(geminiApiKey) ? geminiApiKey : (geminiApiKey ? [geminiApiKey] : []);
      if (keys.length === 0) { setErrorMsg("Vui lòng thiết lập API Key trong phần Cài Đặt để dùng tính năng AI."); return; }
      if (!formData.rawText.trim()) return;
@@ -510,7 +510,8 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
 
   const trapRef = useFocusTrap(isOpen);
   if (!isOpen) return null;
-  const hasWikiInRawText = safeString(formData.rawText).includes('[[');
+  const _hasWikiInRawText = safeString(formData.rawText).includes('[[');
+  void _hasWikiInRawText;
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in">
        <div ref={trapRef} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-2xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col max-h-[85vh]">
