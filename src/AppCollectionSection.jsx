@@ -36,8 +36,6 @@ export function AppCollectionSection({
   // novel data
   activeNovelData,
   currentContextDirHandle,
-  activeNovelDirHandle,
-  dirHandle,
   tocRailExpanded = true,
   // entity filter/search toolbar
   entityAdvancedRef,
@@ -74,13 +72,8 @@ export function AppCollectionSection({
   groupVisibleCount,
   setGroupVisibleCount,
   entityPageSize,
-  galleryPortraitEntries,
-  visibleGalleryEntries,
-  galleryHasMore,
-  setGalleryVisiblePage,
-  galleryScope,
-  setGalleryScope,
-  handleOpenEntityFromGallery,
+  handleAddEntityImage,
+  handleRemoveEntityImage,
   onEntityCardSelect,
   onEntityCardDelete,
   onEntityCardAddMilestone,
@@ -130,6 +123,7 @@ export function AppCollectionSection({
   handleImageDrop,
 }) {
   void AdvancedFieldSelect;
+  void recentlyMergedFields;
   const [entitySearchDraft, setEntitySearchDraft] = React.useState(entitySearch || '');
   const [entityFilterValueDraft, setEntityFilterValueDraft] = React.useState(entityFilterValue || '');
   const [isCollectionSwitching, setIsCollectionSwitching] = React.useState(false);
@@ -367,7 +361,7 @@ export function AppCollectionSection({
           <AppCollectionTrackTabs
             collectionSubTab={collectionSubTab}
             setCollectionSubTab={setCollectionSubTab}
-            galleryCount={galleryPortraitEntries.length}
+            galleryCount={selectedEntity?.images?.length || 0}
             selectedEntityName={selectedEntity ? safeString(selectedEntity.name) : ''}
             selectedEntityMilestoneCount={selectedEntity?.milestones?.length || 0}
             isSwitching={isCollectionSwitching}
@@ -379,15 +373,12 @@ export function AppCollectionSection({
             )}
             <AppGalleryContent
               collectionSubTab={collectionSubTab}
-              galleryPortraitEntries={galleryPortraitEntries}
-              visibleGalleryEntries={visibleGalleryEntries}
-              galleryHasMore={galleryHasMore}
-              setGalleryVisiblePage={setGalleryVisiblePage}
-              galleryScope={galleryScope}
-              setGalleryScope={setGalleryScope}
-              handleOpenEntityFromGallery={handleOpenEntityFromGallery}
-              activeNovelDirHandle={activeNovelDirHandle}
-              dirHandle={dirHandle}
+              selectedEntity={selectedEntity}
+              onBackToList={() => setCollectionSubTab('list')}
+              onAddEntityImage={handleAddEntityImage}
+              onRemoveEntityImage={handleRemoveEntityImage}
+              onOpenEntityImage={setLightboxSrc}
+              currentContextDirHandle={currentContextDirHandle}
             />
             <AppCollectionListContent
               collectionSubTab={collectionSubTab}

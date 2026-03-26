@@ -210,18 +210,9 @@ export default function App() {
   
   const [selectedEntityId, setSelectedEntityId] = useState(null);
   const entityAdvancedRef = useRef(null);
-  const ENTITY_PAGE_SIZE = 24; 
+  const ENTITY_PAGE_SIZE = 12; 
   
   const [collectionSubTab, setCollectionSubTab] = useState('list'); 
-  const [galleryVisiblePage, setGalleryVisiblePage] = useState(1);
-  const [galleryScope, setGalleryScope] = useState(() => {
-    try {
-      const saved = localStorage.getItem('tangthu_gallery_scope');
-      return saved === 'tab_lon' || saved === 'tab_nho' ? saved : 'all';
-    } catch {
-      return 'all';
-    }
-  }); // all | tab_lon | tab_nho
   const [navHistory, setNavHistory] = useState([]);
 
   const [selectedMilestoneId, setSelectedMilestoneId] = useState(null);
@@ -605,36 +596,6 @@ export default function App() {
     });
   }, [entitiesList, entityGroupBy]);
 
-  const galleryPortraitEntries = useMemo(() => {
-    if (!activeNovelData) return [];
-    if (currentTabConfig?.viewType !== 'collection-track') return [];
-    const cfg = activeNovelData.tabsConfig || globalTabsConfig;
-    const out = [];
-    (cfg || []).forEach((lon) => {
-      if (galleryScope === 'tab_lon' && lon.id !== activeTabLon) return;
-      (lon.subTabs || []).forEach((nho) => {
-        if (nho.viewType !== 'collection-track') return;
-        if (galleryScope === 'tab_nho') {
-          if (!activeTabNho) return;
-          if (lon.id !== activeTabLon || nho.id !== activeTabNho) return;
-        }
-        const tabData = activeNovelData.data?.[lon.id]?.[nho.id];
-        (tabData?.entities || []).forEach((ent) => {
-          if (ent.avatar && String(ent.avatar).trim()) {
-            out.push({ ent, lonId: lon.id, nhoId: nho.id, sectionLabel: nho.label });
-          }
-        });
-      });
-    });
-    return out;
-  }, [activeNovelData, globalTabsConfig, currentTabConfig?.viewType, galleryScope, activeTabLon, activeTabNho]);
-  const GALLERY_PAGE_SIZE = 60;
-  const visibleGalleryEntries = useMemo(
-    () => galleryPortraitEntries.slice(0, galleryVisiblePage * GALLERY_PAGE_SIZE),
-    [galleryPortraitEntries, galleryVisiblePage]
-  );
-  const galleryHasMore = visibleGalleryEntries.length < galleryPortraitEntries.length;
-
   /** Thực thể có kỷ nguyên trong [neo−12, neo+30] — mọi mục sưu tập */
   const nearChapterEntitiesGlobal = useMemo(() => {
     if (!activeNovelData) return [];
@@ -644,12 +605,15 @@ export default function App() {
     const hi = anchor + 30;
     const cfg = activeNovelData.tabsConfig || globalTabsConfig;
     const seen = new Set();
+    const NEAR_CHAPTER_MAX = 120;
     const out = [];
     (cfg || []).forEach((lon) => {
       (lon.subTabs || []).forEach((nho) => {
+        if (out.length >= NEAR_CHAPTER_MAX) return;
         if (nho.viewType !== 'collection-track') return;
         const tabData = activeNovelData.data?.[lon.id]?.[nho.id];
         (tabData?.entities || []).forEach((ent) => {
+          if (out.length >= NEAR_CHAPTER_MAX) return;
           const hit = (ent.milestones || []).some((ms) => {
             const c = parseInt(ms.chapter, 10);
             return !isNaN(c) && c >= lo && c <= hi;
@@ -664,24 +628,6 @@ export default function App() {
     });
     return out;
   }, [activeNovelData, globalTabsConfig, overviewNeoOpen]);
-
-  const handleOpenEntityFromGallery = useCallback(
-    (entry) => {
-      const cfg = activeNovelData?.tabsConfig || globalTabsConfig;
-      const lon = cfg.find((t) => t.id === entry.lonId);
-      const sub = lon?.subTabs?.find((s) => s.id === entry.nhoId);
-      if (!lon || !sub || !activeNovelData) return;
-      setActiveTabLon(entry.lonId);
-      setActiveTabNho(entry.nhoId);
-      setActiveTabCon(null);
-      setSelectedEntityId(entry.ent.id);
-      setCollectionSubTab('detail');
-      setIsEditingMode(false);
-      setIsEntityEditing(false);
-      setEntitySearch('');
-    },
-    [activeNovelData, globalTabsConfig]
-  );
 
   useEffect(() => {
     if (!showEntityAdvanced) return undefined;
@@ -701,9 +647,6 @@ export default function App() {
       window.removeEventListener('keydown', handleEsc);
     };
   }, [showEntityAdvanced]);
-  useEffect(() => {
-    if (collectionSubTab === 'gallery') setGalleryVisiblePage(1);
-  }, [collectionSubTab, activeTabLon, activeTabNho, activeNovelData?.id]);
   useEffect(() => {
     const el = sidebarListRef.current;
     if (!el) return;
@@ -763,7 +706,37 @@ export default function App() {
     }
   }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig, selectedEntityId]);
 
-  const entityMap = useMemo(() => buildEntityLinkMap(activeNovelData), [activeNovelData]);
+  const entityMap = useMemo(() => {
+    if (!activeNovelData) return [];
+    if (currentTabConfig?.viewType === 'collection-track' && activeTabLon) {
+      const nhoId = activeTabNho || 'default';
+      const tabData = activeNovelData.data?.[activeTabLon]?.[nhoId];
+      const entities = Array.isArray(tabData?.entities) ? tabData.entities : [];
+      const temp = [];
+      const addNames = (nameStr, dest) => {
+        if (!nameStr || typeof nameStr !== 'string') return;
+        nameStr.split(/[,/|()]/).forEach((n) => {
+          const clean = n.trim();
+          if (clean.length >= 2 && clean.length <= 40) temp.push({ name: clean, dest });
+        });
+      };
+      for (const ent of entities) {
+        const dest = { lonId: activeTabLon, nhoId, entityId: ent.id };
+        addNames(ent.name, dest);
+        if (ent.dynamicData?.f_alias) addNames(ent.dynamicData.f_alias, dest);
+      }
+      const uniq = [];
+      const seen = new Set();
+      for (const item of temp) {
+        const low = item.name.toLowerCase();
+        if (seen.has(low)) continue;
+        seen.add(low);
+        uniq.push(item);
+      }
+      return uniq.sort((a, b) => b.name.length - a.name.length);
+    }
+    return buildEntityLinkMap(activeNovelData);
+  }, [activeNovelData, currentTabConfig?.viewType, activeTabLon, activeTabNho]);
   const deferredEntityMap = useDeferredValue(entityMap);
   const shouldBuildGlobalRegex = useMemo(() => {
     if (isSplitPreview) return true;
@@ -810,6 +783,9 @@ export default function App() {
           activeTabs,
           entityMap,
           wikiExactMatchOnly,
+          scopeLonId: activeTabLon,
+          scopeNhoId: activeTabNho || 'default',
+          maxResults: 300,
         });
         if (!cancelled) setRelatedEntities(relations);
       } catch (err) {
@@ -824,7 +800,7 @@ export default function App() {
       clearTimeout(timer);
       setIsCalculatingNetwork(false);
     };
-  }, [activeNovelData, selectedEntity, activeTabs, entityMap, wikiExactMatchOnly, collectionSubTab]);
+  }, [activeNovelData, selectedEntity, activeTabs, entityMap, wikiExactMatchOnly, collectionSubTab, activeTabLon, activeTabNho]);
 
   const librarySearchIndex = useMemo(
     () =>
@@ -906,12 +882,6 @@ export default function App() {
       localStorage.setItem('tangthu_perf_mode', performanceMode ? '1' : '0');
     } catch { void 0; }
   }, [performanceMode]);
-  useEffect(() => {
-    try {
-      localStorage.setItem('tangthu_gallery_scope', galleryScope);
-    } catch { void 0; }
-  }, [galleryScope]);
-
   useEffect(() => {
     const q = searchQuery.trim();
     if (q.length < 2) return;
@@ -1271,7 +1241,7 @@ export default function App() {
           let tabData = nov.data[lonId][nhoId];
           if (!tabData || typeof tabData === 'string') tabData = { overview: '', entities: [] };
           if (!tabData.entities) tabData.entities = [];
-          tabData.entities.push({ id: newEntityId, name: name, avatar: '', rawText: '', dynamicData: {}, info: '', milestones: [] });
+          tabData.entities.push({ id: newEntityId, name: name, avatar: '', rawText: '', dynamicData: {}, info: '', milestones: [], images: [] });
           nov.data[lonId][nhoId] = tabData;
           lockFieldsTemplateIfFirstEntity(nov, lonId, nhoId);
       });
@@ -1640,9 +1610,19 @@ export default function App() {
        if (!tabData.entities) tabData.entities = [];
        if (formData.id) { 
           const idx = tabData.entities.findIndex(e => e.id === formData.id);
-          if (idx > -1) { tabData.entities[idx] = { ...tabData.entities[idx], name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData }; }
+         if (idx > -1) {
+           const prevImages = Array.isArray(tabData.entities[idx].images) ? tabData.entities[idx].images : [];
+           tabData.entities[idx] = {
+             ...tabData.entities[idx],
+             name: formData.name,
+             avatar: formData.avatar,
+             rawText: formData.rawText,
+             dynamicData: dynamicData,
+             images: prevImages,
+           };
+         }
        } else {
-          tabData.entities.push({ id: newEntityId, name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData, info: copyRawToInfo ? formData.rawText : '', milestones: [] });
+         tabData.entities.push({ id: newEntityId, name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData, info: copyRawToInfo ? formData.rawText : '', milestones: [], images: [] });
           lockFieldsTemplateIfFirstEntity(nov, activeTabLon, activeTabNho || 'default');
        }
 
@@ -1671,6 +1651,35 @@ export default function App() {
         void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
       }
     } : null);
+  };
+
+  const handleAddImageToSelectedEntity = async () => {
+    if (!selectedEntityId) {
+      showToast('Vui lòng chọn thẻ trước khi thêm ảnh.', 'warning');
+      return;
+    }
+    await handlePickLocalImage((url) => {
+      updateActiveNovelData((nov) => {
+        if (!nov.data?.[activeTabLon]) return;
+        const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
+        const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
+        if (!ent) return;
+        if (!Array.isArray(ent.images)) ent.images = [];
+        ent.images.push(safeString(url));
+      });
+    }, null, 'gallery');
+  };
+
+  const handleRemoveImageFromSelectedEntity = (imageIndex) => {
+    if (!selectedEntityId) return;
+    updateActiveNovelData((nov) => {
+      if (!nov.data?.[activeTabLon]) return;
+      const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
+      const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
+      if (!ent || !Array.isArray(ent.images)) return;
+      ent.images = ent.images.filter((_, idx) => idx !== imageIndex);
+    });
+    showToast('Đã xóa ảnh khỏi BST thẻ.');
   };
 
   const handleUpdateEntityInfo = (content) => {
@@ -2782,13 +2791,8 @@ export default function App() {
                             groupVisibleCount={groupVisibleCount}
                             setGroupVisibleCount={setGroupVisibleCount}
                             entityPageSize={ENTITY_PAGE_SIZE}
-                            galleryPortraitEntries={galleryPortraitEntries}
-                            visibleGalleryEntries={visibleGalleryEntries}
-                            galleryHasMore={galleryHasMore}
-                            setGalleryVisiblePage={setGalleryVisiblePage}
-                            galleryScope={galleryScope}
-                            setGalleryScope={setGalleryScope}
-                            handleOpenEntityFromGallery={handleOpenEntityFromGallery}
+                            handleAddEntityImage={handleAddImageToSelectedEntity}
+                            handleRemoveEntityImage={handleRemoveImageFromSelectedEntity}
                             onEntityCardSelect={onEntityCardSelect}
                             onEntityCardDelete={onEntityCardDelete}
                             onEntityCardAddMilestone={onEntityCardAddMilestone}

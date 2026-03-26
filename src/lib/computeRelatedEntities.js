@@ -23,6 +23,9 @@ export function computeRelatedEntities({
   activeTabs,
   entityMap,
   wikiExactMatchOnly,
+  scopeLonId,
+  scopeNhoId,
+  maxResults = 300,
 }) {
   if (!activeNovelData || !selectedEntity || !entityMap?.length) return [];
 
@@ -51,8 +54,10 @@ export function computeRelatedEntities({
     const combinedRegex = new RegExp(`(${regexStr})`, 'i');
 
     Object.entries(activeNovelData.data || {}).forEach(([lonId, lonData]) => {
+      if (scopeLonId && lonId !== scopeLonId) return;
       const tL = activeTabs.find((t) => t.id === lonId);
       Object.entries(lonData || {}).forEach(([nhoId, nhoData]) => {
+        if (scopeNhoId && nhoId !== scopeNhoId) return;
         const tN = tL?.subTabs?.find((s) => s.id === nhoId);
         if (nhoData && nhoData.entities) {
           nhoData.entities.forEach((otherEnt) => {
@@ -123,7 +128,7 @@ export function computeRelatedEntities({
     absorbWikiText(ms.event, `Mốc ch.${safeString(ms.chapter)} · `);
   });
 
-  return Array.from(relMap.values()).map((v) => ({
+  return Array.from(relMap.values()).slice(0, Math.max(0, maxResults)).map((v) => ({
     entity: v.entity,
     lonId: v.lonId,
     nhoId: v.nhoId,

@@ -21,6 +21,20 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
   importProgress,
   currentContextDirHandle,
 }) {
+  const [lightboxZoom, setLightboxZoom] = React.useState(1);
+  const clampZoom = React.useCallback((z) => Math.min(5, Math.max(0.25, z)), []);
+
+  React.useEffect(() => {
+    if (!lightboxSrc) return;
+    setLightboxZoom(1);
+  }, [lightboxSrc]);
+
+  const handleLightboxWheel = React.useCallback((e) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    setLightboxZoom((prev) => clampZoom(prev + delta));
+  }, [clampZoom]);
+
   return (
     <>
       {lightboxSrc && (
@@ -35,25 +49,59 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
           >
             <X size={24} />
           </button>
-          <div className="max-w-[90vw] max-h-[90vh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-            {lightboxSrc.startsWith('local_image:') ? (
-              <AsyncLocalImage
-                filename={lightboxSrc.replace('local_image:', '')}
-                alt="Xem ảnh"
-                dirHandle={currentContextDirHandle}
-                className="max-w-full max-h-[88vh] rounded-xl shadow-2xl object-contain border border-slate-700"
-              />
-            ) : (
-              <img
-                src={lightboxSrc}
-                alt="Xem ảnh"
-                className="max-w-full max-h-[88vh] rounded-xl shadow-2xl object-contain border border-slate-700"
-                onError={(e) => {
-                  e.target.onerror = null;
-                  e.target.src = FALLBACK_IMG;
-                }}
-              />
-            )}
+          <div className="absolute top-4 left-4 z-10 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setLightboxZoom((z) => clampZoom(z - 0.1))}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-600 text-sm font-bold"
+              title="Thu nhỏ"
+            >
+              -
+            </button>
+            <button
+              type="button"
+              onClick={() => setLightboxZoom(1)}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-600 text-xs font-bold min-w-[56px]"
+              title="Về 100%"
+            >
+              {Math.round(lightboxZoom * 100)}%
+            </button>
+            <button
+              type="button"
+              onClick={() => setLightboxZoom((z) => clampZoom(z + 0.1))}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-600 text-sm font-bold"
+              title="Phóng to"
+            >
+              +
+            </button>
+          </div>
+          <div
+            className="w-[96vw] h-[94vh] overflow-auto p-2 md:p-4"
+            onClick={(e) => e.stopPropagation()}
+            onWheel={handleLightboxWheel}
+          >
+            <div className="min-w-full min-h-full flex items-center justify-center">
+              {lightboxSrc.startsWith('local_image:') ? (
+                <AsyncLocalImage
+                  filename={lightboxSrc.replace('local_image:', '')}
+                  alt="Xem ảnh"
+                  dirHandle={currentContextDirHandle}
+                  className="rounded-xl shadow-2xl object-contain border border-slate-700"
+                  style={{ transform: `scale(${lightboxZoom})`, transformOrigin: 'center center', transition: 'transform 120ms ease-out' }}
+                />
+              ) : (
+                <img
+                  src={lightboxSrc}
+                  alt="Xem ảnh"
+                  className="rounded-xl shadow-2xl object-contain border border-slate-700"
+                  style={{ transform: `scale(${lightboxZoom})`, transformOrigin: 'center center', transition: 'transform 120ms ease-out' }}
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = FALLBACK_IMG;
+                  }}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -448,7 +448,7 @@ export const sortTabsAlphabetically = (tabs) => {
 
 const localImageUrlCache = new WeakMap();
 
-export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className }) => {
+export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className, style }) => {
   const [src, setSrc] = useState(null);
   const [err, setErr] = useState(false);
 
@@ -492,9 +492,9 @@ export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className }) =>
   }, [filename, dirHandle]);
 
   const imgClass = className || "max-w-full rounded-xl my-4 shadow-lg border border-slate-700 object-cover";
-  if (err) return <img src={FALLBACK_IMG} alt="Lỗi truy xuất ảnh" className={imgClass} />;
+  if (err) return <img src={FALLBACK_IMG} alt="Lỗi truy xuất ảnh" className={imgClass} style={style} />;
   if (!src) return <div className={`p-4 bg-slate-900 animate-pulse flex items-center justify-center text-slate-500 text-sm shadow-inner ${imgClass}`}>Đang tải...</div>;
-  return <img src={src} alt={alt} className={imgClass} onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />;
+  return <img src={src} alt={alt} className={imgClass} style={style} onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />;
 });
 
 export const buildEntityNameLookup = (entityMap) => {
