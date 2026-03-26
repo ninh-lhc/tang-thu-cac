@@ -2686,8 +2686,15 @@ export default function App() {
               </div>
 
               <div className="flex-1 flex flex-col overflow-hidden relative bg-slate-950">
-                 <div id="main-scroll-container" className="flex-1 overflow-y-auto custom-scrollbar p-8">
-                    <div className="max-w-7xl mx-auto h-full flex flex-col">
+                 <div
+                   id="main-scroll-container"
+                   className={`flex-1 overflow-y-auto custom-scrollbar transition-[padding] duration-200 ease-out ${menu2Expanded ? 'py-8 px-16' : 'py-8 px-12 sm:px-16 lg:px-20'}`}
+                 >
+                    <div
+                      className={`w-full mx-auto h-full flex flex-col transition-[max-width] duration-200 ease-out ${
+                        menu2Expanded ? 'max-w-7xl' : 'max-w-none'
+                      }`}
+                    >
                        
                        {navHistory.length > 0 && (
                            <div className="mb-4">
@@ -2697,6 +2704,7 @@ export default function App() {
                        
                        {activeTabLon === 'tong-quan' ? (
                           <AppOverviewSection
+                            tocRailExpanded={menu2Expanded}
                             activeNovelData={activeNovelData}
                             overviewForm={overviewForm}
                             setOverviewForm={setOverviewForm}
@@ -2729,6 +2737,7 @@ export default function App() {
                           />
                        ) : (
                           <AppCollectionSection
+                            tocRailExpanded={menu2Expanded}
                             activeTabLon={activeTabLon}
                             activeTabNho={activeTabNho}
                             activeTabCon={activeTabCon}

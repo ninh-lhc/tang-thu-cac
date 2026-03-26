@@ -2,7 +2,7 @@
 // AppOverviewSection.jsx
 // Mục đích: Toàn bộ nội dung tab Tổng Quan (tong-quan)
 // Import bởi: App.jsx (lazy không cần vì luôn hiển thị khi mở truyện)
-// Lưu ý: State isAddingTag / newTagValue là nội bộ; ưu tiên laptop/desktop (layout ≥720px hai cột)
+// Lưu ý: `tocRailExpanded` (mục lục dọc) chỉnh độ rộng văn bản / lối tắt neo. State isAddingTag / newTagValue nội bộ.
 // ==========================================
 
 import React, { useState } from 'react';
@@ -22,8 +22,10 @@ import { FALLBACK_IMG } from './MasterEngines.js';
 import { StatCard, SectionCard, ActionBtn } from './AppSharedUI.jsx';
 
 export function AppOverviewSection({
+  tocRailExpanded = true,
   // novel data
   activeNovelData,
+
   overviewForm,
   setOverviewForm,
   updateActiveNovelData,
@@ -465,7 +467,7 @@ export function AppOverviewSection({
         <div className="border-l-[5px] border-amber-500/85 pl-4 pr-3 py-4 sm:pl-5 sm:pr-4">
           <div className="min-w-0 mb-4">
             <h3 className="font-heading text-lg sm:text-xl text-amber-50 tracking-tight">Theo chương & công cụ</h3>
-            <p className="font-serif text-xs text-slate-500 mt-1.5 max-w-3xl">
+            <p className={`font-serif text-xs text-slate-500 mt-1.5 ${tocRailExpanded ? 'max-w-3xl' : 'max-w-4xl xl:max-w-5xl'}`}>
               Neo <span className="text-amber-400 font-bold tabular-nums">ch.{anchor}</span>
               <span className="text-slate-600"> · Mốc mới (khi tạo) theo chương neo. Cập nhật hàng loạt: «Một cửa» — dùng khối Công cụ nhanh phía trên.</span>
             </p>
@@ -520,7 +522,7 @@ export function AppOverviewSection({
                       key={`${row.lonId}-${row.nhoId}-${row.ent.id}`}
                       type="button"
                       onClick={() => handleNavigate({ lonId: row.lonId, nhoId: row.nhoId, entityId: row.ent.id })}
-                      className="snap-start flex-shrink-0 text-left px-3 py-2.5 rounded-xl bg-slate-800/50 border border-slate-700/70 hover:border-amber-500/35 max-w-[200px] min-w-[120px]"
+                      className={`snap-start flex-shrink-0 text-left px-3 py-2.5 rounded-xl bg-slate-800/50 border border-slate-700/70 hover:border-amber-500/35 min-w-[120px] ${tocRailExpanded ? 'max-w-[200px]' : 'max-w-[260px] sm:min-w-[140px]'}`}
                     >
                       <span className="font-serif text-sm text-slate-100 line-clamp-2">{safeString(row.ent.name)}</span>
                       <span className="block font-sans text-[9px] uppercase text-slate-500 mt-1 truncate">{safeString(row.sectionLabel)}</span>

@@ -1,5 +1,5 @@
-import React, { memo, useMemo, useState, useDeferredValue } from 'react';
-import { Network, Search } from 'lucide-react';
+import React, { memo, useMemo, useState, useDeferredValue, useEffect } from 'react';
+import { Network, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { FALLBACK_IMG } from './MasterEngines.js';
 import { AsyncLocalImage, safeString } from './MasterUtils.jsx';
 import {
@@ -7,10 +7,10 @@ import {
   sortRelatedEntitiesForDisplay,
   groupByTabLabel,
   uniqueTabLabels,
-  takeGroupedForDisplay,
 } from './lib/relatedEntitiesNetwork.js';
 
-const NETWORK_PAGE_SIZE = 24;
+/** Số thẻ tối đa mỗi trang trong một nhóm (nhãn tab) — giới hạn DOM / ảnh. */
+const NETWORK_GROUP_PAGE_SIZE = 10;
 
 function normalizeSearch(s) {
   return safeString(s)
@@ -141,10 +141,11 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
   isCalculatingNetwork,
   currentContextDirHandle,
   onNavigate,
+  tocRailExpanded = true,
 }) {
   const [networkTabKey, setNetworkTabKey] = useState('all');
   const [networkSearch, setNetworkSearch] = useState('');
-  const [visibleCount, setVisibleCount] = useState(NETWORK_PAGE_SIZE);
+  const [pageByGroup, setPageByGroup] = useState(() => ({}));
   const deferredSearch = useDeferredValue(networkSearch);
 
   const tabOptions = useMemo(() => uniqueTabLabels(relatedEntities), [relatedEntities]);
@@ -165,10 +166,37 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
   );
   const sorted = useMemo(() => sortRelatedEntitiesForDisplay(filtered), [filtered]);
   const grouped = useMemo(() => groupByTabLabel(sorted), [sorted]);
-  const { sections, hasMore, totalShown, totalFiltered } = useMemo(
-    () => takeGroupedForDisplay(grouped, visibleCount),
-    [grouped, visibleCount]
-  );
+  const totalFiltered = filtered.length;
+
+  useEffect(() => {
+    setPageByGroup({});
+  }, [deferredSearch, networkTabKey]);
+
+  useEffect(() => {
+    setPageByGroup((prev) => {
+      const next = { ...prev };
+      let dirty = false;
+      for (const g of grouped) {
+        const maxPage = Math.max(1, Math.ceil(g.items.length / NETWORK_GROUP_PAGE_SIZE));
+        const cur = next[g.tabLabel] ?? 1;
+        if (cur > maxPage) {
+          next[g.tabLabel] = maxPage;
+          dirty = true;
+        }
+      }
+      return dirty ? next : prev;
+    });
+  }, [grouped]);
+
+  const renderedCount = useMemo(() => {
+    let n = 0;
+    for (const sec of grouped) {
+      const page = pageByGroup[sec.tabLabel] ?? 1;
+      const start = (page - 1) * NETWORK_GROUP_PAGE_SIZE;
+      n += Math.min(NETWORK_GROUP_PAGE_SIZE, Math.max(0, sec.items.length - start));
+    }
+    return n;
+  }, [grouped, pageByGroup]);
 
   if (relatedEntities.length === 0 && !isCalculatingNetwork) return null;
 
@@ -190,7 +218,7 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
             <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">
               {isCalculatingNetwork
                 ? 'Thần thức đang dò xét...'
-                : `Tổng ${relatedEntities.length} liên kết · ${totalFiltered} khớp bộ lọc · đang hiện ${totalShown}`}
+                : `Tổng ${relatedEntities.length} liên kết · ${totalFiltered} khớp bộ lọc · đang hiện ${renderedCount} thẻ`}
             </p>
           </div>
         </div>
@@ -206,7 +234,6 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
               value={networkSearch}
               onChange={(e) => {
                 setNetworkSearch(e.target.value);
-                setVisibleCount(NETWORK_PAGE_SIZE);
               }}
               placeholder="Lọc tên, ngữ cảnh, nhãn tab…"
               autoComplete="off"
@@ -228,7 +255,6 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
             type="button"
             onClick={() => {
               setNetworkTabKey('all');
-              setVisibleCount(NETWORK_PAGE_SIZE);
             }}
             className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-colors shadow-sm ${
               networkTabKey === 'all'
@@ -244,7 +270,6 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
               type="button"
               onClick={() => {
                 setNetworkTabKey(tab);
-                setVisibleCount(NETWORK_PAGE_SIZE);
               }}
               className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-colors max-w-[200px] truncate shadow-sm ${
                 networkTabKey === tab
@@ -261,19 +286,29 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
 
         {!isCalculatingNetwork && (
           <div className="space-y-8">
-          {sections.map((sec) => (
+          {grouped.map((sec) => {
+            const page = pageByGroup[sec.tabLabel] ?? 1;
+            const totalPages = Math.max(1, Math.ceil(sec.items.length / NETWORK_GROUP_PAGE_SIZE));
+            const start = (page - 1) * NETWORK_GROUP_PAGE_SIZE;
+            const pageSlice = sec.items.slice(start, start + NETWORK_GROUP_PAGE_SIZE);
+            return (
             <div key={sec.tabLabel}>
               {(() => {
                 const tabStyles = getNetworkTabStyles(sec.tabLabel);
                 return (
                   <div className="flex items-center gap-2 px-1 mb-3">
                     <span className={`text-[10px] uppercase tracking-widest ${tabStyles.sectionText} font-bold`}>{sec.tabLabel}</span>
+                    <span className="text-[10px] text-slate-600 tabular-nums">({sec.items.length})</span>
                     <span className={`h-px flex-1 ${tabStyles.sectionDivider}`} />
                   </div>
                 );
               })()}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {sec.items.map((rel) => {
+              <div
+                className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${
+                  tocRailExpanded ? 'lg:grid-cols-4' : 'lg:grid-cols-4 xl:grid-cols-5'
+                }`}
+              >
+                {pageSlice.map((rel) => {
                   const tabStyles = getNetworkTabStyles(sec.tabLabel);
                   return (
                     <button
@@ -327,19 +362,42 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
                   );
                 })}
               </div>
+              {sec.items.length > NETWORK_GROUP_PAGE_SIZE && (
+                <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 mt-4">
+                  <button
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => {
+                      setPageByGroup((prev) => ({
+                        ...prev,
+                        [sec.tabLabel]: Math.max(1, (prev[sec.tabLabel] ?? 1) - 1),
+                      }));
+                    }}
+                    className="tt-kbd-focus flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-700 bg-slate-900 text-slate-300 hover:border-indigo-600/50 hover:text-indigo-200 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                  >
+                    <ChevronLeft size={16} aria-hidden /> Trước
+                  </button>
+                  <span className="text-[11px] text-slate-500 font-medium tabular-nums">
+                    Trang {page}/{totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => {
+                      setPageByGroup((prev) => ({
+                        ...prev,
+                        [sec.tabLabel]: Math.min(totalPages, (prev[sec.tabLabel] ?? 1) + 1),
+                      }));
+                    }}
+                    className="tt-kbd-focus flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-700 bg-slate-900 text-slate-300 hover:border-indigo-600/50 hover:text-indigo-200 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                  >
+                    Sau <ChevronRight size={16} aria-hidden />
+                  </button>
+                </div>
+              )}
             </div>
-          ))}
-          {hasMore && (
-            <div className="flex justify-center pt-2">
-              <button
-                type="button"
-                onClick={() => setVisibleCount((c) => c + NETWORK_PAGE_SIZE)}
-                className="flex items-center justify-center bg-slate-950/50 border border-dashed border-indigo-700/50 hover:border-indigo-400/80 px-6 py-3 rounded-[24px] transition-all duration-300 hover:bg-indigo-900/20 text-indigo-400/70 hover:text-indigo-300 text-sm font-serif"
-              >
-                Xem thêm ({totalFiltered - totalShown} còn lại)
-              </button>
-            </div>
-          )}
+            );
+          })}
           {totalFiltered === 0 && relatedEntities.length > 0 && (
             <p className="text-center text-slate-500 text-sm py-6">Không có mục nào khớp bộ lọc hiện tại.</p>
           )}
@@ -357,6 +415,7 @@ export const AppEntitySummaryBlocks = memo(function AppEntitySummaryBlocks({
   relatedEntities,
   isCalculatingNetwork,
   onNavigate,
+  tocRailExpanded = true,
 }) {
   if (!selectedEntity || collectionSubTab !== 'detail') return null;
 
@@ -367,6 +426,7 @@ export const AppEntitySummaryBlocks = memo(function AppEntitySummaryBlocks({
       isCalculatingNetwork={isCalculatingNetwork}
       currentContextDirHandle={currentContextDirHandle}
       onNavigate={onNavigate}
+      tocRailExpanded={tocRailExpanded}
     />
   );
 });

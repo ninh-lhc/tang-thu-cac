@@ -3,7 +3,7 @@
 // Mục đích: Nội dung chính khi activeTabLon !== 'tong-quan'
 //   (standard editor + collection-track view)
 // Import bởi: App.jsx
-// Lưu ý: AdvancedFieldSelect được import cùng file vì nó nhỏ và chỉ dùng ở đây
+// Lưu ý: `tocRailExpanded` truyền từ App.jsx để lưới nhân quả giãn khi thu mục lục. AdvancedFieldSelect import cùng file.
 // Ưu tiên laptop/desktop: header xếp chồng khi hẹp, toolbar Nâng cao + focus bàn phím
 // ==========================================
 
@@ -38,6 +38,7 @@ export function AppCollectionSection({
   currentContextDirHandle,
   activeNovelDirHandle,
   dirHandle,
+  tocRailExpanded = true,
   // entity filter/search toolbar
   entityAdvancedRef,
   entitySearch,
@@ -414,7 +415,7 @@ export function AppCollectionSection({
 
             {collectionSubTab === 'detail' && selectedEntity && (
               <div
-                className="flex flex-col max-w-5xl mx-auto w-full animate-fade-in pb-10"
+                className="flex flex-col w-full animate-fade-in pb-10"
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => handleImageDrop(e, 'entity-info-editor')}
               >
@@ -506,14 +507,10 @@ export function AppCollectionSection({
                 <AppEntitySummaryBlocks
                   selectedEntity={selectedEntity}
                   collectionSubTab={collectionSubTab}
-                  isEntityEditing={isEntityEditing}
-                  currentTabConfig={currentTabConfig}
-                  recentlyMergedFields={recentlyMergedFields}
                   currentContextDirHandle={currentContextDirHandle}
-                  entityMap={entityMap}
-                  globalLinkRegex={globalLinkRegex}
                   relatedEntities={relatedEntities}
                   isCalculatingNetwork={isCalculatingNetwork}
+                  tocRailExpanded={tocRailExpanded}
                   onNavigate={(dest) => navFnRef.current?.(dest)}
                 />
               </div>

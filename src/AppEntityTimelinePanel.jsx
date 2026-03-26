@@ -1,11 +1,12 @@
 /**
  * Panel timeline thẻ: danh sách mốc (cột trái) + chi tiết mốc (cột phải).
+ * Phân trang 10 mốc/trang (chương mới nhất trước); thanh trang luôn dùng được, kể cả khi cột mốc thu (icon ←/→).
  * Cột mốc dùng @tanstack/react-virtual — tránh render hàng nghìn nút DOM (P0 roadmap).
  * Ai import: AppCollectionSection / luồng collection.
  */
 import React, { memo, useState, useRef, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { History, Plus, Edit2, Trash2, Clock, Sparkles } from 'lucide-react';
+import { History, Plus, Edit2, Trash2, Clock, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { DEFAULT_ENTITY_FIELDS, FALLBACK_IMG } from './MasterEngines.js';
 import { AsyncLocalImage, renderMarkdown, safeString, processInline } from './MasterUtils.jsx';
 
@@ -224,39 +225,79 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
 
             {totalPages > 1 && (
               <div
-                className={`mt-3 shrink-0 flex items-center justify-between gap-3 px-1 transition-all duration-150 ${
+                className={`mt-3 shrink-0 px-1 transition-all duration-150 ${
                   isEventColumnContentHidden
-                    ? 'opacity-0 max-h-0 overflow-hidden pointer-events-none'
-                    : 'opacity-100 max-h-[60px]'
+                    ? 'flex flex-col items-center gap-1.5 py-2 border-t border-slate-800/70'
+                    : 'flex max-h-[72px] items-center justify-between gap-2 sm:gap-3'
                 }`}
+                role="navigation"
+                aria-label="Phân trang mốc thời gian (10 mốc gần nhất mỗi trang, trang 1 là mới nhất)"
               >
-                <button
-                  type="button"
-                  disabled={safePage <= 0}
-                  onClick={() => setMilestonesPage((p) => Math.max(0, p - 1))}
-                  className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
-                    safePage <= 0
-                      ? 'bg-slate-900 border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
-                      : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-900/50'
-                  }`}
-                >
-                  Trang trước
-                </button>
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
-                  {safePage + 1} / {totalPages}
-                </span>
-                <button
-                  type="button"
-                  disabled={safePage >= totalPages - 1}
-                  onClick={() => setMilestonesPage((p) => Math.min(totalPages - 1, p + 1))}
-                  className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
-                    safePage >= totalPages - 1
-                      ? 'bg-slate-900 border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
-                      : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-900/50'
-                  }`}
-                >
-                  Trang sau
-                </button>
+                {isEventColumnContentHidden ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={safePage <= 0}
+                      title="Trang trước — các mốc mới hơn"
+                      aria-label="Trang trước, mốc mới hơn"
+                      onClick={() => setMilestonesPage((p) => Math.max(0, p - 1))}
+                      className={`tt-kbd-focus p-2 rounded-lg border transition-colors ${
+                        safePage <= 0
+                          ? 'bg-slate-900 border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
+                          : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-900/50'
+                      }`}
+                    >
+                      <ChevronLeft size={18} aria-hidden />
+                    </button>
+                    <span className="text-[10px] font-bold text-slate-500 tabular-nums leading-none">
+                      {safePage + 1}/{totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={safePage >= totalPages - 1}
+                      title="Trang sau — các mốc cũ hơn"
+                      aria-label="Trang sau, mốc cũ hơn"
+                      onClick={() => setMilestonesPage((p) => Math.min(totalPages - 1, p + 1))}
+                      className={`tt-kbd-focus p-2 rounded-lg border transition-colors ${
+                        safePage >= totalPages - 1
+                          ? 'bg-slate-900 border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
+                          : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-900/50'
+                      }`}
+                    >
+                      <ChevronRight size={18} aria-hidden />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      disabled={safePage <= 0}
+                      onClick={() => setMilestonesPage((p) => Math.max(0, p - 1))}
+                      className={`tt-kbd-focus px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
+                        safePage <= 0
+                          ? 'bg-slate-900 border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
+                          : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-900/50'
+                      }`}
+                    >
+                      Trang trước
+                    </button>
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest tabular-nums">
+                      {safePage + 1} / {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={safePage >= totalPages - 1}
+                      onClick={() => setMilestonesPage((p) => Math.min(totalPages - 1, p + 1))}
+                      className={`tt-kbd-focus px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
+                        safePage >= totalPages - 1
+                          ? 'bg-slate-900 border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
+                          : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-900/50'
+                      }`}
+                    >
+                      Trang sau
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </>
