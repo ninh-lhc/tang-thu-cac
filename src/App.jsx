@@ -322,6 +322,7 @@ export default function App() {
   commandPaletteOpenRef.current = isCommandPaletteOpen;
   
   const [dirHandle, setDirHandle] = useState(null);
+  const [showConnectReminder, setShowConnectReminder] = useState(false);
   const [activeNovelDirHandle, setActiveNovelDirHandle] = useState(null);
   
   const [toastMessage, setToastMessage] = useState(null);
@@ -1354,7 +1355,7 @@ export default function App() {
 
   const handleConnectFolder = async () => {
     if (window.self !== window.top) {
-       setDirHandle("LOCAL_STORAGE"); showToast("Preview: Đã chuyển sang Local Storage.");
+       setDirHandle("LOCAL_STORAGE"); setShowConnectReminder(true); showToast("Preview: Đã chuyển sang Local Storage.");
        const local = localStorage.getItem('tangthu_index');
       if (local) { try { const p = migrateIndex(JSON.parse(local)); if (p.metadata) setNovelsMetadata(p.metadata); if (p.config) setGlobalTabsConfig(p.config); if (p.novelStats && typeof p.novelStats === 'object') { novelStatsByIdRef.current = p.novelStats; setNovelStatsById(p.novelStats); } } catch { void 0; } }
        return;
@@ -1380,9 +1381,9 @@ export default function App() {
                  const ih = await h.getFileHandle('index.json', { create: true }); const iw = await ih.createWritable();
                  await iw.write(JSON.stringify({ metadata: newMeta, config: parsedOld.config || globalTabsConfig, novelStats: {} }, null, 2)); await iw.close();
                  setNovelsMetadata(newMeta); if (parsedOld.config) setGlobalTabsConfig(parsedOld.config);
-                 setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Độ kiếp thành công! Cấu trúc mới đã sẵn sàng."); return;
+                setDirHandle(h); setShowConnectReminder(true); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Độ kiếp thành công! Cấu trúc mới đã sẵn sàng."); return;
              }
-         } catch { setDirHandle(h); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Thư mục trống. Đã kết nối Mệnh Bàn!"); return; }
+         } catch { setDirHandle(h); setShowConnectReminder(true); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Thư mục trống. Đã kết nối Mệnh Bàn!"); return; }
       }
       if (content) {
         try {
@@ -1398,6 +1399,7 @@ export default function App() {
             novelStatsByIdRef.current = {};
           }
           setDirHandle(h);
+          setShowConnectReminder(true);
           setActiveNovelData(null);
           setActiveNovelDirHandle(null);
           showToast("Đã tải Mệnh Bàn (Index) thành công!");
@@ -2659,19 +2661,36 @@ export default function App() {
 
         <div className={`flex-1 flex bg-slate-950 transition-opacity duration-300 ${menu1Visible ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
           {!activeNovelData ? (
-            novelsMetadata.length > 0 ? (
-              <DashboardScreen
-                novelsMetadata={novelsMetadata}
-                stats={dashboardStats}
-                isLoading={isStatsBackfilling}
-                novelStatsById={novelStatsById}
-                onSelectNovel={handleSelectNovel}
-                onSelectNovelAtTab={(meta, lonId, nhoId) => handleSelectNovel(meta, { lonId, nhoId })}
-                onAddNovel={handleOpenCreateNovel}
-              />
-            ) : (
-              <LandingScreen setIsAddNovelOpen={handleOpenCreateNovel} setIsManageTabsOpen={() => setIsManageTabsOpen(true)} />
-            )
+            <>
+              {showConnectReminder && !!dirHandle && (
+                <div className="mx-10 mt-6 mb-0 rounded-2xl border border-amber-700/40 bg-amber-900/20 px-5 py-4 text-sm text-amber-100 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="font-bold uppercase tracking-widest text-[11px] text-amber-300 mb-1">Nhắc nhở vận hành</p>
+                    <p className="font-serif text-amber-100/90">Đã kết nối thư mục. Nên backup thư mục lưu trữ định kỳ (tuần/tháng), và thử restore trên bản sao trước khi cập nhật lớn.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowConnectReminder(false)}
+                    className="px-3 py-1.5 rounded-lg border border-amber-600/40 text-amber-200 hover:bg-amber-800/30 text-xs font-bold"
+                  >
+                    Đã rõ
+                  </button>
+                </div>
+              )}
+              {novelsMetadata.length > 0 ? (
+                <DashboardScreen
+                  novelsMetadata={novelsMetadata}
+                  stats={dashboardStats}
+                  isLoading={isStatsBackfilling}
+                  novelStatsById={novelStatsById}
+                  onSelectNovel={handleSelectNovel}
+                  onSelectNovelAtTab={(meta, lonId, nhoId) => handleSelectNovel(meta, { lonId, nhoId })}
+                  onAddNovel={handleOpenCreateNovel}
+                />
+              ) : (
+                <LandingScreen setIsAddNovelOpen={handleOpenCreateNovel} setIsManageTabsOpen={() => setIsManageTabsOpen(true)} />
+              )}
+            </>
           ) : (
             <>
               <div
