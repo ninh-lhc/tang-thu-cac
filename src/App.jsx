@@ -51,7 +51,8 @@ import { buildEntitySearchIndexMap, applyEntityCollectionFilters } from './lib/e
 import { useEntityCollectionQueryState } from './useEntityCollectionQueryState.js';
 import { AppCollectionSection } from './AppCollectionSection.jsx';
 import {
-  searchNovelData,
+  buildNovelSearchIndex,
+  searchNovelIndex,
   dedupeDeepSearchResults,
   countEntitiesInNovel,
   metadataSearchHits,
@@ -72,6 +73,7 @@ import { computeNovelQuickStats } from './lib/tinhThongKeNhanhTruyen.js';
 import { buildCommandPaletteFiltered } from './lib/locLenhNhanhCommandPalette.js';
 import { buildXrefEntityCatalogText } from './lib/xrefBangDanhMucThucThe.js';
 import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
+import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
 
 const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
   value,
@@ -400,6 +402,11 @@ export default function App() {
   const globalTabsConfigRef = useRef(globalTabsConfig);
   const dirHandleRef = useRef(dirHandle);
   const activeNovelDataRef = useRef(null);
+  const deepSearchIndexByNovelIdRef = useRef(new Map());
+  const deepSearchWorkerRef = useRef(null);
+  const deepSearchWorkerReqIdRef = useRef(0);
+  const lazyTabLoadInFlightRef = useRef(new Set());
+  const lazyFullHydrateInFlightRef = useRef(new Set());
   const confirmDeleteEntityRef = useRef(null);
 
   const { syncIndex, syncNovel, loadNovelData, syncNovelRef } = useAppPersistence({
@@ -420,6 +427,69 @@ export default function App() {
   useEffect(() => {
     activeNovelDataRef.current = activeNovelData;
   }, [activeNovelData]);
+
+  useEffect(() => {
+    return () => {
+      if (deepSearchWorkerRef.current) {
+        try {
+          deepSearchWorkerRef.current.terminate();
+        } catch {
+          void 0;
+        }
+        deepSearchWorkerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const keep = new Set((novelsMetadata || []).map((n) => n.id));
+    const idx = deepSearchIndexByNovelIdRef.current;
+    for (const k of idx.keys()) {
+      if (!keep.has(k)) idx.delete(k);
+    }
+  }, [novelsMetadata]);
+
+  const searchRowsInWorker = useCallback((rowsByNovel, query, signal) => {
+    const hasRows = rowsByNovel && Object.keys(rowsByNovel).length > 0;
+    if (!hasRows) return Promise.resolve([]);
+    if (typeof Worker === 'undefined') return Promise.resolve(null);
+    if (!deepSearchWorkerRef.current) {
+      deepSearchWorkerRef.current = new Worker(new URL('./deepSearch.worker.js', import.meta.url), {
+        type: 'module',
+      });
+    }
+    const worker = deepSearchWorkerRef.current;
+    const reqId = ++deepSearchWorkerReqIdRef.current;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const cleanup = () => {
+        worker.removeEventListener('message', onMessage);
+        worker.removeEventListener('error', onError);
+        if (signal) signal.removeEventListener('abort', onAbort);
+      };
+      const done = (fn, val) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        fn(val);
+      };
+      const onMessage = (evt) => {
+        const msg = evt?.data || {};
+        if (msg.reqId !== reqId) return;
+        done(resolve, msg.ok ? msg.results || [] : []);
+      };
+      const onError = (err) => done(reject, err);
+      const onAbort = () => done(resolve, []);
+      worker.addEventListener('message', onMessage);
+      worker.addEventListener('error', onError);
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+      try {
+        worker.postMessage({ type: 'searchRows', reqId, query, rowsByNovel });
+      } catch (err) {
+        done(reject, err);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     novelStatsByIdRef.current = novelStatsById;
@@ -706,7 +776,11 @@ export default function App() {
     }
   }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig, selectedEntityId]);
 
-  const entityMap = useMemo(() => {
+  // Global map — toàn bộ truyện, dùng để resolve [[...]] link và renderMarkdown lookup.
+  const entityMap = useMemo(() => buildEntityLinkMap(activeNovelData), [activeNovelData]);
+
+  // Local/scoped map — chỉ tab hiện tại, dùng cho plain-text auto-link matcher (hiệu năng).
+  const localEntityMap = useMemo(() => {
     if (!activeNovelData) return [];
     if (currentTabConfig?.viewType === 'collection-track' && activeTabLon) {
       const nhoId = activeTabNho || 'default';
@@ -733,11 +807,11 @@ export default function App() {
         seen.add(low);
         uniq.push(item);
       }
-      return uniq.sort((a, b) => b.name.length - a.name.length);
+      if (uniq.length > 0) return uniq.sort((a, b) => b.name.length - a.name.length);
     }
-    return buildEntityLinkMap(activeNovelData);
-  }, [activeNovelData, currentTabConfig?.viewType, activeTabLon, activeTabNho]);
-  const deferredEntityMap = useDeferredValue(entityMap);
+    return entityMap;
+  }, [activeNovelData, currentTabConfig?.viewType, activeTabLon, activeTabNho, entityMap]);
+  const deferredLocalEntityMap = useDeferredValue(localEntityMap);
   const shouldBuildGlobalRegex = useMemo(() => {
     if (isSplitPreview) return true;
     if (currentTabConfig?.viewType !== 'collection-track') return true;
@@ -746,12 +820,9 @@ export default function App() {
 
   const globalLinkRegex = useMemo(() => {
      if (!shouldBuildGlobalRegex) return null;
-     if (!deferredEntityMap || deferredEntityMap.length === 0) return null;
-     const sortedNames = deferredEntityMap.map(e => e.name);
-     if (sortedNames.length === 0) return null;
-     const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-     return new RegExp(`(${sortedNames.map(escapeRegExp).join('|')})`, 'gi');
-  }, [deferredEntityMap, shouldBuildGlobalRegex]);
+     if (!deferredLocalEntityMap || deferredLocalEntityMap.length === 0) return null;
+     return buildWikiLinkMatcher(deferredLocalEntityMap);
+  }, [deferredLocalEntityMap, shouldBuildGlobalRegex]);
 
   const [relatedEntities, setRelatedEntities] = useState([]);
   const [isCalculatingNetwork, setIsCalculatingNetwork] = useState(false);
@@ -783,8 +854,6 @@ export default function App() {
           activeTabs,
           entityMap,
           wikiExactMatchOnly,
-          scopeLonId: activeTabLon,
-          scopeNhoId: activeTabNho || 'default',
           maxResults: 300,
         });
         if (!cancelled) setRelatedEntities(relations);
@@ -800,7 +869,7 @@ export default function App() {
       clearTimeout(timer);
       setIsCalculatingNetwork(false);
     };
-  }, [activeNovelData, selectedEntity, activeTabs, entityMap, wikiExactMatchOnly, collectionSubTab, activeTabLon, activeTabNho]);
+  }, [activeNovelData, selectedEntity, activeTabs, entityMap, wikiExactMatchOnly, collectionSubTab]);
 
   const librarySearchIndex = useMemo(
     () =>
@@ -1097,22 +1166,40 @@ export default function App() {
       for (let i = 0; i < novelsMetadata.length; i += chunk) {
         if (signal?.aborted) return dedupeDeepSearchResults(res);
         const batch = novelsMetadata.slice(i, i + chunk);
+        const rowsByNovel = {};
         await Promise.all(
           batch.map(async (meta) => {
             if (signal?.aborted) return;
-            let d = null;
-            if (activeNovelData?.id === meta.id) d = activeNovelData;
-            else d = await loadNovelData(meta, dirHandle);
-            if (d && typeof d === 'object') {
-              searchNovelData({ ...d, id: meta.id, title: d.title || meta.title }, q, res);
+            let indexRows = deepSearchIndexByNovelIdRef.current.get(meta.id) || null;
+            if (!indexRows) {
+              let d = null;
+              const activeIsPartial = activeNovelData?.id === meta.id && activeNovelData?.__partialData;
+              if (activeNovelData?.id === meta.id && !activeIsPartial) d = activeNovelData;
+              else d = await loadNovelData(meta, dirHandle);
+              if (!d || typeof d !== 'object') return;
+              indexRows = buildNovelSearchIndex({ ...d, id: meta.id, title: d.title || meta.title });
+              deepSearchIndexByNovelIdRef.current.set(meta.id, indexRows);
             }
+            rowsByNovel[meta.id] = indexRows;
           })
         );
+        let batchResults = [];
+        try {
+          const workerResults = await searchRowsInWorker(rowsByNovel, q, signal);
+          if (Array.isArray(workerResults)) batchResults = workerResults;
+        } catch {
+          batchResults = [];
+        }
+        if (batchResults.length === 0) {
+          Object.values(rowsByNovel).forEach((rows) => searchNovelIndex(rows, q, batchResults));
+          batchResults = dedupeDeepSearchResults(batchResults);
+        }
+        res.push(...batchResults);
         tick();
       }
       return dedupeDeepSearchResults(res);
     },
-    [novelsMetadata, activeNovelData, dirHandle, loadNovelData]
+    [novelsMetadata, activeNovelData, dirHandle, loadNovelData, searchRowsInWorker]
   );
 
   const updateActiveNovelData = useCallback(
@@ -1120,10 +1207,17 @@ export default function App() {
       if (!activeNovelData) return;
       const updatedData = structuredClone(activeNovelData);
       updateFn(updatedData);
-      const nextStats = { ...novelStatsByIdRef.current, [updatedData.id]: countEntitiesInNovel(updatedData) };
+      const nextStats = { ...novelStatsByIdRef.current };
+      if (!updatedData.__partialData) {
+        nextStats[updatedData.id] = countEntitiesInNovel(updatedData);
+      }
       novelStatsByIdRef.current = nextStats;
       setNovelStatsById(nextStats);
       setActiveNovelData(updatedData);
+      deepSearchIndexByNovelIdRef.current.set(
+        updatedData.id,
+        buildNovelSearchIndex(updatedData)
+      );
       syncNovel(updatedData, dirHandle);
 
       const newMetaStr = JSON.stringify({
@@ -2062,19 +2156,24 @@ export default function App() {
     }
     setActiveNovelDirHandle(novelDir);
 
-    const data = await loadNovelData(meta, dirHandle);
+    const preloadShardKeys = tabAt?.lonId
+      ? [{ lonId: tabAt.lonId, nhoId: tabAt.nhoId || 'default' }]
+      : [];
+    const data = await loadNovelData(meta, dirHandle, preloadShardKeys ? { shardKeys: preloadShardKeys } : undefined);
     if (data) {
       if (!data.tabsConfig) data.tabsConfig = structuredClone(globalTabsConfig);
       const migrated = migrateTabsFieldTemplates(data);
       setActiveNovelData(migrated);
-      const s = countEntitiesInNovel(migrated);
-      const prevS = novelStatsByIdRef.current[migrated.id];
-      const statsChanged = !prevS || prevS.entities !== s.entities || prevS.milestones !== s.milestones;
-      const nextStats = { ...novelStatsByIdRef.current, [migrated.id]: s };
-      novelStatsByIdRef.current = nextStats;
-      setNovelStatsById(nextStats);
-      if (statsChanged && dirHandle) {
-        void syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, dirHandle, nextStats);
+      if (!migrated.__partialData) {
+        const s = countEntitiesInNovel(migrated);
+        const prevS = novelStatsByIdRef.current[migrated.id];
+        const statsChanged = !prevS || prevS.entities !== s.entities || prevS.milestones !== s.milestones;
+        const nextStats = { ...novelStatsByIdRef.current, [migrated.id]: s };
+        novelStatsByIdRef.current = nextStats;
+        setNovelStatsById(nextStats);
+        if (statsChanged && dirHandle) {
+          void syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, dirHandle, nextStats);
+        }
       }
       if (migrated !== data) syncNovel(migrated, dirHandle);
       if (tabAt?.lonId) {
@@ -2088,6 +2187,68 @@ export default function App() {
     }
     setIsUploading(false);
   };
+
+  useEffect(() => {
+    const run = async () => {
+      if (!activeNovelData || !dirHandle || dirHandle === 'LOCAL_STORAGE') return;
+      if (activeNovelData.storageLayout !== 'sharded') return;
+      const lonId = activeTabLon;
+      const nhoId = activeTabNho || 'default';
+      if (!lonId || !nhoId) return;
+      if (activeNovelData.data?.[lonId]?.[nhoId]) return;
+      const key = `${activeNovelData.id}|${lonId}|${nhoId}`;
+      if (lazyTabLoadInFlightRef.current.has(key)) return;
+      lazyTabLoadInFlightRef.current.add(key);
+      try {
+        const partial = await loadNovelData(activeNovelData, dirHandle, { shardKeys: [{ lonId, nhoId }] });
+        if (partial?.data?.[lonId]?.[nhoId]) {
+          setActiveNovelData((prev) => {
+            if (!prev || prev.id !== activeNovelData.id) return prev;
+            const next = structuredClone(prev);
+            if (!next.data) next.data = {};
+            if (!next.data[lonId]) next.data[lonId] = {};
+            next.data[lonId][nhoId] = partial.data[lonId][nhoId];
+            return next;
+          });
+        }
+      } finally {
+        lazyTabLoadInFlightRef.current.delete(key);
+      }
+    };
+    void run();
+  }, [activeNovelData, activeTabLon, activeTabNho, dirHandle, loadNovelData]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!activeNovelData || !dirHandle || dirHandle === 'LOCAL_STORAGE') return;
+      if (activeNovelData.storageLayout !== 'sharded' || !activeNovelData.__partialData) return;
+      if (activeTabLon !== 'tong-quan') return;
+      const key = activeNovelData.id;
+      if (lazyFullHydrateInFlightRef.current.has(key)) return;
+      lazyFullHydrateInFlightRef.current.add(key);
+      try {
+        const fullData = await loadNovelData(activeNovelData, dirHandle);
+        if (fullData && !fullData.__partialData) {
+          setActiveNovelData((prev) => {
+            if (!prev || prev.id !== key) return prev;
+            return fullData;
+          });
+          deepSearchIndexByNovelIdRef.current.set(
+            fullData.id,
+            buildNovelSearchIndex(fullData)
+          );
+          const s = countEntitiesInNovel(fullData);
+          const nextStats = { ...novelStatsByIdRef.current, [fullData.id]: s };
+          novelStatsByIdRef.current = nextStats;
+          setNovelStatsById(nextStats);
+          void syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, dirHandle, nextStats);
+        }
+      } finally {
+        lazyFullHydrateInFlightRef.current.delete(key);
+      }
+    };
+    void run();
+  }, [activeNovelData, activeTabLon, dirHandle, loadNovelData, syncIndex]);
 
 
   const toggleGenre = (genre) => {

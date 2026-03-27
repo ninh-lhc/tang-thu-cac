@@ -6,6 +6,7 @@
 
 export const NOVEL_STORAGE_SHARDED = 'sharded';
 export const DATA_DIR_NAME = 'data';
+const shardWriteStateByDir = new WeakMap();
 
 /** Tên thư mục / file an toàn trên Windows (id thường là uuid → không đổi). */
 export function encodePathSegment(id) {
@@ -50,6 +51,36 @@ function shardKeyPath(lonId, nhoId) {
   return `${encodePathSegment(lonId)}/${encodePathSegment(nhoId)}.json`;
 }
 
+function getShardState(dirHandle) {
+  const cur = shardWriteStateByDir.get(dirHandle);
+  if (cur && cur.hashes instanceof Map) return cur;
+  const next = { hashes: new Map() };
+  shardWriteStateByDir.set(dirHandle, next);
+  return next;
+}
+
+/** Tính kế hoạch ghi shard dựa trên cache hash nội bộ (skip shard không đổi). */
+export function buildShardWritePlan(data, previousHashes) {
+  const keys = listShardKeysFromData(data);
+  const writes = [];
+  const nextHashes = new Map();
+  const expected = new Set();
+  for (const { lonId, nhoId } of keys) {
+    const rel = shardKeyPath(lonId, nhoId);
+    expected.add(rel);
+    const jsonStr = JSON.stringify(data[lonId][nhoId], null, 2);
+    nextHashes.set(rel, jsonStr);
+    if (previousHashes.get(rel) !== jsonStr) {
+      writes.push({ lonId, nhoId, rel, jsonStr });
+    }
+  }
+  const removed = [];
+  for (const rel of previousHashes.keys()) {
+    if (!expected.has(rel)) removed.push(rel);
+  }
+  return { writes, removed, nextHashes, expected };
+}
+
 /**
  * Đọc toàn bộ shard vào một object data[lonId][nhoId] (chưa migrate).
  * @param {FileSystemDirectoryHandle} novelDirHandle
@@ -78,6 +109,41 @@ export async function loadShardsFromNovelDir(novelDirHandle) {
       } catch (e) {
         console.warn('[TTC] Shard JSON lỗi:', lonEnc, fileName, e);
       }
+    }
+  }
+  return data;
+}
+
+/**
+ * Đọc một phần shard theo danh sách {lonId,nhoId}.
+ * Trả về object data cùng shape với loadShardsFromNovelDir.
+ */
+export async function loadShardSubsetFromNovelDir(novelDirHandle, shardKeys) {
+  const data = {};
+  const keys = Array.isArray(shardKeys) ? shardKeys : [];
+  if (keys.length === 0) return data;
+  let dataDir;
+  try {
+    dataDir = await novelDirHandle.getDirectoryHandle(DATA_DIR_NAME);
+  } catch {
+    return data;
+  }
+  for (const key of keys) {
+    const lonId = key?.lonId;
+    const nhoId = key?.nhoId;
+    if (!lonId || !nhoId) continue;
+    const lonSeg = encodePathSegment(lonId);
+    const nhoSeg = encodePathSegment(nhoId);
+    try {
+      const lonDir = await dataDir.getDirectoryHandle(lonSeg);
+      const fileHandle = await lonDir.getFileHandle(`${nhoSeg}.json`);
+      const file = await fileHandle.getFile();
+      const text = await file.text();
+      const tab = JSON.parse(text);
+      if (!data[lonId]) data[lonId] = {};
+      data[lonId][nhoId] = tab;
+    } catch {
+      /* missing shard is acceptable */
     }
   }
   return data;
@@ -118,18 +184,18 @@ async function writeShardAtomic(lonDirHandle, nhoSeg, jsonStr) {
  * @param {object} novelData — object đầy đủ trong memory (có .data)
  */
 export async function writeShardTree(novelDirHandle, novelData) {
-  const keys = listShardKeysFromData(novelData.data);
-  const expected = new Set(keys.map(({ lonId, nhoId }) => shardKeyPath(lonId, nhoId)));
+  const shardState = getShardState(novelDirHandle);
+  const plan = buildShardWritePlan(novelData.data || {}, shardState.hashes);
 
   const dataDir = await novelDirHandle.getDirectoryHandle(DATA_DIR_NAME, { create: true });
 
-  for (const { lonId, nhoId } of keys) {
-    const tab = novelData.data[lonId][nhoId];
-    const jsonStr = JSON.stringify(tab, null, 2);
+  for (const w of plan.writes) {
+    const { lonId, nhoId, rel, jsonStr } = w;
     const lonSeg = encodePathSegment(lonId);
     const nhoSeg = encodePathSegment(nhoId);
     const lonDir = await dataDir.getDirectoryHandle(lonSeg, { create: true });
     await writeShardAtomic(lonDir, nhoSeg, jsonStr);
+    shardState.hashes.set(rel, jsonStr);
   }
 
   for await (const [lonEnc, lonHandle] of dataDir.entries()) {
@@ -138,9 +204,10 @@ export async function writeShardTree(novelDirHandle, novelData) {
       if (fh.kind !== 'file' || !/\.json$/i.test(fileName)) continue;
       if (fileName.toLowerCase().endsWith('.json.tmp')) continue;
       const rel = `${lonEnc}/${fileName}`;
-      if (!expected.has(rel)) {
+      if (!plan.expected.has(rel)) {
         try {
           await lonHandle.removeEntry(fileName);
+          shardState.hashes.delete(rel);
         } catch {
           /* ignore */
         }

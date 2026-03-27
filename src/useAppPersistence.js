@@ -9,6 +9,7 @@ import {
   NOVEL_STORAGE_SHARDED,
   buildDiskManifest,
   loadShardsFromNovelDir,
+  loadShardSubsetFromNovelDir,
   writeShardTree,
 } from './lib/novelDiskLayout.js';
 
@@ -98,13 +99,40 @@ export function useAppPersistence({
         return;
       }
       const folderName = novelData.folderName || novelData.title.replace(/[\\/:*?"<>|]/g, '').trim() || novelData.id;
-      const manifest = buildDiskManifest(novelData);
+      let novelToWrite = novelData;
+      // Nếu đang giữ data partial (lazy-shard), phải hydrate full trước khi ghi để tránh xóa shard chưa nạp.
+      if (novelData?.storageLayout === NOVEL_STORAGE_SHARDED && novelData?.__partialData) {
+        try {
+          const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
+          const diskData = await loadShardsFromNovelDir(novelDir);
+          const merged = {
+            ...novelData,
+            data: { ...(diskData || {}) },
+          };
+          Object.entries(novelData.data || {}).forEach(([lonId, lonData]) => {
+            if (!merged.data[lonId]) merged.data[lonId] = {};
+            Object.entries(lonData || {}).forEach(([nhoId, nhoData]) => {
+              merged.data[lonId][nhoId] = nhoData;
+            });
+          });
+          delete merged.__partialData;
+          novelToWrite = merged;
+        } catch {
+          // Nếu hydrate thất bại thì fallback ghi như hiện có.
+          novelToWrite = { ...novelData };
+          delete novelToWrite.__partialData;
+        }
+      } else if (novelData?.__partialData) {
+        novelToWrite = { ...novelData };
+        delete novelToWrite.__partialData;
+      }
+      const manifest = buildDiskManifest(novelToWrite);
       const jsonStr = JSON.stringify(manifest, null, 2);
       const mainFile = `${folderName}.json`;
       const tmpFile = `${folderName}.json.tmp`;
       const tryAtomic = async () => {
         const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
-        await writeShardTree(novelDir, novelData);
+        await writeShardTree(novelDir, novelToWrite);
         const tw = await novelDir.getFileHandle(tmpFile, { create: true });
         const w = await tw.createWritable();
         await w.write(jsonStr);
@@ -130,7 +158,7 @@ export function useAppPersistence({
       };
       const tryDirect = async () => {
         const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
-        await writeShardTree(novelDir, novelData);
+        await writeShardTree(novelDir, novelToWrite);
         const f = await novelDir.getFileHandle(mainFile, { create: true });
         const w = await f.createWritable();
         await w.write(jsonStr);
@@ -139,11 +167,11 @@ export function useAppPersistence({
       };
       try {
         await tryAtomic();
-        bumpNovelStatsAfterWrite(novelData);
+        bumpNovelStatsAfterWrite(novelToWrite);
       } catch {
         try {
           await tryDirect();
-          bumpNovelStatsAfterWrite(novelData);
+          bumpNovelStatsAfterWrite(novelToWrite);
         } catch {
           setTimeout(() => {
             showToast(`Lỗi đồng bộ truyện ${novelData.title}!`, 'error');
@@ -158,7 +186,8 @@ export function useAppPersistence({
     syncNovelRef.current = syncNovel;
   }, [syncNovel]);
 
-  const loadNovelData = useCallback(async (meta, rootDir) => {
+  const loadNovelData = useCallback(async (meta, rootDir, options = {}) => {
+    const shardKeys = Array.isArray(options.shardKeys) ? options.shardKeys : null;
     if (!rootDir || rootDir === 'LOCAL_STORAGE') {
       const data = localStorage.getItem(`tangthu_novel_${meta.id}`);
       if (!data) return null;
@@ -178,8 +207,11 @@ export function useAppPersistence({
       try {
         const parsed = JSON.parse(text);
         if (parsed.storageLayout === NOVEL_STORAGE_SHARDED) {
-          const shardData = await loadShardsFromNovelDir(novelDir);
+          const shardData = shardKeys
+            ? await loadShardSubsetFromNovelDir(novelDir, shardKeys)
+            : await loadShardsFromNovelDir(novelDir);
           parsed.data = shardData;
+          if (shardKeys) parsed.__partialData = true;
         }
         return migrateNovel(parsed);
       } catch (pe) {

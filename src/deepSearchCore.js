@@ -81,6 +81,110 @@ export function searchNovelData(novel, q, res) {
   });
 }
 
+/** Dựng chỉ mục tìm kiếm cho một truyện (dùng lại giữa nhiều query). */
+export function buildNovelSearchIndex(novel) {
+  const rows = [];
+  if (!novel?.data) return rows;
+  Object.keys(novel.data).forEach((lonId) => {
+    const lonData = novel.data[lonId];
+    if (typeof lonData !== 'object' || !lonData) return;
+    Object.keys(lonData).forEach((nhoId) => {
+      const nhoData = lonData[nhoId];
+      if (typeof nhoData === 'string') {
+        rows.push({
+          haystack: nhoData.toLowerCase(),
+          result: {
+            novelId: novel.id,
+            tabLonId: lonId,
+            tabNhoId: nhoId,
+            novelTitle: novel.title,
+            location: 'Nội dung',
+            snippet: nhoData,
+          },
+        });
+        return;
+      }
+      if (!nhoData || typeof nhoData !== 'object') return;
+      if (typeof nhoData.overview === 'string') {
+        rows.push({
+          haystack: nhoData.overview.toLowerCase(),
+          result: {
+            novelId: novel.id,
+            tabLonId: lonId,
+            tabNhoId: nhoId,
+            novelTitle: novel.title,
+            location: 'Tổng quan mục',
+            snippet: nhoData.overview,
+          },
+        });
+      }
+      (nhoData.entities || []).forEach((ent) => {
+        const chunks = [ent.name, ent.info];
+        if (ent.dynamicData && typeof ent.dynamicData === 'object') {
+          Object.values(ent.dynamicData).forEach((v) => {
+            if (typeof v === 'string') chunks.push(v);
+          });
+        }
+        const entityText = chunks.filter((x) => typeof x === 'string').join('\n').toLowerCase();
+        rows.push({
+          haystack: entityText,
+          result: {
+            novelId: novel.id,
+            tabLonId: lonId,
+            tabNhoId: nhoId,
+            entityId: ent.id,
+            novelTitle: novel.title,
+            location: `Hồ sơ: ${ent.name}`,
+            snippet: ent.info || ent.name,
+          },
+        });
+        (ent.milestones || []).forEach((ms) => {
+          if (typeof ms?.event !== 'string') return;
+          rows.push({
+            haystack: ms.event.toLowerCase(),
+            result: {
+              novelId: novel.id,
+              tabLonId: lonId,
+              tabNhoId: nhoId,
+              entityId: ent.id,
+              novelTitle: novel.title,
+              location: `Sự kiện Ch.${ms.chapter} — ${ent.name}`,
+              snippet: ms.event,
+            },
+          });
+        });
+      });
+      Object.keys(nhoData).forEach((key) => {
+        const v = nhoData[key];
+        if (key === 'overview' || key === 'entities' || typeof v !== 'string') return;
+        rows.push({
+          haystack: v.toLowerCase(),
+          result: {
+            novelId: novel.id,
+            tabLonId: lonId,
+            tabNhoId: nhoId,
+            tabConId: key,
+            novelTitle: novel.title,
+            location: 'Chi tiết mục',
+            snippet: v,
+          },
+        });
+      });
+    });
+  });
+  return rows;
+}
+
+/** Tìm trong chỉ mục đã dựng sẵn của một truyện. */
+export function searchNovelIndex(rows, q, res) {
+  if (!Array.isArray(rows) || !q) return;
+  for (const row of rows) {
+    if (row?.haystack?.includes(q)) {
+      res.push(row.result);
+    }
+  }
+}
+
 export function runDeepSearch({ novelsMetadata, allNovelsCache, activeNovelData, query }) {
   const q = String(query || '')
     .trim()

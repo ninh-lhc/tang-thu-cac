@@ -4,6 +4,7 @@ import {
   decodePathSegment,
   listShardKeysFromData,
   buildDiskManifest,
+  buildShardWritePlan,
   NOVEL_STORAGE_SHARDED,
 } from './novelDiskLayout.js';
 
@@ -37,5 +38,21 @@ describe('novelDiskLayout', () => {
     expect(m.storageLayout).toBe(NOVEL_STORAGE_SHARDED);
     expect(m.title).toBe('T');
     expect(nov.data.L).toBeDefined();
+  });
+
+  it('buildShardWritePlan marks only changed shards for write', () => {
+    const prev = new Map([
+      ['L/S.json', JSON.stringify({ overview: 'A' }, null, 2)],
+      ['L/OLD.json', JSON.stringify({ overview: 'X' }, null, 2)],
+    ]);
+    const data = {
+      L: {
+        S: { overview: 'A' },
+        N: { overview: 'B' },
+      },
+    };
+    const plan = buildShardWritePlan(data, prev);
+    expect(plan.writes.map((w) => w.rel)).toEqual(['L/N.json']);
+    expect(plan.removed).toEqual(['L/OLD.json']);
   });
 });

@@ -9,6 +9,7 @@ import {
   BookOpen, Swords, User, Map as MapIcon, Hexagon, Flame, Globe, ScrollText, Link2, Plus
 } from 'lucide-react';
 import { FALLBACK_IMG } from './MasterEngines.js';
+import { splitTextByWikiMatcher } from './lib/wikiLinkMatcher.js';
 
 export const generateId = (prefix) => `${prefix}-${Math.random().toString(36).substring(2, 11)}`;
 
@@ -509,20 +510,23 @@ export const buildEntityNameLookup = (entityMap) => {
 
 export const processPlainTextWithLinks = (text, lookup, linkRegex, onNavigate) => {
     if (!text || !lookup || lookup.size === 0 || !linkRegex) return text;
-    const parts = text.split(linkRegex);
+    const usingRegex = linkRegex instanceof RegExp;
+    const parts = usingRegex ? text.split(linkRegex) : splitTextByWikiMatcher(text, linkRegex);
     if (parts.length === 1) return text;
 
     return parts.map((part, i) => {
-        if (i % 2 === 0) return part; 
-        const match = lookup.get(String(part).toLowerCase());
+        const rawText = usingRegex ? part : part.text;
+        const isMatch = usingRegex ? (i % 2 !== 0) : part.isMatch;
+        if (!isMatch) return rawText;
+        const match = lookup.get(String(rawText).toLowerCase());
         if (match) {
             return (
                <span key={i} onClick={(e) => { e.stopPropagation(); onNavigate(match.dest); }} className="text-amber-400 bg-amber-900/20 px-1 rounded hover:bg-amber-600 hover:text-white hover:shadow-[0_0_10px_rgba(217,119,6,0.5)] transition-all font-bold cursor-pointer inline-flex items-center gap-0.5">
-                  <Link2 size={12}/>{part}
+                  <Link2 size={12}/>{rawText}
                </span>
             );
         }
-        return part;
+        return rawText;
     });
 };
 
