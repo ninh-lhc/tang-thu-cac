@@ -419,6 +419,11 @@ export default function App() {
     showToast,
   });
 
+  const resolveSafeTabsConfig = useCallback(
+    (candidate) => (Array.isArray(candidate) && candidate.length > 0 ? candidate : globalTabsConfigRef.current),
+    []
+  );
+
   useEffect(() => {
     novelsMetadataRef.current = novelsMetadata;
     globalTabsConfigRef.current = globalTabsConfig;
@@ -1357,7 +1362,7 @@ export default function App() {
     if (window.self !== window.top) {
        setDirHandle("LOCAL_STORAGE"); setShowConnectReminder(true); showToast("Preview: Đã chuyển sang Local Storage.");
        const local = localStorage.getItem('tangthu_index');
-      if (local) { try { const p = migrateIndex(JSON.parse(local)); if (p.metadata) setNovelsMetadata(p.metadata); if (p.config) setGlobalTabsConfig(p.config); if (p.novelStats && typeof p.novelStats === 'object') { novelStatsByIdRef.current = p.novelStats; setNovelStatsById(p.novelStats); } } catch { void 0; } }
+      if (local) { try { const p = migrateIndex(JSON.parse(local)); if (p.metadata) setNovelsMetadata(p.metadata); const safeConfig = resolveSafeTabsConfig(p.config); setGlobalTabsConfig(safeConfig); const stats = p.novelStats && typeof p.novelStats === 'object' ? p.novelStats : {}; if (p.novelStats && typeof p.novelStats === 'object') { novelStatsByIdRef.current = p.novelStats; setNovelStatsById(p.novelStats); } if (!Array.isArray(p.config) || p.config.length === 0) void syncIndex(p.metadata || [], safeConfig, 'LOCAL_STORAGE', stats); } catch { void 0; } }
        return;
     }
     try {
@@ -1379,8 +1384,9 @@ export default function App() {
                     await wr.write(JSON.stringify(migratedNovel, null, 2)); await wr.close();
                  }
                  const ih = await h.getFileHandle('index.json', { create: true }); const iw = await ih.createWritable();
-                 await iw.write(JSON.stringify({ metadata: newMeta, config: parsedOld.config || globalTabsConfig, novelStats: {} }, null, 2)); await iw.close();
-                 setNovelsMetadata(newMeta); if (parsedOld.config) setGlobalTabsConfig(parsedOld.config);
+                const safeConfig = resolveSafeTabsConfig(parsedOld.config);
+                await iw.write(JSON.stringify({ metadata: newMeta, config: safeConfig, novelStats: {} }, null, 2)); await iw.close();
+                setNovelsMetadata(newMeta); setGlobalTabsConfig(safeConfig);
                 setDirHandle(h); setShowConnectReminder(true); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Độ kiếp thành công! Cấu trúc mới đã sẵn sàng."); return;
              }
          } catch { setDirHandle(h); setShowConnectReminder(true); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Thư mục trống. Đã kết nối Mệnh Bàn!"); return; }
@@ -1390,13 +1396,18 @@ export default function App() {
           const parsed = JSON.parse(content);
           const index = migrateIndex(parsed);
           if (index.metadata) setNovelsMetadata(index.metadata);
-          if (index.config) setGlobalTabsConfig(index.config);
+          const safeConfig = resolveSafeTabsConfig(index.config);
+          setGlobalTabsConfig(safeConfig);
+          const stats = index.novelStats && typeof index.novelStats === 'object' ? index.novelStats : {};
           if (index.novelStats && typeof index.novelStats === 'object') {
             novelStatsByIdRef.current = index.novelStats;
             setNovelStatsById(index.novelStats);
           } else {
             setNovelStatsById({});
             novelStatsByIdRef.current = {};
+          }
+          if (!Array.isArray(index.config) || index.config.length === 0) {
+            void syncIndex(index.metadata || [], safeConfig, h, stats);
           }
           setDirHandle(h);
           setShowConnectReminder(true);
@@ -1473,14 +1484,15 @@ export default function App() {
         const parsed = JSON.parse(event.target.result);
         const backup = migrateBackup(parsed);
         if (backup.metadata && backup.config) {
-          setGlobalTabsConfig(backup.config);
+          const safeConfig = resolveSafeTabsConfig(backup.config);
+          setGlobalTabsConfig(safeConfig);
           setNovelsMetadata(backup.metadata);
           novelsMetadataRef.current = backup.metadata;
           const stats = backup.novelStats && typeof backup.novelStats === 'object' ? backup.novelStats : {};
           novelStatsByIdRef.current = stats;
           setNovelStatsById(stats);
           setImportProgress({ stage: 'Đang ghi danh mục...', current: 0, total: 1 });
-          await syncIndex(backup.metadata, backup.config, dirHandle, stats);
+          await syncIndex(backup.metadata, safeConfig, dirHandle, stats);
           const novelEntries = backup.novels && typeof backup.novels === 'object' ? Object.entries(backup.novels) : [];
           for (let i = 0; i < novelEntries.length; i++) {
             setImportProgress({ stage: `Đang ghi truyện ${i + 1}/${novelEntries.length}...`, current: i + 1, total: novelEntries.length });
