@@ -94,7 +94,6 @@ export function AppCollectionSection({
   setIsExtractingAI,
   geminiApiKeys,
   showToast,
-  handleAIExtractSuccess,
   aiMode,
   isSplitPreview,
   setLivePreviewText,
@@ -488,7 +487,6 @@ export function AppCollectionSection({
                   geminiApiKeys={geminiApiKeys}
                   showToast={showToast}
                   currentTabConfig={currentTabConfig}
-                  handleAIExtractSuccess={handleAIExtractSuccess}
                   aiMode={aiMode}
                   isSplitPreview={isSplitPreview}
                   setLivePreviewText={setLivePreviewText}

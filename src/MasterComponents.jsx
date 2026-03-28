@@ -4,15 +4,16 @@
 // Vai trò: UI components tĩnh + tất cả Modal
 // ==========================================
 
-import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, memo } from 'react';
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, memo, useSyncExternalStore } from 'react';
 import {
   Menu, Search, BookOpen, Filter, ChevronRight, ChevronDown,
   Settings, Network, Plus, Trash2, X, Save,
   Check, Library, Sparkles, Bold, Italic, Heading1, Heading2, List as ListIcon,
   FolderOpen, Cloud, Upload, HardDrive, Clock, Shield, Download, UploadCloud,
   Image as ImageIcon, History, LayoutGrid, Link2, ScrollText, User,
+  Undo2, Redo2, Underline, Strikethrough, Highlighter, ListOrdered, Quote,
   TrendingUp, BarChart2, BookMarked, Users, Layers, Activity, Eye,
-  GitBranch, ZoomIn, ZoomOut, Maximize2, RefreshCw, SlidersHorizontal, Atom, Edit2, Command
+  GitBranch, ZoomIn, ZoomOut, Maximize2, RefreshCw, SlidersHorizontal, Atom, Edit2, Command, Type,
 } from 'lucide-react';
 import {
   FALLBACK_IMG, GENRES, THEMES,
@@ -21,34 +22,265 @@ import {
 } from './MasterEngines.js';
 import {
   generateId, safeString, getTerms, AsyncLocalImage,
-  handleToolbarClick, applyWikiLinkWrap, applyWikiLinkUnwrap, analyzeTextWithAI,
-  truncateForAI, mapGeminiErrorToUserMessage
+  handleToolbarClick,
+  handleToolbarToggleLinePrefix,
+  applyWikiLinkWrap,
+  applyWikiLinkUnwrap,
+  analyzeTextWithAI,
+  truncateForAI,
+  mapGeminiErrorToUserMessage,
 } from './MasterUtils.jsx';
 import { mergeTabsByGenres } from './genreTabsMap.js';
 import { searchNovelData, dedupeDeepSearchResults, metadataSearchHits } from './deepSearchCore.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
+import {
+  ENTITY_NOTES_FONT_OPTIONS,
+  ENTITY_NOTES_FONT_SIZE_OPTIONS,
+  getEntityNotesPrefs,
+  setEntityNotesPrefs,
+  subscribeEntityNotesPrefs,
+} from './lib/entityNotesPrefs.js';
 
 const preventToolbarFocusSteal = (e) => e.preventDefault();
 
-export const MarkdownToolbar = ({ editorId, onInsertImage, onPickLocalImage }) => (
-  <div className="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-slate-800">
-     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('**', '**', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="In đậm"><Bold size={16}/></button>
-     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('*', '*', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="In nghiêng"><Italic size={16}/></button>
-     <div className="w-px h-6 bg-slate-800 mx-1"></div>
-     
-     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('[[', ']]', editorId)} className="p-2 text-indigo-500 hover:text-indigo-300 bg-indigo-950/50 rounded-lg hover:bg-indigo-900 transition-colors border border-indigo-900/50 shadow-inner" title="Wiki Link: bôi đen chữ để bọc [[...]], hoặc chèn [[]] tại con trỏ"><Link2 size={16}/></button>
-     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('__WIKI_UNWRAP__', '', editorId)} className="p-2 text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 rounded-lg hover:bg-cyan-900/40 transition-colors border border-cyan-900/50 shadow-inner" title="Gỡ Wiki Link: chọn [[...]] hoặc đặt con trỏ trong link để bỏ"><X size={16}/></button>
-     <div className="w-px h-6 bg-slate-800 mx-1"></div>
+export const MarkdownToolbar = ({
+  editorId,
+  onInsertImage,
+  onPickLocalImage,
+  variant = 'standard',
+  onUndo,
+  onRedo,
+  undoDisabled,
+  redoDisabled,
+  onEditorContentChange,
+  notesFontKey,
+  notesFontSizePx,
+  onNotesFontKey,
+  onNotesFontSizePx,
+}) => {
+  const sync = onEditorContentChange;
+  const tb = (before, after) => () => handleToolbarClick(before, after, editorId, sync);
+  const linePref = (p) => () => handleToolbarToggleLinePrefix(editorId, p, sync);
 
-     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('# ', '', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Tiêu đề 1"><Heading1 size={16}/></button>
-     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('## ', '', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Tiêu đề 2"><Heading2 size={16}/></button>
-     <div className="w-px h-6 bg-slate-800 mx-1"></div>
-     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => handleToolbarClick('- ', '', editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Gạch đầu dòng"><ListIcon size={16}/></button>
-     <div className="w-px h-6 bg-slate-800 mx-1"></div>
-     <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => onInsertImage(editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Chèn Ảnh (URL)"><ImageIcon size={16}/></button>
-     {onPickLocalImage && <button type="button" onMouseDown={preventToolbarFocusSteal} onClick={() => onPickLocalImage(null, editorId)} className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors" title="Chọn Ảnh Từ Máy tính"><FolderOpen size={16}/></button>}
-  </div>
-);
+  return (
+    <div className="flex flex-col gap-2 mb-4 pb-4 border-b border-slate-800">
+      <div className="flex flex-wrap items-center gap-2">
+        {variant === 'entityNotes' && onUndo && onRedo && (
+          <>
+            <button
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={onUndo}
+              disabled={undoDisabled}
+              className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-35 disabled:pointer-events-none"
+              title="Hoàn tác (Ctrl+Z)"
+            >
+              <Undo2 size={16} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={onRedo}
+              disabled={redoDisabled}
+              className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-35 disabled:pointer-events-none"
+              title="Làm lại (Ctrl+Y hoặc Ctrl+Shift+Z)"
+            >
+              <Redo2 size={16} />
+            </button>
+            <div className="w-px h-6 bg-slate-800 mx-1" />
+          </>
+        )}
+        <button
+          type="button"
+          onMouseDown={preventToolbarFocusSteal}
+          onClick={tb('**', '**')}
+          className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          title="In đậm"
+        >
+          <Bold size={16} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={preventToolbarFocusSteal}
+          onClick={tb('*', '*')}
+          className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          title="In nghiêng"
+        >
+          <Italic size={16} />
+        </button>
+        {variant === 'entityNotes' && (
+          <>
+            <button
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={tb('<u>', '</u>')}
+              className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+              title="Gạch chân (HTML, xem Preview)"
+            >
+              <Underline size={16} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={tb('~~', '~~')}
+              className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+              title="Gạch ngang"
+            >
+              <Strikethrough size={16} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={tb('`', '`')}
+              className="p-2 text-slate-400 hover:text-emerald-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+              title="Mã inline"
+            >
+              <span className="font-mono text-sm font-bold">{'`'}</span>
+            </button>
+            <button
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={tb('==', '==')}
+              className="p-2 text-slate-400 hover:text-amber-300 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+              title="Tô nền (highlight)"
+            >
+              <Highlighter size={16} />
+            </button>
+          </>
+        )}
+        <div className="w-px h-6 bg-slate-800 mx-1" />
+
+        <button
+          type="button"
+          onMouseDown={preventToolbarFocusSteal}
+          onClick={tb('[[', ']]')}
+          className="p-2 text-indigo-500 hover:text-indigo-300 bg-indigo-950/50 rounded-lg hover:bg-indigo-900 transition-colors border border-indigo-900/50 shadow-inner"
+          title="Wiki Link: bôi đen chữ để bọc [[...]], hoặc chèn [[]] tại con trỏ"
+        >
+          <Link2 size={16} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={preventToolbarFocusSteal}
+          onClick={() => handleToolbarClick('__WIKI_UNWRAP__', '', editorId, sync)}
+          className="p-2 text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 rounded-lg hover:bg-cyan-900/40 transition-colors border border-cyan-900/50 shadow-inner"
+          title="Gỡ Wiki Link: chọn [[...]] hoặc đặt con trỏ trong link để bỏ"
+        >
+          <X size={16} />
+        </button>
+        <div className="w-px h-6 bg-slate-800 mx-1" />
+
+        <button
+          type="button"
+          onMouseDown={preventToolbarFocusSteal}
+          onClick={tb('# ', '')}
+          className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          title="Tiêu đề 1"
+        >
+          <Heading1 size={16} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={preventToolbarFocusSteal}
+          onClick={tb('## ', '')}
+          className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          title="Tiêu đề 2"
+        >
+          <Heading2 size={16} />
+        </button>
+        <div className="w-px h-6 bg-slate-800 mx-1" />
+        <button
+          type="button"
+          onMouseDown={preventToolbarFocusSteal}
+          onClick={tb('- ', '')}
+          className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          title="Gạch đầu dòng"
+        >
+          <ListIcon size={16} />
+        </button>
+        {variant === 'entityNotes' && (
+          <>
+            <button
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={linePref('1. ')}
+              className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+              title="Danh sách đánh số (1. )"
+            >
+              <ListOrdered size={16} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={linePref('> ')}
+              className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+              title="Trích dẫn (> )"
+            >
+              <Quote size={16} />
+            </button>
+          </>
+        )}
+        <div className="w-px h-6 bg-slate-800 mx-1" />
+        <button
+          type="button"
+          onMouseDown={preventToolbarFocusSteal}
+          onClick={() => onInsertImage(editorId)}
+          className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          title="Chèn Ảnh (URL)"
+        >
+          <ImageIcon size={16} />
+        </button>
+        {onPickLocalImage && (
+          <button
+            type="button"
+            onMouseDown={preventToolbarFocusSteal}
+            onClick={() => onPickLocalImage(null, editorId)}
+            className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+            title="Chọn Ảnh Từ Máy tính"
+          >
+            <FolderOpen size={16} />
+          </button>
+        )}
+      </div>
+      {variant === 'entityNotes' && onNotesFontKey && onNotesFontSizePx != null && (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+          <span className="font-bold uppercase tracking-wider mr-1">Khung soạn</span>
+          <label className="flex items-center gap-1.5">
+            <span className="text-slate-600">Font</span>
+            <select
+              value={notesFontKey}
+              onChange={(e) => onNotesFontKey(e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-300 max-w-[200px]"
+              style={{ fontFamily: ENTITY_NOTES_FONT_OPTIONS.find((o) => o.id === notesFontKey)?.stack }}
+            >
+              {ENTITY_NOTES_FONT_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id} style={{ fontFamily: o.stack }}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5">
+            <span className="text-slate-600">Cỡ</span>
+            <select
+              value={String(notesFontSizePx)}
+              onChange={(e) => onNotesFontSizePx(Number(e.target.value))}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-300 w-[4.5rem] text-center font-mono"
+            >
+              {ENTITY_NOTES_FONT_SIZE_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const AppHeader = ({
   menu1Visible,
@@ -925,6 +1157,8 @@ export const ModalSettings = ({
   const [testStatus, setTestStatus] = useState({}); // idx -> 'testing'|'ok'|'fail'
   const [showKeys, setShowKeys] = useState({});     // idx -> bool (hiện plain text)
 
+  const notesTypoPrefs = useSyncExternalStore(subscribeEntityNotesPrefs, getEntityNotesPrefs, getEntityNotesPrefs);
+
   if (!isOpen) return null;
 
   const keys = Array.isArray(geminiApiKeys) ? geminiApiKeys : (geminiApiKeys ? [geminiApiKeys] : []);
@@ -1088,6 +1322,50 @@ export const ModalSettings = ({
                 </div>
               </label>
             </div>
+
+             <div className="h-px bg-slate-800 w-full"></div>
+
+             <div>
+               <h3 className="text-sm font-bold text-amber-400 mb-1 uppercase tracking-widest flex items-center gap-2">
+                 <Type size={16} /> Ghi chép chi tiết
+               </h3>
+               <p className="text-slate-500 font-serif text-xs leading-relaxed mb-3">
+                 Font và cỡ chữ cho ô soạn «Ghi chép chi tiết» (hồ sơ thẻ). Lưu cục bộ; cùng bộ với thanh công cụ khi đang viết ghi chép.
+               </p>
+               <div className="flex flex-col sm:flex-row gap-3">
+                 <label className="flex-1 flex flex-col gap-1">
+                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Font chữ</span>
+                   <select
+                     value={notesTypoPrefs.fontKey}
+                     onChange={(e) => setEntityNotesPrefs({ fontKey: e.target.value })}
+                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-200 text-sm focus:border-amber-500 outline-none font-serif"
+                     style={{
+                       fontFamily: ENTITY_NOTES_FONT_OPTIONS.find((o) => o.id === notesTypoPrefs.fontKey)?.stack,
+                     }}
+                   >
+                     {ENTITY_NOTES_FONT_OPTIONS.map((o) => (
+                       <option key={o.id} value={o.id} style={{ fontFamily: o.stack }}>
+                         {o.label}
+                       </option>
+                     ))}
+                   </select>
+                 </label>
+                 <label className="flex flex-col gap-1 w-full sm:w-32">
+                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cỡ chữ</span>
+                   <select
+                     value={String(notesTypoPrefs.sizePx)}
+                     onChange={(e) => setEntityNotesPrefs({ sizePx: Number(e.target.value) })}
+                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-200 text-sm focus:border-amber-500 outline-none font-mono text-center"
+                   >
+                     {ENTITY_NOTES_FONT_SIZE_OPTIONS.map((n) => (
+                       <option key={n} value={n}>
+                         {n}
+                       </option>
+                     ))}
+                   </select>
+                 </label>
+               </div>
+             </div>
 
              <div className="h-px bg-slate-800 w-full"></div>
 

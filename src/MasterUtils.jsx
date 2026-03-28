@@ -530,34 +530,112 @@ export const processPlainTextWithLinks = (text, lookup, linkRegex, onNavigate) =
     });
 };
 
+const INLINE_MARK_SPLIT =
+  /(\*\*[\s\S]*?\*\*|`[^`\n]+`|~~[\s\S]*?~~|==[\s\S]*?==|<u>[\s\S]*?<\/u>|\*[^*\n]+?\*|!\[.*?\]\(.*?\)|\[\[.*?\]\])/g;
+
 export const processInline = (text, dirHandle, entityLookup, linkRegex, onNavigate) => {
   if (!text) return null;
   const lookup = entityLookup instanceof Map ? entityLookup : buildEntityNameLookup(entityLookup);
-  const parts = text.split(/(\*\*.*?\*\*|\*.*?\*|!\[.*?\]\(.*?\)|\[\[.*?\]\])/g);
-  
+  const parts = text.split(INLINE_MARK_SPLIT);
+
   return parts.map((part, i) => {
-    if (i % 2 !== 0) { 
-        if (part.startsWith('![') && part.endsWith(')')) {
-          const match = part.match(/^!\[(.*?)\]\((.*?)\)$/);
-          if (match) {
-             const alt = safeString(match[1]);
-             const url = safeString(match[2]);
-             if (url.startsWith('local_image:')) {
-                return <AsyncLocalImage key={i} filename={url.replace('local_image:', '')} alt={alt} dirHandle={dirHandle} />;
-             }
-             return <img key={i} src={url} alt={alt} className="max-w-full rounded-xl my-4 shadow-lg border border-slate-700" />;
+    if (i % 2 !== 0) {
+      if (part.startsWith('![') && part.endsWith(')')) {
+        const match = part.match(/^!\[(.*?)\]\((.*?)\)$/);
+        if (match) {
+          const alt = safeString(match[1]);
+          const url = safeString(match[2]);
+          if (url.startsWith('local_image:')) {
+            return (
+              <AsyncLocalImage key={i} filename={url.replace('local_image:', '')} alt={alt} dirHandle={dirHandle} />
+            );
           }
+          return (
+            <img
+              key={i}
+              src={url}
+              alt={alt}
+              className="max-w-full rounded-xl my-4 shadow-lg border border-slate-700"
+            />
+          );
         }
-        if (part.startsWith('[[') && part.endsWith(']]')) {
-            const innerText = safeString(part.slice(2, -2)).trim();
-            const match = lookup.get(innerText.toLowerCase());
-            if (match) {
-                return <span key={i} onClick={(e) => { e.stopPropagation(); onNavigate(match.dest); }} className="text-amber-400 bg-amber-900/20 px-1.5 py-0.5 rounded-md hover:bg-amber-600 hover:text-white hover:shadow-[0_0_15px_rgba(217,119,6,0.6)] transition-all font-bold cursor-pointer inline-flex items-center gap-1" title={`Mở hồ sơ: ${innerText}`}><Link2 size={12}/>{innerText}</span>;
-            }
-            return <span key={i} onClick={(e) => { e.stopPropagation(); onNavigate({ type: 'QUICK_CREATE', name: innerText }); }} className="text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded-md hover:text-emerald-400 hover:bg-emerald-900/30 border border-dashed border-slate-600 hover:border-emerald-500/50 transition-all cursor-pointer inline-flex items-center gap-1" title="Thực thể chưa có hồ sơ. Nhấp để ngưng tụ (tạo mới)!"><Plus size={12}/>{innerText}</span>;
+      }
+      if (part.startsWith('[[') && part.endsWith(']]')) {
+        const innerText = safeString(part.slice(2, -2)).trim();
+        const match = lookup.get(innerText.toLowerCase());
+        if (match) {
+          return (
+            <span
+              key={i}
+              onClick={(e) => {
+                e.stopPropagation();
+                onNavigate(match.dest);
+              }}
+              className="text-amber-400 bg-amber-900/20 px-1.5 py-0.5 rounded-md hover:bg-amber-600 hover:text-white hover:shadow-[0_0_15px_rgba(217,119,6,0.6)] transition-all font-bold cursor-pointer inline-flex items-center gap-1"
+              title={`Mở hồ sơ: ${innerText}`}
+            >
+              <Link2 size={12} />
+              {innerText}
+            </span>
+          );
         }
-        if (part.startsWith('**') && part.endsWith('**')) return <strong key={i} className="text-amber-400">{processPlainTextWithLinks(safeString(part.slice(2, -2)), lookup, linkRegex, onNavigate)}</strong>;
-        if (part.startsWith('*') && part.endsWith('*')) return <em key={i} className="text-amber-200/70 italic">{processPlainTextWithLinks(safeString(part.slice(1, -1)), lookup, linkRegex, onNavigate)}</em>;
+        return (
+          <span
+            key={i}
+            onClick={(e) => {
+              e.stopPropagation();
+              onNavigate({ type: 'QUICK_CREATE', name: innerText });
+            }}
+            className="text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded-md hover:text-emerald-400 hover:bg-emerald-900/30 border border-dashed border-slate-600 hover:border-emerald-500/50 transition-all cursor-pointer inline-flex items-center gap-1"
+            title="Thực thể chưa có hồ sơ. Nhấp để ngưng tụ (tạo mới)!"
+          >
+            <Plus size={12} />
+            {innerText}
+          </span>
+        );
+      }
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return (
+          <strong key={i} className="text-amber-400">
+            {processPlainTextWithLinks(safeString(part.slice(2, -2)), lookup, linkRegex, onNavigate)}
+          </strong>
+        );
+      }
+      if (part.startsWith('~~') && part.endsWith('~~')) {
+        return (
+          <del key={i} className="text-slate-400 line-through">
+            {processPlainTextWithLinks(safeString(part.slice(2, -2)), lookup, linkRegex, onNavigate)}
+          </del>
+        );
+      }
+      if (part.startsWith('==') && part.endsWith('==')) {
+        return (
+          <mark key={i} className="bg-amber-500/35 text-amber-100 px-0.5 rounded">
+            {processPlainTextWithLinks(safeString(part.slice(2, -2)), lookup, linkRegex, onNavigate)}
+          </mark>
+        );
+      }
+      if (part.startsWith('<u>') && part.endsWith('</u>')) {
+        return (
+          <u key={i} className="underline decoration-amber-500/80">
+            {processPlainTextWithLinks(safeString(part.slice(3, -4)), lookup, linkRegex, onNavigate)}
+          </u>
+        );
+      }
+      if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) {
+        return (
+          <code key={i} className="text-emerald-300/90 bg-slate-800 px-1 rounded text-[0.9em] font-mono">
+            {safeString(part.slice(1, -1))}
+          </code>
+        );
+      }
+      if (part.startsWith('*') && part.endsWith('*')) {
+        return (
+          <em key={i} className="text-amber-200/70 italic">
+            {processPlainTextWithLinks(safeString(part.slice(1, -1)), lookup, linkRegex, onNavigate)}
+          </em>
+        );
+      }
     }
     return <span key={i}>{processPlainTextWithLinks(safeString(part), lookup, linkRegex, onNavigate)}</span>;
   });
@@ -571,6 +649,23 @@ export const renderMarkdown = (text, dirHandle, entityMap, linkRegex, onNavigate
     if (line.startsWith('# ')) return <h1 key={`h1-${i}`} className="text-3xl font-heading font-bold text-amber-500 mb-4 border-b border-slate-800 pb-2 mt-6">{processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate)}</h1>;
     if (line.startsWith('## ')) return <h2 key={`h2-${i}`} className="text-2xl font-heading font-bold text-amber-600 mb-3 mt-4">{processInline(line.slice(3), dirHandle, lookup, linkRegex, onNavigate)}</h2>;
     if (line.startsWith('- ')) return <li key={`li-${i}`} className="ml-6 list-disc mb-2 text-slate-300 font-serif">{processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate)}</li>;
+    if (/^\d+\.\s/.test(line)) {
+      return (
+        <li key={`oli-${i}`} className="ml-6 list-decimal mb-2 text-slate-300 font-serif">
+          {processInline(line.replace(/^\d+\.\s/, ''), dirHandle, lookup, linkRegex, onNavigate)}
+        </li>
+      );
+    }
+    if (line.startsWith('> ')) {
+      return (
+        <blockquote
+          key={`bq-${i}`}
+          className="border-l-4 border-amber-700/50 pl-4 my-2 text-slate-400 italic font-serif"
+        >
+          {processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate)}
+        </blockquote>
+      );
+    }
     if (line.trim() === '') return <div key={`empty-${i}`} className="h-4"></div>;
     return <p key={`p-${i}`} className="mb-3 text-slate-300 font-serif leading-relaxed text-lg">{processInline(line, dirHandle, lookup, linkRegex, onNavigate)}</p>;
   });
@@ -653,7 +748,7 @@ export const applyWikiLinkUnwrap = (text, selStart, selEnd) => {
   return { newText: nv, selStart: caret, selEnd: caret };
 };
 
-export const handleToolbarClick = (before, after = '', editorId) => {
+export const handleToolbarClick = (before, after = '', editorId, onAfterApply) => {
   const textarea = document.getElementById(editorId);
   if (!textarea) return;
   const start = textarea.selectionStart;
@@ -670,6 +765,7 @@ export const handleToolbarClick = (before, after = '', editorId) => {
     }
     textarea.focus();
     textarea.setSelectionRange(selStart, selEnd);
+    onAfterApply?.(textarea.value);
   };
 
   if (before === '[[' && after === ']]') {
@@ -686,4 +782,38 @@ export const handleToolbarClick = (before, after = '', editorId) => {
   const selectedText = text.substring(start, end);
   const newValue = text.substring(0, start) + before + selectedText + after + text.substring(end);
   apply(newValue, start + before.length, end + before.length);
+};
+
+/** Bật/tắt tiền tố đầu dòng (trích dẫn `> `, danh sách số `1. `). */
+export const handleToolbarToggleLinePrefix = (editorId, prefix, onAfterApply) => {
+  const textarea = document.getElementById(editorId);
+  if (!textarea) return;
+  const start = textarea.selectionStart;
+  const text = textarea.value;
+  const lineStart = text.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+  const lineEndIdx = text.indexOf('\n', start);
+  const lineEndPos = lineEndIdx === -1 ? text.length : lineEndIdx;
+  const line = text.slice(lineStart, lineEndPos);
+  let newLine;
+  if (prefix === '1. ') {
+    if (/^\d+\.\s/.test(line)) newLine = line.replace(/^\d+\.\s/, '');
+    else newLine = prefix + line;
+  } else if (line.startsWith(prefix)) {
+    newLine = line.slice(prefix.length);
+  } else {
+    newLine = prefix + line;
+  }
+  const newText = text.slice(0, lineStart) + newLine + text.slice(lineEndPos);
+  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+  if (nativeSetter) {
+    nativeSetter.call(textarea, newText);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  } else {
+    textarea.value = newText;
+  }
+  const delta = newLine.length - line.length;
+  const newPos = Math.max(0, Math.min(start + delta, newText.length));
+  textarea.focus();
+  textarea.setSelectionRange(newPos, newPos);
+  onAfterApply?.(textarea.value);
 };

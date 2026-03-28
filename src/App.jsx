@@ -1938,36 +1938,6 @@ export default function App() {
     setTimeout(() => { setEditingMilestoneData(null); setIsMilestoneModalOpen(true); }, 100);
   }, []);
 
-  const handleAIExtractSuccess = (existingData, newFieldsArr) => {
-    updateActiveNovelData(nov => {
-       if (!nov.data?.[activeTabLon]) return;
-       const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
-       if (!tabData?.entities) return;
-       const ent = tabData.entities.find(e => e.id === selectedEntityId);
-       if (!ent) return;
-       if (!ent.dynamicData) ent.dynamicData = {};
-       if (existingData) { Object.entries(existingData).forEach(([k, v]) => { ent.dynamicData[k] = safeString(v); }); }
-       if (newFieldsArr && newFieldsArr.length > 0) {
-          const lon = (nov.tabsConfig || globalTabsConfig || []).find(t => t.id === activeTabLon);
-          const nho = lon?.subTabs?.find(s => s.id === activeTabNho);
-          if (nho) {
-             if (!nho.fieldsTemplate) nho.fieldsTemplate = [];
-             newFieldsArr.forEach(nf => {
-                if (nf.label && nf.value) {
-                   const newId = generateId('f');
-                   nho.fieldsTemplate.push({ id: newId, label: safeString(nf.label) });
-                   ent.dynamicData[newId] = safeString(nf.value);
-                }
-             });
-          }
-       }
-       if (ent.dynamicData && Object.prototype.hasOwnProperty.call(ent.dynamicData, 'f_status')) {
-         ent.status = safeString(ent.dynamicData.f_status).trim();
-       }
-    });
-    showToast("Thần thức AI đã lọc và tự cập nhật thẻ bài thành công!");
-  };
-
   // === MERGE SNAPSHOT → HỒ SƠ ===
   const handleMergeSnapshotToProfile = (snapshot) => {
     if (!snapshot?.dynamicData && !snapshot?.avatar) {
@@ -3032,7 +3002,6 @@ export default function App() {
                             setIsExtractingAI={setIsExtractingAI}
                             geminiApiKeys={geminiApiKeys}
                             showToast={showToast}
-                            handleAIExtractSuccess={handleAIExtractSuccess}
                             aiMode={aiMode}
                             isSplitPreview={isSplitPreview}
                             setLivePreviewText={setLivePreviewText}
