@@ -2,8 +2,8 @@ import React, { memo, useCallback, useEffect, useState, useSyncExternalStore } f
 import { BookOpen, Link2, Save, Edit3, Eye } from 'lucide-react';
 import { MarkdownToolbar } from './MasterComponents.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
-import { safeString, mapGeminiErrorToUserMessage, truncateForAI, analyzeTextWithAI } from './MasterUtils.jsx';
-import { resolveFieldsTemplate } from './MasterEngines.js';
+import { safeString, mapGeminiErrorToUserMessage, truncateForAI, suggestWikiLinkSpotsWithAI } from './MasterUtils.jsx';
+import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
 import {
   getEntityNotesFontStack,
   getEntityNotesPrefs,
@@ -16,7 +16,6 @@ const HIST_MAX = 120;
 /** Phiên soạn một thẻ: `key={entityId}` để state/undo reset đúng khi đổi thẻ — không cần effect hydrate. */
 const EntityNotesEditSession = memo(function EntityNotesEditSession({
   initialInfo,
-  fieldsForAi,
   geminiApiKeys,
   aiMode,
   isExtractingAI,
@@ -132,14 +131,20 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             if (wasTruncated) showToast('Đoạn quá dài — chỉ gửi ~12.000 ký tự đầu cho AI.', 'warning');
             setIsExtractingAI(true);
             try {
-              const res = await analyzeTextWithAI(text, fieldsForAi, geminiApiKeys, aiMode);
-              if (res?.processedText) {
-                recordAndSetDraft(res.processedText);
+              const res = await suggestWikiLinkSpotsWithAI(text, geminiApiKeys, aiMode);
+              const spots = Array.isArray(res?.linkSpots) ? res.linkSpots : [];
+              const next = applyWikiLinkSpots(text, spots);
+              if (next !== text) {
+                recordAndSetDraft(next);
                 if (isSplitPreview) {
-                  setLivePreviewText(res.processedText);
-                  setDebouncedMarkdownPreview(res.processedText);
+                  setLivePreviewText(next);
+                  setDebouncedMarkdownPreview(next);
                 }
-                showToast('AI đã tạo liên kết cho các tên riêng!');
+                showToast('Đã thêm [[liên kết]] — giữ nguyên chữ và định dạng bạn nhập.');
+              } else if (spots.length > 0) {
+                showToast('AI gợi ý link nhưng không khớp văn bản — thử lại hoặc chỉnh ngắn đoạn.', 'warning');
+              } else {
+                showToast('Không có chỗ mới cần bọc link (hoặc đã có [[...]]).');
               }
             } catch (e) {
               showToast(mapGeminiErrorToUserMessage(e), 'error');
@@ -147,7 +152,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             setIsExtractingAI(false);
           }}
           className="px-4 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 bg-indigo-700 hover:bg-indigo-600 text-white disabled:opacity-50"
-          title="AI tự động bọc tên người, thế lực, công pháp... vào [[liên kết]]"
+          title="AI chỉ thêm [[liên kết]] — không đổi chữ hay định dạng bạn đã nhập"
         >
           {isExtractingAI ? (
             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -245,7 +250,6 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   setIsExtractingAI,
   geminiApiKeys,
   showToast,
-  currentTabConfig,
   aiMode,
   isSplitPreview,
   setLivePreviewText,
@@ -264,11 +268,6 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   onNavigate,
   memoizedEntityInfo,
 }) {
-  const fieldsForAi =
-    currentTabConfig && activeTabLon
-      ? resolveFieldsTemplate(currentTabConfig, activeTabLon, currentTabConfig._parentLabel || '')
-      : currentTabConfig?.fieldsTemplate || [];
-
   return (
     <div className="flex flex-col mt-4">
       <div className="flex justify-between items-end mb-6 pb-2 border-b border-slate-800/80">
@@ -313,7 +312,6 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
           <EntityNotesEditSession
             key={selectedEntity.id}
             initialInfo={selectedEntity.info}
-            fieldsForAi={fieldsForAi}
             geminiApiKeys={geminiApiKeys}
             aiMode={aiMode}
             isExtractingAI={isExtractingAI}

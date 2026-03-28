@@ -170,6 +170,67 @@ export const analyzeTextWithAI = async (text, fieldsTemplate, key, mode = 'stand
   return callGeminiAPI(payload, key);
 };
 
+const WIKI_LINK_SPOTS_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    linkSpots: {
+      type: 'ARRAY',
+      description:
+        'Danh sách vị trí cần bọc [[...]]. Mỗi mục phải sao chép nguyên văn từ bài gửi lên.',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          before: {
+            type: 'STRING',
+            description: '10–80 ký tự (hoặc ít hơn nếu sát đầu dòng) ngay TRƯỚC target — copy y hệt từ văn bản.',
+          },
+          target: {
+            type: 'STRING',
+            description: 'Cụm chữ cần bọc [[...]] — copy y hệt (không sửa hoa thường, dấu, khoảng trắng).',
+          },
+          after: {
+            type: 'STRING',
+            description: '10–80 ký tự (hoặc ít hơn) ngay SAU target — copy y hệt từ văn bản.',
+          },
+        },
+        required: ['before', 'target', 'after'],
+      },
+    },
+  },
+  required: ['linkSpots'],
+};
+
+/**
+ * Gợi ý chỗ bọc wiki link — chỉ trả linkSpots (before+target+after), không trả full bài viết lại.
+ * Client ghép bằng applyWikiLinkSpots để giữ nguyên định dạng gốc.
+ */
+export const suggestWikiLinkSpotsWithAI = async (text, keysInput, mode = 'standard') => {
+  const isQuick = mode === 'quick';
+  const { text: t } = truncateForAI(text, isQuick ? 7000 : AI_MAX_INPUT_CHARS);
+  const payload = {
+    contents: [{ parts: [{ text: t }] }],
+    systemInstruction: {
+      parts: [
+        {
+          text: `Bạn đọc văn bản và chỉ đề xuất chỗ bọc liên kết wiki dạng [[tên]].
+
+QUY TẮC BẮT BUỘC (vi phạm là sai):
+1) Không viết lại hay tóm tắt bài. Không được trả về toàn bộ văn bản đã sửa — chỉ mảng linkSpots.
+2) Mỗi phần before, target, after phải là SAO CHÉP NGUYÊN VĂN từ đúng văn bản người dùng (kể cả xuống dòng, dấu câu, khoảng trắng, markdown # * \` nếu có).
+3) target là cụm ngắn cần liên kết (tên riêng, địa danh, công pháp…). Không bọc cả câu dài; không bọc phần đã nằm trong [[...]].
+4) before + target + after phải xuất hiện ĐÚNG MỘT LẦN liên tiếp trong văn bản (chuỗi con khớp tuyệt đối). Chọn before/after đủ dài để vị trí không nhầm (thường 15–60 ký tự mỗi phía nếu có).
+5) Nếu không chắc vị trí hoặc không có tên mới cần link, trả linkSpots rỗng [].`,
+        },
+      ],
+    },
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: WIKI_LINK_SPOTS_SCHEMA,
+    },
+  };
+  return callGeminiAPI(payload, keysInput);
+};
+
 export const extractEntityAttributesWithAI = async (text, currentFieldsTemplate, key) => {
   const { text: t } = truncateForAI(text);
   const properties = {
