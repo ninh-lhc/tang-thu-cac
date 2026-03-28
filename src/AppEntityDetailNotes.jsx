@@ -3,6 +3,7 @@ import { BookOpen, Sparkles, Link2, Save, Edit3, Eye } from 'lucide-react';
 import { MarkdownToolbar } from './MasterComponents.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import { safeString, mapGeminiErrorToUserMessage, truncateForAI, extractEntityAttributesWithAI, analyzeTextWithAI } from './MasterUtils.jsx';
+import { resolveFieldsTemplate } from './MasterEngines.js';
 
 export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   activeTabLon,
@@ -32,6 +33,11 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   onNavigate,
   memoizedEntityInfo,
 }) {
+  const fieldsForAi =
+    currentTabConfig && activeTabLon
+      ? resolveFieldsTemplate(currentTabConfig, activeTabLon, currentTabConfig._parentLabel || '')
+      : currentTabConfig?.fieldsTemplate || [];
+
   useEffect(() => {
     if (!isEntityEditing) return;
     // Focus ngay textarea để người dùng bắt đầu gõ ghi chép sau khi tạo thẻ.
@@ -62,7 +68,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
                   if (wasTruncated) showToast('Đoạn quá dài — chỉ gửi ~12.000 ký tự đầu cho AI.', 'warning');
                   setIsExtractingAI(true);
                   try {
-                    const res = await extractEntityAttributesWithAI(text, currentTabConfig?.fieldsTemplate || [], geminiApiKeys);
+                    const res = await extractEntityAttributesWithAI(text, fieldsForAi, geminiApiKeys);
                     if (res) handleAIExtractSuccess(res.existingData, res.newFields);
                   } catch (e) { showToast(mapGeminiErrorToUserMessage(e), 'error'); }
                   setIsExtractingAI(false);
@@ -83,7 +89,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
                   if (wasTruncated) showToast('Đoạn quá dài — chỉ gửi ~12.000 ký tự đầu cho AI.', 'warning');
                   setIsExtractingAI(true);
                   try {
-                    const res = await analyzeTextWithAI(text, currentTabConfig?.fieldsTemplate || [], geminiApiKeys, aiMode);
+                    const res = await analyzeTextWithAI(text, fieldsForAi, geminiApiKeys, aiMode);
                     if (res?.processedText) {
                       ta.value = res.processedText;
                       if (isSplitPreview) {

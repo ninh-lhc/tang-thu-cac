@@ -16,7 +16,8 @@ import {
 } from 'lucide-react';
 import {
   FALLBACK_IMG, GENRES, THEMES,
-  resolveFieldsTemplate
+  resolveFieldsTemplate,
+  WIKI_ALIAS_FIELD,
 } from './MasterEngines.js';
 import {
   generateId, safeString, getTerms, AsyncLocalImage,
@@ -426,275 +427,160 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
 });
 
 export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, parentLabel, geminiApiKey, geminiMode = 'standard' }) => {
-  const fieldsTemplate = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
-  const [editingFieldId, setEditingFieldId] = useState(null);
-  const [editingFieldLabel, setEditingFieldLabel] = useState('');
-  const [linkSuggestField, setLinkSuggestField] = useState(null); // fieldId đang gợi ý link
+  void onUpdateTemplate;
+  void geminiApiKey;
+  void geminiMode;
   const terms = getTerms(parentTabId);
+  const fieldsTemplate = useMemo(
+    () => resolveFieldsTemplate(tabConfig || {}, parentTabId, parentLabel || ''),
+    [tabConfig, parentTabId, parentLabel]
+  );
+  const fStatusLabel = useMemo(() => {
+    const f = fieldsTemplate.find((x) => x.id === 'f_status');
+    return f?.label || 'Tóm tắt dưới tên';
+  }, [fieldsTemplate]);
   const [formData, setFormData] = useState({ id: null, name: '', avatar: '', rawText: '' });
   const [dynamicData, setDynamicData] = useState({});
-  // Hướng B: người dùng chủ động nhấn nút để dùng rawText có [[...]] này làm "Ghi Chép Chi Tiết" (entity.info).
-  const [copyRawToInfo, setCopyRawToInfo] = useState(false);
-  const [newFieldLabel, setNewFieldLabel] = useState('');
-  const [_isAnalyzing, setIsAnalyzing] = useState(false);
-  const [_errorMsg, setErrorMsg] = useState('');
-  const dynamicFieldInputRefs = useRef({});
-  const pendingWikiCaretRef = useRef(null);
 
-  useLayoutEffect(() => {
-    const p = pendingWikiCaretRef.current;
-    if (!p) return;
-    pendingWikiCaretRef.current = null;
-    const el = dynamicFieldInputRefs.current[p.fieldId];
-    if (el) {
-      el.focus();
-      el.setSelectionRange(p.selStart, p.selEnd);
+  /* Reset form khi mở modal (đồng bộ từ initialData) */
+  useEffect(() => {
+    if (!isOpen) return;
+    /* eslint-disable react-hooks/set-state-in-effect -- dialog cần hydrate state khi mở */
+    if (initialData) {
+      setFormData({
+        id: initialData.id,
+        name: initialData.name,
+        avatar: initialData.avatar,
+        rawText: initialData.rawText || '',
+      });
+      const initialDyn = initialData.dynamicData ? { ...initialData.dynamicData } : {};
+      if (!initialDyn.f_status && initialData.status) initialDyn.f_status = initialData.status;
+      if (!initialDyn.f_title && initialData.title) initialDyn.f_title = initialData.title;
+      if (!initialDyn.f_desc && initialData.description) initialDyn.f_desc = initialData.description;
+      setDynamicData(initialDyn);
+    } else {
+      setFormData({ id: null, name: '', avatar: '', rawText: '' });
+      setDynamicData({});
     }
-  }, [dynamicData]);
-
-  useEffect(() => { 
-     if(isOpen) {
-         setErrorMsg('');
-        setCopyRawToInfo(false);
-         if (initialData) {
-             setFormData({ id: initialData.id, name: initialData.name, avatar: initialData.avatar, rawText: initialData.rawText || '' });
-             const initialDyn = initialData.dynamicData ? { ...initialData.dynamicData } : {};
-             if (!initialDyn.f_status && initialData.status) initialDyn.f_status = initialData.status;
-             if (!initialDyn.f_title && initialData.title) initialDyn.f_title = initialData.title;
-             if (!initialDyn.f_desc && initialData.description) initialDyn.f_desc = initialData.description;
-             setDynamicData(initialDyn);
-         } else { 
-             setFormData({ id: null, name: '', avatar: '', rawText: '' });
-             setDynamicData({});
-         } 
-     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [isOpen, initialData]);
 
   useEffect(() => {
     const handler = () => {
-      if (isOpen && formData.name.trim()) { onSave(formData, dynamicData, { copyRawToInfo }); onClose(); }
+      if (isOpen && formData.name.trim()) {
+        onSave(formData, dynamicData, null);
+        onClose();
+      }
     };
     window.addEventListener('ttc-save', handler);
     return () => window.removeEventListener('ttc-save', handler);
-  }, [isOpen, formData, dynamicData, copyRawToInfo, onSave, onClose]);
-
-  const _handleAI = async () => {
-     const keys = Array.isArray(geminiApiKey) ? geminiApiKey : (geminiApiKey ? [geminiApiKey] : []);
-     if (keys.length === 0) { setErrorMsg("Vui lòng thiết lập API Key trong phần Cài Đặt để dùng tính năng AI."); return; }
-     if (!formData.rawText.trim()) return;
-     const { wasTruncated } = truncateForAI(formData.rawText);
-     setIsAnalyzing(true); setErrorMsg(wasTruncated ? "Đoạn quá dài — AI chỉ xử lý ~12k ký tự đầu." : '');
-     try {
-         const result = await analyzeTextWithAI(formData.rawText, fieldsTemplate, keys, geminiMode);
-         if (result) {
-             if (result.name) setFormData(prev => ({ ...prev, name: safeString(result.name) }));
-             if (result.avatar) setFormData(prev => ({ ...prev, avatar: safeString(result.avatar) }));
-            if (result.processedText) {
-              // B: rawText có thể có [[...]]; chỉ copy vào entity.info khi user bấm nút.
-              setCopyRawToInfo(false);
-              setFormData(prev => ({ ...prev, rawText: safeString(result.processedText) }));
-            }
-             const newDyn = { ...dynamicData };
-             fieldsTemplate.forEach(f => { if (result[f.id]) newDyn[f.id] = safeString(result[f.id]); });
-             setDynamicData(newDyn);
-         }
-     } catch (e) { setErrorMsg(mapGeminiErrorToUserMessage(e)); } finally { setIsAnalyzing(false); }
-  };
-
-  const handleAddField = () => {
-     if (!newFieldLabel.trim()) return;
-     const newField = { id: generateId('f'), label: newFieldLabel.trim() };
-     onUpdateTemplate([...fieldsTemplate, newField]);
-     setNewFieldLabel('');
-  };
+  }, [isOpen, formData, dynamicData, onSave, onClose]);
 
   const trapRef = useFocusTrap(isOpen);
   if (!isOpen) return null;
-  const _hasWikiInRawText = safeString(formData.rawText).includes('[[');
-  void _hasWikiInRawText;
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in">
-       <div ref={trapRef} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-2xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col max-h-[85vh]">
-          <div className="w-full p-6 flex flex-col bg-slate-900 relative">
-             <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
-                <h2 className="text-2xl font-heading font-bold text-slate-100">{initialData ? `Tu Bổ ${terms.entity}` : `Khởi Tạo ${terms.entity}`}</h2>
-                <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={20}/></button>
-             </div>
+      <div ref={trapRef} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-2xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col max-h-[85vh] min-h-0">
+        <div className="px-6 pt-6 pb-4 flex-shrink-0 border-b border-slate-800 flex justify-between items-center bg-slate-900">
+          <h2 className="text-2xl font-heading font-bold text-slate-100">{initialData ? `Tu Bổ ${terms.entity}` : `Khởi Tạo ${terms.entity}`}</h2>
+          <button type="button" onClick={onClose} className="text-slate-500 hover:text-white"><X size={20}/></button>
+        </div>
 
-             <div className="overflow-y-auto custom-scrollbar pr-2 space-y-5">
-                <div>
-                  <label className="block text-xs font-bold text-amber-500 mb-1 uppercase tracking-widest">Danh xưng / Tên gọi *</label>
-                  <input autoFocus value={safeString(formData.name)} onChange={e=>setFormData({...formData, name: e.target.value})} className="w-full bg-slate-950 border border-amber-600/50 rounded-xl p-3 text-amber-100 font-serif focus:border-amber-500 outline-none shadow-inner" placeholder="Bắt buộc nhập..." />
-                </div>
-
-                <div className="h-px bg-slate-800/80" />
-
-                <div>
-                  <label className="block text-[10px] font-bold text-emerald-500 mb-2 uppercase tracking-widest flex items-center gap-2">
-                    <Upload size={12}/> {terms.image}
-                  </label>
-                  <div className="flex gap-4 items-center">
-                    <div
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => handleAvatarDrop && handleAvatarDrop(e, (url) => setFormData({ ...formData, avatar: url }))}
-                      onClick={() => handlePickLocalImage && handlePickLocalImage((url) => setFormData({ ...formData, avatar: url }), null, 'avatar')}
-                      className="w-16 h-16 rounded-xl bg-slate-950 border border-dashed border-slate-700 flex items-center justify-center overflow-hidden flex-shrink-0 group cursor-pointer hover:border-amber-500 transition-colors"
-                      title="Nhấp hoặc kéo thả ảnh vào đây"
-                    >
-                      {formData.avatar ? (
-                        formData.avatar.startsWith('local_image:') ? (
-                          <AsyncLocalImage filename={formData.avatar.replace('local_image:', '')} alt="avatar" dirHandle={dirHandle} className="w-full h-full object-cover" />
-                        ) : (
-                          <img src={formData.avatar} className="w-full h-full object-cover" alt="avatar" onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />
-                        )
-                      ) : (
-                        <ImageIcon className="text-slate-600 group-hover:text-amber-500 transition-colors" />
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex gap-2">
-                        <input
-                          value={safeString(formData.avatar)}
-                          onChange={(e) => setFormData({ ...formData, avatar: e.target.value })}
-                          className="flex-1 w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:border-amber-500 outline-none"
-                          placeholder="https://..."
-                        />
-                        <button
-                          onClick={() => handlePickLocalImage && handlePickLocalImage((url) => setFormData({ ...formData, avatar: url }), null, 'avatar')}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 text-xs font-bold"
-                          type="button"
-                        >
-                          Chọn File
-                        </button>
-                      </div>
-                      <p className="mt-1 text-[11px] text-slate-500 font-serif">Mẹo: có thể kéo thả ảnh vào ô vuông bên trái.</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="hidden"><div className="grid grid-cols-2 gap-4">
-                   {fieldsTemplate.map(field => (
-                      <div key={field.id} className="group/field">
-                         {/* Label row: tên + nút sửa/xóa */}
-                         <div className="flex items-center gap-1 mb-1">
-                           {editingFieldId === field.id ? (
-                             <div className="flex items-center gap-1 flex-1">
-                               <input
-                                 autoFocus
-                                 value={editingFieldLabel}
-                                 onChange={e => setEditingFieldLabel(e.target.value)}
-                                 onKeyDown={e => {
-                                   if (e.key === 'Enter' && editingFieldLabel.trim()) {
-                                     onUpdateTemplate(fieldsTemplate.map(f => f.id === field.id ? {...f, label: editingFieldLabel.trim()} : f));
-                                     setEditingFieldId(null);
-                                   }
-                                   if (e.key === 'Escape') setEditingFieldId(null);
-                                 }}
-                                 className="flex-1 bg-slate-950 border border-amber-600/60 rounded px-2 py-0.5 text-[10px] font-bold text-amber-300 uppercase outline-none"
-                               />
-                               <button onClick={() => { if(editingFieldLabel.trim()) { onUpdateTemplate(fieldsTemplate.map(f => f.id === field.id ? {...f, label: editingFieldLabel.trim()} : f)); setEditingFieldId(null); }}} className="p-0.5 text-emerald-400 hover:text-emerald-300"><Check size={12}/></button>
-                               <button onClick={() => setEditingFieldId(null)} className="p-0.5 text-slate-500 hover:text-slate-300"><X size={12}/></button>
-                             </div>
-                           ) : (
-                             <>
-                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex-1">{safeString(field.label)}</label>
-                               <button
-                                 onClick={() => { setEditingFieldId(field.id); setEditingFieldLabel(field.label); }}
-                                 className="p-1 text-slate-600 hover:text-amber-400 transition-all rounded hover:bg-slate-800"
-                                 title="Đổi tên trường"
-                               ><Edit2 size={11}/></button>
-                               {!['f_status','f_title','f_desc'].includes(field.id) && (
-                                 <button
-                                   onClick={() => onUpdateTemplate(fieldsTemplate.filter(f => f.id !== field.id))}
-                                   className="p-1 text-slate-600 hover:text-rose-400 transition-all rounded hover:bg-slate-800"
-                                   title="Xóa trường này"
-                                 ><Trash2 size={11}/></button>
-                               )}
-                             </>
-                           )}
-                         </div>
-                         <div className="relative">
-                           <input
-                             ref={(el) => { if (el) dynamicFieldInputRefs.current[field.id] = el; else delete dynamicFieldInputRefs.current[field.id]; }}
-                             value={safeString(dynamicData[field.id])}
-                             onChange={e => setDynamicData({...dynamicData, [field.id]: e.target.value})}
-                             onFocus={() => setLinkSuggestField(field.id)}
-                             onBlur={() => setTimeout(() => setLinkSuggestField(null), 200)}
-                            className="w-full bg-slate-950/80 border border-slate-700 rounded-lg p-2.5 pr-20 text-sm text-slate-200 font-serif focus:border-amber-500 outline-none"
-                             placeholder="Nhập giá trị hoặc [[Tên]] để liên kết..."
-                           />
-                          {/* Nút chèn/gỡ [[ ]] tại con trỏ hoặc vùng chọn */}
-                           {linkSuggestField === field.id && (
-                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                              <button
-                                type="button"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => {
-                                  const cur = safeString(dynamicData[field.id]);
-                                  const input = dynamicFieldInputRefs.current[field.id];
-                                  let a = cur.length; let b = cur.length;
-                                  if (input && document.activeElement === input) {
-                                    a = input.selectionStart ?? 0;
-                                    b = input.selectionEnd ?? a;
-                                  }
-                                  const { newText, selStart, selEnd } = applyWikiLinkWrap(cur, a, b);
-                                  pendingWikiCaretRef.current = { fieldId: field.id, selStart, selEnd };
-                                  setDynamicData({ ...dynamicData, [field.id]: newText });
-                                }}
-                                className="text-[10px] font-bold text-amber-500 hover:text-amber-300 bg-amber-900/30 px-1.5 py-0.5 rounded border border-amber-700/40"
-                                title="Chèn [[ ]] tại con trỏ hoặc bọc đoạn đang chọn"
-                              >[[]]</button>
-                              <button
-                                type="button"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => {
-                                  const cur = safeString(dynamicData[field.id]);
-                                  const input = dynamicFieldInputRefs.current[field.id];
-                                  let a = cur.length; let b = cur.length;
-                                  if (input && document.activeElement === input) {
-                                    a = input.selectionStart ?? 0;
-                                    b = input.selectionEnd ?? a;
-                                  }
-                                  const { newText, selStart, selEnd } = applyWikiLinkUnwrap(cur, a, b);
-                                  pendingWikiCaretRef.current = { fieldId: field.id, selStart, selEnd };
-                                  setDynamicData({ ...dynamicData, [field.id]: newText });
-                                }}
-                                className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-900/20 px-1.5 py-0.5 rounded border border-cyan-700/35"
-                                title="Gỡ [[ ]] ở vùng chọn hoặc đoạn chứa con trỏ"
-                              >Bỏ</button>
-                            </div>
-                           )}
-                         </div>
-                      </div>
-                   ))}
-                </div>
-
-                <div className="pt-4 mt-2 border-t border-slate-800/80">
-                   <label className="block text-[10px] font-bold text-emerald-500 mb-2 uppercase tracking-widest flex items-center gap-1"><Plus size={12}/> Thêm Trường Mới</label>
-                   <div className="flex gap-2">
-                      <input value={safeString(newFieldLabel)} onChange={e=>setNewFieldLabel(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') handleAddField()}} className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 outline-none focus:border-emerald-500" placeholder="VD: Công pháp, Nơi ở, Sức mạnh..." />
-                      <button onClick={handleAddField} className="px-4 py-2 bg-slate-800 text-emerald-400 border border-emerald-900/50 rounded-lg text-sm font-bold">Tạo</button>
-                   </div>
-                </div>
-             </div>
-
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 custom-scrollbar space-y-5 bg-slate-900">
+          <div>
+            <label className="block text-xs font-bold text-amber-500 mb-1 uppercase tracking-widest">Danh xưng / Tên gọi *</label>
+            <input
+              autoFocus
+              value={safeString(formData.name)}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="w-full bg-slate-950 border border-amber-600/50 rounded-xl p-3 text-amber-100 font-serif focus:border-amber-500 outline-none shadow-inner"
+              placeholder="Bắt buộc nhập..."
+            />
           </div>
 
-          {/* Footer: nút Hủy / Lưu (đặt sau khu vực thêm ảnh) */}
-          <div className="p-6 pt-4 border-t border-slate-800 flex justify-end gap-3">
-            <button onClick={onClose} className="px-6 py-2.5 text-slate-400 hover:text-white font-serif transition-colors rounded-xl" type="button">Hủy bỏ</button>
-            <button
-              onClick={() => { if(formData.name.trim()) { onSave(formData, dynamicData, { copyRawToInfo }); onClose(); } }}
-              disabled={!formData.name.trim()}
-              className="px-8 py-2.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl font-bold font-serif shadow-lg transition-all flex items-center gap-2"
-              type="button"
-            >
-              <Save size={18}/> Lưu Thông Tin
-            </button>
+          <div className="h-px bg-slate-800/80" />
+
+          <div>
+            <label className="block text-[10px] font-bold text-emerald-500 mb-2 uppercase tracking-widest flex items-center gap-2">
+              <Upload size={12}/> {terms.image}
+            </label>
+            <div className="flex gap-4 items-center">
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => handleAvatarDrop && handleAvatarDrop(e, (url) => setFormData({ ...formData, avatar: url }))}
+                onClick={() => handlePickLocalImage && handlePickLocalImage((url) => setFormData({ ...formData, avatar: url }), null, 'avatar')}
+                className="w-16 h-16 rounded-xl bg-slate-950 border border-dashed border-slate-700 flex items-center justify-center overflow-hidden flex-shrink-0 group cursor-pointer hover:border-amber-500 transition-colors"
+                title="Nhấp hoặc kéo thả ảnh vào đây"
+              >
+                {formData.avatar ? (
+                  formData.avatar.startsWith('local_image:') ? (
+                    <AsyncLocalImage filename={formData.avatar.replace('local_image:', '')} alt="avatar" dirHandle={dirHandle} className="w-full h-full object-cover" />
+                  ) : (
+                    <img src={formData.avatar} className="w-full h-full object-cover" alt="avatar" onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />
+                  )
+                ) : (
+                  <ImageIcon className="text-slate-600 group-hover:text-amber-500 transition-colors" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex gap-2">
+                  <input
+                    value={safeString(formData.avatar)}
+                    onChange={(e) => setFormData({ ...formData, avatar: e.target.value })}
+                    className="flex-1 w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:border-amber-500 outline-none"
+                    placeholder="https://..."
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handlePickLocalImage && handlePickLocalImage((url) => setFormData({ ...formData, avatar: url }), null, 'avatar')}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 text-xs font-bold"
+                  >
+                    Chọn File
+                  </button>
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500 font-serif">Mẹo: có thể kéo thả ảnh vào ô vuông bên trái.</p>
+              </div>
+            </div>
           </div>
-       </div>
-    </div>
+
+          <div className="space-y-2">
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-snug">{safeString(fStatusLabel)}</label>
+            <input
+              value={safeString(dynamicData.f_status)}
+              onChange={(e) => setDynamicData({ ...dynamicData, f_status: e.target.value })}
+              className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3 text-sm text-slate-200 font-serif focus:border-amber-600/60 outline-none"
+              placeholder="Ví dụ: Kim Đan kỳ · Đang hoạt động · UI hệ thống… (một dòng, hiện dưới tên ở Hồ sơ)"
+            />
+            <p className="text-[11px] text-slate-500 font-serif">Nhãn ô theo mục sưu tập (cảnh giới, cấp độ, loại chức năng…). Có thể để trống.</p>
+          </div>
+
+          <div className="pt-2 border-t border-slate-800/80 space-y-2">
+            <label className="block text-[10px] font-bold text-indigo-400 uppercase tracking-widest leading-snug">{WIKI_ALIAS_FIELD.label}</label>
+            <textarea
+              value={safeString(dynamicData.f_alias)}
+              onChange={(e) => setDynamicData({ ...dynamicData, f_alias: e.target.value })}
+              rows={3}
+              className="w-full bg-slate-950/80 border border-indigo-800/50 rounded-xl p-3 text-sm text-slate-200 font-serif focus:border-indigo-500 outline-none resize-y min-h-[4.5rem]"
+              placeholder="Nhiều tên: dùng dấu phẩy, / hoặc | — ví dụ: Kim Đan, Hệ Thống / Boss"
+            />
+            <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
+              Mỗi tên tách ra sẽ cùng mở thẻ này khi bấm liên kết trong ghi chép. Gõ tên thường; <strong className="text-slate-400">không dùng [[...]]</strong> trong ô biệt danh.
+            </p>
+          </div>
+        </div>
+
+        <div className="p-6 pt-4 border-t border-slate-800 flex flex-shrink-0 justify-end gap-3 bg-slate-900">
+          <button type="button" onClick={onClose} className="px-6 py-2.5 text-slate-400 hover:text-white font-serif transition-colors rounded-xl">Hủy bỏ</button>
+          <button
+            type="button"
+            onClick={() => { if (formData.name.trim()) { onSave(formData, dynamicData, null); onClose(); } }}
+            disabled={!formData.name.trim()}
+            className="px-8 py-2.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl font-bold font-serif shadow-lg transition-all flex items-center gap-2"
+          >
+            <Save size={18}/> Lưu thông tin
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

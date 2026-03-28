@@ -8,10 +8,19 @@ import { countEntitiesInNovel } from './deepSearchCore.js';
 import {
   NOVEL_STORAGE_SHARDED,
   buildDiskManifest,
+  listShardKeysFromData,
   loadShardsFromNovelDir,
   loadShardSubsetFromNovelDir,
   writeShardTree,
 } from './lib/novelDiskLayout.js';
+
+/** migrateNovel luôn xóa storageLayout; khi novel đang lưu dạng shard trên đĩa thì phải gắn lại để lazy-load + sync an toàn. */
+function restoreShardedLayoutIfNeeded(parsedBeforeMigrate, migrated) {
+  if (parsedBeforeMigrate?.storageLayout === NOVEL_STORAGE_SHARDED) {
+    migrated.storageLayout = NOVEL_STORAGE_SHARDED;
+  }
+  return migrated;
+}
 
 export function useAppPersistence({
   novelStatsByIdRef,
@@ -100,8 +109,9 @@ export function useAppPersistence({
       }
       const folderName = novelData.folderName || novelData.title.replace(/[\\/:*?"<>|]/g, '').trim() || novelData.id;
       let novelToWrite = novelData;
-      // Nếu đang giữ data partial (lazy-shard), phải hydrate full trước khi ghi để tránh xóa shard chưa nạp.
-      if (novelData?.storageLayout === NOVEL_STORAGE_SHARDED && novelData?.__partialData) {
+      // Đang giữ data partial (lazy-shard): BẮT BUỘC merge từ đĩa trước khi ghi — nếu không writeShardTree sẽ xóa mọi shard không nằm trong memory.
+      // (migrateNovel từng xóa storageLayout nên không được phụ thuộc vào storageLayout tại đây.)
+      if (novelData?.__partialData) {
         try {
           const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
           const diskData = await loadShardsFromNovelDir(novelDir);
@@ -117,14 +127,29 @@ export function useAppPersistence({
           });
           delete merged.__partialData;
           novelToWrite = merged;
-        } catch {
-          // Nếu hydrate thất bại thì fallback ghi như hiện có.
-          novelToWrite = { ...novelData };
-          delete novelToWrite.__partialData;
+        } catch (e) {
+          console.warn('[TTC] Không merge shard trước khi lưu (tránh ghi đè/xóa shard):', e);
+          setTimeout(() => {
+            showToast('Lỗi đọc dữ liệu trên đĩa — đã hủy lưu để tránh mất nội dung tab khác.', 'error');
+          }, 0);
+          return;
         }
-      } else if (novelData?.__partialData) {
-        novelToWrite = { ...novelData };
-        delete novelToWrite.__partialData;
+      }
+      // Chống wipe toàn bộ shard: object trong memory không có tab nào nhưng thư mục data/ vẫn có file
+      // (lỗi load / F5 trước khi hydrate — tránh writeShardTree xóa hết file).
+      const memKeys = listShardKeysFromData(novelToWrite.data || {});
+      if (memKeys.length === 0) {
+        try {
+          const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
+          const diskData = await loadShardsFromNovelDir(novelDir);
+          const diskKeys = listShardKeysFromData(diskData || {});
+          if (diskKeys.length > 0) {
+            console.warn('[TTC] syncNovel: memory.data rỗng nhưng đĩa còn shard — gộp từ đĩa để tránh mất dữ liệu.');
+            novelToWrite = { ...novelToWrite, data: { ...(diskData || {}) } };
+          }
+        } catch (e) {
+          console.warn('[TTC] syncNovel: không đọc được shard khi kiểm tra memory rỗng:', e);
+        }
       }
       const manifest = buildDiskManifest(novelToWrite);
       const jsonStr = JSON.stringify(manifest, null, 2);
@@ -187,7 +212,8 @@ export function useAppPersistence({
   }, [syncNovel]);
 
   const loadNovelData = useCallback(async (meta, rootDir, options = {}) => {
-    const shardKeys = Array.isArray(options.shardKeys) ? options.shardKeys : null;
+    const raw = Array.isArray(options.shardKeys) ? options.shardKeys : null;
+    const shardKeys = raw && raw.length > 0 ? raw : null;
     if (!rootDir || rootDir === 'LOCAL_STORAGE') {
       const data = localStorage.getItem(`tangthu_novel_${meta.id}`);
       if (!data) return null;
@@ -213,7 +239,8 @@ export function useAppPersistence({
           parsed.data = shardData;
           if (shardKeys) parsed.__partialData = true;
         }
-        return migrateNovel(parsed);
+        const migrated = migrateNovel(parsed);
+        return restoreShardedLayoutIfNeeded(parsed, migrated);
       } catch (pe) {
         console.warn(`[TTC] File JSON bị hỏng: ${folderName}.json`, pe);
         return null;
@@ -225,7 +252,9 @@ export function useAppPersistence({
         const file = await f.getFile();
         const text = await file.text();
         try {
-          return migrateNovel(JSON.parse(text));
+          const parsed = JSON.parse(text);
+          const migrated = migrateNovel(parsed);
+          return restoreShardedLayoutIfNeeded(parsed, migrated);
         } catch (pe) {
           console.warn(`[TTC] File JSON bị hỏng: ${meta.id}.json`, pe);
           return null;

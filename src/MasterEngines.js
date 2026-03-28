@@ -43,10 +43,17 @@ export const THEMES = [
 // ==========================================
 // KHUÔN ĐÚC THUỘC TÍNH MẶC ĐỊNH
 // ==========================================
+/** Id cố định — buildEntityLinkMap / App.jsx gộp vào wiki & auto-link (tách tên bằng , / | hoặc ngoặc). */
+export const WIKI_ALIAS_FIELD = {
+  id: 'f_alias',
+  label: 'Biệt danh / tên khác (phẩy, / hoặc | — cùng liên kết wiki với tên chính)',
+};
+
 export const DEFAULT_ENTITY_FIELDS = [
   { id: 'f_status', label: 'Cảnh giới / Trạng thái' },
   { id: 'f_title', label: 'Danh hiệu / Phân loại' },
-  { id: 'f_desc', label: 'Mô tả đặc trưng' }
+  { id: 'f_desc', label: 'Mô tả đặc trưng' },
+  WIKI_ALIAS_FIELD,
 ];
 
 /** Gộp target vào cur: thêm trường mới từ target, giữ nhãn tùy chỉnh của cur, giữ trường custom. */
@@ -318,7 +325,7 @@ export const isStockTemplate = (template) => {
   return template.every(f => /^f_/.test(f.id));
 };
 
-/** Lấy fieldsTemplate cho tab — ưu tiên template đã lưu, fallback theo ID rồi label */
+/** Lấy fieldsTemplate cho tab — ưu tiên template đã lưu, fallback theo ID rồi label; luôn đảm bảo có f_alias (cuối). */
 export const resolveFieldsTemplate = (tabConfig, parentTabId, parentLabel = '') => {
   const t = tabConfig?.fieldsTemplate;
   const target =
@@ -326,8 +333,8 @@ export const resolveFieldsTemplate = (tabConfig, parentTabId, parentLabel = '') 
     DEFAULT_FIELDS_BY_PARENT[parentTabId] ||
     guessFieldsByLabel(tabConfig?.label || '') ||
     guessFieldsByLabel(parentLabel);
-  if (!t || t.length === 0) return target || DEFAULT_ENTITY_FIELDS;
-  return t;
+  const base = (!t || t.length === 0) ? (target || DEFAULT_ENTITY_FIELDS) : t;
+  return mergeFieldsTemplate([WIKI_ALIAS_FIELD], base);
 };
 
 /** Lần đầu có đúng 1 thẻ trong mục: ghi fieldsTemplate vào tabsConfig (thẻ chuẩn cho mục đó). */

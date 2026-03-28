@@ -7,7 +7,7 @@
 import React, { memo, useState, useRef, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { History, Plus, Edit2, Trash2, Clock, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
-import { DEFAULT_ENTITY_FIELDS, FALLBACK_IMG } from './MasterEngines.js';
+import { DEFAULT_ENTITY_FIELDS, FALLBACK_IMG, resolveFieldsTemplate } from './MasterEngines.js';
 import { AsyncLocalImage, renderMarkdown, safeString, processInline } from './MasterUtils.jsx';
 
 function isMeaningfulTimelineValue(value) {
@@ -44,6 +44,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   selectedEntity,
   selectedMilestoneId,
   setSelectedMilestoneId,
+  activeTabLon,
   currentTabConfig,
   currentContextDirHandle,
   entityMap,
@@ -312,7 +313,10 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
       <div className="flex-1 min-w-0 overflow-y-auto custom-scrollbar pl-2 pr-2">
         {selectedMilestoneId && selectedEntity.milestones?.find((m) => m.id === selectedMilestoneId) ? (() => {
           const selectedMs = selectedEntity.milestones.find((m) => m.id === selectedMilestoneId);
-          const fields = currentTabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS;
+          const fields =
+            currentTabConfig && activeTabLon
+              ? resolveFieldsTemplate(currentTabConfig, activeTabLon, currentTabConfig._parentLabel || '')
+              : currentTabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS;
           const mergedAvatar = selectedMs.snapshot?.avatar || selectedEntity.avatar;
           const fieldIds = fields.map((f) => f.id);
           const chronMilestones = milestonesSorted.slice().reverse(); // oldest -> newest

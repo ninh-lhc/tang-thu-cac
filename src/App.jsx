@@ -32,6 +32,7 @@ import {
   INITIAL_TABS_CONFIG, MOCK_METADATA, MOCK_NOVEL_DATA,
   DEFAULT_FIELDS_MAP, DEFAULT_FIELDS_BY_PARENT,
   guessFieldsByLabel, isStockTemplate, mergeFieldsTemplate, lockFieldsTemplateIfFirstEntity,
+  resolveFieldsTemplate,
 } from './MasterEngines.js';
 import {
   generateId, safeString, getTerms, sortTabsAlphabetically,
@@ -587,7 +588,14 @@ export default function App() {
     return tabData.entities ? [...tabData.entities] : [];
   }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig]);
   const entityFilterFields = useMemo(() => {
-    const templateFields = currentTabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS;
+    const templateFields =
+      currentTabConfig?.viewType === 'collection-track' && activeTabLon
+        ? resolveFieldsTemplate(
+            currentTabConfig,
+            activeTabLon,
+            sortedTabs.find((t) => t.id === activeTabLon)?.label || ''
+          )
+        : currentTabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS;
     const labelMap = new Map(
       templateFields
         .filter((f) => f && f.id)
@@ -607,7 +615,7 @@ export default function App() {
       }));
     }
     return templateFields;
-  }, [collectionEntitiesRaw, currentTabConfig]);
+  }, [collectionEntitiesRaw, currentTabConfig, activeTabLon, sortedTabs]);
   const {
     entitySearch, setEntitySearch,
     entityFilterField, setEntityFilterField,
@@ -1721,17 +1729,23 @@ export default function App() {
           const idx = tabData.entities.findIndex(e => e.id === formData.id);
          if (idx > -1) {
            const prevImages = Array.isArray(tabData.entities[idx].images) ? tabData.entities[idx].images : [];
+           const prevDyn = tabData.entities[idx].dynamicData || {};
+           const mergedDyn = { ...prevDyn, ...dynamicData };
+           const statusLine = safeString(mergedDyn.f_status).trim();
            tabData.entities[idx] = {
              ...tabData.entities[idx],
              name: formData.name,
              avatar: formData.avatar,
              rawText: formData.rawText,
-             dynamicData: dynamicData,
+             status: statusLine,
+             dynamicData: mergedDyn,
              images: prevImages,
            };
          }
        } else {
-         tabData.entities.push({ id: newEntityId, name: formData.name, avatar: formData.avatar, rawText: formData.rawText, dynamicData: dynamicData, info: copyRawToInfo ? formData.rawText : '', milestones: [], images: [] });
+         const mergedNew = { ...dynamicData };
+         const statusLine = safeString(mergedNew.f_status).trim();
+         tabData.entities.push({ id: newEntityId, name: formData.name, avatar: formData.avatar, rawText: formData.rawText, status: statusLine, dynamicData: mergedNew, info: copyRawToInfo ? formData.rawText : '', milestones: [], images: [] });
           lockFieldsTemplateIfFirstEntity(nov, activeTabLon, activeTabNho || 'default');
        }
 
@@ -1945,6 +1959,9 @@ export default function App() {
              });
           }
        }
+       if (ent.dynamicData && Object.prototype.hasOwnProperty.call(ent.dynamicData, 'f_status')) {
+         ent.status = safeString(ent.dynamicData.f_status).trim();
+       }
     });
     showToast("Thần thức AI đã lọc và tự cập nhật thẻ bài thành công!");
   };
@@ -1981,6 +1998,9 @@ export default function App() {
             });
           }
           if (snapshot.avatar) ent.avatar = snapshot.avatar;
+          if (mergedKeys.has('f_status')) {
+            ent.status = safeString(ent.dynamicData.f_status).trim();
+          }
         });
 
         // Set merged fields và chuyển sang tab Hồ Sơ để thấy pill
@@ -2002,11 +2022,10 @@ export default function App() {
 
   const handleExportEntityPDF = (entity, tabConfig) => {
     if (!entity) return;
-    const fields = tabConfig?.fieldsTemplate || [
-      { id: 'f_status', label: 'Cảnh giới / Trạng thái' },
-      { id: 'f_title', label: 'Danh hiệu / Phân loại' },
-      { id: 'f_desc', label: 'Mô tả đặc trưng' }
-    ];
+    const fields =
+      tabConfig && activeTabLon
+        ? resolveFieldsTemplate(tabConfig, activeTabLon, tabConfig._parentLabel || '')
+        : tabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS;
     const escHtml = (str) => String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     const getVal = (fid) => {
       if (entity.dynamicData?.[fid]) return entity.dynamicData[fid];
@@ -2170,10 +2189,12 @@ export default function App() {
     }
     setActiveNovelDirHandle(novelDir);
 
-    const preloadShardKeys = tabAt?.lonId
-      ? [{ lonId: tabAt.lonId, nhoId: tabAt.nhoId || 'default' }]
-      : [];
-    const data = await loadNovelData(meta, dirHandle, preloadShardKeys ? { shardKeys: preloadShardKeys } : undefined);
+    // Chỉ preload một tab khi có tabAt; KHÔNG dùng mảng rỗng [] — [] truthy sẽ gửi shardKeys rỗng và loadNovel chỉ nạp 0 shard (mất dữ liệu trong RAM).
+    const loadNovelOpts =
+      tabAt?.lonId != null && String(tabAt.lonId).length > 0
+        ? { shardKeys: [{ lonId: tabAt.lonId, nhoId: tabAt.nhoId || 'default' }] }
+        : undefined;
+    const data = await loadNovelData(meta, dirHandle, loadNovelOpts);
     if (data) {
       if (!data.tabsConfig) data.tabsConfig = structuredClone(globalTabsConfig);
       const migrated = migrateTabsFieldTemplates(data);

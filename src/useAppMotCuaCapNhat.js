@@ -140,12 +140,15 @@ export function useAppMotCuaCapNhat({
       let td = nov.data[lonId][nhoId];
       if (!td || typeof td === 'string') td = { overview: typeof td === 'string' ? td : '', entities: [] };
       if (!td.entities) td.entities = [];
+      const dyn = { ...hubCreatePreview.dynamicData };
+      const statusLine = safeString(dyn.f_status).trim();
       td.entities.push({
         id: generateId('ent'),
         name,
         avatar: '',
         rawText: stripWikiBracketSyntax(safeString(hubCreatePreview.rawText)),
-        dynamicData: { ...hubCreatePreview.dynamicData },
+        status: statusLine,
+        dynamicData: dyn,
         info: '',
         milestones: [],
       });

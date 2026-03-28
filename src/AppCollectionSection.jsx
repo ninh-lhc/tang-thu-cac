@@ -404,7 +404,12 @@ export function AppCollectionSection({
               onBackToList={() => setCollectionSubTab('list')}
             />
 
-            {collectionSubTab === 'detail' && selectedEntity && (
+            {collectionSubTab === 'detail' && selectedEntity && (() => {
+              const tabTerms = getTerms(activeTabLon);
+              const profileSubtitle =
+                safeString(selectedEntity.status).trim() ||
+                safeString(selectedEntity.dynamicData?.f_status).trim();
+              return (
               <div
                 className="flex flex-col w-full animate-fade-in pb-10"
                 onDragOver={(e) => e.preventDefault()}
@@ -445,9 +450,17 @@ export function AppCollectionSection({
                         )}
                       </div>
                       <p className="text-slate-400 font-serif flex items-center gap-2">
-                        <Shield size={14} className="text-slate-500"/>
-                        {safeString(selectedEntity.status) || 'Chưa có trạng thái/cảnh giới'}
+                        <Shield size={14} className="text-slate-500 shrink-0" aria-hidden />
+                        <span>{profileSubtitle || tabTerms.profileSubtitleEmpty}</span>
                       </p>
+                      {safeString(selectedEntity.dynamicData?.f_alias).trim() && (
+                        <p className="text-sm text-indigo-200/90 font-serif mt-3 leading-relaxed max-w-2xl border-l-2 border-indigo-700/50 pl-3">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 block mb-0.5">
+                            Biệt danh — cùng liên kết wiki với tên chính
+                          </span>
+                          {safeString(selectedEntity.dynamicData.f_alias)}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -505,13 +518,15 @@ export function AppCollectionSection({
                   onNavigate={(dest) => navFnRef.current?.(dest)}
                 />
               </div>
-            )}
+              );
+            })()}
 
             <AppEntityTimelinePanel
               collectionSubTab={collectionSubTab}
               selectedEntity={selectedEntity}
               selectedMilestoneId={selectedMilestoneId}
               setSelectedMilestoneId={setSelectedMilestoneId}
+              activeTabLon={activeTabLon}
               currentTabConfig={currentTabConfig}
               currentContextDirHandle={currentContextDirHandle}
               entityMap={entityMap}

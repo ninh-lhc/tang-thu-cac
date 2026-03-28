@@ -173,6 +173,7 @@ export function mutateNovelJournalSelections(nov, panel) {
           const f = template.find((t) => t.id === byId);
           if (f) {
             ent.dynamicData[f.id] = val;
+            if (f.id === 'f_status') ent.status = safeString(val).trim();
             patched++;
           }
           return;
@@ -189,6 +190,7 @@ export function mutateNovelJournalSelections(nov, panel) {
           );
         if (f) {
           ent.dynamicData[f.id] = val;
+          if (f.id === 'f_status') ent.status = safeString(val).trim();
           patched++;
         }
       });
