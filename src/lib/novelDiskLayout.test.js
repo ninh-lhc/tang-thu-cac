@@ -6,6 +6,7 @@ import {
   buildDiskManifest,
   buildShardWritePlan,
   NOVEL_STORAGE_SHARDED,
+  novelManifestBaseNameCandidates,
 } from './novelDiskLayout.js';
 
 describe('novelDiskLayout', () => {
@@ -24,6 +25,23 @@ describe('novelDiskLayout', () => {
       { lonId: 'a', nhoId: 'y' },
       { lonId: 'b', nhoId: 'z' },
     ]);
+  });
+
+  it('novelManifestBaseNameCandidates dedupes folderName, title slug, id', () => {
+    expect(
+      novelManifestBaseNameCandidates({
+        folderName: 'Alpha',
+        title: 'Beta',
+        id: 'uuid-1',
+      })
+    ).toEqual(['Alpha', 'Beta', 'uuid-1']);
+    expect(
+      novelManifestBaseNameCandidates({
+        folderName: 'Same',
+        title: 'Same',
+        id: 'Same',
+      })
+    ).toEqual(['Same']);
   });
 
   it('buildDiskManifest clears data and sets sharded layout', () => {

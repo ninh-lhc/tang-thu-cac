@@ -10,7 +10,8 @@ import {
   buildDiskManifest,
   listShardKeysFromData,
   loadShardsFromNovelDir,
-  loadShardSubsetFromNovelDir,
+  novelManifestBaseNameCandidates,
+  readRawNovelPackageFromDir,
   writeShardTree,
 } from './lib/novelDiskLayout.js';
 
@@ -213,55 +214,81 @@ export function useAppPersistence({
 
   const loadNovelData = useCallback(async (meta, rootDir, options = {}) => {
     const raw = Array.isArray(options.shardKeys) ? options.shardKeys : null;
-    const shardKeys = raw && raw.length > 0 ? raw : null;
+    const shardKeysOpt = raw && raw.length > 0 ? { shardKeys: raw } : {};
+    const wantId = String(meta?.id ?? '').trim();
+
+    const finalizeParsed = (parsed, label) => {
+      try {
+        const migrated = migrateNovel(parsed);
+        return restoreShardedLayoutIfNeeded(parsed, migrated);
+      } catch (pe) {
+        console.warn(`[TTC] JSON truyện bị hỏng sau migrate: ${label}`, pe);
+        return null;
+      }
+    };
+
     if (!rootDir || rootDir === 'LOCAL_STORAGE') {
       const data = localStorage.getItem(`tangthu_novel_${meta.id}`);
       if (!data) return null;
       try {
-        return migrateNovel(JSON.parse(data));
+        const parsed = JSON.parse(data);
+        const novel = finalizeParsed(parsed, `LS:${meta.id}`);
+        return novel ? { novel, novelDir: null } : null;
       } catch (e) {
         console.warn(`[TTC] Dữ liệu bị hỏng cho truyện ${meta.id}, bỏ qua.`, e);
         return null;
       }
     }
-    const folderName = meta.folderName || meta.title.replace(/[\\/:*?"<>|]/g, '').trim() || meta.id;
-    try {
-      const novelDir = await rootDir.getDirectoryHandle(folderName);
-      const f = await novelDir.getFileHandle(`${folderName}.json`);
-      const file = await f.getFile();
-      const text = await file.text();
+
+    const tryDirWithBase = async (novelDir, manifestBaseName) => {
+      const parsed = await readRawNovelPackageFromDir(novelDir, manifestBaseName, shardKeysOpt);
+      if (!parsed) return null;
+      const pid = String(parsed.id ?? '').trim();
+      if (wantId && pid && pid !== wantId) return null;
+      const novel = finalizeParsed(parsed, `${manifestBaseName}.json`);
+      return novel ? { novel, novelDir } : null;
+    };
+
+    for (const name of novelManifestBaseNameCandidates(meta)) {
       try {
-        const parsed = JSON.parse(text);
-        if (parsed.storageLayout === NOVEL_STORAGE_SHARDED) {
-          const shardData = shardKeys
-            ? await loadShardSubsetFromNovelDir(novelDir, shardKeys)
-            : await loadShardsFromNovelDir(novelDir);
-          parsed.data = shardData;
-          if (shardKeys) parsed.__partialData = true;
-        }
-        const migrated = migrateNovel(parsed);
-        return restoreShardedLayoutIfNeeded(parsed, migrated);
-      } catch (pe) {
-        console.warn(`[TTC] File JSON bị hỏng: ${folderName}.json`, pe);
-        return null;
-      }
-    } catch {
-      try {
-        const novelsDir = await rootDir.getDirectoryHandle('novels');
-        const f = await novelsDir.getFileHandle(`${meta.id}.json`);
-        const file = await f.getFile();
-        const text = await file.text();
-        try {
-          const parsed = JSON.parse(text);
-          const migrated = migrateNovel(parsed);
-          return restoreShardedLayoutIfNeeded(parsed, migrated);
-        } catch (pe) {
-          console.warn(`[TTC] File JSON bị hỏng: ${meta.id}.json`, pe);
-          return null;
+        const novelDir = await rootDir.getDirectoryHandle(name);
+        const hit = await tryDirWithBase(novelDir, name);
+        if (hit) return hit;
+        for (const alt of novelManifestBaseNameCandidates(meta)) {
+          if (alt === name) continue;
+          const hitAlt = await tryDirWithBase(novelDir, alt);
+          if (hitAlt) return hitAlt;
         }
       } catch {
-        return null;
+        /* thử candidate kế */
       }
+    }
+
+    if (wantId) {
+      try {
+        for await (const [entryName, h] of rootDir.entries()) {
+          if (h.kind !== 'directory') continue;
+          const hit = await tryDirWithBase(h, entryName);
+          if (hit) return hit;
+        }
+      } catch (e) {
+        console.warn('[TTC] Quét thư mục gốc tìm truyện theo id:', e);
+      }
+    }
+
+    try {
+      const novelsDir = await rootDir.getDirectoryHandle('novels');
+      const f = await novelsDir.getFileHandle(`${meta.id}.json`);
+      const text = await (await f.getFile()).text();
+      const parsed = JSON.parse(text);
+      const pid = String(parsed.id ?? '').trim();
+      if (wantId && pid && pid !== wantId) return null;
+      const novel = finalizeParsed(parsed, `novels/${meta.id}.json`);
+      return novel ? { novel, novelDir: null } : null;
+    } catch (e) {
+      if (e && e.name === 'NotFoundError') return null;
+      console.warn(`[TTC] Lỗi đọc novels/${meta.id}.json`, e);
+      return null;
     }
   }, []);
 

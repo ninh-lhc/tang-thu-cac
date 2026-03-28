@@ -1138,8 +1138,10 @@ export default function App() {
           await Promise.all(
             batch.map(async (meta) => {
               try {
-                const d = await loadNovelData(meta, root);
-                acc[meta.id] = d ? countEntitiesInNovel(d) : { entities: 0, milestones: 0, byTab: [] };
+                const loaded = await loadNovelData(meta, root);
+                acc[meta.id] = loaded?.novel
+                  ? countEntitiesInNovel(loaded.novel)
+                  : { entities: 0, milestones: 0, byTab: [] };
               } catch {
                 acc[meta.id] = { entities: 0, milestones: 0, byTab: [] };
               }
@@ -1189,7 +1191,7 @@ export default function App() {
               let d = null;
               const activeIsPartial = activeNovelData?.id === meta.id && activeNovelData?.__partialData;
               if (activeNovelData?.id === meta.id && !activeIsPartial) d = activeNovelData;
-              else d = await loadNovelData(meta, dirHandle);
+              else d = (await loadNovelData(meta, dirHandle))?.novel;
               if (!d || typeof d !== 'object') return;
               indexRows = buildNovelSearchIndex({ ...d, id: meta.id, title: d.title || meta.title });
               deepSearchIndexByNovelIdRef.current.set(meta.id, indexRows);
@@ -1441,8 +1443,8 @@ export default function App() {
         novels: {},
       };
       for (const meta of novelsMetadata) {
-        const data = await loadNovelData(meta, dirHandle);
-        if (data) allData.novels[meta.id] = data;
+        const loaded = await loadNovelData(meta, dirHandle);
+        if (loaded?.novel) allData.novels[meta.id] = loaded.novel;
       }
       const blob = new Blob([JSON.stringify(allData, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -2180,22 +2182,15 @@ export default function App() {
     setIsEntityEditing(false);
     setIsUploading(true);
 
-    let novelDir = null;
-    if (dirHandle && dirHandle !== 'LOCAL_STORAGE') {
-      try {
-        const folderName = meta.folderName || meta.title.replace(/[\\/:*?"<>|]/g, '').trim() || meta.id;
-        novelDir = await dirHandle.getDirectoryHandle(folderName);
-      } catch { void 0; }
-    }
-    setActiveNovelDirHandle(novelDir);
-
     // Chỉ preload một tab khi có tabAt; KHÔNG dùng mảng rỗng [] — [] truthy sẽ gửi shardKeys rỗng và loadNovel chỉ nạp 0 shard (mất dữ liệu trong RAM).
     const loadNovelOpts =
       tabAt?.lonId != null && String(tabAt.lonId).length > 0
         ? { shardKeys: [{ lonId: tabAt.lonId, nhoId: tabAt.nhoId || 'default' }] }
         : undefined;
-    const data = await loadNovelData(meta, dirHandle, loadNovelOpts);
-    if (data) {
+    const loaded = await loadNovelData(meta, dirHandle, loadNovelOpts);
+    if (loaded?.novel) {
+      const data = loaded.novel;
+      setActiveNovelDirHandle(loaded.novelDir ?? null);
       if (!data.tabsConfig) data.tabsConfig = structuredClone(globalTabsConfig);
       const migrated = migrateTabsFieldTemplates(data);
       setActiveNovelData(migrated);
@@ -2217,8 +2212,17 @@ export default function App() {
         setCollectionSubTab('list');
       }
     } else {
-      const newData = { ...meta, data: {}, tabsConfig: structuredClone(globalTabsConfig) };
-      setActiveNovelData(newData);
+      setActiveNovelDirHandle(null);
+      if (dirHandle && dirHandle !== 'LOCAL_STORAGE') {
+        showToast(
+          'Không đọc được dữ liệu truyện trên đĩa. Hãy mở đúng thư mục Mệnh Bàn đã dùng khi lưu; kiểm tra thư mục con trùng folderName/id trong index. Không tạo hồ sơ rỗng để tránh ghi đè mất dữ liệu.',
+          'error'
+        );
+        setActiveNovelData(null);
+      } else {
+        const newData = { ...meta, data: {}, tabsConfig: structuredClone(globalTabsConfig) };
+        setActiveNovelData(newData);
+      }
     }
     setIsUploading(false);
   };
@@ -2235,7 +2239,8 @@ export default function App() {
       if (lazyTabLoadInFlightRef.current.has(key)) return;
       lazyTabLoadInFlightRef.current.add(key);
       try {
-        const partial = await loadNovelData(activeNovelData, dirHandle, { shardKeys: [{ lonId, nhoId }] });
+        const partialLoaded = await loadNovelData(activeNovelData, dirHandle, { shardKeys: [{ lonId, nhoId }] });
+        const partial = partialLoaded?.novel;
         if (partial?.data?.[lonId]?.[nhoId]) {
           setActiveNovelData((prev) => {
             if (!prev || prev.id !== activeNovelData.id) return prev;
@@ -2262,7 +2267,8 @@ export default function App() {
       if (lazyFullHydrateInFlightRef.current.has(key)) return;
       lazyFullHydrateInFlightRef.current.add(key);
       try {
-        const fullData = await loadNovelData(activeNovelData, dirHandle);
+        const fullLoaded = await loadNovelData(activeNovelData, dirHandle);
+        const fullData = fullLoaded?.novel;
         if (fullData && !fullData.__partialData) {
           setActiveNovelData((prev) => {
             if (!prev || prev.id !== key) return prev;

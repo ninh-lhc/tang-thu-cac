@@ -34,6 +34,23 @@ export function listShardKeysFromData(data) {
   return keys;
 }
 
+/**
+ * Các tên file manifest (không đuôi .json) thử lần lượt khi mở thư mục truyện.
+ * Giảm lệch sau đổi tiêu đề / folderName trong index so với tên thư mục thật trên đĩa.
+ */
+export function novelManifestBaseNameCandidates(meta) {
+  const fromFolder = String(meta?.folderName ?? '').trim();
+  const fromTitle = String(meta?.title ?? '')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .trim();
+  const fromId = String(meta?.id ?? '').trim();
+  const out = [];
+  for (const x of [fromFolder, fromTitle, fromId]) {
+    if (x && !out.includes(x)) out.push(x);
+  }
+  return out;
+}
+
 /** Bản ghi manifest: data rỗng + cờ sharded (nội dung tab nằm trong thư mục data/). */
 export function buildDiskManifest(novelData) {
   let m;
@@ -147,6 +164,30 @@ export async function loadShardSubsetFromNovelDir(novelDirHandle, shardKeys) {
     }
   }
   return data;
+}
+
+/**
+ * Đọc `<manifestBaseName>.json` trong novelDir + (nếu sharded) ghép shard.
+ * Trả về object đã parse (chưa migrateNovel), hoặc null.
+ */
+export async function readRawNovelPackageFromDir(novelDirHandle, manifestBaseName, options = {}) {
+  const rawKeys = Array.isArray(options.shardKeys) ? options.shardKeys : null;
+  const shardKeys = rawKeys && rawKeys.length > 0 ? rawKeys : null;
+  try {
+    const f = await novelDirHandle.getFileHandle(`${manifestBaseName}.json`);
+    const text = await (await f.getFile()).text();
+    const parsed = JSON.parse(text);
+    if (parsed.storageLayout === NOVEL_STORAGE_SHARDED) {
+      const shardData = shardKeys
+        ? await loadShardSubsetFromNovelDir(novelDirHandle, shardKeys)
+        : await loadShardsFromNovelDir(novelDirHandle);
+      parsed.data = shardData;
+      if (shardKeys) parsed.__partialData = true;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 /** Ghi một file .json trong data/<lon>/ với tmp + move khi có. */
