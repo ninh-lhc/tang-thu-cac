@@ -75,6 +75,7 @@ import { buildCommandPaletteFiltered } from './lib/locLenhNhanhCommandPalette.js
 import { buildXrefEntityCatalogText } from './lib/xrefBangDanhMucThucThe.js';
 import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
+import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 
 const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
   value,
@@ -1345,17 +1346,36 @@ export default function App() {
 
   const handleConfirmQuickCreate = (name, path) => {
       const [lonId, nhoId] = path.split('|');
+      const quickName = safeString(name).trim();
+      if (!quickName) return;
       const newEntityId = generateId('ent');
+      let targetExistingId = null;
       updateActiveNovelData(nov => {
           if (!nov.data) nov.data = {}; if (!nov.data[lonId]) nov.data[lonId] = {};
           let tabData = nov.data[lonId][nhoId];
           if (!tabData || typeof tabData === 'string') tabData = { overview: '', entities: [] };
           if (!tabData.entities) tabData.entities = [];
-          tabData.entities.push({ id: newEntityId, name: name, avatar: '', rawText: '', dynamicData: {}, info: '', milestones: [], images: [] });
+          const matched = findEquivalentEntityByName(tabData.entities, quickName);
+          if (matched?.entity) {
+            targetExistingId = matched.entity.id;
+            const prevAlias = safeString(matched.entity.dynamicData?.f_alias);
+            const mergedAlias = mergeAliasText(prevAlias, quickName);
+            if (mergedAlias !== prevAlias) {
+              if (!matched.entity.dynamicData) matched.entity.dynamicData = {};
+              matched.entity.dynamicData.f_alias = mergedAlias;
+            }
+          } else {
+            tabData.entities.push({ id: newEntityId, name: quickName, avatar: '', rawText: '', dynamicData: {}, info: '', milestones: [], images: [] });
+          }
           nov.data[lonId][nhoId] = tabData;
-          lockFieldsTemplateIfFirstEntity(nov, lonId, nhoId);
+          if (!targetExistingId) lockFieldsTemplateIfFirstEntity(nov, lonId, nhoId);
       });
-      showToast(`Đã ngưng tụ thành công ${name}!`);
+      if (targetExistingId) {
+        showToast(`«${quickName}» đã trùng thẻ có sẵn — đã thêm vào bí danh và liên kết về thẻ cũ.`, 'warning');
+        handleNavigate({ lonId, nhoId, entityId: targetExistingId });
+        return;
+      }
+      showToast(`Đã ngưng tụ thành công ${quickName}!`);
       handleNavigate({ lonId, nhoId, entityId: newEntityId });
   };
 
@@ -1722,6 +1742,8 @@ export default function App() {
     const prev = activeNovelData ? structuredClone(activeNovelData) : null;
     const isCreate = !formData.id;
     const newEntityId = isCreate ? generateId('ent') : formData.id;
+    let createTargetEntityId = null;
+    let createMergedToExisting = false;
     updateActiveNovelData(nov => {
        if (!nov.data) nov.data = {}; if (!nov.data[activeTabLon]) nov.data[activeTabLon] = {};
        let tabData = nov.data[activeTabLon][activeTabNho || 'default'];
@@ -1747,8 +1769,22 @@ export default function App() {
        } else {
          const mergedNew = { ...dynamicData };
          const statusLine = safeString(mergedNew.f_status).trim();
-         tabData.entities.push({ id: newEntityId, name: formData.name, avatar: formData.avatar, rawText: formData.rawText, status: statusLine, dynamicData: mergedNew, info: copyRawToInfo ? formData.rawText : '', milestones: [], images: [] });
+        const canonicalName = safeString(formData.name).trim();
+        const matched = findEquivalentEntityByName(tabData.entities, canonicalName);
+        if (matched?.entity) {
+          createTargetEntityId = matched.entity.id;
+          createMergedToExisting = true;
+          const prevAlias = safeString(matched.entity.dynamicData?.f_alias);
+          const mergedAlias = mergeAliasText(prevAlias, canonicalName);
+          if (mergedAlias !== prevAlias) {
+            if (!matched.entity.dynamicData) matched.entity.dynamicData = {};
+            matched.entity.dynamicData.f_alias = mergedAlias;
+          }
+        } else {
+          tabData.entities.push({ id: newEntityId, name: canonicalName, avatar: formData.avatar, rawText: formData.rawText, status: statusLine, dynamicData: mergedNew, info: copyRawToInfo ? formData.rawText : '', milestones: [], images: [] });
+          createTargetEntityId = newEntityId;
           lockFieldsTemplateIfFirstEntity(nov, activeTabLon, activeTabNho || 'default');
+        }
        }
 
         // Nếu user bật tùy chọn copy: thay thế info để hiển thị wiki link đầy đủ ở tab Ghi Chép Chi Tiết.
@@ -1761,8 +1797,8 @@ export default function App() {
     });
 
     // UX: tạo thẻ xong thì tự vào tab Hồ Sơ + bật chế độ ghi chép chi tiết.
-    if (isCreate && newEntityId) {
-      setSelectedEntityId(newEntityId);
+    if (isCreate && createTargetEntityId) {
+      setSelectedEntityId(createTargetEntityId);
       setSelectedMilestoneId(null);
       setEditingMilestoneData(null);
       setCollectionSubTab('detail');
@@ -1770,7 +1806,13 @@ export default function App() {
       setIsEntityEditing(true);
     }
 
-    showToast(formData.id ? "Đã tu bổ lại Thực Thể!" : "Đã ngưng tụ Thực Thể mới!", "success", prev ? {
+    const saveToastMsg = formData.id
+      ? "Đã tu bổ lại Thực Thể!"
+      : createMergedToExisting
+        ? "Tên mới trùng thẻ cũ — đã thêm vào bí danh và liên kết về thẻ hiện có."
+        : "Đã ngưng tụ Thực Thể mới!";
+    const saveToastLevel = formData.id || !createMergedToExisting ? "success" : "warning";
+    showToast(saveToastMsg, saveToastLevel, prev ? {
       undoLabel: "Hoàn tác", onUndo: () => {
         setActiveNovelData(structuredClone(prev));
         void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));

@@ -9,10 +9,12 @@
 import { generateId, safeString } from './MasterUtils.jsx';
 import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
 import { lockFieldsTemplateIfFirstEntity, resolveFieldsTemplate } from './MasterEngines.js';
+import { buildEntityNameFingerprint, findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 
 /** Tìm thẻ trong toàn bộ novel (dùng khi áp nhật ký batch). */
 export function findEntitiesByHintInNovel(novelData, hint) {
   const h = safeString(hint).toLowerCase().trim();
+  const hFingerprint = buildEntityNameFingerprint(hint);
   if (!h || !novelData?.tabsConfig) return [];
   const scored = [];
   (novelData.tabsConfig || []).forEach((lon) => {
@@ -23,12 +25,20 @@ export function findEntitiesByHintInNovel(novelData, hint) {
       ents.forEach((ent) => {
         const n = safeString(ent.name).toLowerCase();
         if (!n) return;
+        const aliases = safeString(ent.dynamicData?.f_alias)
+          .split(/[,/|()]/)
+          .map((x) => x.trim().toLowerCase())
+          .filter(Boolean);
         let score = 0;
         if (n === h) score = 100;
+        else if (aliases.includes(h)) score = 95;
+        else if (hFingerprint && buildEntityNameFingerprint(ent.name) === hFingerprint) score = 90;
+        else if (hFingerprint && aliases.some((a) => buildEntityNameFingerprint(a) === hFingerprint)) score = 85;
         else if (n.includes(h) || h.includes(n)) score = 60;
+        else if (aliases.some((a) => a.includes(h) || h.includes(a))) score = 55;
         else {
           const ws = h.split(/\s+/).filter((w) => w.length > 1);
-          if (ws.some((w) => n.includes(w))) score = 30;
+          if (ws.some((w) => n.includes(w) || aliases.some((a) => a.includes(w)))) score = 30;
         }
         if (score) scored.push({ score, lonId: lon.id, nhoId: sub.id, ent });
       });
@@ -89,8 +99,15 @@ export function mutateNovelJournalSelections(nov, panel) {
         return;
       }
       const tabData = ensureTab(path.lonId, path.nhoId);
-      if (tabData.entities.some((e) => safeString(e.name).trim().toLowerCase() === name.toLowerCase())) {
-        fails.push(`«${name}» đã có`);
+      const matched = findEquivalentEntityByName(tabData.entities, name);
+      if (matched?.entity) {
+        const prevAlias = safeString(matched.entity.dynamicData?.f_alias);
+        const mergedAlias = mergeAliasText(prevAlias, name);
+        if (mergedAlias !== prevAlias) {
+          if (!matched.entity.dynamicData) matched.entity.dynamicData = {};
+          matched.entity.dynamicData.f_alias = mergedAlias;
+        }
+        fails.push(`«${name}» đã trùng «${safeString(matched.entity.name)}» — đã nối vào bí danh`);
         return;
       }
       tabData.entities.push({

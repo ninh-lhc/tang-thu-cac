@@ -18,6 +18,7 @@ import {
 import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
 import { mutateNovelJournalSelections } from './appNhatKyVaGoiThe.js';
 import { buildHubExtendedCatalogLines } from './lib/hubBangDanhMucCacMucNhatKy.js';
+import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 
 export function useAppMotCuaCapNhat({
   activeNovelData,
@@ -93,10 +94,11 @@ export function useAppMotCuaCapNhat({
       const proc = safeString(result?.processedText);
       const rawText = stripWikiBracketSyntax(proc || raw);
       const ents = activeNovelData.data?.[lonId]?.[nhoId]?.entities || [];
-      if (ents.some((e) => safeString(e.name).trim().toLowerCase() === name.toLowerCase())) {
-        showToast(`Đã có thẻ «${name}» — chuyển sang tab Cập nhật.`, 'warning');
+      const matched = findEquivalentEntityByName(ents, name);
+      if (matched?.entity) {
+        showToast(`«${name}» đã trùng thẻ «${safeString(matched.entity.name)}» — chuyển sang tab Cập nhật.`, 'warning');
         setOverviewHubTab('update');
-        setHubUpdateText(`Cập nhật về «${name}»: ${raw.slice(0, 3500)}`);
+        setHubUpdateText(`Cập nhật về «${safeString(matched.entity.name)}»: ${raw.slice(0, 3500)}`);
         return;
       }
       setHubCreatePreview({ name, rawText, dynamicData });
@@ -128,10 +130,23 @@ export function useAppMotCuaCapNhat({
       return;
     }
     const ents = activeNovelData?.data?.[lonId]?.[nhoId]?.entities || [];
-    if (ents.some((e) => safeString(e.name).trim().toLowerCase() === name.toLowerCase())) {
-      showToast('Thẻ đã tồn tại — dùng tab Cập nhật.', 'warning');
+    const matched = findEquivalentEntityByName(ents, name);
+    if (matched?.entity) {
+      updateActiveNovelData((nov) => {
+        const tab = nov.data?.[lonId]?.[nhoId];
+        const list = tab?.entities || [];
+        const target = list.find((e) => e.id === matched.entity.id);
+        if (!target) return;
+        const prevAlias = safeString(target.dynamicData?.f_alias);
+        const mergedAlias = mergeAliasText(prevAlias, name);
+        if (mergedAlias !== prevAlias) {
+          if (!target.dynamicData) target.dynamicData = {};
+          target.dynamicData.f_alias = mergedAlias;
+        }
+      });
+      showToast('Tên vừa nhập trùng thẻ có sẵn — đã nối vào bí danh, chuyển sang tab Cập nhật.', 'warning');
       setOverviewHubTab('update');
-      setHubUpdateText((t) => (safeString(t).trim() ? t : `Cập nhật về «${name}»: `));
+      setHubUpdateText((t) => (safeString(t).trim() ? t : `Cập nhật về «${safeString(matched.entity.name)}»: `));
       return;
     }
     updateActiveNovelData((nov) => {

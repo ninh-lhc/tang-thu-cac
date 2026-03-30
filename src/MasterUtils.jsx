@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { FALLBACK_IMG } from './MasterEngines.js';
 import { splitTextByWikiMatcher } from './lib/wikiLinkMatcher.js';
+import { buildEntityCanonicalFingerprint, buildEntityNameFingerprint } from './lib/entityNameIdentity.js';
 
 export const generateId = (prefix) => `${prefix}-${Math.random().toString(36).substring(2, 11)}`;
 
@@ -564,9 +565,30 @@ export const buildEntityNameLookup = (entityMap) => {
   if (!entityMap) return m;
   const arr = Array.isArray(entityMap) ? entityMap : [];
   for (const e of arr) {
-    if (e?.name) m.set(String(e.name).toLowerCase(), e);
+    if (!e?.name) continue;
+    const name = String(e.name);
+    const lower = name.toLowerCase();
+    m.set(lower, e);
+    const fp = buildEntityNameFingerprint(name);
+    if (fp && !m.has(`__fp:${fp}`)) m.set(`__fp:${fp}`, e);
+    const canonicalFp = buildEntityCanonicalFingerprint(name);
+    if (canonicalFp && !m.has(`__cfp:${canonicalFp}`)) m.set(`__cfp:${canonicalFp}`, e);
   }
   return m;
+};
+
+const resolveEntityLookup = (lookup, rawName) => {
+  if (!lookup || !rawName) return null;
+  const lower = String(rawName).toLowerCase();
+  const exact = lookup.get(lower);
+  if (exact) return exact;
+  const fp = buildEntityNameFingerprint(rawName);
+  if (!fp) return null;
+  const byFp = lookup.get(`__fp:${fp}`);
+  if (byFp) return byFp;
+  const canonicalFp = buildEntityCanonicalFingerprint(rawName);
+  if (!canonicalFp) return null;
+  return lookup.get(`__cfp:${canonicalFp}`) || null;
 };
 
 export const processPlainTextWithLinks = (text, lookup, linkRegex, onNavigate) => {
@@ -579,7 +601,7 @@ export const processPlainTextWithLinks = (text, lookup, linkRegex, onNavigate) =
         const rawText = usingRegex ? part : part.text;
         const isMatch = usingRegex ? (i % 2 !== 0) : part.isMatch;
         if (!isMatch) return rawText;
-        const match = lookup.get(String(rawText).toLowerCase());
+        const match = resolveEntityLookup(lookup, rawText);
         if (match) {
             return (
                <span key={i} onClick={(e) => { e.stopPropagation(); onNavigate(match.dest); }} className="text-amber-400 bg-amber-900/20 px-1 rounded hover:bg-amber-600 hover:text-white hover:shadow-[0_0_10px_rgba(217,119,6,0.5)] transition-all font-bold cursor-pointer inline-flex items-center gap-0.5">
@@ -623,7 +645,7 @@ export const processInline = (text, dirHandle, entityLookup, linkRegex, onNaviga
       }
       if (part.startsWith('[[') && part.endsWith(']]')) {
         const innerText = safeString(part.slice(2, -2)).trim();
-        const match = lookup.get(innerText.toLowerCase());
+        const match = resolveEntityLookup(lookup, innerText);
         if (match) {
           return (
             <span

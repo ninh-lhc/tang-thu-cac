@@ -212,6 +212,17 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                       className={`w-full text-left p-4 rounded-2xl flex items-start gap-4 transition-all duration-300 ${isSelected ? 'bg-gradient-to-r from-amber-900/40 to-slate-900 border border-amber-700/50 shadow-lg translate-x-2' : 'bg-transparent border border-transparent hover:bg-slate-900 hover:border-slate-800'}`}
                       >
                         <div className={`mt-1 w-3 h-3 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-amber-400 border-amber-900 shadow-[0_0_10px_var(--t-400)]' : 'bg-slate-800 border-slate-950 group-hover:bg-slate-600'}`}></div>
+                        {isEventColumnContentHidden && (
+                          <div className="min-w-0 flex-1 pt-0.5">
+                            <div className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                              isSelected
+                                ? 'border-amber-700/70 bg-amber-900/40 text-amber-300'
+                                : 'border-slate-700/80 bg-slate-900/70 text-slate-400 group-hover:text-slate-300'
+                            }`}>
+                              Ch {safeString(ms.chapter)}
+                            </div>
+                          </div>
+                        )}
                         <div
                           className={`flex-1 min-w-0 transition-[opacity,max-width] duration-150 overflow-hidden ${
                             isEventColumnContentHidden

@@ -27,9 +27,11 @@ import {
   applyWikiLinkWrap,
   applyWikiLinkUnwrap,
   analyzeTextWithAI,
+  suggestWikiLinkSpotsWithAI,
   truncateForAI,
   mapGeminiErrorToUserMessage,
 } from './MasterUtils.jsx';
+import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
 import { mergeTabsByGenres } from './genreTabsMap.js';
 import { searchNovelData, dedupeDeepSearchResults, metadataSearchHits } from './deepSearchCore.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
@@ -882,7 +884,15 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
              const newDyn = { ...snapshotData.dynamicData };
              fieldsTemplate.forEach(f => { if (result[f.id]) newDyn[f.id] = safeString(result[f.id]); });
              setSnapshotData({ avatar: safeString(result.avatar) || snapshotData.avatar, dynamicData: newDyn });
-             if (result.processedText) setFormData(p => ({...p, event: result.processedText}));
+         }
+         const linkRes = await suggestWikiLinkSpotsWithAI(formData.event, keys, geminiMode);
+         const spots = Array.isArray(linkRes?.linkSpots) ? linkRes.linkSpots : [];
+         if (spots.length > 0) {
+           setFormData((p) => {
+             const current = safeString(p.event);
+             const next = applyWikiLinkSpots(current, spots);
+             return next === current ? p : { ...p, event: next };
+           });
          }
      } catch (e) { setErrorMsg(mapGeminiErrorToUserMessage(e)); } finally { setIsAnalyzing(false); }
   };
