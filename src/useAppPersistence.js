@@ -64,6 +64,15 @@ export function useAppPersistence({
         const w = await f.createWritable();
         await w.write(JSON.stringify(payload, null, 2));
         await w.close();
+        // Lớp an toàn bổ sung: giữ bản dự phòng index gần nhất.
+        try {
+          const fb = await dir.getFileHandle('index.backup.json', { create: true });
+          const wb = await fb.createWritable();
+          await wb.write(JSON.stringify(payload, null, 2));
+          await wb.close();
+        } catch {
+          /* backup là best-effort */
+        }
       } catch {
         setTimeout(() => {
           showToast('Lỗi đồng bộ danh mục!', 'error');
@@ -142,20 +151,34 @@ export function useAppPersistence({
       if (memKeys.length === 0) {
         try {
           const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
-          const diskData = await loadShardsFromNovelDir(novelDir);
-          const diskKeys = listShardKeysFromData(diskData || {});
+          const diskPkg = await readRawNovelPackageFromDir(novelDir, folderName);
+          const diskData = diskPkg?.data || {};
+          const diskKeys = listShardKeysFromData(diskData);
           if (diskKeys.length > 0) {
-            console.warn('[TTC] syncNovel: memory.data rỗng nhưng đĩa còn shard — gộp từ đĩa để tránh mất dữ liệu.');
+            console.warn('[TTC] syncNovel: memory.data rỗng nhưng đĩa còn dữ liệu — gộp từ đĩa để tránh mất dữ liệu.');
             novelToWrite = { ...novelToWrite, data: { ...(diskData || {}) } };
+            if (diskPkg?.storageLayout === NOVEL_STORAGE_SHARDED) {
+              novelToWrite.storageLayout = NOVEL_STORAGE_SHARDED;
+            }
           }
         } catch (e) {
-          console.warn('[TTC] syncNovel: không đọc được shard khi kiểm tra memory rỗng:', e);
+          console.warn('[TTC] syncNovel: không đọc được dữ liệu đĩa khi kiểm tra memory rỗng:', e);
         }
       }
       const manifest = buildDiskManifest(novelToWrite);
       const jsonStr = JSON.stringify(manifest, null, 2);
       const mainFile = `${folderName}.json`;
       const tmpFile = `${folderName}.json.tmp`;
+      const writeNovelBackup = async (novelDir) => {
+        try {
+          const bf = await novelDir.getFileHandle(`${folderName}.backup.json`, { create: true });
+          const bw = await bf.createWritable();
+          await bw.write(JSON.stringify(novelToWrite, null, 2));
+          await bw.close();
+        } catch {
+          /* backup is best-effort */
+        }
+      };
       const tryAtomic = async () => {
         const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
         await writeShardTree(novelDir, novelToWrite);
@@ -181,6 +204,7 @@ export function useAppPersistence({
           } catch { /* ignore */ }
         }
         await novelDir.getDirectoryHandle('images', { create: true });
+        await writeNovelBackup(novelDir);
       };
       const tryDirect = async () => {
         const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
@@ -190,6 +214,7 @@ export function useAppPersistence({
         await w.write(jsonStr);
         await w.close();
         await novelDir.getDirectoryHandle('images', { create: true });
+        await writeNovelBackup(novelDir);
       };
       try {
         await tryAtomic();

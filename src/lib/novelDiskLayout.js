@@ -166,6 +166,23 @@ export async function loadShardSubsetFromNovelDir(novelDirHandle, shardKeys) {
   return data;
 }
 
+async function hasAnyShardData(novelDirHandle) {
+  try {
+    const dataDir = await novelDirHandle.getDirectoryHandle(DATA_DIR_NAME);
+    for await (const [, lonHandle] of dataDir.entries()) {
+      if (lonHandle.kind !== 'directory') continue;
+      for await (const [fileName, fh] of lonHandle.entries()) {
+        if (fh.kind !== 'file' || !/\.json$/i.test(fileName)) continue;
+        if (fileName.toLowerCase().endsWith('.json.tmp')) continue;
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Đọc `<manifestBaseName>.json` trong novelDir + (nếu sharded) ghép shard.
  * Trả về object đã parse (chưa migrateNovel), hoặc null.
@@ -177,12 +194,39 @@ export async function readRawNovelPackageFromDir(novelDirHandle, manifestBaseNam
     const f = await novelDirHandle.getFileHandle(`${manifestBaseName}.json`);
     const text = await (await f.getFile()).text();
     const parsed = JSON.parse(text);
-    if (parsed.storageLayout === NOVEL_STORAGE_SHARDED) {
+    const shouldUseShardedRead =
+      parsed.storageLayout === NOVEL_STORAGE_SHARDED ||
+      (!parsed?.storageLayout && await hasAnyShardData(novelDirHandle));
+    if (shouldUseShardedRead) {
       const shardData = shardKeys
         ? await loadShardSubsetFromNovelDir(novelDirHandle, shardKeys)
         : await loadShardsFromNovelDir(novelDirHandle);
       parsed.data = shardData;
+      parsed.storageLayout = NOVEL_STORAGE_SHARDED;
       if (shardKeys) parsed.__partialData = true;
+    }
+    const hasMainData = listShardKeysFromData(parsed.data || {}).length > 0;
+    if (!hasMainData) {
+      try {
+        const bf = await novelDirHandle.getFileHandle(`${manifestBaseName}.backup.json`);
+        const bText = await (await bf.getFile()).text();
+        const backupParsed = JSON.parse(bText);
+        if (backupParsed && typeof backupParsed === 'object') {
+          const backupKeys = listShardKeysFromData(backupParsed.data || {});
+          if (backupKeys.length > 0) {
+            parsed.data = backupParsed.data;
+            if (!parsed.tabsConfig || parsed.tabsConfig.length === 0) {
+              parsed.tabsConfig = backupParsed.tabsConfig || parsed.tabsConfig;
+            }
+            if (!parsed.storageLayout && backupParsed.storageLayout) {
+              parsed.storageLayout = backupParsed.storageLayout;
+            }
+            parsed.__recoveredFromBackup = true;
+          }
+        }
+      } catch {
+        /* ignore missing/corrupt backup */
+      }
     }
     return parsed;
   } catch {

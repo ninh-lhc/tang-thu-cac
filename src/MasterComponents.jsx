@@ -32,6 +32,9 @@ import {
   mapGeminiErrorToUserMessage,
 } from './MasterUtils.jsx';
 import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
+import { autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
+import { MILESTONE_LABELS } from './lib/milestoneLabels.js';
+import { OWNER_TOKEN_GUIDE_TEXT } from './lib/autoOwnerMilestone.js';
 import { mergeTabsByGenres } from './genreTabsMap.js';
 import { searchNovelData, dedupeDeepSearchResults, metadataSearchHits } from './deepSearchCore.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
@@ -801,6 +804,18 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
               Mỗi tên tách ra sẽ cùng mở thẻ này khi bấm liên kết trong ghi chép. Gõ tên thường; <strong className="text-slate-400">không dùng [[...]]</strong> trong ô biệt danh.
             </p>
           </div>
+
+          {parentTabId !== 'nhan-vat' && (
+            <div className="rounded-xl border border-cyan-800/40 bg-cyan-950/15 px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-300 mb-1">Token nhãn cuối dòng (auto mốc Nhân Vật)</p>
+              <p className="text-[11px] text-slate-300 font-serif leading-relaxed">
+                Ở dòng <strong>Người sở hữu</strong>, dùng cú pháp: <code className="text-cyan-300">Lạc Nam (26) ?</code> hoặc <code className="text-cyan-300">Lạc Nam (26) !!</code>.
+              </p>
+              <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
+                {OWNER_TOKEN_GUIDE_TEXT}
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="p-6 pt-4 border-t border-slate-800 flex flex-shrink-0 justify-end gap-3 bg-slate-900">
@@ -819,7 +834,7 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   );
 };
 
-export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultChapterWhenNew, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, parentLabel, geminiApiKey, geminiMode = 'standard' }) => {
+export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultChapterWhenNew, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, parentLabel, geminiApiKey, geminiMode = 'standard', entityMap = [], showToast, autoLinkToastEnabled = true }) => {
   const fieldsTemplate = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const [editingFieldId, setEditingFieldId] = useState(null);
   const [editingFieldLabel, setEditingFieldLabel] = useState('');
@@ -863,14 +878,28 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
   useEffect(() => {
     const handler = () => {
       if (isOpen && formData.chapter && formData.event.trim()) {
-        const hasData = snapshotData.avatar || Object.values(snapshotData.dynamicData || {}).some(v => v);
-        onSave(formData, hasData ? snapshotData : null);
+        const eventWrap = autoWrapWikiLinksByEntityMapWithCount(safeString(formData.event), entityMap);
+        let wrappedCount = eventWrap.count;
+        const wrappedDynamic = Object.fromEntries(
+          Object.entries(snapshotData.dynamicData || {}).map(([k, v]) => {
+            if (typeof v !== 'string') return [k, v];
+            const fWrap = autoWrapWikiLinksByEntityMapWithCount(v, entityMap);
+            wrappedCount += fWrap.count;
+            return [k, fWrap.text];
+          })
+        );
+        const nextSnapshot = { ...snapshotData, dynamicData: wrappedDynamic };
+        const hasData = nextSnapshot.avatar || Object.values(nextSnapshot.dynamicData || {}).some(v => v);
+        onSave({ ...formData, event: eventWrap.text }, hasData ? nextSnapshot : null);
+        if (wrappedCount > 0 && autoLinkToastEnabled && typeof showToast === 'function') {
+          showToast(`Đã tự bọc ${wrappedCount} [[liên kết]] theo thẻ có sẵn.`);
+        }
         onClose();
       }
     };
     window.addEventListener('ttc-save', handler);
     return () => window.removeEventListener('ttc-save', handler);
-  }, [isOpen, formData, snapshotData, onSave, onClose]);
+  }, [isOpen, formData, snapshotData, onSave, onClose, entityMap, showToast, autoLinkToastEnabled]);
 
   const handleAI = async () => {
      const keys = Array.isArray(geminiApiKey) ? geminiApiKey : (geminiApiKey ? [geminiApiKey] : []);
@@ -905,8 +934,22 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
   };
 
   const handleSave = () => {
-     const hasData = snapshotData.avatar || Object.values(snapshotData.dynamicData).some(v => v);
-     onSave(formData, hasData ? snapshotData : null);
+     const eventWrap = autoWrapWikiLinksByEntityMapWithCount(safeString(formData.event), entityMap);
+     let wrappedCount = eventWrap.count;
+     const wrappedDynamic = Object.fromEntries(
+       Object.entries(snapshotData.dynamicData || {}).map(([k, v]) => {
+         if (typeof v !== 'string') return [k, v];
+         const fWrap = autoWrapWikiLinksByEntityMapWithCount(v, entityMap);
+         wrappedCount += fWrap.count;
+         return [k, fWrap.text];
+       })
+     );
+     const nextSnapshot = { ...snapshotData, dynamicData: wrappedDynamic };
+     const hasData = nextSnapshot.avatar || Object.values(nextSnapshot.dynamicData).some(v => v);
+     onSave({ ...formData, event: eventWrap.text }, hasData ? nextSnapshot : null);
+     if (wrappedCount > 0 && autoLinkToastEnabled && typeof showToast === 'function') {
+       showToast(`Đã tự bọc ${wrappedCount} [[liên kết]] theo thẻ có sẵn.`);
+     }
      onClose();
   };
 
@@ -922,6 +965,14 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
                    <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-widest">Mốc Chương *</label>
                    <input type="number" autoFocus value={safeString(formData.chapter)} onChange={e=>setFormData({...formData, chapter: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-amber-300 font-bold focus:border-amber-500 outline-none" placeholder="VD: 150" />
                 </div>
+                {parentTabId === 'nhan-vat' && (
+                  <div className="rounded-lg border border-cyan-800/50 bg-cyan-950/20 px-3 py-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-300 mb-1">Bộ ký tự nhãn timeline (Nhân vật)</p>
+                    <p className="text-[11px] text-slate-300 leading-relaxed font-serif">
+                      {MILESTONE_LABELS.map((x) => `${x.bracketToken} ${x.title}`).join(' · ')}
+                    </p>
+                  </div>
+                )}
                 <div className="flex flex-col flex-1 min-h-0">
                    <div className="flex items-center justify-between gap-2 mb-1">
                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">{terms.msEvent}</label>
@@ -1162,6 +1213,8 @@ export const ModalSettings = ({
   setWikiExactMatchOnly,
   performanceMode,
   setPerformanceMode,
+  autoLinkToastEnabled,
+  setAutoLinkToastEnabled,
 }) => {
   const [newKey, setNewKey] = useState('');
   const [testStatus, setTestStatus] = useState({}); // idx -> 'testing'|'ok'|'fail'
@@ -1312,6 +1365,26 @@ export const ModalSettings = ({
                  </div>
                </label>
              </div>
+
+            <div className="h-px bg-slate-800 w-full"></div>
+
+            <div>
+              <h3 className="text-sm font-bold text-cyan-400 mb-3 uppercase tracking-widest flex items-center gap-2"><Link2 size={16}/> Tự bọc wiki local</h3>
+              <label className="flex items-start gap-3 cursor-pointer group p-3 rounded-xl border border-slate-800 bg-slate-950/40 hover:border-cyan-800/50">
+                <input
+                  type="checkbox"
+                  className="mt-1 rounded border-slate-600 text-cyan-600 focus:ring-cyan-500"
+                  checked={!!autoLinkToastEnabled}
+                  onChange={(e) => setAutoLinkToastEnabled && setAutoLinkToastEnabled(e.target.checked)}
+                />
+                <div>
+                  <span className="text-sm font-bold text-slate-200">Hiện toast sau khi tự bọc link</span>
+                  <p className="text-xs text-slate-500 font-serif mt-1 leading-relaxed">
+                    Khi lưu mốc timeline, app tự bọc <code className="text-cyan-400/90">[[...]]</code> theo thẻ có sẵn. Tắt mục này để giảm thông báo khi lưu liên tục.
+                  </p>
+                </div>
+              </label>
+            </div>
 
             <div className="h-px bg-slate-800 w-full"></div>
 

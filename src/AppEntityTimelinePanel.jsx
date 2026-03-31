@@ -8,7 +8,8 @@ import React, { memo, useState, useRef, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { History, Plus, Edit2, Trash2, Clock, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { DEFAULT_ENTITY_FIELDS, FALLBACK_IMG, resolveFieldsTemplate } from './MasterEngines.js';
-import { AsyncLocalImage, renderMarkdown, safeString, processInline } from './MasterUtils.jsx';
+import { AsyncLocalImage, renderMarkdown, safeString, processInline, generateId } from './MasterUtils.jsx';
+import { MILESTONE_LABELS, parseMilestoneLabel, applyMilestoneLabel } from './lib/milestoneLabels.js';
 
 function isMeaningfulTimelineValue(value) {
   const v = safeString(value).trim().toLowerCase();
@@ -53,6 +54,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   setEditingMilestoneData,
   setIsMilestoneModalOpen,
   handleDeleteMilestone,
+  handleReplaceMilestones,
   getFieldValue,
   setLightboxSrc,
 }) {
@@ -81,6 +83,8 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   // Thu gọn sau khi đã chọn mốc. Mở rộng lại sẽ làm bằng CSS hover (không setState theo chuột để tránh lag).
   const isEventColumnCollapsed = !!selectedMilestoneId;
   const [isEventColumnHovered, setIsEventColumnHovered] = useState(false);
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [reviewPick, setReviewPick] = useState(() => new Set());
   const isEventColumnExpanded = !isEventColumnCollapsed || isEventColumnHovered;
   const isEventColumnContentHidden = isEventColumnCollapsed && !isEventColumnExpanded;
 
@@ -143,7 +147,75 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- milestones trong closure; rowVirtualizer (TanStack) không khuyến nghị gắn deps
   }, [selectedMilestoneId, selectedEntity?.id, milestones.length, collectionSubTab, milestonesPage]);
 
+  useEffect(() => {
+    setIsReviewOpen(false);
+    setReviewPick(new Set());
+  }, [selectedEntity?.id]);
+
   if (collectionSubTab !== 'timeline' || !selectedEntity) return null;
+  const isNhanVatTab = activeTabLon === 'nhan-vat';
+  const reviewRows = milestonesSorted.map((ms) => {
+    const parsed = parseMilestoneLabel(ms.event);
+    return { ...ms, labelId: parsed.labelId, body: parsed.body };
+  });
+  const reviewGroups = [
+    { id: 'critical', title: 'Bước ngoặt', items: reviewRows.filter((x) => x.labelId === 'critical') },
+    { id: 'important', title: 'Quan trọng', items: reviewRows.filter((x) => x.labelId === 'important') },
+    { id: 'ongoing', title: 'Xuyên suốt', items: reviewRows.filter((x) => x.labelId === 'ongoing') },
+    { id: 'uncertain', title: 'Chưa rõ', items: reviewRows.filter((x) => x.labelId === 'uncertain') },
+    { id: 'drop', title: 'Tạm bỏ', items: reviewRows.filter((x) => x.labelId === 'drop') },
+    { id: 'none', title: 'Chưa gắn nhãn', items: reviewRows.filter((x) => !x.labelId) },
+  ];
+  const selectedReviewIds = Array.from(reviewPick);
+  const selectedCount = selectedReviewIds.length;
+  const toggleReviewPick = (id) => {
+    setReviewPick((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const applyReviewLabel = (labelId) => {
+    if (!handleReplaceMilestones || selectedCount === 0) return;
+    const selectedIdSet = new Set(selectedReviewIds);
+    const next = milestonesAll.map((ms) => {
+      if (!selectedIdSet.has(ms.id)) return ms;
+      return { ...ms, event: applyMilestoneLabel(ms.event, labelId) };
+    });
+    handleReplaceMilestones(next, `Đã gắn nhãn cho ${selectedCount} mốc.`);
+    setReviewPick(new Set());
+  };
+  const deleteReviewPicked = () => {
+    if (!handleReplaceMilestones || selectedCount === 0) return;
+    const selectedIdSet = new Set(selectedReviewIds);
+    const next = milestonesAll.filter((ms) => !selectedIdSet.has(ms.id));
+    handleReplaceMilestones(next, `Đã xóa ${selectedCount} mốc khỏi timeline.`);
+    setReviewPick(new Set());
+  };
+  const mergeReviewPicked = () => {
+    if (!handleReplaceMilestones || selectedCount < 2) return;
+    const selectedIdSet = new Set(selectedReviewIds);
+    const picked = milestonesAll.filter((ms) => selectedIdSet.has(ms.id));
+    if (picked.length < 2) return;
+    const sorted = [...picked].sort((a, b) => (parseInt(a.chapter, 10) || 0) - (parseInt(b.chapter, 10) || 0));
+    const newestWithSnapshot = [...sorted].reverse().find((x) => x.snapshot) || null;
+    const mergedEvent = sorted
+      .map((x) => {
+        const parsed = parseMilestoneLabel(x.event);
+        return `- Ch.${safeString(x.chapter)}: ${safeString(parsed.body || x.event)}`;
+      })
+      .join('\n');
+    const merged = {
+      id: generateId('ms'),
+      chapter: parseInt(sorted[0]?.chapter, 10) || 0,
+      event: `[?] Gộp ${picked.length} mốc:\n${mergedEvent}`,
+      snapshot: newestWithSnapshot?.snapshot || null,
+    };
+    const remained = milestonesAll.filter((ms) => !selectedIdSet.has(ms.id));
+    handleReplaceMilestones([...remained, merged], `Đã ghép ${picked.length} mốc thành 1 mốc.`);
+    setReviewPick(new Set());
+  };
 
   return (
     <div className={`flex overflow-hidden w-full h-full flex-col md:flex-row pb-10`}>
@@ -177,7 +249,23 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
               ? 'opacity-0 pointer-events-none'
               : 'opacity-100'
           }`}>Mốc Sự Kiện</h3>
-          <button onClick={() => { setEditingMilestoneData(null); setIsMilestoneModalOpen(true); }} className="p-2 bg-emerald-900/30 text-emerald-400 rounded-[40px] hover:bg-emerald-800/50 transition-colors" title="Thêm mốc mới"><Plus size={16}/></button>
+          <div className="flex items-center gap-2">
+            {isNhanVatTab && (
+              <button
+                type="button"
+                onClick={() => setIsReviewOpen((p) => !p)}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-colors ${
+                  isReviewOpen
+                    ? 'text-cyan-300 bg-cyan-950/40 border-cyan-700/50'
+                    : 'text-slate-300 bg-slate-900 border-slate-700 hover:border-cyan-700/40'
+                }`}
+                title="Rà soát mốc theo nhãn ký tự"
+              >
+                Rà soát
+              </button>
+            )}
+            <button onClick={() => { setEditingMilestoneData(null); setIsMilestoneModalOpen(true); }} className="p-2 bg-emerald-900/30 text-emerald-400 rounded-[40px] hover:bg-emerald-800/50 transition-colors" title="Thêm mốc mới"><Plus size={16}/></button>
+          </div>
         </div>
 
         {milestonesAll.length === 0 ? (
@@ -322,6 +410,55 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
       </div>
 
       <div className="flex-1 min-w-0 overflow-y-auto custom-scrollbar pl-2 pr-2">
+        {isNhanVatTab && isReviewOpen && (
+          <div className="mb-4 rounded-2xl border border-cyan-800/40 bg-cyan-950/10 p-4">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-cyan-300 mb-2">Bộ nhãn ký tự</div>
+            <div className="text-xs text-slate-300 font-serif mb-3">
+              {MILESTONE_LABELS.map((x) => `${x.bracketToken} ${x.title}`).join(' · ')}
+            </div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {MILESTONE_LABELS.map((x) => (
+                <button
+                  key={x.id}
+                  type="button"
+                  disabled={selectedCount === 0}
+                  onClick={() => applyReviewLabel(x.id)}
+                  className="px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-900 text-slate-300 text-[11px] font-bold disabled:opacity-40"
+                >
+                  Gắn {x.bracketToken}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={selectedCount === 0}
+                onClick={() => applyReviewLabel(null)}
+                className="px-2.5 py-1 rounded-lg border border-slate-700/60 bg-slate-950/30 text-slate-300 text-[11px] font-bold disabled:opacity-40"
+                title="Xóa token nhãn ở đầu event"
+              >
+                Gỡ nhãn
+              </button>
+              <button type="button" disabled={selectedCount < 2} onClick={mergeReviewPicked} className="px-2.5 py-1 rounded-lg border border-amber-700/50 bg-amber-950/20 text-amber-300 text-[11px] font-bold disabled:opacity-40">Ghép mốc</button>
+              <button type="button" disabled={selectedCount === 0} onClick={deleteReviewPicked} className="px-2.5 py-1 rounded-lg border border-rose-700/50 bg-rose-950/20 text-rose-300 text-[11px] font-bold disabled:opacity-40">Xóa</button>
+            </div>
+            <div className="text-[11px] text-slate-400 mb-2">Đã chọn: {selectedCount} mốc</div>
+            <div className="max-h-[280px] overflow-y-auto custom-scrollbar space-y-3 pr-1">
+              {reviewGroups.map((g) => (
+                <div key={g.id}>
+                  <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1">{g.title} ({g.items.length})</div>
+                  {g.items.length === 0 ? (
+                    <div className="text-[11px] text-slate-600 italic mb-1">Không có mốc</div>
+                  ) : g.items.map((ms) => (
+                    <label key={ms.id} className="flex items-start gap-2 text-xs text-slate-200 py-1">
+                      <input type="checkbox" checked={reviewPick.has(ms.id)} onChange={() => toggleReviewPick(ms.id)} className="mt-0.5" />
+                      <span className="text-slate-500 w-12 flex-shrink-0">Ch.{safeString(ms.chapter)}</span>
+                      <span className="line-clamp-2">{safeString(ms.body || ms.event)}</span>
+                    </label>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {selectedMilestoneId && selectedEntity.milestones?.find((m) => m.id === selectedMilestoneId) ? (() => {
           const selectedMs = selectedEntity.milestones.find((m) => m.id === selectedMilestoneId);
           const fields =

@@ -4,6 +4,7 @@ import { MarkdownToolbar } from './MasterComponents.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import { safeString, mapGeminiErrorToUserMessage, truncateForAI, suggestWikiLinkSpotsWithAI } from './MasterUtils.jsx';
 import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
+import { autoWrapWikiLinksByEntityMap } from './lib/autoWrapWikiLinks.js';
 import {
   getEntityNotesFontStack,
   getEntityNotesPrefs,
@@ -165,7 +166,8 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           id="save-entity-btn"
           type="button"
           onClick={() => {
-            handleUpdateEntityInfo(notesEdit.text);
+            const next = autoWrapWikiLinksByEntityMap(notesEdit.text, entityMap);
+            handleUpdateEntityInfo(next);
             setIsSplitPreview(false);
             setIsEntityEditing(false);
           }}

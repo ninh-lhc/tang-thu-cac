@@ -112,6 +112,7 @@ export function AppCollectionSection({
   setIsMilestoneModalOpen,
   handleMergeSnapshotToProfile,
   handleDeleteMilestone,
+  handleReplaceMilestones,
   getFieldValue,
   // standard editor
   isEditingMode,
@@ -533,6 +534,7 @@ export function AppCollectionSection({
               setIsMilestoneModalOpen={setIsMilestoneModalOpen}
               handleMergeSnapshotToProfile={handleMergeSnapshotToProfile}
               handleDeleteMilestone={handleDeleteMilestone}
+              handleReplaceMilestones={handleReplaceMilestones}
               getFieldValue={getFieldValue}
               setLightboxSrc={setLightboxSrc}
             />

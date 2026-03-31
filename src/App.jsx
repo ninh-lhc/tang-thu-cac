@@ -76,6 +76,7 @@ import { buildXrefEntityCatalogText } from './lib/xrefBangDanhMucThucThe.js';
 import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
+import { appendOwnerAcquisitionMilestone, parseOwnerTimelineHint } from './lib/autoOwnerMilestone.js';
 
 const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
   value,
@@ -394,6 +395,14 @@ export default function App() {
       return localStorage.getItem('tangthu_perf_mode') === '1';
     } catch {
       return false;
+    }
+  });
+  const [autoLinkToastEnabled, setAutoLinkToastEnabled] = useState(() => {
+    try {
+      const saved = localStorage.getItem('tangthu_autolink_toast');
+      return saved !== '0';
+    } catch {
+      return true;
     }
   });
 
@@ -966,6 +975,11 @@ export default function App() {
       localStorage.setItem('tangthu_perf_mode', performanceMode ? '1' : '0');
     } catch { void 0; }
   }, [performanceMode]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('tangthu_autolink_toast', autoLinkToastEnabled ? '1' : '0');
+    } catch { void 0; }
+  }, [autoLinkToastEnabled]);
   useEffect(() => {
     const q = searchQuery.trim();
     if (q.length < 2) return;
@@ -1742,8 +1756,16 @@ export default function App() {
     const prev = activeNovelData ? structuredClone(activeNovelData) : null;
     const isCreate = !formData.id;
     const newEntityId = isCreate ? generateId('ent') : formData.id;
+    const ownerTimelineHint = isCreate
+      ? parseOwnerTimelineHint({
+        dynamicData,
+        fieldsTemplate: currentTabConfig?.fieldsTemplate || [],
+        rawText: formData.rawText,
+      })
+      : null;
     let createTargetEntityId = null;
     let createMergedToExisting = false;
+    let ownerMilestoneAutoApplied = false;
     updateActiveNovelData(nov => {
        if (!nov.data) nov.data = {}; if (!nov.data[activeTabLon]) nov.data[activeTabLon] = {};
        let tabData = nov.data[activeTabLon][activeTabNho || 'default'];
@@ -1784,6 +1806,9 @@ export default function App() {
           tabData.entities.push({ id: newEntityId, name: canonicalName, avatar: formData.avatar, rawText: formData.rawText, status: statusLine, dynamicData: mergedNew, info: copyRawToInfo ? formData.rawText : '', milestones: [], images: [] });
           createTargetEntityId = newEntityId;
           lockFieldsTemplateIfFirstEntity(nov, activeTabLon, activeTabNho || 'default');
+          if (activeTabLon !== 'nhan-vat' && ownerTimelineHint) {
+            ownerMilestoneAutoApplied = appendOwnerAcquisitionMilestone(nov, ownerTimelineHint, canonicalName);
+          }
         }
        }
 
@@ -1810,7 +1835,9 @@ export default function App() {
       ? "Đã tu bổ lại Thực Thể!"
       : createMergedToExisting
         ? "Tên mới trùng thẻ cũ — đã thêm vào bí danh và liên kết về thẻ hiện có."
-        : "Đã ngưng tụ Thực Thể mới!";
+        : ownerMilestoneAutoApplied
+          ? "Đã ngưng tụ Thực Thể mới và tự ghi mốc cho Nhân Vật sở hữu."
+          : "Đã ngưng tụ Thực Thể mới!";
     const saveToastLevel = formData.id || !createMergedToExisting ? "success" : "warning";
     showToast(saveToastMsg, saveToastLevel, prev ? {
       undoLabel: "Hoàn tác", onUndo: () => {
@@ -1912,6 +1939,36 @@ export default function App() {
           }
        }
     });
+  };
+
+  const handleReplaceMilestones = (nextMilestones, toastMessage = 'Đã cập nhật mốc.') => {
+    const prev = activeNovelData ? structuredClone(activeNovelData) : null;
+    const nextArr = Array.isArray(nextMilestones) ? nextMilestones : [];
+
+    updateActiveNovelData((nov) => {
+      if (!nov.data?.[activeTabLon]) return;
+      const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
+      const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
+      if (!ent) return;
+      ent.milestones = nextArr;
+    });
+
+    if (selectedMilestoneId && !nextArr.some((m) => m?.id === selectedMilestoneId)) {
+      setSelectedMilestoneId(null);
+    }
+
+    if (toastMessage && typeof showToast === 'function') {
+      showToast(toastMessage, 'success', prev
+        ? {
+          undoLabel: 'Hoàn tác',
+          onUndo: () => {
+            setActiveNovelData(structuredClone(prev));
+            void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
+          },
+        }
+        : null
+      );
+    }
   };
 
   const handleDeleteEntity = (id) => {
@@ -2202,10 +2259,15 @@ export default function App() {
     const loaded = await loadNovelData(meta, dirHandle, loadNovelOpts);
     if (loaded?.novel) {
       const data = loaded.novel;
+      const recoveredFromBackup = Boolean(data.__recoveredFromBackup);
+      if (recoveredFromBackup) delete data.__recoveredFromBackup;
       setActiveNovelDirHandle(loaded.novelDir ?? null);
       if (!data.tabsConfig) data.tabsConfig = structuredClone(globalTabsConfig);
       const migrated = migrateTabsFieldTemplates(data);
       setActiveNovelData(migrated);
+      if (recoveredFromBackup) {
+        showToast('Đã tự khôi phục dữ liệu truyện từ file backup.', 'warning');
+      }
       if (!migrated.__partialData) {
         const s = countEntitiesInNovel(migrated);
         const prevS = novelStatsByIdRef.current[migrated.id];
@@ -3062,6 +3124,7 @@ export default function App() {
                             setIsMilestoneModalOpen={setIsMilestoneModalOpen}
                             handleMergeSnapshotToProfile={handleMergeSnapshotToProfile}
                             handleDeleteMilestone={handleDeleteMilestone}
+                            handleReplaceMilestones={handleReplaceMilestones}
                             getFieldValue={getFieldValue}
                             isEditingMode={isEditingMode}
                             setIsEditingMode={setIsEditingMode}
@@ -3081,7 +3144,7 @@ export default function App() {
 
       <Suspense fallback={null}>
         <ModalEntity isOpen={isEntityModalOpen} onClose={() => setIsEntityModalOpen(false)} onSave={handleSaveEntity} initialData={editingEntityData} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} geminiMode={aiMode} />
-        <ModalMilestone isOpen={isMilestoneModalOpen} onClose={() => setIsMilestoneModalOpen(false)} onSave={handleSaveMilestone} initialData={editingMilestoneData} defaultChapterWhenNew={editingMilestoneData ? undefined : String(Math.max(0, parseInt(activeNovelData?.readingAnchorChapter ?? activeNovelData?.chaptersRead ?? 0, 10) || 0))} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} geminiMode={aiMode} />
+        <ModalMilestone isOpen={isMilestoneModalOpen} onClose={() => setIsMilestoneModalOpen(false)} onSave={handleSaveMilestone} initialData={editingMilestoneData} defaultChapterWhenNew={editingMilestoneData ? undefined : String(Math.max(0, parseInt(activeNovelData?.readingAnchorChapter ?? activeNovelData?.chaptersRead ?? 0, 10) || 0))} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} geminiMode={aiMode} entityMap={entityMap} showToast={showToast} autoLinkToastEnabled={autoLinkToastEnabled} />
         <ModalSettings
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
@@ -3099,6 +3162,8 @@ export default function App() {
           setWikiExactMatchOnly={setWikiExactMatchOnly}
           performanceMode={performanceMode}
           setPerformanceMode={setPerformanceMode}
+          autoLinkToastEnabled={autoLinkToastEnabled}
+          setAutoLinkToastEnabled={setAutoLinkToastEnabled}
         />
         {isCommandPaletteOpen && (
           <AppModalLenhNhanh
