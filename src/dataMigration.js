@@ -20,6 +20,86 @@ function clone(v) {
   }
 }
 
+function normalizeKey(s) {
+  return String(s || '').trim().toLowerCase();
+}
+
+function parseMilestoneBodyText(eventText) {
+  const raw = String(eventText || '').trimStart();
+  if (!raw) return '';
+  const withoutBracket = raw.replace(/^\[(\?\?|!!|!|\?|\.\.\.|x)\]\s*/i, '');
+  if (withoutBracket !== raw) return withoutBracket;
+  const withoutPlain = raw.replace(/^(\?\?|!!|!|\?|\.\.\.|x)\s+/i, '');
+  return withoutPlain;
+}
+
+function extractAutoOwnerWikiFromMilestone(ms) {
+  const wikiFromMeta = String(ms?.meta?.itemWiki || '').trim();
+  if (/^\[\[[^\]]+\]\]$/.test(wikiFromMeta)) return wikiFromMeta;
+  const body = parseMilestoneBodyText(ms?.event);
+  const parts = body.split(' · ').map((x) => x.trim()).filter(Boolean);
+  for (const p of parts) {
+    const m = p.match(/^Nhận được\s+(\[\[[^\]]+\]\])$/i);
+    if (m) return m[1];
+  }
+  return '';
+}
+
+function isAutoOwnerMilestone(ms) {
+  if (!isObj(ms)) return false;
+  if (ms.meta?.source === 'auto-owner') return true;
+  return typeof ms.id === 'string' && ms.id.startsWith('ms-auto-');
+}
+
+function backfillAutoOwnerItemEntityIdForNovel(nov) {
+  if (!isObj(nov?.data)) return;
+  const nameToIds = new Map();
+  for (const lonData of Object.values(nov.data || {})) {
+    if (!isObj(lonData)) continue;
+    for (const tabData of Object.values(lonData)) {
+      const entities = Array.isArray(tabData?.entities) ? tabData.entities : [];
+      for (const ent of entities) {
+        const id = String(ent?.id || '').trim();
+        const name = String(ent?.name || '').trim();
+        if (!id || !name) continue;
+        const k = normalizeKey(name);
+        const arr = nameToIds.get(k) || [];
+        arr.push(id);
+        nameToIds.set(k, arr);
+      }
+    }
+  }
+
+  for (const lonData of Object.values(nov.data || {})) {
+    if (!isObj(lonData)) continue;
+    for (const tabData of Object.values(lonData)) {
+      const entities = Array.isArray(tabData?.entities) ? tabData.entities : [];
+      for (const ent of entities) {
+        if (!Array.isArray(ent?.milestones)) continue;
+        ent.milestones = ent.milestones.map((ms) => {
+          if (!isAutoOwnerMilestone(ms)) return ms;
+          const hasId = String(ms?.meta?.itemEntityId || '').trim();
+          if (hasId) return ms;
+          const wiki = extractAutoOwnerWikiFromMilestone(ms);
+          const label = String(wiki || '').replace(/^\[\[|\]\]$/g, '').trim();
+          if (!label) return ms;
+          const candidates = nameToIds.get(normalizeKey(label)) || [];
+          if (candidates.length !== 1) return ms;
+          return {
+            ...ms,
+            meta: {
+              ...(isObj(ms.meta) ? ms.meta : {}),
+              source: 'auto-owner',
+              itemWiki: wiki || ms.meta?.itemWiki,
+              itemEntityId: candidates[0],
+            },
+          };
+        });
+      }
+    }
+  }
+}
+
 /**
  * Schema metadata một truyện (tangthu_index > metadata[]):
  *
@@ -167,6 +247,8 @@ export function migrateNovel(raw) {
       nov.data[lonId][nhoId] = sanitizeTabData(nov.data[lonId][nhoId]);
     }
   }
+
+  backfillAutoOwnerItemEntityIdForNovel(nov);
 
   delete nov.storageLayout;
 
