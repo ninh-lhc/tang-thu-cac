@@ -20,6 +20,15 @@ describe('autoOwnerMilestone', () => {
     expect(out).toEqual({ ownerName: 'Lạc Nam', chapter: 120, labelId: 'critical' });
   });
 
+  it('parses owner hint from "Chủ nhân" line', () => {
+    const out = parseOwnerTimelineHint({
+      dynamicData: {},
+      fieldsTemplate: [],
+      rawText: 'Ghi chú...\nChủ nhân: Lạc Nam (2) !!',
+    });
+    expect(out).toEqual({ ownerName: 'Lạc Nam', chapter: 2, labelId: 'critical' });
+  });
+
   it('appends into existing chapter milestone', () => {
     const novel = {
       data: {

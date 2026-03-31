@@ -2,7 +2,7 @@ import { findEquivalentEntityByName } from './entityNameIdentity.js';
 import { applyMilestoneLabel, parseMilestoneLabel } from './milestoneLabels.js';
 
 const OWNER_LABEL_RE = /(nguoi\s*so\s*huu|ch[uủ]\s*nh[aâ]n)/i;
-const OWNER_LINE_PREFIX_RE = /^\s*[-*]?\s*(nguoi\s*so\s*huu)\s*:\s*/i;
+const OWNER_LINE_PREFIX_RE = /^\s*[-*]?\s*(nguoi\s*so\s*huu|chu\s*nhan)\s*:\s*/i;
 const OWNER_VALUE_RE = /^(.*?)\s*\((\d{1,6})\)\s*(\[(?:!!|!|\?|\.\.\.|x)\]|!!|!|\?|\.\.\.|x)?\s*$/i;
 
 const LABEL_RANK = {

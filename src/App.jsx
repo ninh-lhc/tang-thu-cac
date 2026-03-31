@@ -1877,6 +1877,15 @@ export default function App() {
   };
 
   const handleUpdateEntityInfo = (content) => {
+    const ownerTimelineHint = activeTabLon !== 'nhan-vat'
+      ? parseOwnerTimelineHint({
+        dynamicData: selectedEntity?.dynamicData || {},
+        fieldsTemplate: currentTabConfig?.fieldsTemplate || [],
+        rawText: content,
+      })
+      : null;
+    let ownerMilestoneAutoApplied = false;
+
     updateActiveNovelData(nov => {
        if (!nov.data?.[activeTabLon]) return;
        const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
@@ -1886,9 +1895,16 @@ export default function App() {
          // Network “Mạng Lưới Nhân Quả” đang đọc [[...]] từ rawText của thẻ.
          // Đồng bộ để network vẫn tròn khi bạn viết ở “Ghi Chép Chi Tiết”.
          ent.rawText = content;
+         if (ownerTimelineHint) {
+           ownerMilestoneAutoApplied = appendOwnerAcquisitionMilestone(nov, ownerTimelineHint, ent.name);
+         }
        }
     });
-    showToast("Ghi chép hồ sơ thành công!");
+    showToast(
+      ownerMilestoneAutoApplied
+        ? "Ghi chép hồ sơ thành công! Đã tự ghi mốc sở hữu vào timeline Nhân Vật."
+        : "Ghi chép hồ sơ thành công!"
+    );
   };
 
   const handleSaveMilestone = (formData, snapshot) => {
