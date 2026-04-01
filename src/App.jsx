@@ -77,6 +77,7 @@ import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { appendOwnerAcquisitionMilestone, parseOwnerTimelineHint } from './lib/autoOwnerMilestone.js';
+import { applyAutoRelationNotesForEntity } from './lib/autoRelationDetailNote.js';
 
 const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
   value,
@@ -1787,6 +1788,12 @@ export default function App() {
              dynamicData: mergedDyn,
              images: prevImages,
            };
+           applyAutoRelationNotesForEntity(nov, {
+             sourceEntity: tabData.entities[idx],
+             sourceLonId: activeTabLon,
+             sourceParentLabel: currentTabConfig?._parentLabel || '',
+             statusLine,
+           });
          }
        } else {
          const mergedNew = { ...dynamicData };
@@ -1802,8 +1809,22 @@ export default function App() {
             if (!matched.entity.dynamicData) matched.entity.dynamicData = {};
             matched.entity.dynamicData.f_alias = mergedAlias;
           }
+          applyAutoRelationNotesForEntity(nov, {
+            sourceEntity: matched.entity,
+            sourceLonId: activeTabLon,
+            sourceParentLabel: currentTabConfig?._parentLabel || '',
+            statusLine,
+          });
         } else {
-          tabData.entities.push({ id: newEntityId, name: canonicalName, avatar: formData.avatar, rawText: formData.rawText, status: statusLine, dynamicData: mergedNew, info: copyRawToInfo ? formData.rawText : '', milestones: [], images: [] });
+          const baseInfo = copyRawToInfo ? formData.rawText : '';
+          tabData.entities.push({ id: newEntityId, name: canonicalName, avatar: formData.avatar, rawText: formData.rawText, status: statusLine, dynamicData: mergedNew, info: baseInfo, milestones: [], images: [] });
+          const created = tabData.entities[tabData.entities.length - 1];
+          applyAutoRelationNotesForEntity(nov, {
+            sourceEntity: created,
+            sourceLonId: activeTabLon,
+            sourceParentLabel: currentTabConfig?._parentLabel || '',
+            statusLine,
+          });
           createTargetEntityId = newEntityId;
           lockFieldsTemplateIfFirstEntity(nov, activeTabLon, activeTabNho || 'default');
           if (activeTabLon !== 'nhan-vat' && ownerTimelineHint) {
