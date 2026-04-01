@@ -1344,6 +1344,23 @@ export default function App() {
     dirHandleRef,
   });
 
+  const scrollAppContentToTop = useCallback(() => {
+    const mainScroller = document.getElementById('main-scroll-container');
+    const colScroller = document.getElementById('collection-scroll-container');
+    if (mainScroller) {
+      mainScroller.scrollTop = 0;
+      if (typeof mainScroller.scrollTo === 'function') {
+        mainScroller.scrollTo({ top: 0, behavior: 'auto' });
+      }
+    }
+    if (colScroller) {
+      colScroller.scrollTop = 0;
+      if (typeof colScroller.scrollTo === 'function') {
+        colScroller.scrollTo({ top: 0, behavior: 'auto' });
+      }
+    }
+  }, []);
+
   const handleNavigate = useCallback((dest) => {
      if (dest.type === 'QUICK_CREATE') { setQuickCreateData(dest.name); return; }
      setNavHistory(prev => {
@@ -1359,7 +1376,14 @@ export default function App() {
      if (dest.entityId) { setSelectedEntityId(dest.entityId); setCollectionSubTab('detail'); } 
      else { setSelectedEntityId(null); setCollectionSubTab('list'); }
      setIsEditingMode(false); setIsEntityEditing(false);
-  }, [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, setEntitySearch]);
+     // Link navigation should always land at top, including same-tab hops.
+     scrollAppContentToTop();
+     if (typeof requestAnimationFrame === 'function') {
+       requestAnimationFrame(() => scrollAppContentToTop());
+     } else {
+       setTimeout(() => scrollAppContentToTop(), 0);
+     }
+  }, [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, setEntitySearch, scrollAppContentToTop]);
 
   const handleGoBack = useCallback(() => {
      if (navHistory.length === 0) return;
@@ -2287,13 +2311,12 @@ export default function App() {
 
   useEffect(() => {
       const timer = setTimeout(() => {
-          const mainScroller = document.getElementById('main-scroll-container'); const colScroller = document.getElementById('collection-scroll-container');
+          scrollAppContentToTop();
           // Tránh tích lũy nhiều animation "smooth" khi người dùng chuyển tab nhanh.
-          if (mainScroller) mainScroller.scrollTo({ top: 0, behavior: 'auto' });
-          if (colScroller) colScroller.scrollTo({ top: 0, behavior: 'auto' });
+
       }, 50);
       return () => clearTimeout(timer);
-  }, [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab]);
+  }, [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, scrollAppContentToTop]);
 
   // ==========================================
   // CÁC HÀM CÒN THIẾU (MISSING HANDLERS)
