@@ -76,19 +76,15 @@ import { buildXrefEntityCatalogText } from './lib/xrefBangDanhMucThucThe.js';
 import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
-<<<<<<< HEAD
-import { appendOwnerAcquisitionMilestone, parseOwnerTimelineHint } from './lib/autoOwnerMilestone.js';
 import { applyAutoRelationNotesForEntity } from './lib/autoRelationDetailNote.js';
-=======
 import {
   appendOwnerAcquisitionMilestone,
-  parseOwnerTimelineHint,
   parseOwnerTimelineHintDetailed,
   ownerTimelineHintReasonToMessage,
   removeOwnerAcquisitionMilestonesByItem,
   syncAutoOwnerMilestonesItemRename,
 } from './lib/autoOwnerMilestone.js';
->>>>>>> 4b35a301709b800cf2b267f743bf440221e9b066
+import { syncAllTheLucMapAutoBlocks, syncTheLucMapAutoBlocks } from './lib/theLucBanDoSync.js';
 
 const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
   value,
@@ -1780,6 +1776,7 @@ export default function App() {
     let createMergedToExisting = false;
     let ownerMilestoneAutoApplied = false;
     let ownerMilestoneRenameSynced = 0;
+    let forceMapAutoApplied = false;
     updateActiveNovelData(nov => {
        if (!nov.data) nov.data = {}; if (!nov.data[activeTabLon]) nov.data[activeTabLon] = {};
        let tabData = nov.data[activeTabLon][activeTabNho || 'default'];
@@ -1802,14 +1799,12 @@ export default function App() {
              dynamicData: mergedDyn,
              images: prevImages,
            };
-<<<<<<< HEAD
            applyAutoRelationNotesForEntity(nov, {
              sourceEntity: tabData.entities[idx],
              sourceLonId: activeTabLon,
              sourceParentLabel: currentTabConfig?._parentLabel || '',
              statusLine,
            });
-=======
           const nextName = safeString(formData.name).trim();
           if (activeTabLon !== 'nhan-vat' && prevName && nextName && prevName !== nextName) {
             ownerMilestoneRenameSynced = syncAutoOwnerMilestonesItemRename(nov, {
@@ -1818,7 +1813,6 @@ export default function App() {
               newName: nextName,
             });
           }
->>>>>>> 4b35a301709b800cf2b267f743bf440221e9b066
          }
        } else {
          const mergedNew = { ...dynamicData };
@@ -1868,6 +1862,14 @@ export default function App() {
         }
 
        nov.data[activeTabLon][activeTabNho || 'default'] = tabData;
+      const targetIdForSync = formData.id || createTargetEntityId;
+      if (activeTabLon === 'the-luc' && targetIdForSync) {
+        forceMapAutoApplied = syncTheLucMapAutoBlocks(nov, {
+          sourceLonId: activeTabLon,
+          sourceNhoId: activeTabNho || 'default',
+          entityId: targetIdForSync,
+        }) || forceMapAutoApplied;
+      }
     });
 
     // UX: tạo thẻ xong thì tự vào tab Hồ Sơ + bật chế độ ghi chép chi tiết.
@@ -1896,6 +1898,9 @@ export default function App() {
     } : null);
     if (ownerMilestoneRenameSynced > 0) {
       showToast(`Đã đồng bộ ${ownerMilestoneRenameSynced} mốc auto theo tên mới của thẻ.`, 'success');
+    }
+    if (forceMapAutoApplied) {
+      showToast('Đã đồng bộ quan hệ Thế Lực ↔ Bản đồ (AUTO).', 'success');
     }
     const ownerWarn = ownerTimelineHintReasonToMessage(ownerTimelineHintDetail?.reason);
     if (!ownerMilestoneAutoApplied && ownerWarn && activeTabLon !== 'nhan-vat') {
@@ -2061,6 +2066,7 @@ export default function App() {
       const updated = structuredClone(data);
       let removed = false;
       let removedEntityName = '';
+      let removedLonId = '';
       for (const lonId of Object.keys(updated.data || {})) {
         const lonData = updated.data[lonId];
         if (!lonData || typeof lonData !== 'object') continue;
@@ -2071,6 +2077,7 @@ export default function App() {
           if (idx >= 0) {
             removedEntityName = safeString(tabData.entities[idx]?.name).trim();
             tabData.entities.splice(idx, 1);
+            removedLonId = lonId;
             removed = true;
             break;
           }
@@ -2079,11 +2086,15 @@ export default function App() {
       }
       if (removed) {
         let removedAutoMsCount = 0;
+        let forceMapResynced = false;
         if (removedEntityName) {
           removedAutoMsCount = removeOwnerAcquisitionMilestonesByItem(updated, {
             name: removedEntityName,
             entityId: entityIdToDelete,
           });
+        }
+        if (removedLonId === 'the-luc') {
+          forceMapResynced = syncAllTheLucMapAutoBlocks(updated, { sourceLonId: 'the-luc' }) || forceMapResynced;
         }
         const nextStats = { ...novelStatsByIdRef.current, [updated.id]: countEntitiesInNovel(updated) };
         novelStatsByIdRef.current = nextStats;
@@ -2102,6 +2113,9 @@ export default function App() {
             void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
           },
         });
+        if (forceMapResynced) {
+          showToast('Đã đồng bộ lại AUTO Thế Lực ↔ Bản đồ sau khi xóa thẻ.', 'success');
+        }
       }
       confirmDeleteEntityRef.current = null;
     };
@@ -2264,20 +2278,8 @@ export default function App() {
   };
 
   useEffect(() => {
-      const handleKeyDown = (e) => {
-          if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); document.dispatchEvent(new CustomEvent('app-save-shortcut')); }
-          if (e.key === 'Escape') {
-            setLightboxSrc(null);
-            if (isEditingMode) setIsEditingMode(false);
-            if (isEntityEditing) setIsEntityEditing(false);
-          }
-      };
-      window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isEditingMode, isEntityEditing]);
-
-  useEffect(() => {
       const handleSave = () => { if (isEditingMode) document.getElementById('save-standard-btn')?.click(); if (isEntityEditing) document.getElementById('save-entity-btn')?.click(); };
-      document.addEventListener('app-save-shortcut', handleSave); return () => document.removeEventListener('app-save-shortcut', handleSave);
+      window.addEventListener('ttc-save', handleSave); return () => window.removeEventListener('ttc-save', handleSave);
   }, [isEditingMode, isEntityEditing]);
 
   useEffect(() => {
@@ -2745,6 +2747,9 @@ export default function App() {
     setIsManageTabsOpen,
     setIsGenreFilterOpen,
     setQuickCreateData,
+    setLightboxSrc,
+    setIsEditingMode,
+    setIsEntityEditing,
   });
 
   const runCommandPaletteAction = useCallback((fn) => {

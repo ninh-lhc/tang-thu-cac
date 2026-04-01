@@ -34,13 +34,6 @@ function isMeaningfulTimelineValue(value) {
   return !emptyTokens.has(v);
 }
 
-function normalizeAscii(s) {
-  return String(s || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-}
-
 /** Chiều cao ước lượng mỗi hàng mốc (p-4 + 2 dòng + gap); virtualizer dùng làm mặc định. */
 const MILESTONE_LIST_ROW_ESTIMATE_PX = 96;
 

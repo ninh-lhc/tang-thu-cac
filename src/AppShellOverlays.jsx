@@ -8,6 +8,7 @@ import React from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { AsyncLocalImage, safeString } from './MasterUtils.jsx';
 import { FALLBACK_IMG } from './MasterEngines.js';
+import { useFocusTrap } from './lib/useFocusTrap.js';
 
 export const AppShellOverlays = React.memo(function AppShellOverlays({
   lightboxSrc,
@@ -22,6 +23,7 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
   currentContextDirHandle,
 }) {
   const [lightboxZoom, setLightboxZoom] = React.useState(1);
+  const lightboxTrapRef = useFocusTrap(Boolean(lightboxSrc));
   const clampZoom = React.useCallback((z) => Math.min(5, Math.max(0.25, z)), []);
 
   React.useEffect(() => {
@@ -39,7 +41,11 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
     <>
       {lightboxSrc && (
         <div
+          ref={lightboxTrapRef}
           className="fixed inset-0 z-[500] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-fast cursor-zoom-out"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Xem ảnh phóng to"
           onClick={() => setLightboxSrc(null)}
         >
           <button

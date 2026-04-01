@@ -1,0 +1,243 @@
+import { describe, expect, it } from 'vitest';
+import { buildForceRowsForLocation, syncAllTheLucMapAutoBlocks, syncTheLucMapAutoBlocks } from './theLucBanDoSync.js';
+
+describe('theLucBanDoSync', () => {
+  it('sorts force rows by type > rank > name > path', () => {
+    const rows = buildForceRowsForLocation([
+      { name: 'B', meta: { orgType: 'Gia Tộc', rankText: 'Bát cấp', rankNum: 8, tailPath: 'A' } },
+      { name: 'A', meta: { orgType: 'Gia Tộc', rankText: 'Bát cấp', rankNum: 8, tailPath: 'B' } },
+      { name: 'C', meta: { orgType: 'Tông Môn', rankText: 'Tam cấp', rankNum: 3, tailPath: 'A' } },
+      { name: 'D', meta: { orgType: 'Gia Tộc', rankText: 'Cửu cấp', rankNum: 9, tailPath: 'A' } },
+    ]);
+    expect(rows.map((x) => x.name)).toEqual(['D', 'A', 'B', 'C']);
+  });
+
+  it('keeps hyphenated location token as one map entity', () => {
+    const nov = {
+      tabsConfig: [
+        { id: 'the-luc', label: 'The Luc', subTabs: [{ id: 'to-chuc', label: 'To Chuc', viewType: 'collection-track' }] },
+        { id: 'tai-nguyen', label: 'Tai Nguyen', subTabs: [{ id: 'dia-danh', label: 'Ban do / Bi canh', viewType: 'collection-track' }] },
+      ],
+      data: {
+        'the-luc': {
+          'to-chuc': {
+            overview: '',
+            entities: [
+              {
+                id: 'tl1',
+                name: 'Lac Gia',
+                dynamicData: { f_status: 'Gia Toc - Bat Cap the luc - Tay-Bac Chau' },
+                info: '',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const ok = syncTheLucMapAutoBlocks(nov, {
+      sourceLonId: 'the-luc',
+      sourceNhoId: 'to-chuc',
+      entityId: 'tl1',
+    });
+    expect(ok).toBe(true);
+    const mapEntities = nov.data['tai-nguyen']['dia-danh'].entities;
+    expect(mapEntities.length).toBe(1);
+    expect(mapEntities[0].name).toBe('Tay-Bac Chau');
+  });
+
+  it('parses accented "Tám" rank higher than "Tam" rank', () => {
+    const rankEight = 'T\u00E1m C\u1EA5p th\u1EBF l\u1EF1c';
+    const rankThree = 'Tam C\u1EA5p th\u1EBF l\u1EF1c';
+    const nov = {
+      tabsConfig: [
+        { id: 'the-luc', label: 'The Luc', subTabs: [{ id: 'to-chuc', label: 'To Chuc', viewType: 'collection-track' }] },
+        { id: 'tai-nguyen', label: 'Tai Nguyen', subTabs: [{ id: 'dia-danh', label: 'Ban do', viewType: 'collection-track' }] },
+      ],
+      data: {
+        'the-luc': {
+          'to-chuc': {
+            overview: '',
+            entities: [
+              { id: 'e8', name: 'ZZZ', dynamicData: { f_status: `Tong Mon - ${rankEight} - Thien Ha Chau` }, info: '' },
+              { id: 'e3', name: 'AAA', dynamicData: { f_status: `Tong Mon - ${rankThree} - Thien Ha Chau` }, info: '' },
+            ],
+          },
+        },
+        'tai-nguyen': {
+          'dia-danh': {
+            overview: '',
+            entities: [{ id: 'm1', name: 'Thien Ha Chau', info: '' }],
+          },
+        },
+      },
+    };
+
+    const ok = syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' });
+    expect(ok).toBe(true);
+    const mapInfo = nov.data['tai-nguyen']['dia-danh'].entities[0].info;
+    const firstLine = String(mapInfo)
+      .split(/\r?\n/)
+      .find((line) => line.startsWith('1. '));
+    expect(firstLine).toContain('[[ZZZ]]');
+  });
+
+  it('syncs force info and map location entities', () => {
+    const nov = {
+      tabsConfig: [
+        { id: 'the-luc', label: 'Thế Lực', subTabs: [{ id: 'gia-toc', label: 'Gia tộc', viewType: 'collection-track' }] },
+        { id: 'tai-nguyen', label: 'Tài Nguyên', subTabs: [{ id: 'dia-danh', label: 'Bản đồ / Bí cảnh', viewType: 'collection-track' }] },
+      ],
+      data: {
+        'the-luc': {
+          'gia-toc': {
+            overview: '',
+            entities: [
+              {
+                id: 'tl1',
+                name: 'Lạc Gia',
+                dynamicData: { f_status: 'Gia Tộc - Bát Cấp Thế Lực - Băng Thiên Đại Lục - Việt Long Tinh Cầu' },
+                info: '',
+              },
+            ],
+          },
+        },
+      },
+    };
+    const ok = syncTheLucMapAutoBlocks(nov, {
+      sourceLonId: 'the-luc',
+      sourceNhoId: 'gia-toc',
+      entityId: 'tl1',
+    });
+    expect(ok).toBe(true);
+    const ent = nov.data['the-luc']['gia-toc'].entities[0];
+    expect(ent.info).toContain('AUTO_THE_LUC_META');
+    expect(ent.info).toContain('Vị Trí:');
+    expect(ent.info).toContain('Đại Lục');
+    expect(ent.info).toContain('Tinh Cầu');
+    const mapEntities = nov.data['tai-nguyen']['dia-danh'].entities;
+    expect(mapEntities.length).toBe(2);
+    expect(mapEntities.some((m) => m.name === 'Băng Thiên Đại Lục')).toBe(true);
+    expect(mapEntities.some((m) => m.info.includes('### Gia Tộc'))).toBe(true);
+    expect(mapEntities.some((m) => m.info.includes('[[Lạc Gia]]'))).toBe(true);
+  });
+
+  it('rebuilds map auto blocks when location changes or force deleted', () => {
+    const nov = {
+      tabsConfig: [
+        { id: 'the-luc', label: 'Thế Lực', subTabs: [{ id: 'gia-toc', label: 'Gia tộc', viewType: 'collection-track' }] },
+        { id: 'tai-nguyen', label: 'Tài Nguyên', subTabs: [{ id: 'dia-danh', label: 'Bản đồ / Bí cảnh', viewType: 'collection-track' }] },
+      ],
+      data: {
+        'the-luc': {
+          'gia-toc': {
+            overview: '',
+            entities: [
+              {
+                id: 'tl1',
+                name: 'Lạc Gia',
+                dynamicData: { f_status: 'Gia Tộc - Bát Cấp Thế Lực - Băng Thiên Đại Lục - Việt Long Tinh Cầu' },
+                info: '',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    syncTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc', sourceNhoId: 'gia-toc', entityId: 'tl1' });
+    let mapEntities = nov.data['tai-nguyen']['dia-danh'].entities;
+    const oldLoc = mapEntities.find((x) => x.name === 'Việt Long Tinh Cầu');
+    expect(oldLoc?.info || '').toContain('[[Lạc Gia]]');
+
+    nov.data['the-luc']['gia-toc'].entities[0].dynamicData.f_status = 'Gia Tộc - Bát Cấp Thế Lực - Băng Thiên Đại Lục - Huyền Minh Đại Lục';
+    syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' });
+    mapEntities = nov.data['tai-nguyen']['dia-danh'].entities;
+    const staleLoc = mapEntities.find((x) => x.name === 'Việt Long Tinh Cầu');
+    const newLoc = mapEntities.find((x) => x.name === 'Huyền Minh Đại Lục');
+    expect(staleLoc?.info || '').not.toContain('[[Lạc Gia]]');
+    expect(newLoc?.info || '').toContain('[[Lạc Gia]]');
+
+    nov.data['the-luc']['gia-toc'].entities = [];
+    syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' });
+    mapEntities.forEach((m) => {
+      expect(String(m.info || '')).not.toContain('AUTO_MAP_THE_LUC_LIST');
+    });
+  });
+
+  it('preserves manual info while replacing AUTO blocks on resync', () => {
+    const nov = {
+      tabsConfig: [
+        { id: 'the-luc', label: 'Thế Lực', subTabs: [{ id: 'gia-toc', label: 'Gia tộc', viewType: 'collection-track' }] },
+        { id: 'tai-nguyen', label: 'Tài Nguyên', subTabs: [{ id: 'dia-danh', label: 'Bản đồ / Bí cảnh', viewType: 'collection-track' }] },
+      ],
+      data: {
+        'the-luc': {
+          'gia-toc': {
+            overview: '',
+            entities: [
+              {
+                id: 'tl1',
+                name: 'Lạc Gia',
+                dynamicData: { f_status: 'Gia Tộc - Bát Cấp Thế Lực - Băng Thiên Đại Lục - Việt Long Tinh Cầu' },
+                info: 'Ghi chú tay đầu',
+              },
+            ],
+          },
+        },
+        'tai-nguyen': {
+          'dia-danh': {
+            overview: '',
+            entities: [
+              {
+                id: 'm1',
+                name: 'Băng Thiên Đại Lục',
+                info: 'Mô tả tay địa danh\n\n<!-- AUTO_MAP_THE_LUC_LIST:START -->\nold auto\n<!-- AUTO_MAP_THE_LUC_LIST:END -->',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const ok = syncTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc', sourceNhoId: 'gia-toc', entityId: 'tl1' });
+    expect(ok).toBe(true);
+
+    const forceInfo = nov.data['the-luc']['gia-toc'].entities[0].info;
+    expect(forceInfo).toContain('Ghi chú tay đầu');
+    expect(forceInfo).toContain('AUTO_THE_LUC_META');
+
+    const mapEnt = nov.data['tai-nguyen']['dia-danh'].entities.find((x) => x.name === 'Băng Thiên Đại Lục');
+    expect(mapEnt.info).toContain('Mô tả tay địa danh');
+    expect(mapEnt.info).toContain('AUTO_MAP_THE_LUC_LIST');
+    expect(mapEnt.info).not.toContain('old auto');
+  });
+
+  it('returns false and does not mutate when force status format is invalid', () => {
+    const nov = {
+      tabsConfig: [
+        { id: 'the-luc', label: 'Thế Lực', subTabs: [{ id: 'gia-toc', label: 'Gia tộc', viewType: 'collection-track' }] },
+        { id: 'tai-nguyen', label: 'Tài Nguyên', subTabs: [{ id: 'dia-danh', label: 'Bản đồ / Bí cảnh', viewType: 'collection-track' }] },
+      ],
+      data: {
+        'the-luc': {
+          'gia-toc': {
+            overview: '',
+            entities: [{ id: 'tl1', name: 'Lạc Gia', dynamicData: { f_status: 'thiếu cấu trúc' }, info: 'manual force' }],
+          },
+        },
+        'tai-nguyen': {
+          'dia-danh': { overview: '', entities: [{ id: 'm1', name: 'Băng Thiên Đại Lục', info: 'manual map' }] },
+        },
+      },
+    };
+
+    const before = JSON.stringify(nov);
+    const ok = syncTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc', sourceNhoId: 'gia-toc', entityId: 'tl1' });
+    const after = JSON.stringify(nov);
+
+    expect(ok).toBe(false);
+    expect(after).toBe(before);
+  });
+});
+

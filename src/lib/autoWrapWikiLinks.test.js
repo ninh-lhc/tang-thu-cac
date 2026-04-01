@@ -34,5 +34,14 @@ describe('autoWrapWikiLinksByEntityMap', () => {
       count: 2,
     });
   });
+
+  it('is idempotent when auto-wrap is applied repeatedly', () => {
+    const text = 'Linh Giới Châu gặp Linh Tu';
+    const map = [{ name: 'Linh Giới Châu' }, { name: 'Linh Tu' }];
+    const once = autoWrapWikiLinksByEntityMap(text, map);
+    const twice = autoWrapWikiLinksByEntityMap(once, map);
+    expect(once).toBe('[[Linh Giới Châu]] gặp [[Linh Tu]]');
+    expect(twice).toBe(once);
+  });
 });
 

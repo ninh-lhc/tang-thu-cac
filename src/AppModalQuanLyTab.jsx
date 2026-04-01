@@ -6,6 +6,7 @@
 import React from 'react';
 import { Network, Plus, X, Save, Edit2, Trash2, LayoutGrid, AlignLeft } from 'lucide-react';
 import { safeString, getIconComponent } from './MasterUtils.jsx';
+import { useFocusTrap } from './lib/useFocusTrap.js';
 
 export function AppModalQuanLyTab({
   activeNovelData,
@@ -21,9 +22,19 @@ export function AppModalQuanLyTab({
   handleAddTabCon,
   setConfirmDialog,
 }) {
+  const trapRef = useFocusTrap(true);
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in">
-      <div className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Trận pháp cải tạo"
+    >
+      <div
+        ref={trapRef}
+        className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
+      >
         <div className="p-6 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-amber-900/30 text-amber-500 rounded-xl border border-amber-500/20">

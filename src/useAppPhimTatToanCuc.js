@@ -28,21 +28,25 @@ export function useAppPhimTatToanCuc({
   setIsManageTabsOpen,
   setIsGenreFilterOpen,
   setQuickCreateData,
+  setLightboxSrc,
+  setIsEditingMode,
+  setIsEntityEditing,
 }) {
   useEffect(() => {
     const onKey = (e) => {
-      if (e.ctrlKey && (e.key === 'k' || e.key === 'K')) {
+      const primaryMod = e.ctrlKey || e.metaKey;
+      if (primaryMod && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
         setIsCommandPaletteOpen((o) => !o);
         setCommandPaletteQuery('');
         return;
       }
-      if (e.ctrlKey && (e.key === 's' || e.key === 'S')) {
+      if (primaryMod && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
-        window.dispatchEvent(new CustomEvent('ttc-save'));
+        window.dispatchEvent(new CustomEvent('ttc-save', { cancelable: true }));
         return;
       }
-      if (e.ctrlKey && e.shiftKey && (e.key === 'N' || e.key === 'n')) {
+      if (primaryMod && e.shiftKey && (e.key === 'N' || e.key === 'n')) {
         e.preventDefault();
         if (activeNovelData && !isEntityModalOpen) {
           setEditingEntityData(null);
@@ -63,6 +67,9 @@ export function useAppPhimTatToanCuc({
           setIsCommandPaletteOpen(false);
           return;
         }
+        setLightboxSrc(null);
+        setIsEditingMode(false);
+        setIsEntityEditing(false);
         setConfirmDialog((c) => (c.isOpen ? { ...c, isOpen: false } : c));
         setIsSettingsOpen(false);
         setOverviewHubOpen(false);
@@ -100,5 +107,8 @@ export function useAppPhimTatToanCuc({
     setIsManageTabsOpen,
     setIsGenreFilterOpen,
     setQuickCreateData,
+    setLightboxSrc,
+    setIsEditingMode,
+    setIsEntityEditing,
   ]);
 }

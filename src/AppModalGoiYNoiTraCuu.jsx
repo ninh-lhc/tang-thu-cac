@@ -6,6 +6,7 @@
 import React from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
+import { useFocusTrap } from './lib/useFocusTrap.js';
 
 export function AppModalGoiYNoiTraCuu({
   panel,
@@ -16,15 +17,19 @@ export function AppModalGoiYNoiTraCuu({
   applyXrefSuggestionProfile,
   activeNovelData,
 }) {
+  const trapRef = useFocusTrap(Boolean(panel));
   if (!panel) return null;
 
   return (
     <div
       className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-950/85 backdrop-blur-sm p-4 animate-fade-in"
       onClick={onClose}
-      role="presentation"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Gợi ý nối tra cứu"
     >
       <div
+        ref={trapRef}
         className="bg-slate-900 border border-amber-700/40 rounded-2xl w-full max-w-lg max-h-[min(85vh,560px)] flex flex-col shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >

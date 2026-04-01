@@ -678,6 +678,7 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   }, [fieldsTemplate]);
   const [formData, setFormData] = useState({ id: null, name: '', avatar: '', rawText: '' });
   const [dynamicData, setDynamicData] = useState({});
+  const trapRef = useFocusTrap(isOpen);
 
   /* Reset form khi mở modal (đồng bộ từ initialData) */
   useEffect(() => {
@@ -703,21 +704,29 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   }, [isOpen, initialData]);
 
   useEffect(() => {
-    const handler = () => {
-      if (isOpen && formData.name.trim()) {
-        onSave(formData, dynamicData, null);
-        onClose();
-      }
+    const handler = (event) => {
+      if (!isOpen || !formData.name.trim()) return;
+      const trapEl = trapRef.current;
+      const activeEl = document.activeElement;
+      if (event?.defaultPrevented) return;
+      if (trapEl && activeEl && !trapEl.contains(activeEl)) return;
+      onSave(formData, dynamicData, null);
+      onClose();
+      if (event?.cancelable) event.preventDefault();
+      event?.stopImmediatePropagation?.();
     };
     window.addEventListener('ttc-save', handler);
     return () => window.removeEventListener('ttc-save', handler);
-  }, [isOpen, formData, dynamicData, onSave, onClose]);
-
-  const trapRef = useFocusTrap(isOpen);
+  }, [isOpen, formData, dynamicData, onSave, onClose, trapRef]);
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in">
-      <div ref={trapRef} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-2xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col max-h-[85vh] min-h-0">
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-label={initialData ? `Tu bổ ${terms.entity}` : `Khởi tạo ${terms.entity}`}
+    >
+      <div data-testid="modal-entity-root" ref={trapRef} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-2xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col max-h-[85vh] min-h-0">
         <div className="px-6 pt-6 pb-4 flex-shrink-0 border-b border-slate-800 flex justify-between items-center bg-slate-900">
           <h2 className="text-2xl font-heading font-bold text-slate-100">{initialData ? `Tu Bổ ${terms.entity}` : `Khởi Tạo ${terms.entity}`}</h2>
           <button type="button" onClick={onClose} className="text-slate-500 hover:text-white"><X size={20}/></button>
@@ -848,6 +857,7 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
   const EVENT_WIKI_FIELD_ID = '__milestone_event__';
   const dynamicFieldInputRefs = useRef({});
   const pendingWikiCaretRef = useRef(null);
+  const trapRefMs = useFocusTrap(isOpen);
 
   useLayoutEffect(() => {
     const p = pendingWikiCaretRef.current;
@@ -876,30 +886,35 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
   }, [isOpen, initialData, defaultChapterWhenNew]);
 
   useEffect(() => {
-    const handler = () => {
-      if (isOpen && formData.chapter && formData.event.trim()) {
-        const eventWrap = autoWrapWikiLinksByEntityMapWithCount(safeString(formData.event), entityMap);
-        let wrappedCount = eventWrap.count;
-        const wrappedDynamic = Object.fromEntries(
-          Object.entries(snapshotData.dynamicData || {}).map(([k, v]) => {
-            if (typeof v !== 'string') return [k, v];
-            const fWrap = autoWrapWikiLinksByEntityMapWithCount(v, entityMap);
-            wrappedCount += fWrap.count;
-            return [k, fWrap.text];
-          })
-        );
-        const nextSnapshot = { ...snapshotData, dynamicData: wrappedDynamic };
-        const hasData = nextSnapshot.avatar || Object.values(nextSnapshot.dynamicData || {}).some(v => v);
-        onSave({ ...formData, event: eventWrap.text }, hasData ? nextSnapshot : null);
-        if (wrappedCount > 0 && autoLinkToastEnabled && typeof showToast === 'function') {
-          showToast(`Đã tự bọc ${wrappedCount} [[liên kết]] theo thẻ có sẵn.`);
-        }
-        onClose();
+    const handler = (event) => {
+      if (!isOpen || !formData.chapter || !formData.event.trim()) return;
+      const trapEl = trapRefMs.current;
+      const activeEl = document.activeElement;
+      if (event?.defaultPrevented) return;
+      if (trapEl && activeEl && !trapEl.contains(activeEl)) return;
+      const eventWrap = autoWrapWikiLinksByEntityMapWithCount(safeString(formData.event), entityMap);
+      let wrappedCount = eventWrap.count;
+      const wrappedDynamic = Object.fromEntries(
+        Object.entries(snapshotData.dynamicData || {}).map(([k, v]) => {
+          if (typeof v !== 'string') return [k, v];
+          const fWrap = autoWrapWikiLinksByEntityMapWithCount(v, entityMap);
+          wrappedCount += fWrap.count;
+          return [k, fWrap.text];
+        })
+      );
+      const nextSnapshot = { ...snapshotData, dynamicData: wrappedDynamic };
+      const hasData = nextSnapshot.avatar || Object.values(nextSnapshot.dynamicData || {}).some(v => v);
+      onSave({ ...formData, event: eventWrap.text }, hasData ? nextSnapshot : null);
+      if (wrappedCount > 0 && autoLinkToastEnabled && typeof showToast === 'function') {
+        showToast(`Đã tự bọc ${wrappedCount} [[liên kết]] theo thẻ có sẵn.`);
       }
+      onClose();
+      if (event?.cancelable) event.preventDefault();
+      event?.stopImmediatePropagation?.();
     };
     window.addEventListener('ttc-save', handler);
     return () => window.removeEventListener('ttc-save', handler);
-  }, [isOpen, formData, snapshotData, onSave, onClose, entityMap, showToast, autoLinkToastEnabled]);
+  }, [isOpen, formData, snapshotData, onSave, onClose, entityMap, showToast, autoLinkToastEnabled, trapRefMs]);
 
   const handleAI = async () => {
      const keys = Array.isArray(geminiApiKey) ? geminiApiKey : (geminiApiKey ? [geminiApiKey] : []);
@@ -953,11 +968,15 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
      onClose();
   };
 
-  const trapRefMs = useFocusTrap(isOpen);
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in">
-       <div ref={trapRefMs} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-5xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col md:flex-row h-[85vh]">
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Ghi chép mệnh số"
+    >
+       <div data-testid="modal-milestone-root" ref={trapRefMs} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-5xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col md:flex-row h-[85vh]">
           <div className="w-full md:w-5/12 bg-slate-950 border-r border-slate-800 p-6 flex flex-col relative">
              <h2 className="text-xl font-heading font-bold text-amber-500 mb-6 flex items-center gap-2"><Clock size={20}/> Ghi Chép Mệnh Số</h2>
              <div className="flex-1 flex flex-col space-y-4">
@@ -1175,10 +1194,16 @@ export const ModalQuickCreate = ({ isOpen, onClose, quickCreateName, onConfirm, 
         });
     }
 
+    const trapRefQuick = useFocusTrap(isOpen);
     if (!isOpen) return null;
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast">
-           <div className="bg-slate-900 border border-emerald-900/50 rounded-2xl w-full max-w-md shadow-2xl p-6">
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Ngưng tụ ý niệm"
+        >
+           <div ref={trapRefQuick} className="bg-slate-900 border border-emerald-900/50 rounded-2xl w-full max-w-md shadow-2xl p-6">
              <h2 className="text-xl font-heading font-bold text-emerald-500 mb-2">Ngưng Tụ Ý Niệm</h2>
              <p className="text-sm text-slate-400 font-serif mb-6">Khí tức <strong className="text-emerald-400">{quickCreateName}</strong> chưa được ghi chép. Bạn muốn tạo hồ sơ cho nó ở thẻ nào?</p>
              
@@ -1221,6 +1246,7 @@ export const ModalSettings = ({
   const [showKeys, setShowKeys] = useState({});     // idx -> bool (hiện plain text)
 
   const notesTypoPrefs = useSyncExternalStore(subscribeEntityNotesPrefs, getEntityNotesPrefs, getEntityNotesPrefs);
+  const trapRefSettings = useFocusTrap(isOpen);
 
   if (!isOpen) return null;
 
@@ -1255,8 +1281,13 @@ export const ModalSettings = ({
   const maskKey = (k) => k.length > 12 ? k.slice(0, 8) + '••••••••' + k.slice(-4) : '••••••••••••';
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in">
-       <div className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Ấn ký và lưu trữ"
+    >
+       <div ref={trapRefSettings} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
           <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900">
              <div className="flex items-center gap-3">
                 <HardDrive size={24} className="text-amber-500" />
@@ -1479,10 +1510,16 @@ export const ModalSettings = ({
 };
 
 export const ModalConfirm = ({ isOpen, onClose, title, message, onConfirm }) => {
+  const trapRefConfirm = useFocusTrap(isOpen);
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast">
-       <div className="bg-slate-900 border border-rose-900/50 rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center">
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast"
+      role="dialog"
+      aria-modal="true"
+      aria-label={safeString(title) || 'Xác nhận'}
+    >
+       <div ref={trapRefConfirm} className="bg-slate-900 border border-rose-900/50 rounded-2xl w-full max-w-sm shadow-2xl p-6 text-center">
          <div className="w-16 h-16 bg-rose-950 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-rose-900/50"><Trash2 size={32} /></div>
          <h2 className="text-xl font-heading font-bold text-rose-500 mb-2">{safeString(title)}</h2>
          <p className="text-sm text-slate-400 font-serif mb-8" dangerouslySetInnerHTML={{ __html: safeString(message).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/&lt;b&gt;/g,'<b>').replace(/&lt;\/b&gt;/g,'</b>') }}></p>
@@ -1496,10 +1533,16 @@ export const ModalConfirm = ({ isOpen, onClose, title, message, onConfirm }) => 
 };
 
 export const ModalInsertImage = ({ isOpen, onClose, imageForm, setImageForm, handleConfirmInsertImage }) => {
+  const trapRefInsertImage = useFocusTrap(isOpen);
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast">
-       <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-md shadow-2xl p-6">
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Pháp trận lưu ảnh"
+    >
+       <div ref={trapRefInsertImage} className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-md shadow-2xl p-6">
           <h2 className="text-xl font-heading text-amber-500 mb-4 font-bold flex items-center gap-2"><ImageIcon size={20}/> Pháp Trận Lưu Ảnh</h2>
           <textarea placeholder='Dán mã <img src="..." /> hoặc link ảnh trực tiếp...' className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-slate-200 text-sm mb-4 min-h-[120px] focus:border-amber-500/50 outline-none custom-scrollbar" value={safeString(imageForm.url)} onChange={(e) => setImageForm(prev => ({...prev, url: e.target.value}))} />
           <div className="flex justify-end gap-3">
@@ -1513,6 +1556,7 @@ export const ModalInsertImage = ({ isOpen, onClose, imageForm, setImageForm, han
 
 // CẢI TIẾN: Thay thế Thể Loại bằng Nút Bấm Đa Chọn (Multi-select) và Thêm Chọn Giao Diện
 export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, mode = "create", handlePickLocalImage, dirHandle }) => {
+  const trapRefAddNovel = useFocusTrap(isOpen);
   if (!isOpen) return null;
 
   const toggleGenre = (g) => {
@@ -1525,8 +1569,16 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in">
-       <div className="bg-slate-900 border border-amber-700/50 rounded-3xl w-full max-w-4xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col md:flex-row h-[90vh]">
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-label={mode === "create" ? 'Khai sinh thư tịch' : 'Tu bổ thư tịch'}
+    >
+       <div
+         ref={trapRefAddNovel}
+         className="bg-slate-900 border border-amber-700/50 rounded-3xl w-full max-w-4xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col md:flex-row h-[90vh]"
+       >
           <div className="w-full md:w-2/5 bg-slate-950 p-8 flex flex-col items-center justify-center border-r border-slate-800 relative overflow-hidden">
              <div
                 className="w-full rounded-2xl border-2 border-dashed border-slate-700/80 flex flex-col items-center justify-center text-slate-500 relative overflow-hidden group bg-slate-900/50 z-10 shadow-2xl cursor-pointer hover:border-amber-600/50 transition-colors min-h-[180px]"
@@ -1749,10 +1801,20 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, performDeepSe
     }
   };
 
+  const trapRefDeepSearch = useFocusTrap(isOpen);
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[300] flex items-start justify-center bg-slate-950/95 backdrop-blur-md pt-[8vh] px-4 animate-fade-in">
-      <div className="bg-slate-900 border border-amber-500/30 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col" style={{maxHeight:'80vh'}}>
+    <div
+      className="fixed inset-0 z-[300] flex items-start justify-center bg-slate-950/95 backdrop-blur-md pt-[8vh] px-4 animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Tra cứu toàn thư viện"
+    >
+      <div
+        ref={trapRefDeepSearch}
+        className="bg-slate-900 border border-amber-500/30 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col"
+        style={{maxHeight:'80vh'}}
+      >
         <div className="p-4 border-b border-slate-800 flex items-center gap-3 bg-slate-950">
           <Search size={20} className="text-amber-500 flex-shrink-0" />
           <input autoFocus type="text"
@@ -1881,10 +1943,20 @@ export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) =
     }
   };
 
+  const trapRefInNovelSearch = useFocusTrap(isOpen && !!novel);
   if (!isOpen || !novel) return null;
   return (
-    <div className="fixed inset-0 z-[295] flex items-start justify-center bg-slate-950/95 backdrop-blur-md pt-[8vh] px-4 animate-fade-in">
-      <div className="bg-slate-900 border border-cyan-600/30 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: '78vh' }}>
+    <div
+      className="fixed inset-0 z-[295] flex items-start justify-center bg-slate-950/95 backdrop-blur-md pt-[8vh] px-4 animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Tra cứu trong truyện"
+    >
+      <div
+        ref={trapRefInNovelSearch}
+        className="bg-slate-900 border border-cyan-600/30 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col"
+        style={{ maxHeight: '78vh' }}
+      >
         <div className="p-4 border-b border-slate-800 flex items-center gap-3 bg-slate-950">
           <BookOpen size={20} className="text-cyan-500 flex-shrink-0" />
           <div className="flex-1 min-w-0">

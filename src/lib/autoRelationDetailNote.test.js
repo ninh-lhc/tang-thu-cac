@@ -25,6 +25,15 @@ describe('autoRelationDetailNote', () => {
     });
   });
 
+  it('keeps hyphenated place names as one chain node', () => {
+    const out = parseRelationHierarchyFromStatus('Gia Toc - Bat Cap the luc - Tay-Bac Chau');
+    expect(out).toEqual({
+      categoryLabel: 'Gia Toc',
+      rankLabel: 'Bat Cap the luc',
+      chain: ['Tay-Bac Chau'],
+    });
+  });
+
   it('upserts auto relation block without duplication', () => {
     const s1 = upsertAutoRelationDetailNote(
       'Nội dung tay.',
@@ -157,6 +166,9 @@ describe('autoRelationDetailNote', () => {
     expect(idxGiaToc).toBeGreaterThan(-1);
     expect(idxTongMon).toBeGreaterThan(-1);
     expect(idxGiaToc).toBeLessThan(idxTongMon);
+    expect(text).toContain('## Tông Môn');
+    expect(text).toContain('[[Thánh Kiếm Viện]] (Tam Cấp thế lực - Nguyên Giới)');
+    expect(text).not.toContain('[[Thánh Kiếm Viện]] (Tông Môn - Tam Cấp thế lực - Nguyên Giới)');
   });
 
   it('normalizes manual "# Vị trí" heading to one auto block', () => {
@@ -186,5 +198,90 @@ describe('autoRelationDetailNote', () => {
     });
     const text = novel.data.z.q.entities[0].info;
     expect((text.match(/#{1,3}\s*Vị trí/g) || []).length).toBe(1);
+  });
+
+  it('merges legacy "## Vị trí" block without duplicating title heading', () => {
+    const novel = {
+      data: {
+        z: {
+          q: {
+            entities: [
+              {
+                id: 'map',
+                name: 'Thiên Hà Châu',
+                info: '## Vị trí\n- [[Cũ]] (Bát Cấp thế lực - Thiên Hà Châu)\n> (Tự động cập nhật từ các thẻ liên quan)',
+                dynamicData: {},
+                milestones: [],
+              },
+              { id: 'x2', name: 'Lạc Gia', info: '', dynamicData: {}, milestones: [] },
+              { id: 'x3', name: 'Cũ', info: '', dynamicData: {}, milestones: [] },
+            ],
+          },
+        },
+      },
+    };
+    applyAutoRelationNotesForEntity(novel, {
+      sourceEntity: novel.data.z.q.entities[1],
+      sourceLonId: 'gia-toc',
+      sourceParentLabel: 'Thế Lực',
+      statusLine: 'Gia Tộc - Cửu Cấp thế lực - Thiên Hà Châu',
+    });
+    const text = novel.data.z.q.entities[0].info;
+    expect((text.match(/#{1,3}\s*Vị trí/g) || []).length).toBe(1);
+    expect(text).toContain('## Gia Tộc');
+    expect(text).toContain('## Khác');
+  });
+
+  it('stress: repeated auto relation updates do not duplicate backlink entries', () => {
+    const location = { id: 'loc1', name: 'Thiên Hà Châu', info: '', dynamicData: {}, milestones: [] };
+    const sources = Array.from({ length: 7 }, (_, i) => ({
+      id: `src-${i}`,
+      name: `Thế Lực ${i}`,
+      info: '',
+      dynamicData: {},
+      milestones: [],
+    }));
+    const novel = {
+      data: {
+        scope: {
+          main: {
+            entities: [location, ...sources],
+          },
+        },
+      },
+    };
+
+    const rankTokens = ['Bát Cấp thế lực', 'Cửu Cấp thế lực', 'Ngũ Cấp thế lực'];
+    const categories = ['Gia Tộc', 'Tông Môn', 'Thương Minh'];
+    for (let i = 0; i < 210; i += 1) {
+      const src = sources[i % sources.length];
+      const category = categories[i % categories.length];
+      const rank = rankTokens[i % rankTokens.length];
+      const out = applyAutoRelationNotesForEntity(novel, {
+        sourceEntity: src,
+        sourceLonId: 'the-luc',
+        sourceParentLabel: 'Thế Lực',
+        statusLine: `${category} - ${rank} - Thiên Hà Châu`,
+      });
+      expect(out.applied).toBe(true);
+    }
+
+    const text = location.info;
+    expect((text.match(/#{1,3}\s*Vị trí/g) || []).length).toBe(1);
+
+    const names = String(text)
+      .split(/\r?\n/)
+      .filter((line) => /^\s*-\s*\[\[[^\]]+\]\]\s*\(/.test(line))
+      .map((line) => line.match(/\[\[([^\]]+)\]\]/)?.[1] || '')
+      .filter(Boolean);
+
+    const uniqueNames = new Set(names);
+    expect(uniqueNames.size).toBe(sources.length);
+    expect(names.length).toBe(uniqueNames.size);
+
+    // Mỗi source cũng chỉ có đúng 1 khối AUTO relation trong info của chính nó.
+    sources.forEach((src) => {
+      expect((String(src.info).match(/## Quan hệ bản đồ - thế lực \(tự động\)/g) || []).length).toBe(1);
+    });
   });
 });

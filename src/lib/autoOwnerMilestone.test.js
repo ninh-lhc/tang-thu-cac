@@ -233,5 +233,134 @@ describe('autoOwnerMilestone', () => {
     expect(ms[0].event).toContain('[[demo mới]]');
     expect(ms[1].event).toContain('[[demo cũ]]');
   });
+
+  it('keeps non-target parts when removing auto owner milestones by item id', () => {
+    const novel = {
+      data: {
+        'nhan-vat': {
+          'nhan-vat-chinh': {
+            entities: [{
+              id: 'nv1',
+              name: 'Lạc Nam',
+              dynamicData: {},
+              milestones: [
+                {
+                  id: 'ms-mix',
+                  chapter: 12,
+                  event: '[?] Đột phá cảnh giới · Nhận được [[demo]]',
+                  meta: { source: 'auto-owner', itemWiki: '[[demo]]', itemEntityId: 'item-demo' },
+                },
+              ],
+            }],
+          },
+        },
+      },
+    };
+    const removed = removeOwnerAcquisitionMilestonesByItem(novel, { name: 'demo', entityId: 'item-demo' });
+    expect(removed).toBe(1);
+    const ms = novel.data['nhan-vat']['nhan-vat-chinh'].entities[0].milestones;
+    expect(ms.length).toBe(1);
+    expect(ms[0].event).toContain('Đột phá cảnh giới');
+    expect(ms[0].event).not.toContain('[[demo]]');
+  });
+
+  it('does not duplicate auto-owner milestone when applying same item twice', () => {
+    const novel = {
+      data: {
+        'nhan-vat': {
+          'nhan-vat-chinh': {
+            entities: [{
+              id: 'nv1',
+              name: 'Lạc Nam',
+              dynamicData: {},
+              milestones: [],
+            }],
+          },
+        },
+      },
+    };
+    const hint = { ownerName: 'Lạc Nam', chapter: 66, labelId: 'important' };
+    const item = { name: 'Thiên Địa Công', entityId: 'cp-001' };
+    const ok1 = appendOwnerAcquisitionMilestone(novel, hint, item);
+    const ok2 = appendOwnerAcquisitionMilestone(novel, hint, item);
+    expect(ok1).toBe(true);
+    expect(ok2).toBe(true);
+    const ms = novel.data['nhan-vat']['nhan-vat-chinh'].entities[0].milestones;
+    expect(ms.length).toBe(1);
+    expect(ms[0].event).toContain('[[Thiên Địa Công]]');
+  });
+
+  it('stress: keeps one auto-owner milestone per (owner, itemEntityId) across repeated updates', () => {
+    const ownerA = {
+      id: 'nv-a',
+      name: 'Lạc Nam',
+      dynamicData: {},
+      milestones: [{ id: 'manual-a', chapter: 1, event: '[?] Mốc tay A' }],
+    };
+    const ownerB = {
+      id: 'nv-b',
+      name: 'Vân Y',
+      dynamicData: {},
+      milestones: [{ id: 'manual-b', chapter: 2, event: '[?] Mốc tay B' }],
+    };
+    const ownerC = {
+      id: 'nv-c',
+      name: 'Mặc Trần',
+      dynamicData: {},
+      milestones: [{ id: 'manual-c', chapter: 3, event: '[?] Mốc tay C' }],
+    };
+    const novel = {
+      data: {
+        'nhan-vat': {
+          'nhan-vat-chinh': {
+            entities: [ownerA, ownerB, ownerC],
+          },
+        },
+      },
+    };
+
+    const owners = ['Lạc Nam', 'Vân Y', 'Mặc Trần'];
+    const labels = ['uncertain', 'important', 'critical', 'ongoing'];
+    for (let i = 0; i < 180; i += 1) {
+      const ownerName = owners[i % owners.length];
+      const itemIdx = i % 17;
+      const ok = appendOwnerAcquisitionMilestone(
+        novel,
+        {
+          ownerName,
+          chapter: (i % 60) + 1,
+          labelId: labels[i % labels.length],
+        },
+        {
+          name: `Vật phẩm ${itemIdx}`,
+          entityId: `item-${itemIdx}`,
+        }
+      );
+      expect(ok).toBe(true);
+    }
+
+    [ownerA, ownerB, ownerC].forEach((ent) => {
+      const auto = ent.milestones.filter((ms) => ms?.meta?.source === 'auto-owner');
+      const seen = new Set();
+      auto.forEach((ms) => {
+        const key = String(ms?.meta?.itemEntityId || '').trim();
+        expect(key).not.toBe('');
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+      });
+      // Mốc tay phải còn nguyên, không bị auto ghi đè.
+      expect(ent.milestones.some((ms) => String(ms.id).startsWith('manual-'))).toBe(true);
+    });
+
+    const removed = removeOwnerAcquisitionMilestonesByItem(novel, {
+      name: 'Vật phẩm 5',
+      entityId: 'item-5',
+    });
+    expect(removed).toBeGreaterThan(0);
+    [ownerA, ownerB, ownerC].forEach((ent) => {
+      const auto = ent.milestones.filter((ms) => ms?.meta?.source === 'auto-owner');
+      expect(auto.some((ms) => String(ms?.meta?.itemEntityId || '') === 'item-5')).toBe(false);
+    });
+  });
 });
 

@@ -7,6 +7,7 @@ import React from 'react';
 import { X, Layers, Sparkles } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
 import { resolveFieldsTemplate } from './MasterEngines.js';
+import { useFocusTrap } from './lib/useFocusTrap.js';
 
 export function AppModalMotCua({
   activeNovelData,
@@ -33,15 +34,19 @@ export function AppModalMotCua({
   applyHubUpdateSelected,
   findEntitiesByXrefHint,
 }) {
+  const trapRef = useFocusTrap(Boolean(activeNovelData));
   if (!activeNovelData) return null;
 
   return (
     <div
       className="fixed inset-0 z-[218] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm p-4 animate-fade-in"
       onClick={() => !hubCreateBusy && !hubUpdatePanel?.loading && onClose()}
-      role="presentation"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Một cửa cập nhật"
     >
       <div
+        ref={trapRef}
         className="bg-slate-900 border border-violet-800/45 rounded-2xl w-full max-w-2xl max-h-[min(92vh,720px)] flex flex-col shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
