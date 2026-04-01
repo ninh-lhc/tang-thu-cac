@@ -76,8 +76,19 @@ import { buildXrefEntityCatalogText } from './lib/xrefBangDanhMucThucThe.js';
 import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
+<<<<<<< HEAD
 import { appendOwnerAcquisitionMilestone, parseOwnerTimelineHint } from './lib/autoOwnerMilestone.js';
 import { applyAutoRelationNotesForEntity } from './lib/autoRelationDetailNote.js';
+=======
+import {
+  appendOwnerAcquisitionMilestone,
+  parseOwnerTimelineHint,
+  parseOwnerTimelineHintDetailed,
+  ownerTimelineHintReasonToMessage,
+  removeOwnerAcquisitionMilestonesByItem,
+  syncAutoOwnerMilestonesItemRename,
+} from './lib/autoOwnerMilestone.js';
+>>>>>>> 4b35a301709b800cf2b267f743bf440221e9b066
 
 const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
   value,
@@ -1757,16 +1768,18 @@ export default function App() {
     const prev = activeNovelData ? structuredClone(activeNovelData) : null;
     const isCreate = !formData.id;
     const newEntityId = isCreate ? generateId('ent') : formData.id;
-    const ownerTimelineHint = isCreate
-      ? parseOwnerTimelineHint({
+    const ownerTimelineHintDetail = isCreate
+      ? parseOwnerTimelineHintDetailed({
         dynamicData,
         fieldsTemplate: currentTabConfig?.fieldsTemplate || [],
         rawText: formData.rawText,
       })
-      : null;
+      : { hint: null, reason: 'no_owner_hint' };
+    const ownerTimelineHint = ownerTimelineHintDetail?.hint || null;
     let createTargetEntityId = null;
     let createMergedToExisting = false;
     let ownerMilestoneAutoApplied = false;
+    let ownerMilestoneRenameSynced = 0;
     updateActiveNovelData(nov => {
        if (!nov.data) nov.data = {}; if (!nov.data[activeTabLon]) nov.data[activeTabLon] = {};
        let tabData = nov.data[activeTabLon][activeTabNho || 'default'];
@@ -1775,6 +1788,7 @@ export default function App() {
        if (formData.id) { 
           const idx = tabData.entities.findIndex(e => e.id === formData.id);
          if (idx > -1) {
+          const prevName = safeString(tabData.entities[idx].name).trim();
            const prevImages = Array.isArray(tabData.entities[idx].images) ? tabData.entities[idx].images : [];
            const prevDyn = tabData.entities[idx].dynamicData || {};
            const mergedDyn = { ...prevDyn, ...dynamicData };
@@ -1788,12 +1802,23 @@ export default function App() {
              dynamicData: mergedDyn,
              images: prevImages,
            };
+<<<<<<< HEAD
            applyAutoRelationNotesForEntity(nov, {
              sourceEntity: tabData.entities[idx],
              sourceLonId: activeTabLon,
              sourceParentLabel: currentTabConfig?._parentLabel || '',
              statusLine,
            });
+=======
+          const nextName = safeString(formData.name).trim();
+          if (activeTabLon !== 'nhan-vat' && prevName && nextName && prevName !== nextName) {
+            ownerMilestoneRenameSynced = syncAutoOwnerMilestonesItemRename(nov, {
+              entityId: formData.id,
+              oldName: prevName,
+              newName: nextName,
+            });
+          }
+>>>>>>> 4b35a301709b800cf2b267f743bf440221e9b066
          }
        } else {
          const mergedNew = { ...dynamicData };
@@ -1828,7 +1853,10 @@ export default function App() {
           createTargetEntityId = newEntityId;
           lockFieldsTemplateIfFirstEntity(nov, activeTabLon, activeTabNho || 'default');
           if (activeTabLon !== 'nhan-vat' && ownerTimelineHint) {
-            ownerMilestoneAutoApplied = appendOwnerAcquisitionMilestone(nov, ownerTimelineHint, canonicalName);
+            ownerMilestoneAutoApplied = appendOwnerAcquisitionMilestone(nov, ownerTimelineHint, {
+              name: canonicalName,
+              entityId: newEntityId,
+            });
           }
         }
        }
@@ -1866,6 +1894,13 @@ export default function App() {
         void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
       }
     } : null);
+    if (ownerMilestoneRenameSynced > 0) {
+      showToast(`Đã đồng bộ ${ownerMilestoneRenameSynced} mốc auto theo tên mới của thẻ.`, 'success');
+    }
+    const ownerWarn = ownerTimelineHintReasonToMessage(ownerTimelineHintDetail?.reason);
+    if (!ownerMilestoneAutoApplied && ownerWarn && activeTabLon !== 'nhan-vat') {
+      showToast(ownerWarn, 'warning');
+    }
   };
 
   const handleAddImageToSelectedEntity = async () => {
@@ -1898,13 +1933,14 @@ export default function App() {
   };
 
   const handleUpdateEntityInfo = (content) => {
-    const ownerTimelineHint = activeTabLon !== 'nhan-vat'
-      ? parseOwnerTimelineHint({
+    const ownerTimelineHintDetail = activeTabLon !== 'nhan-vat'
+      ? parseOwnerTimelineHintDetailed({
         dynamicData: selectedEntity?.dynamicData || {},
         fieldsTemplate: currentTabConfig?.fieldsTemplate || [],
         rawText: content,
       })
-      : null;
+      : { hint: null, reason: 'no_owner_hint' };
+    const ownerTimelineHint = ownerTimelineHintDetail?.hint || null;
     let ownerMilestoneAutoApplied = false;
 
     updateActiveNovelData(nov => {
@@ -1917,7 +1953,10 @@ export default function App() {
          // Đồng bộ để network vẫn tròn khi bạn viết ở “Ghi Chép Chi Tiết”.
          ent.rawText = content;
          if (ownerTimelineHint) {
-           ownerMilestoneAutoApplied = appendOwnerAcquisitionMilestone(nov, ownerTimelineHint, ent.name);
+          ownerMilestoneAutoApplied = appendOwnerAcquisitionMilestone(nov, ownerTimelineHint, {
+            name: ent.name,
+            entityId: ent.id,
+          });
          }
        }
     });
@@ -1926,6 +1965,10 @@ export default function App() {
         ? "Ghi chép hồ sơ thành công! Đã tự ghi mốc sở hữu vào timeline Nhân Vật."
         : "Ghi chép hồ sơ thành công!"
     );
+    const ownerWarn = ownerTimelineHintReasonToMessage(ownerTimelineHintDetail?.reason);
+    if (!ownerMilestoneAutoApplied && ownerWarn && activeTabLon !== 'nhan-vat') {
+      showToast(ownerWarn, 'warning');
+    }
   };
 
   const handleSaveMilestone = (formData, snapshot) => {
@@ -2017,6 +2060,7 @@ export default function App() {
       const prev = structuredClone(data);
       const updated = structuredClone(data);
       let removed = false;
+      let removedEntityName = '';
       for (const lonId of Object.keys(updated.data || {})) {
         const lonData = updated.data[lonId];
         if (!lonData || typeof lonData !== 'object') continue;
@@ -2025,6 +2069,7 @@ export default function App() {
           if (!tabData?.entities) continue;
           const idx = tabData.entities.findIndex(e => e.id === entityIdToDelete);
           if (idx >= 0) {
+            removedEntityName = safeString(tabData.entities[idx]?.name).trim();
             tabData.entities.splice(idx, 1);
             removed = true;
             break;
@@ -2033,13 +2078,23 @@ export default function App() {
         if (removed) break;
       }
       if (removed) {
+        let removedAutoMsCount = 0;
+        if (removedEntityName) {
+          removedAutoMsCount = removeOwnerAcquisitionMilestonesByItem(updated, {
+            name: removedEntityName,
+            entityId: entityIdToDelete,
+          });
+        }
         const nextStats = { ...novelStatsByIdRef.current, [updated.id]: countEntitiesInNovel(updated) };
         novelStatsByIdRef.current = nextStats;
         setNovelStatsById(nextStats);
         setActiveNovelData(updated);
         syncNovelRef.current?.(updated, dirHandleRef.current);
         if (prevSelectedId === entityIdToDelete) setSelectedEntityId(null);
-        showToast('Đã xóa thẻ.', 'success', {
+        const deleteMsg = removedAutoMsCount > 0
+          ? `Đã xóa thẻ và dọn ${removedAutoMsCount} mốc auto liên quan.`
+          : 'Đã xóa thẻ.';
+        showToast(deleteMsg, 'success', {
           undoLabel: 'Hoàn tác xóa',
           onUndo: () => {
             setActiveNovelData(prev);

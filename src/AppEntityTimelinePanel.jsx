@@ -34,11 +34,31 @@ function isMeaningfulTimelineValue(value) {
   return !emptyTokens.has(v);
 }
 
+function normalizeAscii(s) {
+  return String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
 /** Chiều cao ước lượng mỗi hàng mốc (p-4 + 2 dòng + gap); virtualizer dùng làm mặc định. */
 const MILESTONE_LIST_ROW_ESTIMATE_PX = 96;
 
 /** Cùng reference khi không có milestones — tránh dependency useMemo đổi mỗi render. */
 const EMPTY_MILESTONES = [];
+const LABEL_BADGE_CLASS = {
+  critical: 'border-rose-700/50 bg-rose-950/35 text-rose-300',
+  important: 'border-amber-700/50 bg-amber-950/35 text-amber-300',
+  ongoing: 'border-cyan-700/50 bg-cyan-950/35 text-cyan-300',
+  uncertain: 'border-violet-700/50 bg-violet-950/35 text-violet-300',
+  drop: 'border-slate-600/60 bg-slate-900/80 text-slate-300',
+};
+
+function isAutoOwnerMilestone(ms) {
+  if (!ms || typeof ms !== 'object') return false;
+  if (ms.meta?.source === 'auto-owner') return true;
+  return typeof ms.id === 'string' && ms.id.startsWith('ms-auto-');
+}
 
 export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   collectionSubTab,
@@ -58,6 +78,12 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   getFieldValue,
   setLightboxSrc,
 }) {
+  const labelTitleById = React.useMemo(
+    () => new Map(MILESTONE_LABELS.map((x) => [x.id, x.title])),
+    []
+  );
+  const getLabelBadgeClass = (labelId) =>
+    LABEL_BADGE_CLASS[labelId] || 'border-cyan-700/40 bg-cyan-950/30 text-cyan-300';
   const [milestonesPage, setMilestonesPage] = useState(0);
   const milestoneListScrollRef = useRef(null);
   const eventColumnRef = useRef(null);
@@ -153,7 +179,8 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   }, [selectedEntity?.id]);
 
   if (collectionSubTab !== 'timeline' || !selectedEntity) return null;
-  const isNhanVatTab = activeTabLon === 'nhan-vat';
+  const canReviewTimeline = true;
+  const shouldSuggestReview = canReviewTimeline && milestonesAll.length >= 30;
   const reviewRows = milestonesSorted.map((ms) => {
     const parsed = parseMilestoneLabel(ms.event);
     return { ...ms, labelId: parsed.labelId, body: parsed.body };
@@ -250,7 +277,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
               : 'opacity-100'
           }`}>Mốc Sự Kiện</h3>
           <div className="flex items-center gap-2">
-            {isNhanVatTab && (
+            {canReviewTimeline && (
               <button
                 type="button"
                 onClick={() => setIsReviewOpen((p) => !p)}
@@ -275,6 +302,18 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
           </div>
         ) : (
           <>
+            {shouldSuggestReview && !isReviewOpen && (
+              <div className="mb-3 rounded-xl border border-cyan-700/40 bg-cyan-950/20 p-2.5 text-[11px] text-cyan-200 flex items-center justify-between gap-2">
+                <span>Đã có {milestonesAll.length} mốc — nên rà soát nhãn/gộp để timeline gọn hơn.</span>
+                <button
+                  type="button"
+                  onClick={() => setIsReviewOpen(true)}
+                  className="px-2 py-1 rounded-md border border-cyan-700/50 bg-cyan-900/20 text-cyan-200 font-bold hover:bg-cyan-900/35 transition-colors"
+                >
+                  Mở rà soát
+                </button>
+              </div>
+            )}
             <div ref={milestoneListScrollRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative pl-1">
               <div
                 className="absolute left-[14px] top-0 w-px bg-gradient-to-b from-amber-900/50 via-slate-700 to-transparent z-0 pointer-events-none"
@@ -286,6 +325,8 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                   const ms = milestones[vi.index];
                   if (!ms) return null;
                   const isSelected = selectedMilestoneId === ms.id;
+                  const parsedMs = parseMilestoneLabel(ms.event);
+                  const isAutoMs = isAutoOwnerMilestone(ms);
                   return (
                     <div
                       key={ms.id}
@@ -319,7 +360,19 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                           }`}
                         >
                           <div className={`text-sm font-bold uppercase tracking-widest font-heading mb-1 transition-colors ${isSelected ? 'text-amber-400' : 'text-slate-400 group-hover:text-slate-300'}`}>Chương {safeString(ms.chapter)}</div>
-                          <div className={`text-xs font-serif line-clamp-2 leading-relaxed ${isSelected ? 'text-slate-200' : 'text-slate-500 group-hover:text-slate-400'}`}>{safeString(ms.event)}</div>
+                          <div className="flex items-center gap-2 mb-1">
+                            {parsedMs.labelId && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded border uppercase tracking-wide ${getLabelBadgeClass(parsedMs.labelId)}`}>
+                                {safeString(labelTitleById.get(parsedMs.labelId))}
+                              </span>
+                            )}
+                            {isAutoMs && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700/50 bg-emerald-950/30 text-emerald-300 uppercase tracking-wide">
+                                AUTO
+                              </span>
+                            )}
+                          </div>
+                          <div className={`text-xs font-serif line-clamp-2 leading-relaxed ${isSelected ? 'text-slate-200' : 'text-slate-500 group-hover:text-slate-400'}`}>{safeString(parsedMs.body || ms.event)}</div>
                         </div>
                       </button>
                     </div>
@@ -410,7 +463,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
       </div>
 
       <div className="flex-1 min-w-0 overflow-y-auto custom-scrollbar pl-2 pr-2">
-        {isNhanVatTab && isReviewOpen && (
+        {canReviewTimeline && isReviewOpen && (
           <div className="mb-4 rounded-2xl border border-cyan-800/40 bg-cyan-950/10 p-4">
             <div className="text-[11px] font-bold uppercase tracking-widest text-cyan-300 mb-2">Bộ nhãn ký tự</div>
             <div className="text-xs text-slate-300 font-serif mb-3">
@@ -461,6 +514,8 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
         )}
         {selectedMilestoneId && selectedEntity.milestones?.find((m) => m.id === selectedMilestoneId) ? (() => {
           const selectedMs = selectedEntity.milestones.find((m) => m.id === selectedMilestoneId);
+          const selectedParsed = parseMilestoneLabel(selectedMs.event);
+          const selectedIsAuto = isAutoOwnerMilestone(selectedMs);
           const fields =
             currentTabConfig && activeTabLon
               ? resolveFieldsTemplate(currentTabConfig, activeTabLon, currentTabConfig._parentLabel || '')
@@ -518,6 +573,20 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                     <div className="flex items-center gap-2 mb-2 text-amber-600/80">
                       <History size={14}/> <span className="text-[10px] uppercase font-bold tracking-widest">Kỷ Nguyên / Sự kiện</span>
                     </div>
+                    {selectedParsed.labelId && (
+                      <div className="mb-2">
+                        <span className={`text-[11px] px-2 py-1 rounded-full border uppercase tracking-wide font-bold ${getLabelBadgeClass(selectedParsed.labelId)}`}>
+                          {safeString(labelTitleById.get(selectedParsed.labelId))}
+                        </span>
+                      </div>
+                    )}
+                    {selectedIsAuto && (
+                      <div className="mb-2">
+                        <span className="text-[11px] px-2 py-1 rounded-full border border-emerald-700/50 bg-emerald-950/30 text-emerald-300 uppercase tracking-wide font-bold">
+                          AUTO
+                        </span>
+                      </div>
+                    )}
                     <h3 className="text-3xl font-heading font-bold text-amber-500">Giai đoạn chương {safeString(selectedMs.chapter)}</h3>
                   </div>
                   <div className="flex gap-2">
@@ -526,7 +595,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                   </div>
                 </div>
                 <div className="prose prose-invert max-w-none relative z-10 text-[17px] text-slate-200 font-serif leading-loose whitespace-pre-wrap">
-                  {renderMarkdown(safeString(selectedMs.event), currentContextDirHandle, entityMap, globalLinkRegex, onNavigate)}
+                  {renderMarkdown(safeString(selectedParsed.body || selectedMs.event), currentContextDirHandle, entityMap, globalLinkRegex, onNavigate)}
                 </div>
               </div>
 

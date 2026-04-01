@@ -103,6 +103,59 @@ describe('dataMigration', () => {
       });
       expect(out.storageLayout).toBeUndefined();
     });
+
+    it('backfills auto-owner itemEntityId when name resolves uniquely', () => {
+      const out = migrateNovel({
+        id: 'n1',
+        data: {
+          nhanVat: {
+            chinh: {
+              entities: [{ id: 'nv1', name: 'Lạc Nam', milestones: [] }],
+            },
+          },
+          congPhap: {
+            cp: {
+              entities: [
+                { id: 'cp1', name: 'Thiên Địa Công', milestones: [] },
+                {
+                  id: 'item-holder',
+                  name: 'ItemHolder',
+                  milestones: [
+                    { id: 'ms-auto-1', chapter: 9, event: '[?] Nhận được [[Thiên Địa Công]]', meta: { source: 'auto-owner' } },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      });
+      const ms = out.data.congPhap.cp.entities[1].milestones[0];
+      expect(ms.meta?.itemEntityId).toBe('cp1');
+      expect(ms.meta?.source).toBe('auto-owner');
+    });
+
+    it('does not backfill itemEntityId when item name is ambiguous', () => {
+      const out = migrateNovel({
+        id: 'n1',
+        data: {
+          a: { x: { entities: [{ id: 'i1', name: 'demo', milestones: [] }] } },
+          b: { y: { entities: [{ id: 'i2', name: 'demo', milestones: [] }] } },
+          c: {
+            z: {
+              entities: [
+                {
+                  id: 'h1',
+                  name: 'holder',
+                  milestones: [{ id: 'ms-auto-1', chapter: 1, event: '[?] Nhận được [[demo]]', meta: { source: 'auto-owner' } }],
+                },
+              ],
+            },
+          },
+        },
+      });
+      const ms = out.data.c.z.entities[0].milestones[0];
+      expect(ms.meta?.itemEntityId).toBeUndefined();
+    });
   });
 
   describe('migrateBackup', () => {
