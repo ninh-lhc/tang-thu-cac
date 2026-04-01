@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyAutoRelationNotesForEntity,
+  cleanupAutoRelationLegacyInfoForNovel,
+  cleanupAutoRelationLegacyInfoText,
   isAutoRelationScopeLonId,
   parseRelationHierarchyFromStatus,
   upsertAutoRelationDetailNote,
@@ -75,6 +77,29 @@ describe('autoRelationDetailNote', () => {
     expect(out).toContain('[[Thiên Hà Châu]]');
     expect(out).not.toContain('[[Cũ A]]');
     expect(out).not.toContain('[[Cũ B]]');
+  });
+
+  it('normalizes mixed current/legacy related blocks to one canonical block', () => {
+    const input = [
+      'Mô tả tay.',
+      '',
+      '## Vị trí',
+      '## Gia Tộc',
+      '- [[Lạc Gia]] (Tam Cấp thế lực - Thiên Hà Châu)',
+      '> (Tự động cập nhật từ các thẻ liên quan)',
+      '',
+      '## Liên kết liên quan (tự động)',
+      '- [[Lạc Gia]] (Ngũ Cấp thế lực - Thiên Hà Châu)',
+      '- [[Cũ]] (Bát Cấp thế lực - Thiên Hà Châu)',
+      '> (Tự động cập nhật từ các thẻ liên quan)',
+    ].join('\n');
+    const out = cleanupAutoRelationLegacyInfoText(input);
+    expect((out.match(/#{1,3}\s*Vị trí/g) || []).length).toBe(1);
+    expect((out.match(/Liên kết liên quan \(tự động\)/g) || []).length).toBe(0);
+    expect((out.match(/\[\[Lạc Gia\]\]/g) || []).length).toBe(1);
+    expect(out).toContain('[[Lạc Gia]] (Ngũ Cấp thế lực - Thiên Hà Châu)');
+    expect(out).toContain('[[Cũ]] (Bát Cấp thế lực - Thiên Hà Châu)');
+    expect(out).toContain('Mô tả tay.');
   });
 
   it('enables only the-luc and ban-do scopes', () => {
@@ -298,6 +323,43 @@ describe('autoRelationDetailNote', () => {
     expect((text.match(/\[\[Lạc Gia\]\]/g) || []).length).toBe(1);
     expect(text).toContain('[[Lạc Gia]] (Cửu Cấp thế lực - Thiên Hà Châu)');
     expect(text).toContain('Mô tả tay.');
+  });
+
+  it('cleanup helper scans whole novel and returns touched count', () => {
+    const novel = {
+      data: {
+        a: {
+          b: {
+            entities: [
+              {
+                id: 'e1',
+                name: 'Lạc Gia',
+                info: [
+                  '## Quan hệ bản đồ - thế lực (tự động)',
+                  '- Cấp bậc: Tam Cấp thế lực',
+                  '- Trực thuộc: [[Cũ A]]',
+                  '> (Khối tự động, không cần sửa tay)',
+                  '',
+                  '## Quan hệ bản đồ - thế lực (tự động)',
+                  '- Cấp bậc: Cửu Cấp thế lực',
+                  '- Trực thuộc: [[Thiên Hà Châu]]',
+                  '> (Khối tự động, không cần sửa tay)',
+                ].join('\n'),
+              },
+              {
+                id: 'e2',
+                name: 'Thiên Hà Châu',
+                info: '',
+              },
+            ],
+          },
+        },
+      },
+    };
+    const touched = cleanupAutoRelationLegacyInfoForNovel(novel);
+    expect(touched).toBe(1);
+    expect((String(novel.data.a.b.entities[0].info).match(/## Quan hệ bản đồ - thế lực \(tự động\)/g) || []).length).toBe(1);
+    expect(String(novel.data.a.b.entities[0].info)).toContain('[[Thiên Hà Châu]]');
   });
 
   it('stress: repeated auto relation updates do not duplicate backlink entries', () => {

@@ -38,6 +38,20 @@ function dedupeRelatedEntriesByName(entries) {
   return [...byName.values()];
 }
 
+function buildAutoRelationBlockRegexGlobal() {
+  return new RegExp(`${escapeRegExp(AUTO_REL_TITLE)}[\\s\\S]*?${escapeRegExp(AUTO_REL_END)}`, 'g');
+}
+
+function buildRelatedBlockRegexGlobal() {
+  const blockPattern = `#{1,3}\\s*${escapeRegExp(RELATED_TITLE.replace(/^##\s*/, ''))}[\\s\\S]*?${escapeRegExp(RELATED_END)}`;
+  return new RegExp(blockPattern, 'g');
+}
+
+function buildLegacyRelatedBlockRegexGlobal() {
+  const legacyBlockPattern = `${escapeRegExp('## Liên kết liên quan (tự động)')}[\\s\\S]*?${escapeRegExp(RELATED_END)}`;
+  return new RegExp(legacyBlockPattern, 'g');
+}
+
 export function parseRelationHierarchyFromStatus(statusLine) {
   return parseStatusHierarchy(statusLine);
 }
@@ -87,7 +101,7 @@ export function upsertAutoRelationDetailNote(infoText, statusLine) {
     .replace(/<!--ttc:auto-rel:end-->/g, '')
     .trimEnd();
   const block = buildAutoRelationBlock(parsed);
-  const autoBlockReGlobal = new RegExp(`${escapeRegExp(AUTO_REL_TITLE)}[\\s\\S]*?${escapeRegExp(AUTO_REL_END)}`, 'g');
+  const autoBlockReGlobal = buildAutoRelationBlockRegexGlobal();
   const { cleaned, matches } = stripMatchedBlocks(src, autoBlockReGlobal);
   if (matches.length > 0) {
     return cleaned ? `${cleaned}\n\n${block}` : block;
@@ -142,13 +156,16 @@ function parseRelatedBlockEntries(blockText) {
   const out = [];
   const re = /^\s*-\s*\[\[([^\]]+)\]\]\s*\((.*)\)\s*$/;
   const relatedTitle = normalizeAsciiText(RELATED_TITLE.replace(/^##\s*/, ''));
+  const legacyRelatedTitle = normalizeAsciiText('Liên kết liên quan (tự động)');
   let currentCategory = '';
   lines.forEach((line) => {
     const hm = line.match(/^\s*#{2,3}\s+(.+?)\s*$/);
     if (hm) {
       const heading = String(hm[1] || '').trim();
       // Ignore the block title heading itself; only keep real category headings.
-      currentCategory = normalizeAsciiText(heading) === relatedTitle ? '' : heading;
+      const headingNorm = normalizeAsciiText(heading);
+      currentCategory =
+        headingNorm === relatedTitle || headingNorm === legacyRelatedTitle ? '' : heading;
       return;
     }
     const m = line.match(re);
@@ -174,10 +191,8 @@ function upsertRelatedBacklinkNote(infoText, sourceName, statusLine) {
   if (!source) return String(infoText || '');
   const src = String(infoText || '').trimEnd();
   const nextEntry = buildRelatedEntry(source, statusLine);
-  const blockPattern = `#{1,3}\\s*${escapeRegExp(RELATED_TITLE.replace(/^##\s*/, ''))}[\\s\\S]*?${escapeRegExp(RELATED_END)}`;
-  const blockReGlobal = new RegExp(blockPattern, 'g');
-  const legacyBlockPattern = `${escapeRegExp('## Liên kết liên quan (tự động)')}[\\s\\S]*?${escapeRegExp(RELATED_END)}`;
-  const legacyBlockReGlobal = new RegExp(legacyBlockPattern, 'g');
+  const blockReGlobal = buildRelatedBlockRegexGlobal();
+  const legacyBlockReGlobal = buildLegacyRelatedBlockRegexGlobal();
   const currentBlocks = src.match(blockReGlobal) || [];
   const legacyBlocks = src.match(legacyBlockReGlobal) || [];
 
@@ -200,6 +215,68 @@ function upsertRelatedBacklinkNote(infoText, sourceName, statusLine) {
     .replace(/\n{3,}/g, '\n\n')
     .trimEnd();
   return cleanedSrc ? `${cleanedSrc}\n\n${merged}` : merged;
+}
+
+export function cleanupAutoRelationLegacyInfoText(infoText) {
+  let next = String(infoText || '')
+    .replace(/<!--ttc:auto-rel:start-->/g, '')
+    .replace(/<!--ttc:auto-rel:end-->/g, '')
+    .trimEnd();
+
+  const autoBlockReGlobal = buildAutoRelationBlockRegexGlobal();
+  const autoBlocks = next.match(autoBlockReGlobal) || [];
+  if (autoBlocks.length > 1) {
+    const kept = autoBlocks[autoBlocks.length - 1].trim();
+    const base = next
+      .replace(autoBlockReGlobal, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    next = base ? `${base}\n\n${kept}` : kept;
+  }
+
+  const blockReGlobal = buildRelatedBlockRegexGlobal();
+  const legacyBlockReGlobal = buildLegacyRelatedBlockRegexGlobal();
+  const relatedBlocks = next.match(blockReGlobal) || [];
+  const legacyRelatedBlocks = next.match(legacyBlockReGlobal) || [];
+  if (relatedBlocks.length > 0 || legacyRelatedBlocks.length > 0) {
+    const allEntries = [...relatedBlocks, ...legacyRelatedBlocks]
+      .flatMap((blockText) => parseRelatedBlockEntries(blockText));
+    const deduped = dedupeRelatedEntriesByName(allEntries);
+    const merged = deduped.length > 0
+      ? renderRelatedBlock(sortRelatedEntries(deduped))
+      : [...relatedBlocks, ...legacyRelatedBlocks].slice(-1)[0];
+    const base = next
+      .replace(blockReGlobal, '')
+      .replace(legacyBlockReGlobal, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trimEnd();
+    const normalized = merged ? merged.trim() : '';
+    next = normalized ? (base ? `${base}\n\n${normalized}` : normalized) : base.trim();
+  }
+
+  return next;
+}
+
+export function cleanupAutoRelationLegacyInfoForNovel(novelData) {
+  const data = novelData?.data;
+  if (!data || typeof data !== 'object') return 0;
+  let touched = 0;
+  for (const lonData of Object.values(data)) {
+    if (!lonData || typeof lonData !== 'object') continue;
+    for (const nhoData of Object.values(lonData)) {
+      const entities = Array.isArray(nhoData?.entities) ? nhoData.entities : [];
+      entities.forEach((entity) => {
+        if (!entity || typeof entity !== 'object') return;
+        const before = String(entity.info || '');
+        const after = cleanupAutoRelationLegacyInfoText(before);
+        if (after !== before) {
+          entity.info = after;
+          touched += 1;
+        }
+      });
+    }
+  }
+  return touched;
 }
 
 function iterAllCollectionEntities(novelData, cb) {

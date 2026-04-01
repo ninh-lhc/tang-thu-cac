@@ -5,6 +5,8 @@
  * Sau khi sửa: chạy `npm run test` (dataMigration.test.js).
  */
 
+import { cleanupAutoRelationLegacyInfoForNovel } from './lib/autoRelationDetailNote.js';
+
 export const INDEX_DATA_VERSION = 1;
 export const NOVEL_DATA_VERSION = 1;
 
@@ -249,6 +251,7 @@ export function migrateNovel(raw) {
   }
 
   backfillAutoOwnerItemEntityIdForNovel(nov);
+  cleanupAutoRelationLegacyInfoForNovel(nov);
 
   delete nov.storageLayout;
 

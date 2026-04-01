@@ -156,6 +156,38 @@ describe('dataMigration', () => {
       const ms = out.data.c.z.entities[0].milestones[0];
       expect(ms.meta?.itemEntityId).toBeUndefined();
     });
+
+    it('normalizes duplicated AUTO relation blocks during novel migration', () => {
+      const out = migrateNovel({
+        id: 'n1',
+        data: {
+          theLuc: {
+            giaToc: {
+              entities: [
+                {
+                  id: 'e1',
+                  name: 'Lac Gia',
+                  info: [
+                    '## Quan hệ bản đồ - thế lực (tự động)',
+                    '- Cấp bậc: Tam Cấp thế lực',
+                    '- Trực thuộc: [[Cũ A]]',
+                    '> (Khối tự động, không cần sửa tay)',
+                    '',
+                    '## Quan hệ bản đồ - thế lực (tự động)',
+                    '- Cấp bậc: Cửu Cấp thế lực',
+                    '- Trực thuộc: [[Thiên Hà Châu]]',
+                    '> (Khối tự động, không cần sửa tay)',
+                  ].join('\n'),
+                },
+              ],
+            },
+          },
+        },
+      });
+      const info = String(out.data.theLuc.giaToc.entities[0].info || '');
+      expect((info.match(/## Quan hệ bản đồ - thế lực \(tự động\)/g) || []).length).toBe(1);
+      expect(info).toContain('[[Thiên Hà Châu]]');
+    });
   });
 
   describe('migrateBackup', () => {

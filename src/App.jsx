@@ -76,7 +76,10 @@ import { buildXrefEntityCatalogText } from './lib/xrefBangDanhMucThucThe.js';
 import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
-import { applyAutoRelationNotesForEntity } from './lib/autoRelationDetailNote.js';
+import {
+  applyAutoRelationNotesForEntity,
+  cleanupAutoRelationLegacyInfoForNovel,
+} from './lib/autoRelationDetailNote.js';
 import {
   appendOwnerAcquisitionMilestone,
   parseOwnerTimelineHintDetailed,
@@ -2353,6 +2356,7 @@ export default function App() {
     const loaded = await loadNovelData(meta, dirHandle, loadNovelOpts);
     if (loaded?.novel) {
       const data = loaded.novel;
+      const legacyAutoInfoCleanedCount = cleanupAutoRelationLegacyInfoForNovel(data);
       const recoveredFromBackup = Boolean(data.__recoveredFromBackup);
       if (recoveredFromBackup) delete data.__recoveredFromBackup;
       setActiveNovelDirHandle(loaded.novelDir ?? null);
@@ -2373,7 +2377,7 @@ export default function App() {
           void syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, dirHandle, nextStats);
         }
       }
-      if (migrated !== data) syncNovel(migrated, dirHandle);
+      if (migrated !== data || legacyAutoInfoCleanedCount > 0) syncNovel(migrated, dirHandle);
       if (tabAt?.lonId) {
         setActiveTabLon(tabAt.lonId);
         setActiveTabNho(tabAt.nhoId || null);
@@ -2438,6 +2442,7 @@ export default function App() {
         const fullLoaded = await loadNovelData(activeNovelData, dirHandle);
         const fullData = fullLoaded?.novel;
         if (fullData && !fullData.__partialData) {
+          const legacyAutoInfoCleanedCount = cleanupAutoRelationLegacyInfoForNovel(fullData);
           setActiveNovelData((prev) => {
             if (!prev || prev.id !== key) return prev;
             return fullData;
@@ -2451,13 +2456,16 @@ export default function App() {
           novelStatsByIdRef.current = nextStats;
           setNovelStatsById(nextStats);
           void syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, dirHandle, nextStats);
+          if (legacyAutoInfoCleanedCount > 0) {
+            void syncNovel(fullData, dirHandle);
+          }
         }
       } finally {
         lazyFullHydrateInFlightRef.current.delete(key);
       }
     };
     void run();
-  }, [activeNovelData, activeTabLon, dirHandle, loadNovelData, syncIndex]);
+  }, [activeNovelData, activeTabLon, dirHandle, loadNovelData, syncIndex, syncNovel]);
 
 
   const toggleGenre = (genre) => {
