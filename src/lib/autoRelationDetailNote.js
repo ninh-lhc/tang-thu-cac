@@ -16,6 +16,28 @@ function escapeRegExp(text) {
   return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function stripMatchedBlocks(text, blockReGlobal) {
+  const src = String(text || '');
+  const matches = src.match(blockReGlobal) || [];
+  if (matches.length === 0) return { cleaned: src, matches: [] };
+  const cleaned = src
+    .replace(blockReGlobal, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { cleaned, matches };
+}
+
+function dedupeRelatedEntriesByName(entries) {
+  const byName = new Map();
+  (entries || []).forEach((entry) => {
+    const key = normalizeAsciiText(entry?.name);
+    if (!key) return;
+    // Keep the latest parsed row for a name when legacy data contains duplicates.
+    byName.set(key, entry);
+  });
+  return [...byName.values()];
+}
+
 export function parseRelationHierarchyFromStatus(statusLine) {
   return parseStatusHierarchy(statusLine);
 }
@@ -65,8 +87,11 @@ export function upsertAutoRelationDetailNote(infoText, statusLine) {
     .replace(/<!--ttc:auto-rel:end-->/g, '')
     .trimEnd();
   const block = buildAutoRelationBlock(parsed);
-  const replaceRe = new RegExp(`${escapeRegExp(AUTO_REL_TITLE)}[\\s\\S]*?${escapeRegExp(AUTO_REL_END)}`);
-  if (replaceRe.test(src)) return src.replace(replaceRe, block);
+  const autoBlockReGlobal = new RegExp(`${escapeRegExp(AUTO_REL_TITLE)}[\\s\\S]*?${escapeRegExp(AUTO_REL_END)}`, 'g');
+  const { cleaned, matches } = stripMatchedBlocks(src, autoBlockReGlobal);
+  if (matches.length > 0) {
+    return cleaned ? `${cleaned}\n\n${block}` : block;
+  }
 
   if (!src) return block;
   return `${src}\n\n${block}`;
@@ -149,24 +174,32 @@ function upsertRelatedBacklinkNote(infoText, sourceName, statusLine) {
   if (!source) return String(infoText || '');
   const src = String(infoText || '').trimEnd();
   const nextEntry = buildRelatedEntry(source, statusLine);
-  const blockRe = new RegExp(`#{1,3}\\s*${escapeRegExp(RELATED_TITLE.replace(/^##\s*/, ''))}[\\s\\S]*?${escapeRegExp(RELATED_END)}`);
-  const legacyBlockRe = /## Liên kết liên quan \(tự động\)[\s\S]*?> \(Tự động cập nhật từ các thẻ liên quan\)/;
+  const blockPattern = `#{1,3}\\s*${escapeRegExp(RELATED_TITLE.replace(/^##\s*/, ''))}[\\s\\S]*?${escapeRegExp(RELATED_END)}`;
+  const blockReGlobal = new RegExp(blockPattern, 'g');
+  const legacyBlockPattern = `${escapeRegExp('## Liên kết liên quan (tự động)')}[\\s\\S]*?${escapeRegExp(RELATED_END)}`;
+  const legacyBlockReGlobal = new RegExp(legacyBlockPattern, 'g');
+  const currentBlocks = src.match(blockReGlobal) || [];
+  const legacyBlocks = src.match(legacyBlockReGlobal) || [];
 
-  if (!blockRe.test(src) && !legacyBlockRe.test(src)) {
+  if (currentBlocks.length === 0 && legacyBlocks.length === 0) {
     const block = renderRelatedBlock([nextEntry]);
     return src ? `${src}\n\n${block}` : block;
   }
 
-  const oldBlock = src.match(blockRe)?.[0] || src.match(legacyBlockRe)?.[0] || '';
-  const existing = parseRelatedBlockEntries(oldBlock);
-  const hasSource = existing.some((x) => normalizeAsciiText(x.name) === normalizeAsciiText(source));
-  const mergedEntries = hasSource
-    ? existing.map((x) => (normalizeAsciiText(x.name) === normalizeAsciiText(source) ? nextEntry : x))
-    : [...existing, nextEntry];
+  const existing = dedupeRelatedEntriesByName(
+    [...currentBlocks, ...legacyBlocks].flatMap((blockText) => parseRelatedBlockEntries(blockText))
+  );
+  const byName = new Map(existing.map((entry) => [normalizeAsciiText(entry.name), entry]));
+  byName.set(normalizeAsciiText(source), nextEntry);
+  const mergedEntries = [...byName.values()];
   const sorted = sortRelatedEntries(mergedEntries);
   const merged = renderRelatedBlock(sorted);
-  if (blockRe.test(src)) return src.replace(blockRe, merged);
-  return src.replace(legacyBlockRe, merged);
+  const cleanedSrc = src
+    .replace(blockReGlobal, '')
+    .replace(legacyBlockReGlobal, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
+  return cleanedSrc ? `${cleanedSrc}\n\n${merged}` : merged;
 }
 
 function iterAllCollectionEntities(novelData, cb) {
