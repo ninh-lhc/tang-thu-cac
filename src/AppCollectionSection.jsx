@@ -131,6 +131,24 @@ export function AppCollectionSection({
     collectionSubTab === 'detail' && selectedEntity
       ? [currentTabConfig?.label, selectedEntity?.name]
       : [];
+  const standardImageFileStemParts = React.useMemo(() => {
+    const parts = [];
+    const currentLabel = safeString(currentTabConfig?.label);
+    if (currentLabel) parts.push(currentLabel);
+    const currentConLabel = safeString(
+      currentTabConfig?.tabCon?.find((c) => c.id === activeTabCon)?.label
+    );
+    if (currentConLabel && currentConLabel !== currentLabel) parts.push(currentConLabel);
+    return parts;
+  }, [activeTabCon, currentTabConfig]);
+  const handlePickScopedStandardLocalImage = React.useCallback(
+    (setAvatarCallback, editorId = null) =>
+      handlePickLocalImage(setAvatarCallback, editorId, {
+        filePrefix: 'tab',
+        fileStemParts: standardImageFileStemParts,
+      }),
+    [handlePickLocalImage, standardImageFileStemParts]
+  );
   React.useEffect(() => { setEntitySearchDraft(entitySearch || ''); }, [entitySearch]);
   React.useEffect(() => { setEntityFilterValueDraft(entityFilterValue || ''); }, [entityFilterValue]);
   React.useEffect(() => {
@@ -553,7 +571,10 @@ export function AppCollectionSection({
         <div
           className="flex-1 flex flex-col bg-slate-900/30 p-8 rounded-[40px] backdrop-blur-md border border-slate-800 min-h-[500px]"
           onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => handleImageDrop(e, 'standard-editor')}
+          onDrop={(e) => handleImageDrop(e, 'standard-editor', {
+            filePrefix: 'tab',
+            fileStemParts: standardImageFileStemParts,
+          })}
         >
           {isEditingMode ? (
             <div className="flex flex-col flex-1 animate-fade-in">
@@ -561,7 +582,7 @@ export function AppCollectionSection({
                 <MarkdownToolbar
                   editorId="standard-editor"
                   onInsertImage={(eid) => { setImageForm({ url: '', alt: '', editorId: eid }); setIsInsertImageModalOpen(true); }}
-                  onPickLocalImage={handlePickLocalImage}
+                  onPickLocalImage={handlePickScopedStandardLocalImage}
                 />
                 <button
                   onClick={() => {
