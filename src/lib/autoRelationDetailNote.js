@@ -7,10 +7,13 @@ import {
   splitStatusHierarchyTokens,
 } from './statusHierarchyParser.js';
 
-const AUTO_REL_TITLE = '## Quan há»‡ báº£n Ä‘á»“ - tháº¿ lá»±c (tá»± Ä‘á»™ng)';
-const AUTO_REL_END = '> (Khá»‘i tá»± Ä‘á»™ng, khÃ´ng cáº§n sá»­a tay)';
-const RELATED_TITLE = '## Vá»‹ trÃ­';
-const RELATED_END = '> (Tá»± Ä‘á»™ng cáº­p nháº­t tá»« cÃ¡c tháº» liÃªn quan)';
+const AUTO_REL_TITLE = '## Quan h\u1ec7 b\u1ea3n \u0111\u1ed3 - th\u1ebf l\u1ef1c (t\u1ef1 \u0111\u1ed9ng)';
+const AUTO_REL_END = '> (Kh\u1ed1i t\u1ef1 \u0111\u1ed9ng, kh\u00f4ng c\u1ea7n s\u1eeda tay)';
+const RELATED_TITLE = '## V\u1ecb tr\u00ed';
+const RELATED_END = '> (T\u1ef1 \u0111\u1ed9ng c\u1eadp nh\u1eadt t\u1eeb c\u00e1c th\u1ebb li\u00ean quan)';
+const LEGACY_RELATED_TITLE = '## Li\u00ean k\u1ebft li\u00ean quan (t\u1ef1 \u0111\u1ed9ng)';
+const CATEGORY_OTHER = 'Kh\u00e1c';
+const FALLBACK_STATUS_LABEL = 'chu\u1ed7i ph\u00e2n t\u1ea7ng';
 
 function escapeRegExp(text) {
   return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -48,7 +51,7 @@ function buildRelatedBlockRegexGlobal() {
 }
 
 function buildLegacyRelatedBlockRegexGlobal() {
-  const legacyBlockPattern = `${escapeRegExp('## LiÃªn káº¿t liÃªn quan (tá»± Ä‘á»™ng)')}[\\s\\S]*?${escapeRegExp(RELATED_END)}`;
+  const legacyBlockPattern = `${escapeRegExp(LEGACY_RELATED_TITLE)}[\\s\\S]*?${escapeRegExp(RELATED_END)}`;
   return new RegExp(legacyBlockPattern, 'g');
 }
 
@@ -64,10 +67,10 @@ export function isAutoRelationScopeLonId(lonId, parentLabel = '') {
 }
 
 function relationLabelAt(index) {
-  if (index === 0) return 'Trá»±c thuá»™c';
-  if (index === 1) return 'Khu vá»±c';
-  if (index === 2) return 'Tháº¿ giá»›i';
-  return `Táº§ng má»Ÿ rá»™ng ${index - 2}`;
+  if (index === 0) return 'Tr\u1ef1c thu\u1ed9c';
+  if (index === 1) return 'Khu v\u1ef1c';
+  if (index === 2) return 'Th\u1ebf gi\u1edbi';
+  return `T\u1ea7ng m\u1edf r\u1ed9ng ${index - 2}`;
 }
 
 function rankScoreFromStatus(statusLine) {
@@ -82,8 +85,8 @@ function rankScoreFromStatus(statusLine) {
 function buildAutoRelationBlock(parsed) {
   const lines = [
     AUTO_REL_TITLE,
-    parsed.categoryLabel ? `- Loáº¡i hÃ¬nh: ${parsed.categoryLabel}` : null,
-    `- Cáº¥p báº­c: ${parsed.rankLabel}`,
+    parsed.categoryLabel ? `- Lo\u1ea1i h\u00ecnh: ${parsed.categoryLabel}` : null,
+    `- C\u1ea5p b\u1eadc: ${parsed.rankLabel}`,
   ].filter(Boolean);
   parsed.chain.forEach((name, idx) => {
     lines.push(`- ${relationLabelAt(idx)}: [[${name}]]`);
@@ -113,7 +116,7 @@ export function upsertAutoRelationDetailNote(infoText, statusLine) {
 
 function buildRelatedEntry(sourceName, statusLine) {
   const parsed = parseRelationHierarchyFromStatus(statusLine);
-  const category = String(parsed?.categoryLabel || 'KhÃ¡c').trim() || 'KhÃ¡c';
+  const category = String(parsed?.categoryLabel || CATEGORY_OTHER).trim() || CATEGORY_OTHER;
   return {
     name: String(sourceName || '').trim(),
     status: String(statusLine || '').trim(),
@@ -217,7 +220,7 @@ function renderFlatRelatedBlock(entries) {
   const lines = [RELATED_TITLE];
   const grouped = new Map();
   entries.forEach((e) => {
-    const k = String(e.category || 'Khác').trim() || 'Khác';
+    const k = String(e.category || CATEGORY_OTHER).trim() || CATEGORY_OTHER;
     if (!grouped.has(k)) grouped.set(k, []);
     grouped.get(k).push(e);
   });
@@ -225,7 +228,7 @@ function renderFlatRelatedBlock(entries) {
   categories.forEach((cat) => {
     lines.push(`## ${cat}`);
     grouped.get(cat).forEach((e) => {
-      const prettyStatus = stripDuplicatedCategoryPrefix(e.status, cat) || 'chuỗi phân tầng';
+      const prettyStatus = stripDuplicatedCategoryPrefix(e.status, cat) || FALLBACK_STATUS_LABEL;
       lines.push(`- [[${e.name}]] (${prettyStatus})`);
     });
   });
@@ -248,7 +251,7 @@ function parseRelatedBlockEntries(blockText, targetName = '') {
   const itemRe = /^(\s*)-\s*\[\[([^\]]+)\]\]\s*\((.*)\)\s*$/;
   const nodeRe = /^(\s*)-\s*\[\[([^\]]+)\]\]\s*$/;
   const relatedTitle = normalizeAsciiText(RELATED_TITLE.replace(/^##\s*/, ''));
-  const legacyRelatedTitle = normalizeAsciiText('LiÃªn káº¿t liÃªn quan (tá»± Ä‘á»™ng)');
+  const legacyRelatedTitle = normalizeAsciiText(LEGACY_RELATED_TITLE.replace(/^##\s*/, ''));
   let currentCategory = '';
   const locationStack = [];
 

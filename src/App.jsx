@@ -1,35 +1,34 @@
 ﻿// ==========================================
-// TRá»¤ 4: TRáº¬N NHÃƒN TRUNG TÃ‚M
+// TRỤ 4: TRẬN NHÃN TRUNG TÂM
 // File: App.jsx
-// Vai tro: state toan cuc, dieu phoi, layout chinh, quan ly thu muc truyen.
+// Vai trò: state toàn cục, điều phối, layout chính, quản lý thư mục truyện.
 //
-// ÄÃ£ tÃ¡ch (cÃ¹ng thÆ° má»¥c src/, tÃªn dá»… nhá»›):
-//   appNhatKyVaGoiThe.js     â€” findEntitiesByHintInNovel (mutateâ€¦ dÃ¹ng trong useAppMotCuaCapNhat)
-//   AppPhongChuVaTheme.jsx   - font + CSS theme toan cuc
-//   AppModalMotCua.jsx       â€” Má»™t cá»­a cáº­p nháº­t (táº¡o tháº» / nháº­t kÃ½ batch)
-//   AppModalQuanLyTab.jsx    â€” Tráº­n phÃ¡p / quáº£n lÃ½ tab
-//   AppModalLenhNhanh.jsx    â€” Command palette
-//   AppModalGoiYNoiTraCuu.jsx â€” Gá»£i Ã½ AI ná»‘i tra cá»©u
+// Đã tách (cùng thư mục src/, tên dễ nhớ):
+//   appNhatKyVaGoiThe.js - findEntitiesByHintInNovel (mutate), dùng trong useAppMotCuaCapNhat
+//   AppPhongChuVaTheme.jsx - font + CSS theme toàn cục
+//   AppModalMotCua.jsx - Một cửa cập nhật (tạo thẻ / nhật ký batch)
+//   AppModalQuanLyTab.jsx - Trận pháp / quản lý tab
+//   AppModalLenhNhanh.jsx - Command palette
+//   AppModalGoiYNoiTraCuu.jsx - Gợi ý AI nối tra cứu
 //   lib/stripWikiBrackets.js, lib/computeRelatedEntities.js, lib/entityFieldValue.js, lib/entityCollectionQuery.js
-//   useAppPersistence.js      â€” sync index + file truyá»‡n
-//   AppAdvancedFieldSelect.jsx â€” collection filter select UI
-//   AppLibrarySidebar.jsx, useAppLibrarySidebarState.js â€” library rail UI + state
-//   AppNovelTocRail.jsx, useAppTocRail.js â€” novel TOC rail UI + navigation state
-//   useAppDirectoryBackup.js  â€” folder connect + import/export backup handlers
-//   useAppImageWorkflow.js    â€” image upload/picker/modal workflow
-//   AppShellOverlays.jsx      â€” lightbox, toast, spinner
+//   useAppPersistence.js - sync index + file truyện
+//   AppAdvancedFieldSelect.jsx - collection filter select UI
+//   AppLibrarySidebar.jsx, useAppLibrarySidebarState.js - library rail UI + state
+//   AppNovelTocRail.jsx, useAppTocRail.js - novel TOC rail UI + navigation state
+//   useAppDirectoryBackup.js - folder connect + import/export backup handlers
+//   useAppImageWorkflow.js - image upload/picker/modal workflow
+//   AppShellOverlays.jsx - lightbox, toast, spinner
 //   lib/appTabGroups, appDashboardStats, buildEntityLinkMap, filterNovelsForLibrary, buildCurrentContextDirHandle
-//   useAppNovelCrud.js        â€” novel modal state + create/edit/delete handlers
-//   useAppPhimTatToanCuc.js     â€” phÃ­m táº¯t Ctrl+K, /, Escapeâ€¦
+//   useAppNovelCrud.js - novel modal state + create/edit/delete handlers
+//   useAppPhimTatToanCuc.js - phím tắt Ctrl+K, /, Escape...
 //   lib/tinhThongKeNhanhTruyen, locLenhNhanhCommandPalette, xrefBangDanhMucThucThe, xrefChonMucThuThap
-//   useAppMotCuaCapNhat.js, lib/hubBangDanhMucCacMucNhatKy â€” Hub má»™t cá»­a + catalog nháº­t kÃ½
+//   useAppMotCuaCapNhat.js, lib/hubBangDanhMucCacMucNhatKy - Hub một cửa + catalog nhật ký
 // ==========================================
 
-import React, { Suspense, lazy, useDeferredValue, useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import React, { useDeferredValue, useMemo, useEffect, useRef, useCallback, useState } from 'react';
 import {
   FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
-  INITIAL_TABS_CONFIG, MOCK_METADATA, MOCK_NOVEL_DATA,
+  INITIAL_TABS_CONFIG,
   DEFAULT_FIELDS_MAP, DEFAULT_FIELDS_BY_PARENT,
   guessFieldsByLabel, isStockTemplate, mergeFieldsTemplate, lockFieldsTemplateIfFirstEntity,
   resolveFieldsTemplate,
@@ -40,18 +39,13 @@ import {
   analyzeCrossRefNoteWithAI, mapGeminiErrorToUserMessage
 } from './MasterUtils.jsx';
 import {
-  AppHeader, LandingScreen, DashboardScreen,
-  ModalEntity, ModalMilestone, ModalQuickCreate, ModalSettings,
-  ModalConfirm, ModalInsertImage, ModalAddNovel, ModalDeepSearch, ModalInNovelSearch
+  AppHeader,
 } from './MasterComponents.jsx';
 import { AdvancedFieldSelect } from './AppAdvancedFieldSelect.jsx';
 import { AppLibrarySidebar } from './AppLibrarySidebar.jsx';
-import { AppNovelTocRail } from './AppNovelTocRail.jsx';
-import { AppOverviewSection } from './AppOverviewSection.jsx';
 import { getEntityFieldValue } from './lib/entityFieldValue.js';
 import { buildEntitySearchIndexMap, applyEntityCollectionFilters } from './lib/entityCollectionQuery.js';
 import { useEntityCollectionQueryState } from './useEntityCollectionQueryState.js';
-import { AppCollectionSection } from './AppCollectionSection.jsx';
 import {
   buildNovelSearchIndex,
   searchNovelIndex,
@@ -62,12 +56,12 @@ import {
 import { computeRelatedEntities } from './lib/computeRelatedEntities.js';
 import { findEntitiesByHintInNovel } from './appNhatKyVaGoiThe.js';
 import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
-import { migrateIndex } from './dataMigration.js';
 import { buildTabGroups } from './lib/appTabGroups.js';
 import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
 import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
 import { useAppPersistence } from './useAppPersistence.js';
+import { useAppShellState } from './useAppShellState.js';
 import { AppShellOverlays } from './AppShellOverlays.jsx';
 import { useAppLibrarySidebarState } from './useAppLibrarySidebarState.js';
 import { useAppNavigationAndHistory } from './useAppNavigationAndHistory.js';
@@ -84,86 +78,145 @@ import { buildXrefEntityCatalogText } from './lib/xrefBangDanhMucThucThe.js';
 import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
-
-
-
-const AppModalMotCua = lazy(() => import('./AppModalMotCua.jsx').then((m) => ({ default: m.AppModalMotCua })));
-const AppModalQuanLyTab = lazy(() => import('./AppModalQuanLyTab.jsx').then((m) => ({ default: m.AppModalQuanLyTab })));
-const AppModalLenhNhanh = lazy(() => import('./AppModalLenhNhanh.jsx').then((m) => ({ default: m.AppModalLenhNhanh })));
-const AppModalGoiYNoiTraCuu = lazy(() => import('./AppModalGoiYNoiTraCuu.jsx').then((m) => ({ default: m.AppModalGoiYNoiTraCuu })));
+import { AppMainPane } from './AppMainPane.jsx';
+import { AppModalLayer } from './AppModalLayer.jsx';
 
 export default function App() {
-  const [novelsMetadata, setNovelsMetadata] = useState(MOCK_METADATA);
-  const [activeNovelData, setActiveNovelData] = useState(null); 
-
-  const [globalTabsConfig, setGlobalTabsConfig] = useState(INITIAL_TABS_CONFIG);
-  
-  const [menu1Visible, setMenu1Visible] = useState(false);
-  const [activeTabLon, setActiveTabLon] = useState('tong-quan');
-  const [activeTabNho, setActiveTabNho] = useState(null);
-  const [activeTabCon, setActiveTabCon] = useState(null);
-  
-  const [selectedEntityId, setSelectedEntityId] = useState(null);
-  const entityAdvancedRef = useRef(null);
-  const ENTITY_PAGE_SIZE = 12; 
-  
-  const [collectionSubTab, setCollectionSubTab] = useState('list'); 
-  const [navHistory, setNavHistory] = useState([]);
-
-  const [selectedMilestoneId, setSelectedMilestoneId] = useState(null);
-  const [editingMilestoneData, setEditingMilestoneData] = useState(null);
-
-  const [isEntityEditing, setIsEntityEditing] = useState(false);
-  const [isSplitPreview, setIsSplitPreview] = useState(false);
-  const [recentlyMergedFields, setRecentlyMergedFields] = useState(new Set()); // track field vá»«a merge
-  const [livePreviewText, setLivePreviewText] = useState('');
-  const [debouncedMarkdownPreview, setDebouncedMarkdownPreview] = useState('');
-  const [isExtractingAI, setIsExtractingAI] = useState(false);
-  const [isGeneratingReview, setIsGeneratingReview] = useState(false);
-
-  const [isEditingMode, setIsEditingMode] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isManageTabsOpen, setIsManageTabsOpen] = useState(false);
-  const [isDeepSearchOpen, setIsDeepSearchOpen] = useState(false);
-  const [isInNovelSearchOpen, setIsInNovelSearchOpen] = useState(false);
-  const [xrefDraft, setXrefDraft] = useState({ from: '', to: '', note: '' });
-  const [neoXrefSectionOpen, setNeoXrefSectionOpen] = useState(false);
-  const [overviewNeoOpen, setOverviewNeoOpen] = useState(false);
-  /** { xref, suggestions, loading, error } | null */
-  const [xrefAiPanel, setXrefAiPanel] = useState(null);
-
-  const [overviewHubOpen, setOverviewHubOpen] = useState(false);
-  const [overviewHubTab, setOverviewHubTab] = useState('create');
-  const [hubCreatePath, setHubCreatePath] = useState('');
-  const [hubCreateInput, setHubCreateInput] = useState('');
-  const [hubCreatePreview, setHubCreatePreview] = useState(null);
-  const [hubCreateBusy, setHubCreateBusy] = useState(false);
-  const [hubUpdateChapter, setHubUpdateChapter] = useState('');
-  const [hubUpdateText, setHubUpdateText] = useState('');
-  const [hubUpdatePanel, setHubUpdatePanel] = useState(null);
-  
-  const [isEntityModalOpen, setIsEntityModalOpen] = useState(false);
-  const [editingEntityData, setEditingEntityData] = useState(null);
-  const [isMilestoneModalOpen, setIsMilestoneModalOpen] = useState(false);
-  const [quickCreateData, setQuickCreateData] = useState(null); 
-  
-  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
-
-  const [overviewForm, setOverviewForm] = useState(null);
-  
-  const [wikiExactMatchOnly, setWikiExactMatchOnly] = useState(() => {
-    try {
-      return localStorage.getItem('tangthu_wiki_exact') === '1';
-    } catch {
-      return false;
-    }
-  });
-  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-  const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
-  const deferredCommandPaletteQuery = useDeferredValue(commandPaletteQuery);
-  const [overviewStatsOpen, setOverviewStatsOpen] = useState(false);
-  const commandPaletteOpenRef = useRef(false);
-  commandPaletteOpenRef.current = isCommandPaletteOpen;
+  const {
+    novelsMetadata,
+    setNovelsMetadata,
+    activeNovelData,
+    setActiveNovelData,
+    globalTabsConfig,
+    setGlobalTabsConfig,
+    menu1Visible,
+    setMenu1Visible,
+    activeTabLon,
+    setActiveTabLon,
+    activeTabNho,
+    setActiveTabNho,
+    activeTabCon,
+    setActiveTabCon,
+    selectedEntityId,
+    setSelectedEntityId,
+    entityAdvancedRef,
+    ENTITY_PAGE_SIZE,
+    collectionSubTab,
+    setCollectionSubTab,
+    navHistory,
+    setNavHistory,
+    selectedMilestoneId,
+    setSelectedMilestoneId,
+    editingMilestoneData,
+    setEditingMilestoneData,
+    isEntityEditing,
+    setIsEntityEditing,
+    isSplitPreview,
+    setIsSplitPreview,
+    recentlyMergedFields,
+    setRecentlyMergedFields,
+    livePreviewText,
+    setLivePreviewText,
+    debouncedMarkdownPreview,
+    setDebouncedMarkdownPreview,
+    isExtractingAI,
+    setIsExtractingAI,
+    isGeneratingReview,
+    setIsGeneratingReview,
+    isEditingMode,
+    setIsEditingMode,
+    isSettingsOpen,
+    setIsSettingsOpen,
+    isManageTabsOpen,
+    setIsManageTabsOpen,
+    isDeepSearchOpen,
+    setIsDeepSearchOpen,
+    isInNovelSearchOpen,
+    setIsInNovelSearchOpen,
+    xrefDraft,
+    setXrefDraft,
+    neoXrefSectionOpen,
+    setNeoXrefSectionOpen,
+    overviewNeoOpen,
+    setOverviewNeoOpen,
+    xrefAiPanel,
+    setXrefAiPanel,
+    overviewHubOpen,
+    setOverviewHubOpen,
+    overviewHubTab,
+    setOverviewHubTab,
+    hubCreatePath,
+    setHubCreatePath,
+    hubCreateInput,
+    setHubCreateInput,
+    hubCreatePreview,
+    setHubCreatePreview,
+    hubCreateBusy,
+    setHubCreateBusy,
+    hubUpdateChapter,
+    setHubUpdateChapter,
+    hubUpdateText,
+    setHubUpdateText,
+    hubUpdatePanel,
+    setHubUpdatePanel,
+    isEntityModalOpen,
+    setIsEntityModalOpen,
+    editingEntityData,
+    setEditingEntityData,
+    isMilestoneModalOpen,
+    setIsMilestoneModalOpen,
+    quickCreateData,
+    setQuickCreateData,
+    confirmDialog,
+    setConfirmDialog,
+    overviewForm,
+    setOverviewForm,
+    wikiExactMatchOnly,
+    setWikiExactMatchOnly,
+    isCommandPaletteOpen,
+    setIsCommandPaletteOpen,
+    commandPaletteQuery,
+    setCommandPaletteQuery,
+    deferredCommandPaletteQuery,
+    overviewStatsOpen,
+    setOverviewStatsOpen,
+    commandPaletteOpenRef,
+    dirHandle,
+    setDirHandle,
+    activeNovelDirHandle,
+    setActiveNovelDirHandle,
+    toastMessage,
+    setToastMessage,
+    toastTimerRef,
+    showToast,
+    lightboxSrc,
+    setLightboxSrc,
+    editingTab,
+    setEditingTab,
+    geminiApiKeys,
+    handleSaveApiKeys,
+    aiMode,
+    setAiMode,
+    performanceMode,
+    setPerformanceMode,
+    autoLinkToastEnabled,
+    setAutoLinkToastEnabled,
+    novelStatsById,
+    setNovelStatsById,
+    isStatsBackfilling,
+    setIsStatsBackfilling,
+    novelStatsByIdRef,
+    novelsMetadataRef,
+    globalTabsConfigRef,
+    dirHandleRef,
+    activeNovelDataRef,
+    deepSearchIndexByNovelIdRef,
+    deepSearchWorkerRef,
+    deepSearchWorkerReqIdRef,
+    lazyTabLoadInFlightRef,
+    lazyFullHydrateInFlightRef,
+    confirmDeleteEntityRef,
+  } = useAppShellState();
 
   const {
     librarySearchInputRef,
@@ -190,92 +243,6 @@ export default function App() {
     handleSidebarNovelHover,
     clearHoveredNovel,
   } = useAppLibrarySidebarState({ novelsMetadata });
-  
-  const [dirHandle, setDirHandle] = useState(null);
-  const [activeNovelDirHandle, setActiveNovelDirHandle] = useState(null);
-  
-  const [toastMessage, setToastMessage] = useState(null);
-  const toastTimerRef = useRef(null);
-  /** options: { undoLabel, onUndo } - hien nut hoan tac, toast lau hon */
-  const showToast = useCallback((msg, type = 'success', options = null) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    const hasUndo = options && typeof options.onUndo === 'function';
-    setToastMessage({
-      msg,
-      type,
-      undoLabel: hasUndo ? (options.undoLabel || 'HoÃ n tÃ¡c') : undefined,
-      onUndo: hasUndo ? options.onUndo : undefined,
-    });
-    const ms = hasUndo ? 9000 : 3500;
-    toastTimerRef.current = setTimeout(() => {
-      setToastMessage(null);
-      toastTimerRef.current = null;
-    }, ms);
-  }, []);
-  useEffect(
-    () => () => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    },
-    []
-  );
-
-  const [lightboxSrc, setLightboxSrc] = useState(null); // null = Ä‘Ã³ng, string = URL/local_image
-  
-  const [editingTab, setEditingTab] = useState(null);
-
-  const [geminiApiKeys, setGeminiApiKeys] = useState(() => {
-    try {
-      const stored = localStorage.getItem('tangthu_apikeys');
-      if (stored) { const arr = JSON.parse(stored); if (Array.isArray(arr) && arr.length > 0) return arr; }
-    } catch { void 0; }
-    // Backward compat: migrate old single-key
-    const oldKey = localStorage.getItem('tangthu_apikey');
-    return oldKey ? [oldKey] : [];
-  });
-  const handleSaveApiKeys = (keys) => {
-    const filtered = keys.map(k => k.trim()).filter(Boolean);
-    setGeminiApiKeys(filtered);
-    localStorage.setItem('tangthu_apikeys', JSON.stringify(filtered));
-    if (filtered.length > 0) localStorage.setItem('tangthu_apikey', filtered[0]);
-  };
-  const [aiMode, setAiMode] = useState(() => {
-    try {
-      const saved = localStorage.getItem('tangthu_ai_mode');
-      return saved === 'quick' ? 'quick' : 'standard';
-    } catch {
-      return 'standard';
-    }
-  });
-  const [performanceMode, setPerformanceMode] = useState(() => {
-    try {
-      return localStorage.getItem('tangthu_perf_mode') === '1';
-    } catch {
-      return false;
-    }
-  });
-  const [autoLinkToastEnabled, setAutoLinkToastEnabled] = useState(() => {
-    try {
-      const saved = localStorage.getItem('tangthu_autolink_toast');
-      return saved !== '0';
-    } catch {
-      return true;
-    }
-  });
-
-  /** Tong thuc the / moc - luu trong index.json, khong preload toan bo novel */
-  const [novelStatsById, setNovelStatsById] = useState({});
-  const [isStatsBackfilling, setIsStatsBackfilling] = useState(false);
-  const novelStatsByIdRef = useRef({});
-  const novelsMetadataRef = useRef(novelsMetadata);
-  const globalTabsConfigRef = useRef(globalTabsConfig);
-  const dirHandleRef = useRef(dirHandle);
-  const activeNovelDataRef = useRef(null);
-  const deepSearchIndexByNovelIdRef = useRef(new Map());
-  const deepSearchWorkerRef = useRef(null);
-  const deepSearchWorkerReqIdRef = useRef(0);
-  const lazyTabLoadInFlightRef = useRef(new Set());
-  const lazyFullHydrateInFlightRef = useRef(new Set());
-  const confirmDeleteEntityRef = useRef(null);
 
   const { syncIndex, syncNovel, loadNovelData, syncNovelRef } = useAppPersistence({
     novelStatsByIdRef,
@@ -288,39 +255,8 @@ export default function App() {
 
   const resolveSafeTabsConfig = useCallback(
     (candidate) => (Array.isArray(candidate) && candidate.length > 0 ? candidate : globalTabsConfigRef.current),
-    []
+    [globalTabsConfigRef]
   );
-
-  useEffect(() => {
-    novelsMetadataRef.current = novelsMetadata;
-    globalTabsConfigRef.current = globalTabsConfig;
-    dirHandleRef.current = dirHandle;
-  }, [novelsMetadata, globalTabsConfig, dirHandle]);
-
-  useEffect(() => {
-    activeNovelDataRef.current = activeNovelData;
-  }, [activeNovelData]);
-
-  useEffect(() => {
-    return () => {
-      if (deepSearchWorkerRef.current) {
-        try {
-          deepSearchWorkerRef.current.terminate();
-        } catch {
-          void 0;
-        }
-        deepSearchWorkerRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const keep = new Set((novelsMetadata || []).map((n) => n.id));
-    const idx = deepSearchIndexByNovelIdRef.current;
-    for (const k of idx.keys()) {
-      if (!keep.has(k)) idx.delete(k);
-    }
-  }, [novelsMetadata]);
 
   const searchRowsInWorker = useCallback((rowsByNovel, query, signal) => {
     const hasRows = rowsByNovel && Object.keys(rowsByNovel).length > 0;
@@ -362,11 +298,7 @@ export default function App() {
         done(reject, err);
       }
     });
-  }, []);
-
-  useEffect(() => {
-    novelStatsByIdRef.current = novelStatsById;
-  }, [novelStatsById]);
+  }, [deepSearchWorkerRef, deepSearchWorkerReqIdRef]);
 
   const dashboardStats = useMemo(
     () => computeDashboardStats(novelsMetadata, novelStatsById),
@@ -389,14 +321,14 @@ export default function App() {
   const tabGroups = useMemo(() => buildTabGroups(sortedTabs), [sortedTabs]);
 
 
-  const dirName = typeof dirHandle === 'string' ? 'Bá»™ nhá»› Ä‘á»‡m' : (dirHandle?.name || '');
+  const dirName = typeof dirHandle === 'string' ? 'Bộ nhớ đệm' : (dirHandle?.name || '');
   
   const currentTabConfig = useMemo(() => {
     if (!activeTabLon) return null;
     const parent = sortedTabs.find(t => t.id === activeTabLon);
     const tab = parent?.subTabs?.find(s => s.id === activeTabNho) || parent;
     if (!tab) return null;
-    // Chá»‰ inject template máº·c Ä‘á»‹nh khi chÆ°a cÃ³ template Ä‘Ã£ lÆ°u (giá»¯ nhÃ£n tÃ¹y chá»‰nh)
+    // Chỉ inject template mặc định khi chưa có template đã lưu (giữ nhãn tùy chỉnh)
     if (tab.viewType === 'collection-track') {
       const cur = tab.fieldsTemplate;
       if (!cur || cur.length === 0) {
@@ -535,24 +467,24 @@ export default function App() {
   );
   const pagedEntitiesList = useMemo(
     () => entitiesList.slice((entityPage - 1) * ENTITY_PAGE_SIZE, entityPage * ENTITY_PAGE_SIZE),
-    [entitiesList, entityPage]
+    [entitiesList, entityPage, ENTITY_PAGE_SIZE]
   );
   const groupedEntitiesList = useMemo(() => {
     if (entityGroupBy === 'none') return [];
     const groups = {};
     entitiesList.forEach((ent) => {
-      const val = getEntityFieldValue(ent, entityGroupBy).trim() || 'â€” ChÆ°a phÃ¢n loáº¡i â€”';
+      const val = getEntityFieldValue(ent, entityGroupBy).trim() || '— Chưa phân loại —';
       if (!groups[val]) groups[val] = [];
       groups[val].push(ent);
     });
     return Object.entries(groups).sort((a, b) => {
-      if (a[0] === 'â€” ChÆ°a phÃ¢n loáº¡i â€”') return 1;
-      if (b[0] === 'â€” ChÆ°a phÃ¢n loáº¡i â€”') return -1;
+      if (a[0] === '— Chưa phân loại —') return 1;
+      if (b[0] === '— Chưa phân loại —') return -1;
       return a[0].localeCompare(b[0], 'vi');
     });
   }, [entitiesList, entityGroupBy]);
 
-  /** Thá»±c thá»ƒ cÃ³ ká»· nguyÃªn trong [neoâˆ’12, neo+30] â€” má»i má»¥c sÆ°u táº­p */
+  /** Thực thể có kỷ nguyên trong [neo-12, neo+30] — mọi mục sưu tập */
   const nearChapterEntitiesGlobal = useMemo(() => {
     if (!activeNovelData) return [];
     if (!overviewNeoOpen) return [];
@@ -602,7 +534,7 @@ export default function App() {
       window.removeEventListener('touchstart', handleOutside);
       window.removeEventListener('keydown', handleEsc);
     };
-  }, [showEntityAdvanced, setShowEntityAdvanced]);
+  }, [showEntityAdvanced, entityAdvancedRef, setShowEntityAdvanced]);
   /** Luon resolve tu toan bo entities tab - khong dung entitiesList da loc theo o tim. */
   const selectedEntity = useMemo(() => {
     if (!activeNovelData || !activeTabLon || !selectedEntityId) return undefined;
@@ -612,7 +544,7 @@ export default function App() {
     return tabData.entities.find((e) => e.id === selectedEntityId);
   }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig, selectedEntityId]);
 
-  /** Äá»•i má»¥c / loáº¡i tab: bá» chá»n tháº» náº¿u khÃ´ng cÃ²n thuá»™c tab collection hiá»‡n táº¡i hoáº·c tháº» Ä‘Ã£ bá»‹ xÃ³a. */
+  /** Đổi mục / loại tab: bỏ chọn thẻ nếu không còn thuộc tab collection hiện tại hoặc thẻ đã bị xóa. */
   useEffect(() => {
     if (!selectedEntityId) return;
 
@@ -641,12 +573,24 @@ export default function App() {
     if (!tabData.entities.some((e) => e.id === selectedEntityId)) {
       clearEntitySelection();
     }
-  }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig, selectedEntityId]);
+  }, [
+    activeNovelData,
+    activeTabLon,
+    activeTabNho,
+    currentTabConfig,
+    selectedEntityId,
+    setCollectionSubTab,
+    setEditingMilestoneData,
+    setIsEntityModalOpen,
+    setIsMilestoneModalOpen,
+    setSelectedEntityId,
+    setSelectedMilestoneId,
+  ]);
 
   // Global map - toan bo truyen, dung de resolve [[...]] link va renderMarkdown lookup.
   const entityMap = useMemo(() => buildEntityLinkMap(activeNovelData), [activeNovelData]);
 
-  // Local/scoped map â€” chá»‰ tab hiá»‡n táº¡i, dÃ¹ng cho plain-text auto-link matcher (hiá»‡u nÄƒng).
+  // Local/scoped map — chỉ tab hiện tại, dùng cho plain-text auto-link matcher (hiệu năng).
   const localEntityMap = useMemo(() => {
     if (!activeNovelData) return [];
     if (currentTabConfig?.viewType === 'collection-track' && activeTabLon) {
@@ -727,58 +671,6 @@ export default function App() {
     };
   }, [activeNovelData, selectedEntity, activeTabs, entityMap, wikiExactMatchOnly, collectionSubTab]);
 
-  useEffect(() => {
-    if (window.self !== window.top) {
-       const localIndex = localStorage.getItem('tangthu_index');
-       if (localIndex) {
-          try {
-             const parsed = JSON.parse(localIndex);
-             const index = migrateIndex(parsed);
-             if (index.metadata && index.metadata.length > 0) setNovelsMetadata(index.metadata);
-             if (index.config) setGlobalTabsConfig(index.config);
-             if (index.novelStats && typeof index.novelStats === 'object') {
-               novelStatsByIdRef.current = index.novelStats;
-               setNovelStatsById(index.novelStats);
-             }
-             setDirHandle("LOCAL_STORAGE");
-          } catch { void 0; }
-       }
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('tangthu_wiki_exact', wikiExactMatchOnly ? '1' : '0');
-    } catch { void 0; }
-  }, [wikiExactMatchOnly]);
-  useEffect(() => {
-    try {
-      localStorage.setItem('tangthu_ai_mode', aiMode);
-    } catch { void 0; }
-  }, [aiMode]);
-  useEffect(() => {
-    try {
-      localStorage.setItem('tangthu_perf_mode', performanceMode ? '1' : '0');
-    } catch { void 0; }
-  }, [performanceMode]);
-  useEffect(() => {
-    try {
-      localStorage.setItem('tangthu_autolink_toast', autoLinkToastEnabled ? '1' : '0');
-    } catch { void 0; }
-  }, [autoLinkToastEnabled]);
-  useEffect(() => {
-    if (activeNovelData) {
-      setOverviewForm({
-        status: activeNovelData.status,
-        chaptersRead: activeNovelData.chaptersRead,
-        chaptersTotal: activeNovelData.chaptersTotal,
-        rating: activeNovelData.rating,
-        review: activeNovelData.review,
-        ratingOpinion: safeString(activeNovelData.ratingOpinion),
-      });
-    }
-  }, [activeNovelData]); 
-
   const findEntitiesByXrefHint = useCallback(
     (hint) => findEntitiesByHintInNovel(activeNovelData, hint),
     [activeNovelData]
@@ -787,7 +679,7 @@ export default function App() {
   const runXrefAiForRow = useCallback(
     async (xref) => {
       if (!activeNovelData || geminiApiKeys.length === 0) {
-        showToast('Cáº§n API Key (CÃ i Ä‘áº·t) Ä‘á»ƒ gá»£i Ã½ AI.', 'warning');
+        showToast('Cần API Key (Cài đặt) để gợi ý AI.', 'warning');
         return;
       }
       setXrefAiPanel({ xref, suggestions: [], loading: true, error: '' });
@@ -811,7 +703,7 @@ export default function App() {
         );
       }
     },
-    [activeNovelData, geminiApiKeys, showToast]
+    [activeNovelData, geminiApiKeys, setXrefAiPanel, showToast]
   );
 
   const applyXrefSuggestionNewEntity = useCallback(
@@ -822,7 +714,7 @@ export default function App() {
         activeNovelData?.tabsConfig || globalTabsConfig
       );
       if (!path) {
-        showToast('KhÃ´ng tÃ¬m tháº¥y má»¥c sÆ°u táº­p phÃ¹ há»£p.', 'warning');
+        showToast('Không tìm thấy mục sưu tập phù hợp.', 'warning');
         return;
       }
       setNavHistory((prev) => [
@@ -837,16 +729,35 @@ export default function App() {
       setEntitySearch('');
       setEditingEntityData({
         id: null,
-        name: safeString(s.suggestedName) || 'ChÆ°a Ä‘áº·t tÃªn',
+        name: safeString(s.suggestedName) || 'Chưa đặt tên',
         avatar: '',
         rawText: safeString(s.draftRawText) || safeString(xref?.note) || '',
         dynamicData: {},
       });
       setIsEntityModalOpen(true);
       setXrefAiPanel(null);
-      showToast('ÄÃ£ má»Ÿ form táº¡o tháº» â€” kiá»ƒm tra rá»“i LÆ°u.');
+      showToast('Đã mở form tạo thẻ — kiểm tra rồi Lưu.');
     },
-    [activeNovelData?.tabsConfig, globalTabsConfig, activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, showToast, setEntitySearch]
+    [
+      activeNovelData?.tabsConfig,
+      globalTabsConfig,
+      activeTabLon,
+      activeTabNho,
+      activeTabCon,
+      selectedEntityId,
+      collectionSubTab,
+      setActiveTabCon,
+      setActiveTabLon,
+      setActiveTabNho,
+      setCollectionSubTab,
+      setEditingEntityData,
+      setEntitySearch,
+      setIsEntityModalOpen,
+      setNavHistory,
+      setSelectedEntityId,
+      setXrefAiPanel,
+      showToast,
+    ]
   );
 
   const applyXrefSuggestionMilestone = useCallback(
@@ -866,9 +777,25 @@ export default function App() {
       setEditingMilestoneData({ id: null, chapter: String(chFinal), event: ev });
       setIsMilestoneModalOpen(true);
       setXrefAiPanel(null);
-      showToast(`Má»‘c cho Â«${safeString(matchRow.ent.name)}Â» â€” chá»‰nh rá»“i LÆ°u.`);
+      showToast(`Mốc cho «${safeString(matchRow.ent.name)}» — chỉnh rồi Lưu.`);
     },
-    [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, showToast]
+    [
+      activeTabLon,
+      activeTabNho,
+      activeTabCon,
+      selectedEntityId,
+      collectionSubTab,
+      setActiveTabCon,
+      setActiveTabLon,
+      setActiveTabNho,
+      setCollectionSubTab,
+      setEditingMilestoneData,
+      setIsMilestoneModalOpen,
+      setNavHistory,
+      setSelectedEntityId,
+      setXrefAiPanel,
+      showToast,
+    ]
   );
 
   const applyXrefSuggestionProfile = useCallback(
@@ -876,7 +803,7 @@ export default function App() {
       const tabData = novelData?.data?.[matchRow.lonId]?.[matchRow.nhoId];
       const ent = tabData?.entities?.find((e) => e.id === matchRow.ent.id);
       if (!ent) {
-        showToast('KhÃ´ng tÃ¬m tháº¥y tháº».', 'error');
+        showToast('Không tìm thấy thẻ.', 'error');
         return;
       }
       const note = safeString(suggestion?.profileNote);
@@ -893,13 +820,29 @@ export default function App() {
         ...ent,
         rawText:
           safeString(ent.rawText) +
-          (note ? `\n\nâ€” Gá»£i Ã½ tá»« ná»‘i tra cá»©u â€”\n${note}` : ''),
+          (note ? `\n\n— Gợi ý từ nối tra cứu —\n${note}` : ''),
       });
       setIsEntityModalOpen(true);
       setXrefAiPanel(null);
-      showToast('ÄÃ£ má»Ÿ sá»­a tháº» â€” xem pháº§n báº£n tháº£o / AI Ä‘iá»n form.');
+      showToast('Đã mở sửa thẻ — xem phần bản thảo / AI điền form.');
     },
-    [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, showToast]
+    [
+      activeTabLon,
+      activeTabNho,
+      activeTabCon,
+      selectedEntityId,
+      collectionSubTab,
+      setActiveTabCon,
+      setActiveTabLon,
+      setActiveTabNho,
+      setCollectionSubTab,
+      setEditingEntityData,
+      setIsEntityModalOpen,
+      setNavHistory,
+      setSelectedEntityId,
+      setXrefAiPanel,
+      showToast,
+    ]
   );
 
   useEffect(() => {
@@ -907,7 +850,7 @@ export default function App() {
     const delay = (livePreviewText || '').length > 40000 ? 800 : 300;
     const t = setTimeout(() => setDebouncedMarkdownPreview(livePreviewText), delay);
     return () => clearTimeout(t);
-  }, [livePreviewText, isSplitPreview]);
+  }, [livePreviewText, isSplitPreview, setDebouncedMarkdownPreview]);
 
   useEffect(() => {
     if (!dirHandle || novelsMetadata.length === 0) return;
@@ -957,7 +900,18 @@ export default function App() {
       if (typeof cancelIdleCallback === 'function') try { cancelIdleCallback(idleId); } catch { void 0; }
       clearTimeout(idleId);
     };
-  }, [novelsMetadata, dirHandle, activeNovelData?.id, loadNovelData, syncIndex]);
+  }, [
+    novelsMetadata,
+    dirHandle,
+    activeNovelData?.id,
+    globalTabsConfigRef,
+    loadNovelData,
+    novelStatsByIdRef,
+    novelsMetadataRef,
+    setIsStatsBackfilling,
+    setNovelStatsById,
+    syncIndex,
+  ]);
 
   const performDeepSearch = useCallback(
     async (query, signal, onProgress) => {
@@ -1004,7 +958,7 @@ export default function App() {
       }
       return dedupeDeepSearchResults(res);
     },
-    [novelsMetadata, activeNovelData, dirHandle, loadNovelData, searchRowsInWorker]
+    [novelsMetadata, activeNovelData, deepSearchIndexByNovelIdRef, dirHandle, loadNovelData, searchRowsInWorker]
   );
 
   const updateActiveNovelData = useCallback(
@@ -1071,7 +1025,20 @@ export default function App() {
         syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
       }
     },
-    [activeNovelData, novelsMetadata, globalTabsConfig, dirHandle, syncNovel, syncIndex]
+    [
+      activeNovelData,
+      deepSearchIndexByNovelIdRef,
+      dirHandle,
+      globalTabsConfig,
+      novelStatsByIdRef,
+      novelsMetadata,
+      novelsMetadataRef,
+      setActiveNovelData,
+      setNovelStatsById,
+      setNovelsMetadata,
+      syncIndex,
+      syncNovel,
+    ]
   );
 
   const {
@@ -1154,11 +1121,11 @@ export default function App() {
           if (!targetExistingId) lockFieldsTemplateIfFirstEntity(nov, lonId, nhoId);
       });
       if (targetExistingId) {
-        showToast(`"${quickName}" da trung the co san - da them vao bi danh va lien ket ve the cu.`, 'warning');
+        showToast(`"${quickName}" đã trùng thẻ có sẵn - đã thêm vào bí danh và liên kết về thẻ cũ.`, 'warning');
         handleNavigate({ lonId, nhoId, entityId: targetExistingId });
         return;
       }
-      showToast(`Da ngung tu thanh cong ${quickName}!`);
+      showToast(`Đã ngưng tụ thành công ${quickName}!`);
       handleNavigate({ lonId, nhoId, entityId: newEntityId });
   };
 
@@ -1267,7 +1234,7 @@ export default function App() {
            else { n.data[activeTabLon][activeTabNho || 'default'] = content; }
        }
     });
-    setIsEditingMode(false); setIsSplitPreview(false); showToast("Kháº¯c áº¥n Ä‘áº¡i Ä‘áº¡o thÃ nh cÃ´ng!");
+    setIsEditingMode(false); setIsSplitPreview(false); showToast('Khắc ấn đại đạo thành công!');
   };
 
   const {
@@ -1324,7 +1291,7 @@ export default function App() {
     setSelectedEntityId(ent.id);
     setCollectionSubTab('timeline');
     setTimeout(() => { setEditingMilestoneData(null); setIsMilestoneModalOpen(true); }, 100);
-  }, []);
+  }, [setCollectionSubTab, setEditingMilestoneData, setIsMilestoneModalOpen, setSelectedEntityId]);
 
   const handleExportEntityPDF = (entity, tabConfig) => {
     if (!entity) return;
@@ -1347,7 +1314,7 @@ export default function App() {
     }).filter(Boolean).join('');
 
     const milestonesHTML = (entity.milestones || []).sort((a,b) => a.chapter - b.chapter).map(ms =>
-      '<div class="milestone"><div class="ms-chapter">ChÆ°Æ¡ng ' + escHtml(ms.chapter) + '</div><div class="ms-event">' + escHtml(ms.event || '') + '</div></div>'
+      '<div class="milestone"><div class="ms-chapter">Chương ' + escHtml(ms.chapter) + '</div><div class="ms-event">' + escHtml(ms.event || '') + '</div></div>'
     ).join('');
 
     const infoHTML = escHtml(entity.info || '').replace(/\n/g, '<br/>');
@@ -1356,9 +1323,9 @@ export default function App() {
     const firstFieldVal = fields[0] ? getVal(fields[0].id) : '';
 
     const printWindow = window.open('', '_blank');
-    if (!printWindow) { showToast('TrÃ¬nh duyá»‡t cháº·n popup. Vui lÃ²ng cho phÃ©p popup!', 'warning'); return; }
+    if (!printWindow) { showToast('Trình duyệt chặn popup. Vui lòng cho phép popup!', 'warning'); return; }
 
-    const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Há»“ SÆ¡: ' + escHtml(entity.name || '') + '</title>'
+    const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Hồ Sơ: ' + escHtml(entity.name || '') + '</title>'
       + '<style>'
       + '@import url(\'https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400&family=Playfair+Display:wght@700;800&display=swap\');'
       + '* { box-sizing: border-box; margin: 0; padding: 0; }'
@@ -1380,17 +1347,17 @@ export default function App() {
       + '.footer { margin-top:40px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8;text-align:center; }'
       + '@media print { .no-print { display:none; } body { padding:20px; } }'
       + '</style></head><body>'
-      + '<div class="no-print"><span>ðŸ“„ Xem trÆ°á»›c â€” Nháº¥n In Ä‘á»ƒ lÆ°u PDF</span>'
-      + '<button class="print-btn" onclick="window.print()">ðŸ–¨ In / LÆ°u PDF</button></div>'
+      + '<div class="no-print"><span>Xem trước — Nhấn In để lưu PDF</span>'
+      + '<button class="print-btn" onclick="window.print()">In / Lưu PDF</button></div>'
       + '<div class="header">'
-      + '<div class="novel-name">ðŸ“š ' + escHtml(novelTitle) + (tabLabel ? ' Â· ' + escHtml(tabLabel) : '') + '</div>'
-      + '<div class="entity-name">' + escHtml(entity.name || 'VÃ´ Danh') + '</div>'
+      + '<div class="novel-name">' + escHtml(novelTitle) + (tabLabel ? ' · ' + escHtml(tabLabel) : '') + '</div>'
+      + '<div class="entity-name">' + escHtml(entity.name || 'Vô Danh') + '</div>'
       + (firstFieldVal ? '<div style="color:#64748b;font-size:12px;margin-top:6px;text-transform:uppercase;letter-spacing:.1em">' + escHtml(firstFieldVal) + '</div>' : '')
       + '</div>'
-      + (fieldsHTML ? '<div class="section"><div class="section-title">CÄƒn CÆ¡ & Thuá»™c TÃ­nh</div>' + fieldsHTML + '</div>' : '')
-      + (infoHTML ? '<div class="section"><div class="section-title">Ghi ChÃ©p Chi Tiáº¿t</div><div class="info-text">' + infoHTML + '</div></div>' : '')
-      + (milestonesHTML ? '<div class="section"><div class="section-title">DÃ²ng Thá»i Gian (' + (entity.milestones||[]).length + ' má»‘c)</div>' + milestonesHTML + '</div>' : '')
-      + '<div class="footer">Xuáº¥t tá»« TÃ ng ThÆ° CÃ¡c Â· ' + new Date().toLocaleDateString('vi-VN') + '</div>'
+      + (fieldsHTML ? '<div class="section"><div class="section-title">Căn Cơ & Thuộc Tính</div>' + fieldsHTML + '</div>' : '')
+      + (infoHTML ? '<div class="section"><div class="section-title">Ghi Chép Chi Tiết</div><div class="info-text">' + infoHTML + '</div></div>' : '')
+      + (milestonesHTML ? '<div class="section"><div class="section-title">Dòng Thời Gian (' + (entity.milestones||[]).length + ' mốc)</div>' + milestonesHTML + '</div>' : '')
+      + '<div class="footer">Xuất từ Tàng Thư Các · ' + new Date().toLocaleDateString('vi-VN') + '</div>'
       + '</body></html>';
 
     printWindow.document.write(html);
@@ -1412,7 +1379,7 @@ export default function App() {
   }, [isEditingMode, isEntityEditing]);
 
   // ==========================================
-  // CÃC HÃ€M CÃ’N THIáº¾U (MISSING HANDLERS)
+  // CÁC HÀM CÒN THIẾU (MISSING HANDLERS)
   // ==========================================
 
   const handleGoHome = useCallback(() => {
@@ -1424,9 +1391,18 @@ export default function App() {
     setSelectedEntityId(null);
     setNavHistory([]);
     setMenu1Visible(false);
-  }, []);
+  }, [
+    setActiveNovelData,
+    setActiveNovelDirHandle,
+    setActiveTabCon,
+    setActiveTabLon,
+    setActiveTabNho,
+    setMenu1Visible,
+    setNavHistory,
+    setSelectedEntityId,
+  ]);
 
-  // Migration: gá»™p fieldsTemplate â€” thÃªm trÆ°á»ng má»›i, giá»¯ nhÃ£n tÃ¹y chá»‰nh cá»§a ngÆ°á»i dÃ¹ng
+  // Migration: gộp fieldsTemplate — thêm trường mới, giữ nhãn tùy chỉnh của người dùng
   const { handleSelectNovel } = useAppNovelSelectionAndHydration({
     dirHandle,
     activeNovelData,
@@ -1459,7 +1435,7 @@ export default function App() {
   });
   const handleDeepSearchResultSelect = (result) => {
     setIsDeepSearchOpen(false);
-    // Build dest from result fields (ModalDeepSearch tráº£ vá» tabLonId/tabNhoId/entityId, khÃ´ng pháº£i result.dest)
+    // Build dest from result fields (ModalDeepSearch trả về tabLonId/tabNhoId/entityId, không phải result.dest)
     const buildDest = (r) => {
       if (!r.tabLonId) return null;
       return { lonId: r.tabLonId, nhoId: r.tabNhoId || null, conId: r.tabConId || null, entityId: r.entityId || null };
@@ -1490,10 +1466,10 @@ export default function App() {
   const handleAddTabLon = () => {
     const newTab = {
       id: generateId('tab'),
-      label: 'Má»¥c Má»›i',
+      label: 'Mục Mới',
       iconName: 'ScrollText',
       subTabs: [
-        { id: generateId('sub'), label: 'Tiá»ƒu Má»¥c 1', viewType: 'standard', tabCon: [] }
+        { id: generateId('sub'), label: 'Tiểu Mục 1', viewType: 'standard', tabCon: [] }
       ]
     };
     const current = getTabsToUpdate();
@@ -1512,7 +1488,7 @@ export default function App() {
       structuredClone(DEFAULT_ENTITY_FIELDS);
     lon.subTabs.push({
       id: generateId('sub'),
-      label: 'ChÆ°Æ¡ng Má»¥c Má»›i',
+      label: 'Chương Mục Mới',
       viewType: 'collection-track',
       tabCon: [],
       fieldsTemplate: defaultFields
@@ -1526,7 +1502,7 @@ export default function App() {
     const nho = lon?.subTabs?.find(s => s.id === nhoId);
     if (!nho) return;
     if (!nho.tabCon) nho.tabCon = [];
-    nho.tabCon.push({ id: generateId('con'), label: 'Tiá»ƒu Má»¥c Má»›i' });
+    nho.tabCon.push({ id: generateId('con'), label: 'Tiểu Mục Mới' });
     setTabsConfig(current);
   };
 
@@ -1558,7 +1534,7 @@ export default function App() {
       const nho = lon?.subTabs?.find(s => s.id === path[1]);
       if (nho) {
         nho.label = label.trim();
-        // Tá»± sinh trÆ°á»ng phÃ¹ há»£p khi Ä‘á»•i tÃªn â€” chá»‰ Ã¡p náº¿u template chÆ°a tÃ¹y chá»‰nh
+        // Tự sinh trường phù hợp khi đổi tên — chỉ áp nếu template chưa tùy chỉnh
         if (nho.viewType === 'collection-track' && isStockTemplate(nho.fieldsTemplate)) {
           const guessed = guessFieldsByLabel(label.trim());
           if (guessed) nho.fieldsTemplate = structuredClone(guessed);
@@ -1585,7 +1561,7 @@ export default function App() {
       if (nho) {
         const switching = nho.viewType !== 'collection-track';
         nho.viewType = switching ? 'collection-track' : 'standard';
-        // Tá»± gÃ¡n template phÃ¹ há»£p khi chuyá»ƒn sang collection-track
+        // Tự gán template phù hợp khi chuyển sang collection-track
         if (switching && isStockTemplate(nho.fieldsTemplate)) {
           const lon = current.find(t => t.id === path[0]);
           const guessed =
@@ -1606,7 +1582,7 @@ export default function App() {
   const navFnRef = useRef(null);
   navFnRef.current = handleNavigate;
 
-  // LÆ°u láº¡i fieldsTemplate khi cáº§n gá»™p â€” thÃªm trÆ°á»ng má»›i, giá»¯ nhÃ£n tÃ¹y chá»‰nh
+  // Lưu lại fieldsTemplate khi cần gộp — thêm trường mới, giữ nhãn tùy chỉnh
   useEffect(() => {
     if (!activeNovelData || !activeTabNho || !currentTabConfig) return;
     if (currentTabConfig.viewType !== 'collection-track') return;
@@ -1653,6 +1629,137 @@ export default function App() {
     [activeNovelData]
   );
 
+  const overviewSectionProps = {
+    tocRailExpanded: menu2Expanded,
+    activeNovelData,
+    overviewForm,
+    setOverviewForm,
+    updateActiveNovelData,
+    nearChapterEntitiesGlobal,
+    novelQuickStats,
+    geminiApiKeys,
+    currentContextDirHandle,
+    isGeneratingReview,
+    setIsGeneratingReview,
+    overviewNeoOpen,
+    setOverviewNeoOpen,
+    neoXrefSectionOpen,
+    setNeoXrefSectionOpen,
+    overviewStatsOpen,
+    setOverviewStatsOpen,
+    xrefDraft,
+    setXrefDraft,
+    setXrefAiPanel,
+    showToast,
+    setLightboxSrc,
+    setIsDeepSearchOpen,
+    setIsInNovelSearchOpen,
+    handleOpenEditNovel,
+    handleDeleteNovel,
+    openOverviewHub,
+    handleNavigate,
+    runXrefAiForRow,
+    setConfirmDialog,
+  };
+
+  const collectionSectionProps = {
+    tocRailExpanded: menu2Expanded,
+    activeTabLon,
+    activeTabNho,
+    activeTabCon,
+    sortedTabs,
+    currentTabConfig,
+    handleSelectTabLon,
+    handleSelectTabNho: (event, lonId, sub) => {
+      event.stopPropagation();
+      handleSelectTabNho(lonId, sub.id);
+    },
+    activeNovelData,
+    currentContextDirHandle,
+    activeNovelDirHandle,
+    dirHandle,
+    entityAdvancedRef,
+    entitySearch,
+    setEntitySearch,
+    entitySortMode,
+    setEntitySortMode,
+    showEntityAdvanced,
+    setShowEntityAdvanced,
+    isEntityAdvancedActive,
+    clearEntityAdvanced,
+    entityFilterField,
+    setEntityFilterField,
+    entityFilterValue,
+    setEntityFilterValue,
+    entityGroupBy,
+    setEntityGroupBy,
+    entityFilterFields,
+    entityFilterOptions,
+    entityGroupOptions,
+    entityContextPresets,
+    applyEntityPreset,
+    AdvancedFieldSelect,
+    getTerms,
+    handleOpenCreateEntity,
+    collectionSubTab,
+    setCollectionSubTab,
+    entitiesList,
+    entityPage,
+    setEntityPage,
+    pagedEntitiesList,
+    groupedEntitiesList,
+    groupVisibleCount,
+    setGroupVisibleCount,
+    entityPageSize: ENTITY_PAGE_SIZE,
+    handleAddEntityImage: handleAddImageToSelectedEntity,
+    handleRemoveEntityImage: handleRemoveImageFromSelectedEntity,
+    onEntityCardSelect,
+    onEntityCardDelete,
+    onEntityCardAddMilestone,
+    selectedEntity,
+    isEntityEditing,
+    setIsEntityEditing,
+    recentlyMergedFields,
+    entityMap,
+    globalLinkRegex,
+    relatedEntities,
+    isCalculatingNetwork,
+    navFnRef,
+    handleNavigate,
+    handleExportEntityPDF,
+    handleOpenEditEntity,
+    isExtractingAI,
+    setIsExtractingAI,
+    geminiApiKeys,
+    showToast,
+    aiMode,
+    isSplitPreview,
+    setLivePreviewText,
+    setDebouncedMarkdownPreview,
+    setIsSplitPreview,
+    handleUpdateEntityInfo,
+    setImageForm,
+    setIsInsertImageModalOpen,
+    handlePickLocalImage,
+    debouncedMarkdownPreview,
+    memoizedEntityInfo,
+    setLightboxSrc,
+    selectedMilestoneId,
+    setSelectedMilestoneId,
+    setEditingMilestoneData,
+    setIsMilestoneModalOpen,
+    handleMergeSnapshotToProfile,
+    handleDeleteMilestone,
+    handleReplaceMilestones,
+    getFieldValue,
+    isEditingMode,
+    setIsEditingMode,
+    handleSaveStandardEditor,
+    currentStandardData,
+    memoizedStandardData,
+    handleImageDrop,
+  };
+
   const { runCommandPaletteAction, commandPaletteFiltered } = useAppModalShortcutOrchestration({
     activeNovelData,
     isEntityModalOpen,
@@ -1682,6 +1789,116 @@ export default function App() {
     novelsMetadata,
     safeString,
   });
+
+  const modalLayerProps = {
+    isEntityModalOpen,
+    setIsEntityModalOpen,
+    handleSaveEntity,
+    editingEntityData,
+    currentTabConfig,
+    handleUpdateTabTemplate,
+    handleAvatarDrop,
+    handlePickLocalImage,
+    currentContextDirHandle,
+    activeTabLon,
+    geminiApiKeys,
+    aiMode,
+    isMilestoneModalOpen,
+    setIsMilestoneModalOpen,
+    handleSaveMilestone,
+    editingMilestoneData,
+    activeNovelData,
+    entityMap,
+    showToast,
+    autoLinkToastEnabled,
+    isSettingsOpen,
+    setIsSettingsOpen,
+    handleConnectFolder,
+    dirHandle,
+    dirName,
+    handleExportBackup,
+    handleExportIndexOnly,
+    handleImportBackup,
+    handleSaveApiKeys,
+    setAiMode,
+    wikiExactMatchOnly,
+    setWikiExactMatchOnly,
+    performanceMode,
+    setPerformanceMode,
+    setAutoLinkToastEnabled,
+    isCommandPaletteOpen,
+    setIsCommandPaletteOpen,
+    commandPaletteQuery,
+    setCommandPaletteQuery,
+    commandPaletteFiltered,
+    runCommandPaletteAction,
+    setIsDeepSearchOpen,
+    setIsInNovelSearchOpen,
+    openOverviewHub,
+    handleGoHome,
+    handleSelectNovel,
+    confirmDialog,
+    setConfirmDialog,
+    isInsertImageModalOpen,
+    setIsInsertImageModalOpen,
+    imageForm,
+    setImageForm,
+    handleConfirmInsertImage,
+    isAddNovelOpen,
+    setIsAddNovelOpen,
+    novelForm,
+    setNovelForm,
+    handleSaveNovelModal,
+    novelModalMode,
+    handlePickCoverImage,
+    novelsMetadata,
+    isDeepSearchOpen,
+    performDeepSearch,
+    handleDeepSearchResultSelect,
+    isInNovelSearchOpen,
+    xrefAiPanel,
+    setXrefAiPanel,
+    findEntitiesByXrefHint,
+    applyXrefSuggestionNewEntity,
+    applyXrefSuggestionMilestone,
+    applyXrefSuggestionProfile,
+    overviewHubOpen,
+    setOverviewHubOpen,
+    overviewHubTab,
+    setOverviewHubTab,
+    hubCreatePath,
+    setHubCreatePath,
+    hubCreateInput,
+    setHubCreateInput,
+    hubCreateBusy,
+    hubCreatePreview,
+    setHubCreatePreview,
+    hubUpdateChapter,
+    setHubUpdateChapter,
+    hubUpdateText,
+    setHubUpdateText,
+    hubUpdatePanel,
+    setHubUpdatePanel,
+    activeTabs,
+    hubRunCreateAi,
+    hubSaveCreateEntity,
+    runHubUpdateAi,
+    applyHubUpdateSelected,
+    quickCreateData,
+    setQuickCreateData,
+    handleConfirmQuickCreate,
+    isManageTabsOpen,
+    setIsManageTabsOpen,
+    sortedTabs,
+    editingTab,
+    setEditingTab,
+    handleAddTabLon,
+    handleSaveEditLabel,
+    handleToggleViewType,
+    handleDeleteTab,
+    handleAddTabNho,
+    handleAddTabCon,
+  };
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden relative theme-wrapper ${activeThemeClass} ${performanceMode ? 'performance-mode' : ''}`}>
       <AppHeader
@@ -1734,319 +1951,44 @@ export default function App() {
           onClearHover={clearHoveredNovel}
         />
 
-        <div className={`flex-1 flex bg-slate-950 transition-opacity duration-300 ${menu1Visible ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
-          {!activeNovelData ? (
-            <>
-              {showConnectReminder && !!dirHandle && (
-                <div className="mx-10 mt-6 mb-0 rounded-2xl border border-amber-700/40 bg-amber-900/20 px-5 py-4 text-sm text-amber-100 flex items-start justify-between gap-4">
-                  <div>
-                    <p className="font-bold uppercase tracking-widest text-[11px] text-amber-300 mb-1">Nhac nho van hanh</p>
-                    <p className="font-serif text-amber-100/90">Da ket noi thu muc. Nen backup thu muc luu tru dinh ky (tuan/thang), va thu restore tren ban sao truoc khi cap nhat lon.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={dismissConnectReminder}
-                    className="px-3 py-1.5 rounded-lg border border-amber-600/40 text-amber-200 hover:bg-amber-800/30 text-xs font-bold"
-                  >
-                    ÄÃ£ rÃµ
-                  </button>
-                </div>
-              )}
-              {novelsMetadata.length > 0 ? (
-                <DashboardScreen
-                  novelsMetadata={novelsMetadata}
-                  stats={dashboardStats}
-                  isLoading={isStatsBackfilling}
-                  novelStatsById={novelStatsById}
-                  onSelectNovel={handleSelectNovel}
-                  onSelectNovelAtTab={(meta, lonId, nhoId) => handleSelectNovel(meta, { lonId, nhoId })}
-                  onAddNovel={handleOpenCreateNovel}
-                />
-              ) : (
-                <LandingScreen setIsAddNovelOpen={handleOpenCreateNovel} setIsManageTabsOpen={() => setIsManageTabsOpen(true)} />
-              )}
-            </>
-          ) : (
-            <>
-              <AppNovelTocRail
-                menu2Expanded={menu2Expanded}
-                setMenu2Expanded={setMenu2Expanded}
-                handleMenu2MouseEnter={handleMenu2MouseEnter}
-                handleMenu2MouseLeave={handleMenu2MouseLeave}
-                sidebarGrouped={sidebarGrouped}
-                setSidebarGrouped={setSidebarGrouped}
-                tabGroups={tabGroups}
-                sortedTabs={sortedTabs}
-                collapsedTabGroups={collapsedTabGroups}
-                toggleTabGroupCollapse={toggleTabGroupCollapse}
-                activeTabLon={activeTabLon}
-                activeTabNho={activeTabNho}
-                activeTabCon={activeTabCon}
-                handleSelectTabLon={handleSelectTabLon}
-                handleSelectTabNho={handleSelectTabNho}
-                handleSelectTabCon={handleSelectTabCon}
-                setIsManageTabsOpen={setIsManageTabsOpen}
-              />
-
-              <div className="flex-1 flex flex-col overflow-hidden relative bg-slate-950">
-                 <div
-                   id="main-scroll-container"
-                   className={`flex-1 overflow-y-auto custom-scrollbar transition-[padding] duration-200 ease-out ${menu2Expanded ? 'py-8 px-16' : 'py-8 px-12 sm:px-16 lg:px-20'}`}
-                 >
-                    <div
-                      className={`w-full mx-auto h-full flex flex-col transition-[max-width] duration-200 ease-out ${
-                        menu2Expanded ? 'max-w-7xl' : 'max-w-none'
-                      }`}
-                    >
-                       
-                       {navHistory.length > 0 && (
-                           <div className="mb-4">
-                               <button onClick={handleGoBack} className="flex items-center gap-1 text-xs text-slate-400 hover:text-amber-400 transition-colors font-bold uppercase tracking-widest bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-800 w-fit shadow-sm"><ChevronLeft size={14}/> Quay Láº¡i Dáº¥u Váº¿t CÅ©</button>
-                           </div>
-                       )}
-                       
-                       {activeTabLon === 'tong-quan' ? (
-                          <AppOverviewSection
-                            tocRailExpanded={menu2Expanded}
-                            activeNovelData={activeNovelData}
-                            overviewForm={overviewForm}
-                            setOverviewForm={setOverviewForm}
-                            updateActiveNovelData={updateActiveNovelData}
-                            nearChapterEntitiesGlobal={nearChapterEntitiesGlobal}
-                            novelQuickStats={novelQuickStats}
-                            geminiApiKeys={geminiApiKeys}
-                            currentContextDirHandle={currentContextDirHandle}
-                            isGeneratingReview={isGeneratingReview}
-                            setIsGeneratingReview={setIsGeneratingReview}
-                            overviewNeoOpen={overviewNeoOpen}
-                            setOverviewNeoOpen={setOverviewNeoOpen}
-                            neoXrefSectionOpen={neoXrefSectionOpen}
-                            setNeoXrefSectionOpen={setNeoXrefSectionOpen}
-                            overviewStatsOpen={overviewStatsOpen}
-                            setOverviewStatsOpen={setOverviewStatsOpen}
-                            xrefDraft={xrefDraft}
-                            setXrefDraft={setXrefDraft}
-                            setXrefAiPanel={setXrefAiPanel}
-                            showToast={showToast}
-                            setLightboxSrc={setLightboxSrc}
-                            setIsDeepSearchOpen={setIsDeepSearchOpen}
-                            setIsInNovelSearchOpen={setIsInNovelSearchOpen}
-                            handleOpenEditNovel={handleOpenEditNovel}
-                            handleDeleteNovel={handleDeleteNovel}
-                            openOverviewHub={openOverviewHub}
-                            handleNavigate={handleNavigate}
-                            runXrefAiForRow={runXrefAiForRow}
-                            setConfirmDialog={setConfirmDialog}
-                          />
-                       ) : (
-                          <AppCollectionSection
-                            tocRailExpanded={menu2Expanded}
-                            activeTabLon={activeTabLon}
-                            activeTabNho={activeTabNho}
-                             activeTabCon={activeTabCon}
-                             sortedTabs={sortedTabs}
-                             currentTabConfig={currentTabConfig}
-                             handleSelectTabLon={handleSelectTabLon}
-                             handleSelectTabNho={(event, lonId, sub) => {
-                               event.stopPropagation();
-                               handleSelectTabNho(lonId, sub.id);
-                             }}
-                             activeNovelData={activeNovelData}
-                            currentContextDirHandle={currentContextDirHandle}
-                            activeNovelDirHandle={activeNovelDirHandle}
-                            dirHandle={dirHandle}
-                            entityAdvancedRef={entityAdvancedRef}
-                            entitySearch={entitySearch}
-                            setEntitySearch={setEntitySearch}
-                            entitySortMode={entitySortMode}
-                            setEntitySortMode={setEntitySortMode}
-                            showEntityAdvanced={showEntityAdvanced}
-                            setShowEntityAdvanced={setShowEntityAdvanced}
-                            isEntityAdvancedActive={isEntityAdvancedActive}
-                            clearEntityAdvanced={clearEntityAdvanced}
-                            entityFilterField={entityFilterField}
-                            setEntityFilterField={setEntityFilterField}
-                            entityFilterValue={entityFilterValue}
-                            setEntityFilterValue={setEntityFilterValue}
-                            entityGroupBy={entityGroupBy}
-                            setEntityGroupBy={setEntityGroupBy}
-                            entityFilterFields={entityFilterFields}
-                            entityFilterOptions={entityFilterOptions}
-                            entityGroupOptions={entityGroupOptions}
-                            entityContextPresets={entityContextPresets}
-                            applyEntityPreset={applyEntityPreset}
-                            AdvancedFieldSelect={AdvancedFieldSelect}
-                            getTerms={getTerms}
-                            handleOpenCreateEntity={handleOpenCreateEntity}
-                            collectionSubTab={collectionSubTab}
-                            setCollectionSubTab={setCollectionSubTab}
-                            entitiesList={entitiesList}
-                            entityPage={entityPage}
-                            setEntityPage={setEntityPage}
-                            pagedEntitiesList={pagedEntitiesList}
-                            groupedEntitiesList={groupedEntitiesList}
-                            groupVisibleCount={groupVisibleCount}
-                            setGroupVisibleCount={setGroupVisibleCount}
-                            entityPageSize={ENTITY_PAGE_SIZE}
-                            handleAddEntityImage={handleAddImageToSelectedEntity}
-                            handleRemoveEntityImage={handleRemoveImageFromSelectedEntity}
-                            onEntityCardSelect={onEntityCardSelect}
-                            onEntityCardDelete={onEntityCardDelete}
-                            onEntityCardAddMilestone={onEntityCardAddMilestone}
-                            selectedEntity={selectedEntity}
-                            isEntityEditing={isEntityEditing}
-                            setIsEntityEditing={setIsEntityEditing}
-                            recentlyMergedFields={recentlyMergedFields}
-                            entityMap={entityMap}
-                            globalLinkRegex={globalLinkRegex}
-                            relatedEntities={relatedEntities}
-                            isCalculatingNetwork={isCalculatingNetwork}
-                            navFnRef={navFnRef}
-                            handleNavigate={handleNavigate}
-                            handleExportEntityPDF={handleExportEntityPDF}
-                            handleOpenEditEntity={handleOpenEditEntity}
-                            isExtractingAI={isExtractingAI}
-                            setIsExtractingAI={setIsExtractingAI}
-                            geminiApiKeys={geminiApiKeys}
-                            showToast={showToast}
-                            aiMode={aiMode}
-                            isSplitPreview={isSplitPreview}
-                            setLivePreviewText={setLivePreviewText}
-                            setDebouncedMarkdownPreview={setDebouncedMarkdownPreview}
-                            setIsSplitPreview={setIsSplitPreview}
-                            handleUpdateEntityInfo={handleUpdateEntityInfo}
-                            setImageForm={setImageForm}
-                            setIsInsertImageModalOpen={setIsInsertImageModalOpen}
-                            handlePickLocalImage={handlePickLocalImage}
-                            debouncedMarkdownPreview={debouncedMarkdownPreview}
-                            memoizedEntityInfo={memoizedEntityInfo}
-                            setLightboxSrc={setLightboxSrc}
-                            selectedMilestoneId={selectedMilestoneId}
-                            setSelectedMilestoneId={setSelectedMilestoneId}
-                            setEditingMilestoneData={setEditingMilestoneData}
-                            setIsMilestoneModalOpen={setIsMilestoneModalOpen}
-                            handleMergeSnapshotToProfile={handleMergeSnapshotToProfile}
-                            handleDeleteMilestone={handleDeleteMilestone}
-                            handleReplaceMilestones={handleReplaceMilestones}
-                            getFieldValue={getFieldValue}
-                            isEditingMode={isEditingMode}
-                            setIsEditingMode={setIsEditingMode}
-                            handleSaveStandardEditor={handleSaveStandardEditor}
-                            currentStandardData={currentStandardData}
-                            memoizedStandardData={memoizedStandardData}
-                            handleImageDrop={handleImageDrop}
-                          />
-                       )}
-                    </div>
-                 </div>
-              </div>
-            </>
-          )}
-        </div>
+        <AppMainPane
+          menu1Visible={menu1Visible}
+          activeNovelData={activeNovelData}
+          showConnectReminder={showConnectReminder}
+          dirHandle={dirHandle}
+          dismissConnectReminder={dismissConnectReminder}
+          novelsMetadata={novelsMetadata}
+          dashboardStats={dashboardStats}
+          isStatsBackfilling={isStatsBackfilling}
+          novelStatsById={novelStatsById}
+          handleSelectNovel={handleSelectNovel}
+          handleOpenCreateNovel={handleOpenCreateNovel}
+          setIsManageTabsOpen={setIsManageTabsOpen}
+          menu2Expanded={menu2Expanded}
+          setMenu2Expanded={setMenu2Expanded}
+          handleMenu2MouseEnter={handleMenu2MouseEnter}
+          handleMenu2MouseLeave={handleMenu2MouseLeave}
+          sidebarGrouped={sidebarGrouped}
+          setSidebarGrouped={setSidebarGrouped}
+          tabGroups={tabGroups}
+          sortedTabs={sortedTabs}
+          collapsedTabGroups={collapsedTabGroups}
+          toggleTabGroupCollapse={toggleTabGroupCollapse}
+          activeTabLon={activeTabLon}
+          activeTabNho={activeTabNho}
+          activeTabCon={activeTabCon}
+          handleSelectTabLon={handleSelectTabLon}
+          handleSelectTabNho={handleSelectTabNho}
+          handleSelectTabCon={handleSelectTabCon}
+          navHistory={navHistory}
+          handleGoBack={handleGoBack}
+          collectionSubTab={collectionSubTab}
+          overviewSectionProps={overviewSectionProps}
+          collectionSectionProps={collectionSectionProps}
+        />
       </div>
 
-      <Suspense fallback={null}>
-        <ModalEntity isOpen={isEntityModalOpen} onClose={() => setIsEntityModalOpen(false)} onSave={handleSaveEntity} initialData={editingEntityData} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} geminiMode={aiMode} />
-        <ModalMilestone isOpen={isMilestoneModalOpen} onClose={() => setIsMilestoneModalOpen(false)} onSave={handleSaveMilestone} initialData={editingMilestoneData} defaultChapterWhenNew={editingMilestoneData ? undefined : String(Math.max(0, parseInt(activeNovelData?.readingAnchorChapter ?? activeNovelData?.chaptersRead ?? 0, 10) || 0))} tabConfig={currentTabConfig} onUpdateTemplate={handleUpdateTabTemplate} handleAvatarDrop={handleAvatarDrop} handlePickLocalImage={handlePickLocalImage} dirHandle={currentContextDirHandle} parentTabId={activeTabLon} parentLabel={currentTabConfig?._parentLabel} geminiApiKey={geminiApiKeys} geminiMode={aiMode} entityMap={entityMap} showToast={showToast} autoLinkToastEnabled={autoLinkToastEnabled} />
-        <ModalSettings
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
-          handleConnectFolder={handleConnectFolder}
-          dirHandle={dirHandle}
-          dirName={dirName}
-          onExportBackup={handleExportBackup}
-          onExportIndexOnly={handleExportIndexOnly}
-          onImportBackup={handleImportBackup}
-          geminiApiKeys={geminiApiKeys}
-          setGeminiApiKeys={handleSaveApiKeys}
-          aiMode={aiMode}
-          setAiMode={setAiMode}
-          wikiExactMatchOnly={wikiExactMatchOnly}
-          setWikiExactMatchOnly={setWikiExactMatchOnly}
-          performanceMode={performanceMode}
-          setPerformanceMode={setPerformanceMode}
-          autoLinkToastEnabled={autoLinkToastEnabled}
-          setAutoLinkToastEnabled={setAutoLinkToastEnabled}
-        />
-        {isCommandPaletteOpen && (
-          <AppModalLenhNhanh
-            onClose={() => setIsCommandPaletteOpen(false)}
-            commandPaletteQuery={commandPaletteQuery}
-            setCommandPaletteQuery={setCommandPaletteQuery}
-            commandPaletteFiltered={commandPaletteFiltered}
-            onSelectCommand={(id) => {
-              if (id === 'set') runCommandPaletteAction(() => setIsSettingsOpen(true));
-              else if (id === 'deep') runCommandPaletteAction(() => setIsDeepSearchOpen(true));
-              else if (id === 'innov') runCommandPaletteAction(() => setIsInNovelSearchOpen(true));
-              else if (id === 'hub') runCommandPaletteAction(() => openOverviewHub());
-              else if (id === 'home') runCommandPaletteAction(() => handleGoHome());
-            }}
-            onSelectNovel={(n) => runCommandPaletteAction(() => { void handleSelectNovel(n); })}
-          />
-        )}
-
-        <ModalConfirm isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onClose={() => setConfirmDialog({...confirmDialog, isOpen: false})} onConfirm={confirmDialog.onConfirm} />
-        <ModalInsertImage isOpen={isInsertImageModalOpen} onClose={() => setIsInsertImageModalOpen(false)} imageForm={imageForm} setImageForm={setImageForm} handleConfirmInsertImage={handleConfirmInsertImage} />
-        <ModalAddNovel isOpen={isAddNovelOpen} onClose={() => setIsAddNovelOpen(false)} formData={novelForm} setFormData={setNovelForm} onSave={handleSaveNovelModal} mode={novelModalMode} handlePickLocalImage={(cb) => handlePickCoverImage(cb)} dirHandle={currentContextDirHandle} />
-        <ModalDeepSearch isOpen={isDeepSearchOpen} onClose={() => setIsDeepSearchOpen(false)} novelsMetadata={novelsMetadata} performDeepSearch={performDeepSearch} onSelectResult={handleDeepSearchResultSelect} />
-        {activeNovelData && <ModalInNovelSearch isOpen={isInNovelSearchOpen} onClose={() => setIsInNovelSearchOpen(false)} novel={activeNovelData} onSelectResult={handleDeepSearchResultSelect} />}
-        {xrefAiPanel && (
-          <AppModalGoiYNoiTraCuu
-            panel={xrefAiPanel}
-            onClose={() => setXrefAiPanel(null)}
-            findEntitiesByXrefHint={findEntitiesByXrefHint}
-            applyXrefSuggestionNewEntity={applyXrefSuggestionNewEntity}
-            applyXrefSuggestionMilestone={applyXrefSuggestionMilestone}
-            applyXrefSuggestionProfile={applyXrefSuggestionProfile}
-            activeNovelData={activeNovelData}
-          />
-        )}
-        {overviewHubOpen && activeNovelData && (
-          <AppModalMotCua
-            activeNovelData={activeNovelData}
-            onClose={() => setOverviewHubOpen(false)}
-            overviewHubTab={overviewHubTab}
-            setOverviewHubTab={setOverviewHubTab}
-            hubCreatePath={hubCreatePath}
-            setHubCreatePath={setHubCreatePath}
-            hubCreateInput={hubCreateInput}
-            setHubCreateInput={setHubCreateInput}
-            hubCreateBusy={hubCreateBusy}
-            hubCreatePreview={hubCreatePreview}
-            setHubCreatePreview={setHubCreatePreview}
-            hubUpdateChapter={hubUpdateChapter}
-            setHubUpdateChapter={setHubUpdateChapter}
-            hubUpdateText={hubUpdateText}
-            setHubUpdateText={setHubUpdateText}
-            hubUpdatePanel={hubUpdatePanel}
-            setHubUpdatePanel={setHubUpdatePanel}
-            activeTabs={activeTabs}
-            hubRunCreateAi={hubRunCreateAi}
-            hubSaveCreateEntity={hubSaveCreateEntity}
-            runHubUpdateAi={runHubUpdateAi}
-            applyHubUpdateSelected={applyHubUpdateSelected}
-            findEntitiesByXrefHint={findEntitiesByXrefHint}
-          />
-        )}
-        <ModalQuickCreate isOpen={!!quickCreateData} onClose={() => setQuickCreateData(null)} quickCreateName={quickCreateData} onConfirm={handleConfirmQuickCreate} activeTabs={activeTabs} />
-
-        {isManageTabsOpen && (
-          <AppModalQuanLyTab
-            activeNovelData={activeNovelData}
-            onClose={() => setIsManageTabsOpen(false)}
-            sortedTabs={sortedTabs}
-            editingTab={editingTab}
-            setEditingTab={setEditingTab}
-            handleAddTabLon={handleAddTabLon}
-            handleSaveEditLabel={handleSaveEditLabel}
-            handleToggleViewType={handleToggleViewType}
-            handleDeleteTab={handleDeleteTab}
-            handleAddTabNho={handleAddTabNho}
-            handleAddTabCon={handleAddTabCon}
-            setConfirmDialog={setConfirmDialog}
-          />
-        )}
-      </Suspense>
+      <AppModalLayer {...modalLayerProps} />
 
       <AppShellOverlays
         lightboxSrc={lightboxSrc}
