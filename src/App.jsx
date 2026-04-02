@@ -1,32 +1,32 @@
-// ==========================================
-// TRỤ 4: TRẬN NHÃN TRUNG TÂM
+﻿// ==========================================
+// TRá»¤ 4: TRáº¬N NHÃƒN TRUNG TÃ‚M
 // File: App.jsx
-// Vai trò: State toàn cục, điều phối, layout chính, Quản lý Thư mục Truyện
+// Vai tro: state toan cuc, dieu phoi, layout chinh, quan ly thu muc truyen.
 //
-// Đã tách (cùng thư mục src/, tên dễ nhớ):
-//   appNhatKyVaGoiThe.js     — findEntitiesByHintInNovel (mutate… dùng trong useAppMotCuaCapNhat)
-//   AppPhongChuVaTheme.jsx   — font + CSS theme toàn cục
-//   AppModalMotCua.jsx       — Một cửa cập nhật (tạo thẻ / nhật ký batch)
-//   AppModalQuanLyTab.jsx    — Trận pháp / quản lý tab
-//   AppModalLenhNhanh.jsx    — Command palette
-//   AppModalGoiYNoiTraCuu.jsx — Gợi ý AI nối tra cứu
+// ÄÃ£ tÃ¡ch (cÃ¹ng thÆ° má»¥c src/, tÃªn dá»… nhá»›):
+//   appNhatKyVaGoiThe.js     â€” findEntitiesByHintInNovel (mutateâ€¦ dÃ¹ng trong useAppMotCuaCapNhat)
+//   AppPhongChuVaTheme.jsx   - font + CSS theme toan cuc
+//   AppModalMotCua.jsx       â€” Má»™t cá»­a cáº­p nháº­t (táº¡o tháº» / nháº­t kÃ½ batch)
+//   AppModalQuanLyTab.jsx    â€” Tráº­n phÃ¡p / quáº£n lÃ½ tab
+//   AppModalLenhNhanh.jsx    â€” Command palette
+//   AppModalGoiYNoiTraCuu.jsx â€” Gá»£i Ã½ AI ná»‘i tra cá»©u
 //   lib/stripWikiBrackets.js, lib/computeRelatedEntities.js, lib/entityFieldValue.js, lib/entityCollectionQuery.js
-//   useAppPersistence.js      — sync index + file truyện
-//   AppShellOverlays.jsx      — lightbox, toast, spinner
+//   useAppPersistence.js      â€” sync index + file truyá»‡n
+//   AppAdvancedFieldSelect.jsx â€” collection filter select UI
+//   AppLibrarySidebar.jsx, useAppLibrarySidebarState.js â€” library rail UI + state
+//   AppNovelTocRail.jsx, useAppTocRail.js â€” novel TOC rail UI + navigation state
+//   useAppDirectoryBackup.js  â€” folder connect + import/export backup handlers
+//   useAppImageWorkflow.js    â€” image upload/picker/modal workflow
+//   AppShellOverlays.jsx      â€” lightbox, toast, spinner
 //   lib/appTabGroups, appDashboardStats, buildEntityLinkMap, filterNovelsForLibrary, buildCurrentContextDirHandle
-//   useAppPhimTatToanCuc.js     — phím tắt Ctrl+K, /, Escape…
+//   useAppNovelCrud.js        â€” novel modal state + create/edit/delete handlers
+//   useAppPhimTatToanCuc.js     â€” phÃ­m táº¯t Ctrl+K, /, Escapeâ€¦
 //   lib/tinhThongKeNhanhTruyen, locLenhNhanhCommandPalette, xrefBangDanhMucThucThe, xrefChonMucThuThap
-//   useAppMotCuaCapNhat.js, lib/hubBangDanhMucCacMucNhatKy — Hub một cửa + catalog nhật ký
+//   useAppMotCuaCapNhat.js, lib/hubBangDanhMucCacMucNhatKy â€” Hub má»™t cá»­a + catalog nháº­t kÃ½
 // ==========================================
 
 import React, { Suspense, lazy, useDeferredValue, useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import {
-  Search, BookOpen, Filter, ChevronRight, ChevronLeft, ChevronDown,
-  User, Settings, Edit3, Network, Plus, Trash2, Edit2,
-  X, Save, Check, Sparkles, Cloud, History, LayoutGrid, Clock,
-  AlignLeft, Shield, Link2, Download, Eye, TrendingUp, BarChart2, BookMarked, Users, Layers, Activity,
-  GitBranch
-} from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import {
   FALLBACK_IMG, DEFAULT_ENTITY_FIELDS, GENRES, THEMES,
   INITIAL_TABS_CONFIG, MOCK_METADATA, MOCK_NOVEL_DATA,
@@ -36,16 +36,17 @@ import {
 } from './MasterEngines.js';
 import {
   generateId, safeString, getTerms, sortTabsAlphabetically,
-  AsyncLocalImage, renderMarkdown,
-  getIconComponent, handleToolbarClick,
+  renderMarkdown,
   analyzeCrossRefNoteWithAI, mapGeminiErrorToUserMessage
 } from './MasterUtils.jsx';
 import {
-  MarkdownToolbar, AppHeader, LandingScreen, DashboardScreen,
+  AppHeader, LandingScreen, DashboardScreen,
   ModalEntity, ModalMilestone, ModalQuickCreate, ModalSettings,
   ModalConfirm, ModalInsertImage, ModalAddNovel, ModalDeepSearch, ModalInNovelSearch
 } from './MasterComponents.jsx';
+import { AdvancedFieldSelect } from './AppAdvancedFieldSelect.jsx';
 import { AppLibrarySidebar } from './AppLibrarySidebar.jsx';
+import { AppNovelTocRail } from './AppNovelTocRail.jsx';
 import { AppOverviewSection } from './AppOverviewSection.jsx';
 import { getEntityFieldValue } from './lib/entityFieldValue.js';
 import { buildEntitySearchIndexMap, applyEntityCollectionFilters } from './lib/entityCollectionQuery.js';
@@ -61,134 +62,30 @@ import {
 import { computeRelatedEntities } from './lib/computeRelatedEntities.js';
 import { findEntitiesByHintInNovel } from './appNhatKyVaGoiThe.js';
 import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
-import { migrateIndex, migrateBackup, migrateNovel } from './dataMigration.js';
+import { migrateIndex } from './dataMigration.js';
 import { buildTabGroups } from './lib/appTabGroups.js';
 import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
 import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
 import { useAppPersistence } from './useAppPersistence.js';
 import { AppShellOverlays } from './AppShellOverlays.jsx';
+import { useAppLibrarySidebarState } from './useAppLibrarySidebarState.js';
 import { useAppNavigationAndHistory } from './useAppNavigationAndHistory.js';
+import { useAppDirectoryBackup } from './useAppDirectoryBackup.js';
+import { useAppImageWorkflow } from './useAppImageWorkflow.js';
 import { useAppNovelSelectionAndHydration } from './useAppNovelSelectionAndHydration.js';
+import { useAppNovelCrud } from './useAppNovelCrud.js';
 import { useAppModalShortcutOrchestration } from './useAppModalShortcutOrchestration.js';
 import { useAppEntityMilestoneActions } from './useAppEntityMilestoneActions.js';
 import { useAppMotCuaCapNhat } from './useAppMotCuaCapNhat.js';
+import { useAppTocRail } from './useAppTocRail.js';
 import { computeNovelQuickStats } from './lib/tinhThongKeNhanhTruyen.js';
 import { buildXrefEntityCatalogText } from './lib/xrefBangDanhMucThucThe.js';
 import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 
-const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
-  value,
-  onChange,
-  options,
-  placeholder = 'Chọn',
-  active = false,
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef(null);
-  const optionRefs = useRef([]);
-  const selected = options.find((opt) => opt.value === value);
-  const selectedIndex = Math.max(0, options.findIndex((opt) => opt.value === value));
-  useEffect(() => {
-    if (!open) return undefined;
-    const handleOutside = (event) => {
-      if (!rootRef.current) return;
-      if (!rootRef.current.contains(event.target)) setOpen(false);
-    };
-    const handleEsc = (event) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('mousedown', handleOutside);
-    window.addEventListener('touchstart', handleOutside);
-    window.addEventListener('keydown', handleEsc);
-    return () => {
-      window.removeEventListener('mousedown', handleOutside);
-      window.removeEventListener('touchstart', handleOutside);
-      window.removeEventListener('keydown', handleEsc);
-    };
-  }, [open]);
-  useEffect(() => {
-    if (!open) return;
-    const next = optionRefs.current[selectedIndex] || optionRefs.current[0];
-    if (next) next.focus();
-  }, [open, selectedIndex]);
 
-  const focusOptionByIndex = (idx) => {
-    const max = options.length - 1;
-    if (max < 0) return;
-    const clamped = Math.max(0, Math.min(max, idx));
-    optionRefs.current[clamped]?.focus();
-  };
-  return (
-    <div ref={rootRef} className="relative min-w-0 z-40">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            setOpen(true);
-          } else if (event.key === 'Escape' || event.key === 'Tab') {
-            setOpen(false);
-          }
-        }}
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        className={`w-full border rounded-xl py-2 pl-3 pr-8 text-xs font-serif outline-none cursor-pointer transition-colors text-left truncate ${
-          active
-            ? 'bg-amber-900/30 border-amber-700/50 text-amber-100'
-            : 'bg-slate-900 border-slate-800 text-slate-200 hover:border-slate-700'
-        }`}
-      >
-        {selected?.label || placeholder}
-        <ChevronDown size={12} className={`absolute right-3 top-1/2 -translate-y-1/2 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div role="listbox" className="absolute z-[60] mt-1 w-full max-h-64 overflow-auto rounded-xl border border-slate-700 bg-slate-950 shadow-2xl custom-scrollbar animate-fade-in origin-top">
-          {options.map((opt, idx) => (
-            <button
-              key={opt.value}
-              ref={(el) => { optionRefs.current[idx] = el; }}
-              type="button"
-              onClick={() => {
-                onChange(opt.value);
-                setOpen(false);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'ArrowDown') {
-                  event.preventDefault();
-                  focusOptionByIndex(idx + 1);
-                } else if (event.key === 'ArrowUp') {
-                  event.preventDefault();
-                  focusOptionByIndex(idx - 1);
-                } else if (event.key === 'Home') {
-                  event.preventDefault();
-                  focusOptionByIndex(0);
-                } else if (event.key === 'End') {
-                  event.preventDefault();
-                  focusOptionByIndex(options.length - 1);
-                } else if (event.key === 'Escape' || event.key === 'Tab') {
-                  setOpen(false);
-                }
-              }}
-              role="option"
-              aria-selected={opt.value === value}
-              className={`w-full text-left px-3 py-2 text-xs font-serif transition-colors ${
-                opt.value === value
-                  ? 'bg-amber-700/30 text-amber-100'
-                  : 'text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-});
 
 const AppModalMotCua = lazy(() => import('./AppModalMotCua.jsx').then((m) => ({ default: m.AppModalMotCua })));
 const AppModalQuanLyTab = lazy(() => import('./AppModalQuanLyTab.jsx').then((m) => ({ default: m.AppModalQuanLyTab })));
@@ -202,14 +99,6 @@ export default function App() {
   const [globalTabsConfig, setGlobalTabsConfig] = useState(INITIAL_TABS_CONFIG);
   
   const [menu1Visible, setMenu1Visible] = useState(false);
-  const [hoveredNovelId, setHoveredNovelId] = useState(null);
-  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  const hoverTooltipRafRef = useRef(null);
-  const [menu2Expanded, setMenu2Expanded] = useState(true);
-  const menu2LeaveCollapseTimeoutRef = useRef(null);
-  const [collapsedTabGroups, setCollapsedTabGroups] = useState(() => new Set());
-  const [sidebarGrouped, setSidebarGrouped] = useState(true);
-  const lastSyncedActiveTabRef = useRef(null);
   const [activeTabLon, setActiveTabLon] = useState('tong-quan');
   const [activeTabNho, setActiveTabNho] = useState(null);
   const [activeTabCon, setActiveTabCon] = useState(null);
@@ -226,7 +115,7 @@ export default function App() {
 
   const [isEntityEditing, setIsEntityEditing] = useState(false);
   const [isSplitPreview, setIsSplitPreview] = useState(false);
-  const [recentlyMergedFields, setRecentlyMergedFields] = useState(new Set()); // track field vừa merge
+  const [recentlyMergedFields, setRecentlyMergedFields] = useState(new Set()); // track field vá»«a merge
   const [livePreviewText, setLivePreviewText] = useState('');
   const [debouncedMarkdownPreview, setDebouncedMarkdownPreview] = useState('');
   const [isExtractingAI, setIsExtractingAI] = useState(false);
@@ -253,12 +142,6 @@ export default function App() {
   const [hubUpdateText, setHubUpdateText] = useState('');
   const [hubUpdatePanel, setHubUpdatePanel] = useState(null);
   
-  const [isAddNovelOpen, setIsAddNovelOpen] = useState(false);
-  const [novelModalMode, setNovelModalMode] = useState("create");
-  
-  // BẢO VỆ CHỐNG CRASH CHO FORM
-  const [novelForm, setNovelForm] = useState({ title: '', author: '', genres: (GENRES && GENRES.length > 0) ? [GENRES[0]] : [], theme: 'theme-tien-hiep', cover: '', status: 'Đang đọc', chaptersTotal: '' });
-  
   const [isEntityModalOpen, setIsEntityModalOpen] = useState(false);
   const [editingEntityData, setEditingEntityData] = useState(null);
   const [isMilestoneModalOpen, setIsMilestoneModalOpen] = useState(false);
@@ -266,50 +149,8 @@ export default function App() {
   
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
 
-  const handleMenu2MouseEnter = () => {
-    if (menu2LeaveCollapseTimeoutRef.current) {
-      clearTimeout(menu2LeaveCollapseTimeoutRef.current);
-      menu2LeaveCollapseTimeoutRef.current = null;
-    }
-    setMenu2Expanded(true);
-  };
-
-  const handleMenu2MouseLeave = () => {
-    if (menu2LeaveCollapseTimeoutRef.current) clearTimeout(menu2LeaveCollapseTimeoutRef.current);
-    // Hysteresis để chuyển qua lại mượt hơn (giảm jitter khi hit-area đổi do transition)
-    menu2LeaveCollapseTimeoutRef.current = setTimeout(() => {
-      setMenu2Expanded(false);
-      menu2LeaveCollapseTimeoutRef.current = null;
-    }, 140);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (menu2LeaveCollapseTimeoutRef.current) {
-        clearTimeout(menu2LeaveCollapseTimeoutRef.current);
-        menu2LeaveCollapseTimeoutRef.current = null;
-      }
-    };
-  }, []);
   const [overviewForm, setOverviewForm] = useState(null);
   
-  const [searchInput, setSearchInput] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchField, setSearchField] = useState('all'); // 'all' | 'title' | 'author' | 'tag'
-  const deferredLibrarySearch = useDeferredValue(searchQuery);
-  const sidebarListRef = useRef(null);
-  const sidebarScrollRafRef = useRef(null);
-  const [sidebarScrollTop, setSidebarScrollTop] = useState(0);
-  const [sidebarViewportHeight, setSidebarViewportHeight] = useState(0);
-  const [searchHistory, setSearchHistory] = useState(() => {
-    try {
-      const raw = localStorage.getItem('tangthu_lib_search_hist');
-      const arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr : [];
-    } catch {
-      return [];
-    }
-  });
   const [wikiExactMatchOnly, setWikiExactMatchOnly] = useState(() => {
     try {
       return localStorage.getItem('tangthu_wiki_exact') === '1';
@@ -321,24 +162,48 @@ export default function App() {
   const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
   const deferredCommandPaletteQuery = useDeferredValue(commandPaletteQuery);
   const [overviewStatsOpen, setOverviewStatsOpen] = useState(false);
-  const librarySearchInputRef = useRef(null);
   const commandPaletteOpenRef = useRef(false);
   commandPaletteOpenRef.current = isCommandPaletteOpen;
+
+  const {
+    librarySearchInputRef,
+    searchInput,
+    setSearchInput,
+    setSearchQuery,
+    searchField,
+    setSearchField,
+    searchHistory,
+    isGenreFilterOpen,
+    setIsGenreFilterOpen,
+    selectedGenres,
+    setSelectedGenres,
+    toggleGenre,
+    filteredNovelsList,
+    sidebarListRef,
+    handleSidebarScroll,
+    totalSidebarItems,
+    sidebarItemHeight,
+    visibleSidebarNovels,
+    sidebarStartIndex,
+    hoveredNovelData,
+    tooltipPos,
+    handleSidebarNovelHover,
+    clearHoveredNovel,
+  } = useAppLibrarySidebarState({ novelsMetadata });
   
   const [dirHandle, setDirHandle] = useState(null);
-  const [showConnectReminder, setShowConnectReminder] = useState(false);
   const [activeNovelDirHandle, setActiveNovelDirHandle] = useState(null);
   
   const [toastMessage, setToastMessage] = useState(null);
   const toastTimerRef = useRef(null);
-  /** options: { undoLabel, onUndo } — hiện nút hoàn tác, toast lâu hơn */
+  /** options: { undoLabel, onUndo } - hien nut hoan tac, toast lau hon */
   const showToast = useCallback((msg, type = 'success', options = null) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     const hasUndo = options && typeof options.onUndo === 'function';
     setToastMessage({
       msg,
       type,
-      undoLabel: hasUndo ? (options.undoLabel || 'Hoàn tác') : undefined,
+      undoLabel: hasUndo ? (options.undoLabel || 'HoÃ n tÃ¡c') : undefined,
       onUndo: hasUndo ? options.onUndo : undefined,
     });
     const ms = hasUndo ? 9000 : 3500;
@@ -350,23 +215,13 @@ export default function App() {
   useEffect(
     () => () => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-      if (hoverTooltipRafRef.current) cancelAnimationFrame(hoverTooltipRafRef.current);
-      if (sidebarScrollRafRef.current) cancelAnimationFrame(sidebarScrollRafRef.current);
     },
     []
   );
 
-  const [lightboxSrc, setLightboxSrc] = useState(null); // null = đóng, string = URL/local_image
-  const [isUploading, setIsUploading] = useState(false);
-  const [importProgress, setImportProgress] = useState(null);
-  const [isInsertImageModalOpen, setIsInsertImageModalOpen] = useState(false);
-  const [imageForm, setImageForm] = useState({ url: '', alt: '', editorId: 'standard-editor' });
+  const [lightboxSrc, setLightboxSrc] = useState(null); // null = Ä‘Ã³ng, string = URL/local_image
   
   const [editingTab, setEditingTab] = useState(null);
-  const [isGenreFilterOpen, setIsGenreFilterOpen] = useState(false);
-  const [selectedGenres, setSelectedGenres] = useState([]);
-  const SIDEBAR_ITEM_HEIGHT = 78;
-  const SIDEBAR_OVERSCAN = 8;
 
   const [geminiApiKeys, setGeminiApiKeys] = useState(() => {
     try {
@@ -407,7 +262,7 @@ export default function App() {
     }
   });
 
-  /** Tổng thực thể / mốc — lưu trong index.json, không preload toàn bộ novel */
+  /** Tong thuc the / moc - luu trong index.json, khong preload toan bo novel */
   const [novelStatsById, setNovelStatsById] = useState({});
   const [isStatsBackfilling, setIsStatsBackfilling] = useState(false);
   const novelStatsByIdRef = useRef({});
@@ -517,15 +372,6 @@ export default function App() {
     () => computeDashboardStats(novelsMetadata, novelStatsById),
     [novelsMetadata, novelStatsById]
   );
-  const novelMetaById = useMemo(() => {
-    const map = new Map();
-    (novelsMetadata || []).forEach((n) => map.set(n.id, n));
-    return map;
-  }, [novelsMetadata]);
-  const hoveredNovelData = useMemo(
-    () => (hoveredNovelId ? novelMetaById.get(hoveredNovelId) || null : null),
-    [hoveredNovelId, novelMetaById]
-  );
 
   const activeThemeClass = useMemo(() => {
       if (!activeNovelData) return 'theme-tien-hiep';
@@ -542,33 +388,15 @@ export default function App() {
 
   const tabGroups = useMemo(() => buildTabGroups(sortedTabs), [sortedTabs]);
 
-  useEffect(() => {
-    const labels = tabGroups.filter(g => g.groupLabel).map(g => g.groupLabel);
-    setCollapsedTabGroups(new Set(labels));
-    lastSyncedActiveTabRef.current = null;
-  }, [activeNovelData?.id, tabGroups]);
 
-  useEffect(() => {
-    if (activeTabLon === lastSyncedActiveTabRef.current) return;
-    lastSyncedActiveTabRef.current = activeTabLon;
-    const grp = tabGroups.find(g => g.tabs.some(t => t.id === activeTabLon));
-    if (grp?.groupLabel) {
-      setCollapsedTabGroups(prev => {
-        const next = new Set(prev);
-        next.delete(grp.groupLabel);
-        return next;
-      });
-    }
-  }, [activeTabLon, tabGroups]);
-
-  const dirName = typeof dirHandle === 'string' ? 'Bộ nhớ đệm' : (dirHandle?.name || '');
+  const dirName = typeof dirHandle === 'string' ? 'Bá»™ nhá»› Ä‘á»‡m' : (dirHandle?.name || '');
   
   const currentTabConfig = useMemo(() => {
     if (!activeTabLon) return null;
     const parent = sortedTabs.find(t => t.id === activeTabLon);
     const tab = parent?.subTabs?.find(s => s.id === activeTabNho) || parent;
     if (!tab) return null;
-    // Chỉ inject template mặc định khi chưa có template đã lưu (giữ nhãn tùy chỉnh)
+    // Chá»‰ inject template máº·c Ä‘á»‹nh khi chÆ°a cÃ³ template Ä‘Ã£ lÆ°u (giá»¯ nhÃ£n tÃ¹y chá»‰nh)
     if (tab.viewType === 'collection-track') {
       const cur = tab.fieldsTemplate;
       if (!cur || cur.length === 0) {
@@ -648,6 +476,39 @@ export default function App() {
     activeTabNho,
     entityFilterFields,
   });
+  const {
+    menu2Expanded,
+    setMenu2Expanded,
+    sidebarGrouped,
+    setSidebarGrouped,
+    collapsedTabGroups,
+    handleMenu2MouseEnter,
+    handleMenu2MouseLeave,
+    toggleTabGroupCollapse,
+    handleSelectTabLon,
+    handleSelectTabNho,
+    handleSelectTabCon,
+  } = useAppTocRail({
+    activeNovelId: activeNovelData?.id,
+    tabGroups,
+    activeTabLon,
+    activeTabNho,
+    activeTabCon,
+    selectedEntityId,
+    collectionSubTab,
+    isEditingMode,
+    isEntityEditing,
+    setConfirmDialog,
+    setEntitySearch,
+    setNavHistory,
+    setActiveTabLon,
+    setActiveTabNho,
+    setActiveTabCon,
+    setSelectedEntityId,
+    setCollectionSubTab,
+    setIsEditingMode,
+    setIsEntityEditing,
+  });
   const deferredEntitySearch = useDeferredValue(entitySearch);
   const deferredEntityFilterValue = useDeferredValue(entityFilterValue);
   const entitySearchIndexById = useMemo(
@@ -680,18 +541,18 @@ export default function App() {
     if (entityGroupBy === 'none') return [];
     const groups = {};
     entitiesList.forEach((ent) => {
-      const val = getEntityFieldValue(ent, entityGroupBy).trim() || '— Chưa phân loại —';
+      const val = getEntityFieldValue(ent, entityGroupBy).trim() || 'â€” ChÆ°a phÃ¢n loáº¡i â€”';
       if (!groups[val]) groups[val] = [];
       groups[val].push(ent);
     });
     return Object.entries(groups).sort((a, b) => {
-      if (a[0] === '— Chưa phân loại —') return 1;
-      if (b[0] === '— Chưa phân loại —') return -1;
+      if (a[0] === 'â€” ChÆ°a phÃ¢n loáº¡i â€”') return 1;
+      if (b[0] === 'â€” ChÆ°a phÃ¢n loáº¡i â€”') return -1;
       return a[0].localeCompare(b[0], 'vi');
     });
   }, [entitiesList, entityGroupBy]);
 
-  /** Thực thể có kỷ nguyên trong [neo−12, neo+30] — mọi mục sưu tập */
+  /** Thá»±c thá»ƒ cÃ³ ká»· nguyÃªn trong [neoâˆ’12, neo+30] â€” má»i má»¥c sÆ°u táº­p */
   const nearChapterEntitiesGlobal = useMemo(() => {
     if (!activeNovelData) return [];
     if (!overviewNeoOpen) return [];
@@ -742,26 +603,7 @@ export default function App() {
       window.removeEventListener('keydown', handleEsc);
     };
   }, [showEntityAdvanced, setShowEntityAdvanced]);
-  useEffect(() => {
-    const el = sidebarListRef.current;
-    if (!el) return;
-    const updateHeight = () => setSidebarViewportHeight(el.clientHeight || 0);
-    updateHeight();
-    if (typeof ResizeObserver !== 'undefined') {
-      const ro = new ResizeObserver(updateHeight);
-      ro.observe(el);
-      return () => ro.disconnect();
-    }
-    window.addEventListener('resize', updateHeight);
-    return () => window.removeEventListener('resize', updateHeight);
-  }, []);
-  useEffect(() => {
-    const el = sidebarListRef.current;
-    if (el) el.scrollTop = 0;
-    setSidebarScrollTop(0);
-  }, [searchQuery, selectedGenres]);
-
-  /** Luôn resolve từ toàn bộ entities tab — không dùng entitiesList đã lọc theo ô tìm (tránh mất thẻ đang xem). */
+  /** Luon resolve tu toan bo entities tab - khong dung entitiesList da loc theo o tim. */
   const selectedEntity = useMemo(() => {
     if (!activeNovelData || !activeTabLon || !selectedEntityId) return undefined;
     if (!currentTabConfig || currentTabConfig.viewType !== 'collection-track') return undefined;
@@ -770,7 +612,7 @@ export default function App() {
     return tabData.entities.find((e) => e.id === selectedEntityId);
   }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig, selectedEntityId]);
 
-  /** Đổi mục / loại tab: bỏ chọn thẻ nếu không còn thuộc tab collection hiện tại hoặc thẻ đã bị xóa. */
+  /** Äá»•i má»¥c / loáº¡i tab: bá» chá»n tháº» náº¿u khÃ´ng cÃ²n thuá»™c tab collection hiá»‡n táº¡i hoáº·c tháº» Ä‘Ã£ bá»‹ xÃ³a. */
   useEffect(() => {
     if (!selectedEntityId) return;
 
@@ -801,10 +643,10 @@ export default function App() {
     }
   }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig, selectedEntityId]);
 
-  // Global map — toàn bộ truyện, dùng để resolve [[...]] link và renderMarkdown lookup.
+  // Global map - toan bo truyen, dung de resolve [[...]] link va renderMarkdown lookup.
   const entityMap = useMemo(() => buildEntityLinkMap(activeNovelData), [activeNovelData]);
 
-  // Local/scoped map — chỉ tab hiện tại, dùng cho plain-text auto-link matcher (hiệu năng).
+  // Local/scoped map â€” chá»‰ tab hiá»‡n táº¡i, dÃ¹ng cho plain-text auto-link matcher (hiá»‡u nÄƒng).
   const localEntityMap = useMemo(() => {
     if (!activeNovelData) return [];
     if (currentTabConfig?.viewType === 'collection-track' && activeTabLon) {
@@ -851,17 +693,6 @@ export default function App() {
 
   const [relatedEntities, setRelatedEntities] = useState([]);
   const [isCalculatingNetwork, setIsCalculatingNetwork] = useState(false);
-  const handleSidebarNovelHover = useCallback((novelId, el) => {
-    setHoveredNovelId(novelId);
-    if (!el) return;
-    if (hoverTooltipRafRef.current) cancelAnimationFrame(hoverTooltipRafRef.current);
-    hoverTooltipRafRef.current = requestAnimationFrame(() => {
-      const rect = el.getBoundingClientRect();
-      setTooltipPos({ x: rect.right + 8, y: Math.min(rect.top, window.innerHeight - 260) });
-      hoverTooltipRafRef.current = null;
-    });
-  }, []);
-  const handleSelectNovelRef = useRef(null);
 
   useEffect(() => {
     if (!activeNovelData || !selectedEntity || collectionSubTab !== 'detail') {
@@ -896,47 +727,6 @@ export default function App() {
     };
   }, [activeNovelData, selectedEntity, activeTabs, entityMap, wikiExactMatchOnly, collectionSubTab]);
 
-  const librarySearchIndex = useMemo(
-    () =>
-      (novelsMetadata || []).map((n) => {
-        let genres = [];
-        if (Array.isArray(n.genres)) genres = n.genres;
-        else if (typeof n.genres === 'string') genres = [n.genres];
-        else if (n.genre) genres = [n.genre];
-        const titleText = safeString(n.title).toLowerCase();
-        const authorText = safeString(n.author).toLowerCase();
-        const tagText = (n.tags || []).map((t) => safeString(t)).join(' ').toLowerCase();
-        return {
-          id: n.id,
-          text: `${titleText} ${authorText} ${tagText}`,
-          titleText,
-          authorText,
-          tagText,
-          genres,
-        };
-      }),
-    [novelsMetadata]
-  );
-  const filteredNovelsList = useMemo(() => {
-    const q = safeString(deferredLibrarySearch).toLowerCase().trim();
-    const selected = selectedGenres || [];
-    const byId = new Map((novelsMetadata || []).map((n) => [n.id, n]));
-    return librarySearchIndex
-      .filter((row) => {
-        let matchSearch = true;
-        if (q) {
-          if (searchField === 'title') matchSearch = row.titleText.includes(q);
-          else if (searchField === 'author') matchSearch = row.authorText.includes(q);
-          else if (searchField === 'tag') matchSearch = row.tagText.includes(q);
-          else matchSearch = row.text.includes(q);
-        }
-        const matchGenre = selected.length === 0 || selected.some((sg) => row.genres.includes(sg));
-        return matchSearch && matchGenre;
-      })
-      .map((row) => byId.get(row.id))
-      .filter(Boolean);
-  }, [librarySearchIndex, novelsMetadata, deferredLibrarySearch, selectedGenres, searchField]);
-
   useEffect(() => {
     if (window.self !== window.top) {
        const localIndex = localStorage.getItem('tangthu_index');
@@ -955,11 +745,6 @@ export default function App() {
        }
     }
   }, []);
-
-  useEffect(() => {
-    const timerId = setTimeout(() => setSearchQuery(searchInput), 300);
-    return () => clearTimeout(timerId);
-  }, [searchInput]);
 
   useEffect(() => {
     try {
@@ -982,18 +767,6 @@ export default function App() {
     } catch { void 0; }
   }, [autoLinkToastEnabled]);
   useEffect(() => {
-    const q = searchQuery.trim();
-    if (q.length < 2) return;
-    try {
-      const raw = localStorage.getItem('tangthu_lib_search_hist');
-      let arr = raw ? JSON.parse(raw) : [];
-      if (!Array.isArray(arr)) arr = [];
-      arr = [q, ...arr.filter((x) => safeString(x).toLowerCase() !== q.toLowerCase())].slice(0, 12);
-      localStorage.setItem('tangthu_lib_search_hist', JSON.stringify(arr));
-      setSearchHistory(arr);
-    } catch { void 0; }
-  }, [searchQuery]);
-  useEffect(() => {
     if (activeNovelData) {
       setOverviewForm({
         status: activeNovelData.status,
@@ -1014,7 +787,7 @@ export default function App() {
   const runXrefAiForRow = useCallback(
     async (xref) => {
       if (!activeNovelData || geminiApiKeys.length === 0) {
-        showToast('Cần API Key (Cài đặt) để gợi ý AI.', 'warning');
+        showToast('Cáº§n API Key (CÃ i Ä‘áº·t) Ä‘á»ƒ gá»£i Ã½ AI.', 'warning');
         return;
       }
       setXrefAiPanel({ xref, suggestions: [], loading: true, error: '' });
@@ -1049,7 +822,7 @@ export default function App() {
         activeNovelData?.tabsConfig || globalTabsConfig
       );
       if (!path) {
-        showToast('Không tìm thấy mục sưu tập phù hợp.', 'warning');
+        showToast('KhÃ´ng tÃ¬m tháº¥y má»¥c sÆ°u táº­p phÃ¹ há»£p.', 'warning');
         return;
       }
       setNavHistory((prev) => [
@@ -1064,14 +837,14 @@ export default function App() {
       setEntitySearch('');
       setEditingEntityData({
         id: null,
-        name: safeString(s.suggestedName) || 'Chưa đặt tên',
+        name: safeString(s.suggestedName) || 'ChÆ°a Ä‘áº·t tÃªn',
         avatar: '',
         rawText: safeString(s.draftRawText) || safeString(xref?.note) || '',
         dynamicData: {},
       });
       setIsEntityModalOpen(true);
       setXrefAiPanel(null);
-      showToast('Đã mở form tạo thẻ — kiểm tra rồi Lưu.');
+      showToast('ÄÃ£ má»Ÿ form táº¡o tháº» â€” kiá»ƒm tra rá»“i LÆ°u.');
     },
     [activeNovelData?.tabsConfig, globalTabsConfig, activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, showToast, setEntitySearch]
   );
@@ -1093,7 +866,7 @@ export default function App() {
       setEditingMilestoneData({ id: null, chapter: String(chFinal), event: ev });
       setIsMilestoneModalOpen(true);
       setXrefAiPanel(null);
-      showToast(`Mốc cho «${safeString(matchRow.ent.name)}» — chỉnh rồi Lưu.`);
+      showToast(`Má»‘c cho Â«${safeString(matchRow.ent.name)}Â» â€” chá»‰nh rá»“i LÆ°u.`);
     },
     [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, showToast]
   );
@@ -1103,7 +876,7 @@ export default function App() {
       const tabData = novelData?.data?.[matchRow.lonId]?.[matchRow.nhoId];
       const ent = tabData?.entities?.find((e) => e.id === matchRow.ent.id);
       if (!ent) {
-        showToast('Không tìm thấy thẻ.', 'error');
+        showToast('KhÃ´ng tÃ¬m tháº¥y tháº».', 'error');
         return;
       }
       const note = safeString(suggestion?.profileNote);
@@ -1120,11 +893,11 @@ export default function App() {
         ...ent,
         rawText:
           safeString(ent.rawText) +
-          (note ? `\n\n— Gợi ý từ nối tra cứu —\n${note}` : ''),
+          (note ? `\n\nâ€” Gá»£i Ã½ tá»« ná»‘i tra cá»©u â€”\n${note}` : ''),
       });
       setIsEntityModalOpen(true);
       setXrefAiPanel(null);
-      showToast('Đã mở sửa thẻ — xem phần bản thảo / AI điền form.');
+      showToast('ÄÃ£ má»Ÿ sá»­a tháº» â€” xem pháº§n báº£n tháº£o / AI Ä‘iá»n form.');
     },
     [activeTabLon, activeTabNho, activeTabCon, selectedEntityId, collectionSubTab, showToast]
   );
@@ -1381,11 +1154,11 @@ export default function App() {
           if (!targetExistingId) lockFieldsTemplateIfFirstEntity(nov, lonId, nhoId);
       });
       if (targetExistingId) {
-        showToast(`«${quickName}» đã trùng thẻ có sẵn — đã thêm vào bí danh và liên kết về thẻ cũ.`, 'warning');
+        showToast(`"${quickName}" da trung the co san - da them vao bi danh va lien ket ve the cu.`, 'warning');
         handleNavigate({ lonId, nhoId, entityId: targetExistingId });
         return;
       }
-      showToast(`Đã ngưng tụ thành công ${quickName}!`);
+      showToast(`Da ngung tu thanh cong ${quickName}!`);
       handleNavigate({ lonId, nhoId, entityId: newEntityId });
   };
 
@@ -1398,335 +1171,88 @@ export default function App() {
     });
   };
 
-  const handleConnectFolder = async () => {
-    if (window.self !== window.top) {
-       setDirHandle("LOCAL_STORAGE"); setShowConnectReminder(true); showToast("Preview: Đã chuyển sang Local Storage.");
-       const local = localStorage.getItem('tangthu_index');
-      if (local) { try { const p = migrateIndex(JSON.parse(local)); if (p.metadata) setNovelsMetadata(p.metadata); const safeConfig = resolveSafeTabsConfig(p.config); setGlobalTabsConfig(safeConfig); const stats = p.novelStats && typeof p.novelStats === 'object' ? p.novelStats : {}; if (p.novelStats && typeof p.novelStats === 'object') { novelStatsByIdRef.current = p.novelStats; setNovelStatsById(p.novelStats); } if (!Array.isArray(p.config) || p.config.length === 0) void syncIndex(p.metadata || [], safeConfig, 'LOCAL_STORAGE', stats); } catch { void 0; } }
-       return;
-    }
-    try {
-      const h = await window.showDirectoryPicker({ mode: 'readwrite' });
-      let fileHandle, file, content;
-      try {
-        fileHandle = await h.getFileHandle('index.json');
-        file = await fileHandle.getFile(); content = await file.text();
-      } catch {
-         try {
-             const oldHandle = await h.getFileHandle('db.json'); const oldFile = await oldHandle.getFile(); const oldContent = await oldFile.text(); const parsedOld = JSON.parse(oldContent);
-             if (parsedOld.novels) {
-                 showToast("Đang thực hiện độ kiếp (Migrate) cấu trúc thư mục...");
-                 const newMeta = parsedOld.novels.map(n => ({ id: n.id, title: n.title, author: n.author, genres: n.genres || (n.genre ? [n.genre] : []), theme: n.theme || 'theme-tien-hiep', status: n.status, rating: n.rating, tags: n.tags || [], chaptersRead: n.chaptersRead, chaptersTotal: n.chaptersTotal, cover: n.cover, review: n.review }));
-                 const novelsDir = await h.getDirectoryHandle('novels', { create: true });
-                for (const n of parsedOld.novels) {
-                    const migratedNovel = migrateNovel(n);
-                     const fh = await novelsDir.getFileHandle(`${n.id}.json`, { create: true }); const wr = await fh.createWritable();
-                    await wr.write(JSON.stringify(migratedNovel, null, 2)); await wr.close();
-                 }
-                 const ih = await h.getFileHandle('index.json', { create: true }); const iw = await ih.createWritable();
-                const safeConfig = resolveSafeTabsConfig(parsedOld.config);
-                await iw.write(JSON.stringify({ metadata: newMeta, config: safeConfig, novelStats: {} }, null, 2)); await iw.close();
-                setNovelsMetadata(newMeta); setGlobalTabsConfig(safeConfig);
-                setDirHandle(h); setShowConnectReminder(true); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Độ kiếp thành công! Cấu trúc mới đã sẵn sàng."); return;
-             }
-         } catch { setDirHandle(h); setShowConnectReminder(true); setActiveNovelData(null); setActiveNovelDirHandle(null); showToast("Thư mục trống. Đã kết nối Mệnh Bàn!"); return; }
-      }
-      if (content) {
-        try {
-          const parsed = JSON.parse(content);
-          const index = migrateIndex(parsed);
-          if (index.metadata) setNovelsMetadata(index.metadata);
-          const safeConfig = resolveSafeTabsConfig(index.config);
-          setGlobalTabsConfig(safeConfig);
-          const stats = index.novelStats && typeof index.novelStats === 'object' ? index.novelStats : {};
-          if (index.novelStats && typeof index.novelStats === 'object') {
-            novelStatsByIdRef.current = index.novelStats;
-            setNovelStatsById(index.novelStats);
-          } else {
-            setNovelStatsById({});
-            novelStatsByIdRef.current = {};
-          }
-          if (!Array.isArray(index.config) || index.config.length === 0) {
-            void syncIndex(index.metadata || [], safeConfig, h, stats);
-          }
-          setDirHandle(h);
-          setShowConnectReminder(true);
-          setActiveNovelData(null);
-          setActiveNovelDirHandle(null);
-          showToast("Đã tải Mệnh Bàn (Index) thành công!");
-        } catch {
-          showToast("LỖI CHÍ MẠNG: File index.json bị hỏng cấu trúc.", "error");
-        }
-      }
-    } catch { void 0; }
-  };
+  const {
+    isAddNovelOpen,
+    setIsAddNovelOpen,
+    novelModalMode,
+    novelForm,
+    setNovelForm,
+    handleOpenCreateNovel,
+    handleOpenEditNovel,
+    handleSaveNovelModal,
+    handleDeleteNovel,
+  } = useAppNovelCrud({
+    genres: GENRES,
+    initialTabsConfig: INITIAL_TABS_CONFIG,
+    generateId,
+    activeNovelData,
+    novelsMetadata,
+    dirHandle,
+    globalTabsConfig,
+    syncIndex,
+    syncNovel,
+    showToast,
+    updateActiveNovelData,
+    setNovelStatsById,
+    setNovelsMetadata,
+    setActiveNovelData,
+    setActiveNovelDirHandle,
+    setMenu1Visible,
+    setActiveTabLon,
+    setActiveTabNho,
+    setActiveTabCon,
+    setConfirmDialog,
+    novelsMetadataRef,
+    novelStatsByIdRef,
+  });
 
-  const handleExportBackup = async () => {
-    showToast("Đang gom tụ linh khí, chuẩn bị xuất Mệnh Bàn...");
-    try {
-      const allData = {
-        backupVersion: 2,
-        exportedAt: new Date().toISOString(),
-        config: globalTabsConfig,
-        metadata: novelsMetadata,
-        novelStats: { ...novelStatsById },
-        novels: {},
-      };
-      for (const meta of novelsMetadata) {
-        const loaded = await loadNovelData(meta, dirHandle);
-        if (loaded?.novel) allData.novels[meta.id] = loaded.novel;
-      }
-      const blob = new Blob([JSON.stringify(allData, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `TangThuCac_Backup_${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast("Đã xuất backup đầy đủ (index + thống kê + từng truyện).");
-    } catch {
-      showToast("Lỗi khi xuất backup!", "error");
-    }
-  };
+  const {
+    showConnectReminder,
+    dismissConnectReminder,
+    importProgress,
+    handleConnectFolder,
+    handleExportBackup,
+    handleExportIndexOnly,
+    handleImportBackup,
+  } = useAppDirectoryBackup({
+    dirHandle,
+    globalTabsConfig,
+    novelsMetadata,
+    novelStatsById,
+    syncIndex,
+    syncNovel,
+    loadNovelData,
+    resolveSafeTabsConfig,
+    setDirHandle,
+    setActiveNovelData,
+    setActiveNovelDirHandle,
+    setNovelsMetadata,
+    setGlobalTabsConfig,
+    setNovelStatsById,
+    novelsMetadataRef,
+    novelStatsByIdRef,
+    showToast,
+  });
 
-  /** Chỉ index + thống kê — không đọc từng file truyện (nhanh). */
-  const handleExportIndexOnly = () => {
-    try {
-      const payload = {
-        backupVersion: 2,
-        indexOnly: true,
-        exportedAt: new Date().toISOString(),
-        config: globalTabsConfig,
-        metadata: novelsMetadata,
-        novelStats: { ...novelStatsById },
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `TangThuCac_Index_${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast("Đã xuất file index (mệnh bàn + thống kê).");
-    } catch {
-      showToast("Lỗi xuất index!", "error");
-    }
-  };
-
-  const handleImportBackup = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setImportProgress({ stage: 'Đang đọc file...', current: 0, total: 1 });
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        setImportProgress({ stage: 'Đang chuẩn hóa dữ liệu...', current: 0, total: 1 });
-        const parsed = JSON.parse(event.target.result);
-        const backup = migrateBackup(parsed);
-        if (backup.metadata && backup.config) {
-          const safeConfig = resolveSafeTabsConfig(backup.config);
-          setGlobalTabsConfig(safeConfig);
-          setNovelsMetadata(backup.metadata);
-          novelsMetadataRef.current = backup.metadata;
-          const stats = backup.novelStats && typeof backup.novelStats === 'object' ? backup.novelStats : {};
-          novelStatsByIdRef.current = stats;
-          setNovelStatsById(stats);
-          setImportProgress({ stage: 'Đang ghi danh mục...', current: 0, total: 1 });
-          await syncIndex(backup.metadata, safeConfig, dirHandle, stats);
-          const novelEntries = backup.novels && typeof backup.novels === 'object' ? Object.entries(backup.novels) : [];
-          for (let i = 0; i < novelEntries.length; i++) {
-            setImportProgress({ stage: `Đang ghi truyện ${i + 1}/${novelEntries.length}...`, current: i + 1, total: novelEntries.length });
-            await syncNovel(novelEntries[i][1], dirHandle);
-          }
-          setImportProgress(null);
-          showToast("Khôi phục thành công! Tải lại trang…");
-          setTimeout(() => window.location.reload(), 1200);
-        } else {
-          setImportProgress(null);
-          showToast("File không đúng cấu trúc Tàng Thư Các.", "error");
-        }
-      } catch {
-        setImportProgress(null);
-        showToast("Lỗi đọc file backup!", "error");
-      }
-    };
-    reader.onerror = () => { setImportProgress(null); showToast("Lỗi đọc file!", "error"); };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
-
-  const handleOpenCreateNovel = () => {
-    setNovelForm({ title: '', author: '', genres: (GENRES && GENRES.length > 0) ? [GENRES[0]] : [], theme: 'theme-tien-hiep', cover: '', status: 'Đang đọc', chaptersTotal: '', tabsConfig: undefined });
-    setNovelModalMode('create'); setIsAddNovelOpen(true);
-  };
-
-  const handleOpenEditNovel = () => {
-    if (!activeNovelData) return;
-    let nGenres = [];
-    if (Array.isArray(activeNovelData.genres)) nGenres = activeNovelData.genres;
-    else if (typeof activeNovelData.genres === 'string') nGenres = [activeNovelData.genres];
-    else if (activeNovelData.genre) nGenres = [activeNovelData.genre];
-
-    setNovelForm({
-      title: activeNovelData.title, author: activeNovelData.author, 
-      genres: nGenres, theme: activeNovelData.theme || 'theme-tien-hiep',
-      cover: activeNovelData.cover, status: activeNovelData.status, chaptersTotal: activeNovelData.chaptersTotal
-    });
-    setNovelModalMode('edit'); setIsAddNovelOpen(true);
-  };
-
-  const handleSaveNovelModal = async () => {
-    if (!novelForm.title.trim()) return;
-    if (novelModalMode === 'create') {
-      const newId = generateId('novel');
-      const safeTitle = novelForm.title.replace(/[\\/:*?"<>|]/g, '').trim() || newId; 
-      const folderName = safeTitle;
-
-      const newMeta = {
-        id: newId, title: novelForm.title, author: novelForm.author || 'Vô Danh',
-        genres: novelForm.genres || [], theme: novelForm.theme || 'theme-tien-hiep',
-        tags: [], chaptersRead: 0, chaptersTotal: novelForm.chaptersTotal || '???', status: novelForm.status,
-        rating: 0, review: '', ratingOpinion: '', cover: novelForm.cover, folderName: folderName
-      };
-      
-      const tabsToUse = Array.isArray(novelForm.tabsConfig) && novelForm.tabsConfig.length > 0
-        ? structuredClone(novelForm.tabsConfig)
-        : structuredClone(INITIAL_TABS_CONFIG);
-      const newFullData = { ...newMeta, data: {}, tabsConfig: tabsToUse, chapterCrossRefs: [], readingJournal: [] };
-      const newMetaList = [newMeta, ...novelsMetadata];
-      const nextStats = { ...novelStatsByIdRef.current, [newId]: { entities: 0, milestones: 0, byTab: [] } };
-      novelStatsByIdRef.current = nextStats;
-      setNovelStatsById(nextStats);
-      setNovelsMetadata(newMetaList); setActiveNovelData(newFullData);
-      novelsMetadataRef.current = newMetaList;
-      setIsAddNovelOpen(false); setMenu1Visible(false); setActiveTabLon('tong-quan'); setActiveTabNho(null); setActiveTabCon(null);
-      
-      if (dirHandle && dirHandle !== 'LOCAL_STORAGE') {
-          try { const nHandle = await dirHandle.getDirectoryHandle(folderName, { create: true }); setActiveNovelDirHandle(nHandle); } catch { void 0; }
-      }
-      await syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
-      await syncNovel(newFullData, dirHandle);
-      showToast("Khai sinh thư tịch mới thành công!");
-    } else {
-      updateActiveNovelData(nov => { 
-          nov.title = novelForm.title; nov.author = novelForm.author; 
-          nov.genres = novelForm.genres; nov.theme = novelForm.theme;
-          nov.cover = novelForm.cover; nov.status = novelForm.status; nov.chaptersTotal = novelForm.chaptersTotal; 
-      });
-      setIsAddNovelOpen(false); showToast("Đã tu bổ thông tin thư tịch!");
-    }
-  };
-
-  const handleImageDrop = async (e, editorId = 'standard-editor') => {
-    e.preventDefault();
-    if (!isEditingMode && !isEntityEditing) return;
-    if (!dirHandle) { showToast("Vui lòng kết nối Thư Mục trước để lưu ảnh!", "warning"); return; }
-    const files = e.dataTransfer.files;
-    if (files && files[0] && files[0].type.startsWith('image/')) {
-      const file = files[0]; setIsUploading(true);
-      if (dirHandle === "LOCAL_STORAGE") {
-         const reader = new FileReader();
-         reader.onload = (event) => { handleToolbarClick(`\n\n![${file.name}](${event.target.result})\n\n`, '', editorId); setIsUploading(false); showToast("Đã lưu ảnh dạng mã hóa Base64."); };
-         reader.readAsDataURL(file); return;
-      }
-      try {
-         const imagesDir = await currentContextDirHandle.getDirectoryHandle('images', { create: true });
-         const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-         const imageFileHandle = await imagesDir.getFileHandle(fileName, { create: true });
-         const writable = await imageFileHandle.createWritable();
-         await writable.write(file); await writable.close();
-         handleToolbarClick(`\n\n![${file.name}](local_image:${fileName})\n\n`, '', editorId); showToast("Linh ảnh đã được khảm vào local!");
-      } catch { showToast("Thất bại khi lưu ảnh!", "error"); } finally { setIsUploading(false); }
-    }
-  };
-
-  const handleAvatarDrop = async (e, setAvatarCallback) => {
-    e.preventDefault();
-    if (!dirHandle) { showToast("Vui lòng kết nối Thư Mục trước để tải ảnh Local!", "warning"); return; }
-    const files = e.dataTransfer.files;
-    if (files && files[0] && files[0].type.startsWith('image/')) {
-      const file = files[0]; setIsUploading(true);
-      if (dirHandle === "LOCAL_STORAGE") {
-         const reader = new FileReader();
-         reader.onload = (event) => { setAvatarCallback(event.target.result); setIsUploading(false); showToast("Đã lưu Avatar dạng Base64."); };
-         reader.readAsDataURL(file); return;
-      }
-      try {
-         const imagesDir = await currentContextDirHandle.getDirectoryHandle('images', { create: true });
-         const fileName = `avatar-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-         const imageFileHandle = await imagesDir.getFileHandle(fileName, { create: true });
-         const writable = await imageFileHandle.createWritable();
-         await writable.write(file); await writable.close();
-         setAvatarCallback(`local_image:${fileName}`); showToast("Linh ảnh đã được khảm vào local!");
-      } catch { showToast("Thất bại khi lưu ảnh!", "error"); } finally { setIsUploading(false); }
-    }
-  };
-
-  // Ảnh bìa luôn lưu vào ROOT/images/ vì cần hiển thị ngoài context truyện (sidebar, dashboard)
-  const handlePickCoverImage = async (setAvatarCallback) => {
-    try {
-      const [fileHandle] = await window.showOpenFilePicker({
-        types: [{ description: 'Images', accept: { 'image/*': ['.png', '.gif', '.jpeg', '.jpg', '.webp'] } }],
-        multiple: false
-      });
-      const file = await fileHandle.getFile();
-      setIsUploading(true);
-
-      if (!dirHandle || dirHandle === 'LOCAL_STORAGE') {
-        const reader = new FileReader();
-        reader.onload = (e) => { setAvatarCallback(e.target.result); setIsUploading(false); };
-        reader.readAsDataURL(file);
-        return;
-      }
-
-      // Lưu vào root/images/ để luôn accessible
-      const imagesDir = await dirHandle.getDirectoryHandle('images', { create: true });
-      const ext = file.name.split('.').pop().replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
-      const fileName = `cover-${Date.now()}.${ext}`;
-      const newFileHandle = await imagesDir.getFileHandle(fileName, { create: true });
-      const writable = await newFileHandle.createWritable();
-      await writable.write(file);
-      await writable.close();
-      setAvatarCallback(`local_image:${fileName}`);
-      showToast('Ảnh bìa đã được lưu!');
-    } catch(err) {
-      if (err.name !== 'AbortError') showToast('Hủy chọn ảnh.', 'warning');
-    } finally { setIsUploading(false); }
-  };
-
-  const handlePickLocalImage = async (setAvatarCallback, editorId = null, filePrefix = 'img') => {
-    try {
-        const [fileHandle] = await window.showOpenFilePicker({ types: [{ description: 'Images', accept: { 'image/*': ['.png', '.gif', '.jpeg', '.jpg', '.webp'] } }], multiple: false });
-        const file = await fileHandle.getFile(); setIsUploading(true);
-        if (!dirHandle || dirHandle === "LOCAL_STORAGE") {
-             const reader = new FileReader();
-             reader.onload = (event) => {
-                if (editorId) handleToolbarClick(`\n\n![${file.name}](${event.target.result})\n\n`, '', editorId);
-                else if (setAvatarCallback) setAvatarCallback(event.target.result);
-                setIsUploading(false); showToast("Đã lưu ảnh dạng mã hóa Base64.");
-             };
-             reader.readAsDataURL(file); return;
-        }
-        const imagesDir = await currentContextDirHandle.getDirectoryHandle('images', { create: true });
-        const ext = file.name.split('.').pop().replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
-        const fileName = `${filePrefix}-${Date.now()}.${ext}`;
-        const newFileHandle = await imagesDir.getFileHandle(fileName, { create: true });
-        const writable = await newFileHandle.createWritable(); await writable.write(file); await writable.close();
-        if (editorId) handleToolbarClick(`\n\n![${file.name}](local_image:${fileName})\n\n`, '', editorId);
-        else if (setAvatarCallback) setAvatarCallback(`local_image:${fileName}`);
-        showToast("Linh ảnh đã được khảm vào Tàng Thư Các!");
-    } catch (err) { if (err.name !== 'AbortError') showToast("Hủy chọn ảnh."); } finally { setIsUploading(false); }
-  };
-
-  const handleConfirmInsertImage = () => {
-    if (!imageForm.url.trim()) return;
-    let finalUrl = imageForm.url.trim();
-    const srcMatch = finalUrl.match(/src=["'](.*?)["']/);
-    if (srcMatch && srcMatch[1]) finalUrl = srcMatch[1].replace(/&amp;/g, '&');
-    if (/^javascript:/i.test(finalUrl)) { showToast('URL không hợp lệ!', 'error'); return; }
-    handleToolbarClick(`\n\n![${imageForm.alt.trim() || 'Minh họa'}](${finalUrl})\n\n`, '', imageForm.editorId);
-    setIsInsertImageModalOpen(false); setImageForm({ url: '', alt: '', editorId: 'standard-editor' });
-  };
+  const {
+    isUploading,
+    setIsUploading,
+    isInsertImageModalOpen,
+    setIsInsertImageModalOpen,
+    imageForm,
+    setImageForm,
+    handleImageDrop,
+    handleAvatarDrop,
+    handlePickCoverImage,
+    handlePickLocalImage,
+    handleConfirmInsertImage,
+  } = useAppImageWorkflow({
+    dirHandle,
+    currentContextDirHandle,
+    isEditingMode,
+    isEntityEditing,
+    showToast,
+  });
 
   const handleSaveStandardEditor = () => {
     updateActiveNovelData(n => {
@@ -1741,7 +1267,7 @@ export default function App() {
            else { n.data[activeTabLon][activeTabNho || 'default'] = content; }
        }
     });
-    setIsEditingMode(false); setIsSplitPreview(false); showToast("Khắc ấn đại đạo thành công!");
+    setIsEditingMode(false); setIsSplitPreview(false); showToast("Kháº¯c áº¥n Ä‘áº¡i Ä‘áº¡o thÃ nh cÃ´ng!");
   };
 
   const {
@@ -1821,7 +1347,7 @@ export default function App() {
     }).filter(Boolean).join('');
 
     const milestonesHTML = (entity.milestones || []).sort((a,b) => a.chapter - b.chapter).map(ms =>
-      '<div class="milestone"><div class="ms-chapter">Chương ' + escHtml(ms.chapter) + '</div><div class="ms-event">' + escHtml(ms.event || '') + '</div></div>'
+      '<div class="milestone"><div class="ms-chapter">ChÆ°Æ¡ng ' + escHtml(ms.chapter) + '</div><div class="ms-event">' + escHtml(ms.event || '') + '</div></div>'
     ).join('');
 
     const infoHTML = escHtml(entity.info || '').replace(/\n/g, '<br/>');
@@ -1830,9 +1356,9 @@ export default function App() {
     const firstFieldVal = fields[0] ? getVal(fields[0].id) : '';
 
     const printWindow = window.open('', '_blank');
-    if (!printWindow) { showToast('Trình duyệt chặn popup. Vui lòng cho phép popup!', 'warning'); return; }
+    if (!printWindow) { showToast('TrÃ¬nh duyá»‡t cháº·n popup. Vui lÃ²ng cho phÃ©p popup!', 'warning'); return; }
 
-    const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Hồ Sơ: ' + escHtml(entity.name || '') + '</title>'
+    const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Há»“ SÆ¡: ' + escHtml(entity.name || '') + '</title>'
       + '<style>'
       + '@import url(\'https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400&family=Playfair+Display:wght@700;800&display=swap\');'
       + '* { box-sizing: border-box; margin: 0; padding: 0; }'
@@ -1854,17 +1380,17 @@ export default function App() {
       + '.footer { margin-top:40px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8;text-align:center; }'
       + '@media print { .no-print { display:none; } body { padding:20px; } }'
       + '</style></head><body>'
-      + '<div class="no-print"><span>📄 Xem trước — Nhấn In để lưu PDF</span>'
-      + '<button class="print-btn" onclick="window.print()">🖨 In / Lưu PDF</button></div>'
+      + '<div class="no-print"><span>ðŸ“„ Xem trÆ°á»›c â€” Nháº¥n In Ä‘á»ƒ lÆ°u PDF</span>'
+      + '<button class="print-btn" onclick="window.print()">ðŸ–¨ In / LÆ°u PDF</button></div>'
       + '<div class="header">'
-      + '<div class="novel-name">📚 ' + escHtml(novelTitle) + (tabLabel ? ' · ' + escHtml(tabLabel) : '') + '</div>'
-      + '<div class="entity-name">' + escHtml(entity.name || 'Vô Danh') + '</div>'
+      + '<div class="novel-name">ðŸ“š ' + escHtml(novelTitle) + (tabLabel ? ' Â· ' + escHtml(tabLabel) : '') + '</div>'
+      + '<div class="entity-name">' + escHtml(entity.name || 'VÃ´ Danh') + '</div>'
       + (firstFieldVal ? '<div style="color:#64748b;font-size:12px;margin-top:6px;text-transform:uppercase;letter-spacing:.1em">' + escHtml(firstFieldVal) + '</div>' : '')
       + '</div>'
-      + (fieldsHTML ? '<div class="section"><div class="section-title">Căn Cơ & Thuộc Tính</div>' + fieldsHTML + '</div>' : '')
-      + (infoHTML ? '<div class="section"><div class="section-title">Ghi Chép Chi Tiết</div><div class="info-text">' + infoHTML + '</div></div>' : '')
-      + (milestonesHTML ? '<div class="section"><div class="section-title">Dòng Thời Gian (' + (entity.milestones||[]).length + ' mốc)</div>' + milestonesHTML + '</div>' : '')
-      + '<div class="footer">Xuất từ Tàng Thư Các · ' + new Date().toLocaleDateString('vi-VN') + '</div>'
+      + (fieldsHTML ? '<div class="section"><div class="section-title">CÄƒn CÆ¡ & Thuá»™c TÃ­nh</div>' + fieldsHTML + '</div>' : '')
+      + (infoHTML ? '<div class="section"><div class="section-title">Ghi ChÃ©p Chi Tiáº¿t</div><div class="info-text">' + infoHTML + '</div></div>' : '')
+      + (milestonesHTML ? '<div class="section"><div class="section-title">DÃ²ng Thá»i Gian (' + (entity.milestones||[]).length + ' má»‘c)</div>' + milestonesHTML + '</div>' : '')
+      + '<div class="footer">Xuáº¥t tá»« TÃ ng ThÆ° CÃ¡c Â· ' + new Date().toLocaleDateString('vi-VN') + '</div>'
       + '</body></html>';
 
     printWindow.document.write(html);
@@ -1886,7 +1412,7 @@ export default function App() {
   }, [isEditingMode, isEntityEditing]);
 
   // ==========================================
-  // CÁC HÀM CÒN THIẾU (MISSING HANDLERS)
+  // CÃC HÃ€M CÃ’N THIáº¾U (MISSING HANDLERS)
   // ==========================================
 
   const handleGoHome = useCallback(() => {
@@ -1900,7 +1426,7 @@ export default function App() {
     setMenu1Visible(false);
   }, []);
 
-  // Migration: gộp fieldsTemplate — thêm trường mới, giữ nhãn tùy chỉnh của người dùng
+  // Migration: gá»™p fieldsTemplate â€” thÃªm trÆ°á»ng má»›i, giá»¯ nhÃ£n tÃ¹y chá»‰nh cá»§a ngÆ°á»i dÃ¹ng
   const { handleSelectNovel } = useAppNovelSelectionAndHydration({
     dirHandle,
     activeNovelData,
@@ -1931,44 +1457,9 @@ export default function App() {
     lazyFullHydrateInFlightRef,
     deepSearchIndexByNovelIdRef,
   });
-
-
-  const toggleGenre = (genre) => {
-    setSelectedGenres(prev =>
-      prev.includes(genre) ? prev.filter(g => g !== genre) : [...prev, genre]
-    );
-  };
-
-  const handleDeleteNovel = async (id) => {
-    const meta = novelsMetadata.find(m => m.id === id);
-    const folderName = meta ? (meta.folderName || (meta.title || '').replace(/[\\/:*?"<>|]/g, '').trim() || meta.id) : null;
-    const newMetaList = novelsMetadata.filter(m => m.id !== id);
-    const nextStats = { ...novelStatsByIdRef.current };
-    delete nextStats[id];
-    novelStatsByIdRef.current = nextStats;
-    setNovelStatsById(nextStats);
-    setNovelsMetadata(newMetaList);
-    novelsMetadataRef.current = newMetaList;
-    syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
-    if (dirHandle === 'LOCAL_STORAGE') {
-      localStorage.removeItem(`tangthu_novel_${id}`);
-    } else if (dirHandle && folderName) {
-      try {
-        await dirHandle.removeEntry(folderName, { recursive: true });
-      } catch (e) {
-        console.warn('[TTC] Không xóa được thư mục truyện:', folderName, e);
-        setTimeout(() => showToast(`Đã xóa khỏi sổ nhưng không xóa được thư mục "${folderName}".`, 'warning'), 0);
-      }
-    }
-    setActiveNovelData(null);
-    setActiveNovelDirHandle(null);
-    setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-    showToast('Đã hủy diệt thư tịch!');
-  };
-
   const handleDeepSearchResultSelect = (result) => {
     setIsDeepSearchOpen(false);
-    // Build dest from result fields (ModalDeepSearch trả về tabLonId/tabNhoId/entityId, không phải result.dest)
+    // Build dest from result fields (ModalDeepSearch tráº£ vá» tabLonId/tabNhoId/entityId, khÃ´ng pháº£i result.dest)
     const buildDest = (r) => {
       if (!r.tabLonId) return null;
       return { lonId: r.tabLonId, nhoId: r.tabNhoId || null, conId: r.tabConId || null, entityId: r.entityId || null };
@@ -1999,10 +1490,10 @@ export default function App() {
   const handleAddTabLon = () => {
     const newTab = {
       id: generateId('tab'),
-      label: 'Mục Mới',
+      label: 'Má»¥c Má»›i',
       iconName: 'ScrollText',
       subTabs: [
-        { id: generateId('sub'), label: 'Tiểu Mục 1', viewType: 'standard', tabCon: [] }
+        { id: generateId('sub'), label: 'Tiá»ƒu Má»¥c 1', viewType: 'standard', tabCon: [] }
       ]
     };
     const current = getTabsToUpdate();
@@ -2021,7 +1512,7 @@ export default function App() {
       structuredClone(DEFAULT_ENTITY_FIELDS);
     lon.subTabs.push({
       id: generateId('sub'),
-      label: 'Chương Mục Mới',
+      label: 'ChÆ°Æ¡ng Má»¥c Má»›i',
       viewType: 'collection-track',
       tabCon: [],
       fieldsTemplate: defaultFields
@@ -2035,7 +1526,7 @@ export default function App() {
     const nho = lon?.subTabs?.find(s => s.id === nhoId);
     if (!nho) return;
     if (!nho.tabCon) nho.tabCon = [];
-    nho.tabCon.push({ id: generateId('con'), label: 'Tiểu Mục Mới' });
+    nho.tabCon.push({ id: generateId('con'), label: 'Tiá»ƒu Má»¥c Má»›i' });
     setTabsConfig(current);
   };
 
@@ -2067,7 +1558,7 @@ export default function App() {
       const nho = lon?.subTabs?.find(s => s.id === path[1]);
       if (nho) {
         nho.label = label.trim();
-        // Tự sinh trường phù hợp khi đổi tên — chỉ áp nếu template chưa tùy chỉnh
+        // Tá»± sinh trÆ°á»ng phÃ¹ há»£p khi Ä‘á»•i tÃªn â€” chá»‰ Ã¡p náº¿u template chÆ°a tÃ¹y chá»‰nh
         if (nho.viewType === 'collection-track' && isStockTemplate(nho.fieldsTemplate)) {
           const guessed = guessFieldsByLabel(label.trim());
           if (guessed) nho.fieldsTemplate = structuredClone(guessed);
@@ -2094,7 +1585,7 @@ export default function App() {
       if (nho) {
         const switching = nho.viewType !== 'collection-track';
         nho.viewType = switching ? 'collection-track' : 'standard';
-        // Tự gán template phù hợp khi chuyển sang collection-track
+        // Tá»± gÃ¡n template phÃ¹ há»£p khi chuyá»ƒn sang collection-track
         if (switching && isStockTemplate(nho.fieldsTemplate)) {
           const lon = current.find(t => t.id === path[0]);
           const guessed =
@@ -2110,49 +1601,12 @@ export default function App() {
     setTabsConfig(current);
   };
 
-  const handleSelectTabLon = useCallback((tabId) => {
-    if (activeTabLon !== tabId) {
-      if (isEditingMode || isEntityEditing) {
-        setConfirmDialog({ isOpen: true, title: 'Chưa Lưu Thay Đổi',
-          message: 'Bạn có thay đổi chưa được lưu. Rời đi sẽ mất nội dung đang soạn. Tiếp tục?',
-          onConfirm: () => {
-            setConfirmDialog(prev => ({...prev, isOpen: false}));
-            setIsEditingMode(false); setIsEntityEditing(false);
-            setActiveTabLon(tabId); setActiveTabNho(null); setActiveTabCon(null);
-            setSelectedEntityId(null); setEntitySearch(''); setMenu2Expanded(true);
-          }
-        });
-        return;
-      }
-      setActiveTabLon(tabId);
-      setActiveTabNho(null);
-      setActiveTabCon(null);
-      setSelectedEntityId(null);
-      setIsEditingMode(false);
-      setIsEntityEditing(false);
-      setEntitySearch('');
-    }
-    setMenu2Expanded(true);
-  }, [activeTabLon, isEditingMode, isEntityEditing, setEntitySearch]);
-
-  const handleSelectTabNho = useCallback((e, lonId, sub) => {
-    e.stopPropagation();
-    setActiveTabLon(lonId);
-    setActiveTabNho(sub.id);
-    setActiveTabCon(null);
-    setSelectedEntityId(null);
-    setCollectionSubTab('list');
-    setIsEditingMode(false);
-    setIsEntityEditing(false);
-    setEntitySearch('');
-  }, [setEntitySearch]);
-
   // ==========================================
 
   const navFnRef = useRef(null);
   navFnRef.current = handleNavigate;
 
-  // Lưu lại fieldsTemplate khi cần gộp — thêm trường mới, giữ nhãn tùy chỉnh
+  // LÆ°u láº¡i fieldsTemplate khi cáº§n gá»™p â€” thÃªm trÆ°á»ng má»›i, giá»¯ nhÃ£n tÃ¹y chá»‰nh
   useEffect(() => {
     if (!activeNovelData || !activeTabNho || !currentTabConfig) return;
     if (currentTabConfig.viewType !== 'collection-track') return;
@@ -2228,64 +1682,6 @@ export default function App() {
     novelsMetadata,
     safeString,
   });
-  handleSelectNovelRef.current = handleSelectNovel;
-  const totalSidebarItems = filteredNovelsList.length;
-  const sidebarStartIndex = useMemo(
-    () => Math.max(0, Math.floor(sidebarScrollTop / SIDEBAR_ITEM_HEIGHT) - SIDEBAR_OVERSCAN),
-    [sidebarScrollTop]
-  );
-  const sidebarEndIndex = useMemo(() => {
-    const visibleCount = Math.max(1, Math.ceil((sidebarViewportHeight || 0) / SIDEBAR_ITEM_HEIGHT));
-    return Math.min(totalSidebarItems - 1, sidebarStartIndex + visibleCount + SIDEBAR_OVERSCAN * 2);
-  }, [sidebarViewportHeight, totalSidebarItems, sidebarStartIndex]);
-  const visibleSidebarNovels = useMemo(
-    () => filteredNovelsList.slice(sidebarStartIndex, sidebarEndIndex + 1),
-    [filteredNovelsList, sidebarStartIndex, sidebarEndIndex]
-  );
-  const handleSidebarScroll = useCallback((e) => {
-    const nextTop = e.currentTarget.scrollTop || 0;
-    if (sidebarScrollRafRef.current) cancelAnimationFrame(sidebarScrollRafRef.current);
-    sidebarScrollRafRef.current = requestAnimationFrame(() => {
-      setSidebarScrollTop(nextTop);
-      sidebarScrollRafRef.current = null;
-    });
-  }, []);
-  const sidebarNovelItems = useMemo(() => (
-    visibleSidebarNovels.map((novel, idx) => {
-      const realIndex = sidebarStartIndex + idx;
-      let nGenres = [];
-      if (Array.isArray(novel.genres)) nGenres = novel.genres;
-      else if (typeof novel.genres === 'string') nGenres = [novel.genres];
-      else if (novel.genre) nGenres = [novel.genre];
-      return (
-        <div
-          key={novel.id}
-          style={{ position: 'absolute', top: realIndex * SIDEBAR_ITEM_HEIGHT, left: 0, right: 0 }}
-          onClick={() => { void handleSelectNovelRef.current?.(novel); }}
-          onMouseEnter={(e) => {
-            handleSidebarNovelHover(novel.id, e.currentTarget);
-          }}
-          onMouseLeave={() => { setHoveredNovelId(null); }}
-          className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors relative overflow-visible ${activeNovelData?.id === novel.id ? 'bg-amber-900/20 border border-amber-800/50' : 'hover:bg-slate-800 border border-transparent'}`}
-        >
-          <div className="w-10 h-14 bg-slate-800 rounded overflow-hidden border border-slate-700 flex-shrink-0">
-            {novel.cover && (
-              novel.cover.startsWith('local_image:') ? (
-                <AsyncLocalImage filename={novel.cover.replace('local_image:', '')} alt="" dirHandle={dirHandle} className="w-full h-full object-cover" />
-              ) : (
-                <img src={novel.cover} loading="lazy" className="w-full h-full object-cover" alt="" onError={(e) => { e.target.onerror = null; }} />
-              )
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className={`text-sm font-bold truncate font-serif ${activeNovelData?.id === novel.id ? 'text-amber-400' : 'group-hover:text-amber-500'}`}>{safeString(novel.title)}</h3>
-            <p className="text-[10px] text-slate-500 uppercase truncate">{safeString(nGenres.join(', '))} • {safeString(novel.author)}</p>
-          </div>
-        </div>
-      );
-    })
-  ), [visibleSidebarNovels, sidebarStartIndex, activeNovelData?.id, dirHandle, handleSidebarNovelHover]);
-
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden relative theme-wrapper ${activeThemeClass} ${performanceMode ? 'performance-mode' : ''}`}>
       <AppHeader
@@ -2329,8 +1725,13 @@ export default function App() {
           sidebarListRef={sidebarListRef}
           handleSidebarScroll={handleSidebarScroll}
           totalSidebarItems={totalSidebarItems}
-          SIDEBAR_ITEM_HEIGHT={SIDEBAR_ITEM_HEIGHT}
-          sidebarNovelItems={sidebarNovelItems}
+          sidebarItemHeight={sidebarItemHeight}
+          visibleSidebarNovels={visibleSidebarNovels}
+          sidebarStartIndex={sidebarStartIndex}
+          activeNovelId={activeNovelData?.id}
+          onSelectNovel={handleSelectNovel}
+          onHoverNovel={handleSidebarNovelHover}
+          onClearHover={clearHoveredNovel}
         />
 
         <div className={`flex-1 flex bg-slate-950 transition-opacity duration-300 ${menu1Visible ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
@@ -2339,15 +1740,15 @@ export default function App() {
               {showConnectReminder && !!dirHandle && (
                 <div className="mx-10 mt-6 mb-0 rounded-2xl border border-amber-700/40 bg-amber-900/20 px-5 py-4 text-sm text-amber-100 flex items-start justify-between gap-4">
                   <div>
-                    <p className="font-bold uppercase tracking-widest text-[11px] text-amber-300 mb-1">Nhắc nhở vận hành</p>
-                    <p className="font-serif text-amber-100/90">Đã kết nối thư mục. Nên backup thư mục lưu trữ định kỳ (tuần/tháng), và thử restore trên bản sao trước khi cập nhật lớn.</p>
+                    <p className="font-bold uppercase tracking-widest text-[11px] text-amber-300 mb-1">Nhac nho van hanh</p>
+                    <p className="font-serif text-amber-100/90">Da ket noi thu muc. Nen backup thu muc luu tru dinh ky (tuan/thang), va thu restore tren ban sao truoc khi cap nhat lon.</p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setShowConnectReminder(false)}
+                    onClick={dismissConnectReminder}
                     className="px-3 py-1.5 rounded-lg border border-amber-600/40 text-amber-200 hover:bg-amber-800/30 text-xs font-bold"
                   >
-                    Đã rõ
+                    ÄÃ£ rÃµ
                   </button>
                 </div>
               )}
@@ -2367,187 +1768,25 @@ export default function App() {
             </>
           ) : (
             <>
-              <div
-                className={`bg-slate-900 border-r border-slate-800 transition-[width] duration-200 ease-out flex flex-col z-20 flex-shrink-0 h-full ${menu2Expanded ? 'w-64' : 'w-12'}`}
-                onMouseEnter={handleMenu2MouseEnter}
-                onMouseLeave={handleMenu2MouseLeave}
-              >
-                <div className="p-4 border-b border-slate-800 h-16 flex items-center justify-between overflow-hidden whitespace-nowrap"
-                >
-                   {/* Nút toggle cho mobile/tap */}
-                   <button
-                     onClick={() => setMenu2Expanded(p => !p)}
-                     className={`font-serif text-amber-500 font-bold text-[10px] uppercase tracking-widest transition-all flex items-center gap-2 ${menu2Expanded ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>
-                     Mục Lục
-                   </button>
-                   {!menu2Expanded && (
-                     <button onClick={() => setMenu2Expanded(true)} className="w-8 h-8 flex items-center justify-center text-amber-600 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors mx-auto" title="Mở mục lục">
-                       <ChevronRight size={16}/>
-                     </button>
-                   )}
-                   {menu2Expanded && (
-                     <div className="flex items-center gap-1">
-                       <button
-                         onClick={() => setSidebarGrouped(p => !p)}
-                         className={`p-1.5 rounded-lg transition-colors ${sidebarGrouped ? 'text-amber-500 bg-amber-900/30' : 'text-slate-500 hover:text-amber-500 hover:bg-slate-800'}`}
-                         title={sidebarGrouped ? 'Tắt gom nhóm' : 'Bật gom nhóm'}
-                       >
-                         <Layers size={16}/>
-                       </button>
-                       <button onClick={() => setIsManageTabsOpen(true)} className="p-1.5 text-amber-600 hover:text-amber-400 rounded-lg hover:bg-slate-800 transition-colors"><Network size={18}/></button>
-                     </div>
-                   )}
-                </div>
-                
-                <div className="flex-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
-                   <div className="py-3 flex flex-col">
-                       {sidebarGrouped ? (
-                         tabGroups.filter(grp => grp.tabs.length > 0).map((grp) => {
-                           const isCollapsed = grp.groupLabel && collapsedTabGroups.has(grp.groupLabel);
-                           return (
-                            <div
-                              key={grp.groupLabel || 'tong-quan'}
-                              className={`${menu2Expanded ? 'px-3' : 'px-1'} mb-1`}
-                            >
-                               {grp.groupLabel ? (
-                                 <button
-                                   onClick={() => setCollapsedTabGroups(prev => {
-                                     const next = new Set(prev);
-                                     if (next.has(grp.groupLabel)) next.delete(grp.groupLabel);
-                                     else next.add(grp.groupLabel);
-                                     return next;
-                                   })}
-                                   className="w-full flex items-center gap-2 py-2 px-2 rounded-md text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-amber-500 hover:bg-slate-800/50 transition-colors"
-                                 >
-                                   {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                                   <span
-                                     className={`flex-1 min-w-0 text-left truncate transition-[opacity,max-width] duration-150 ${
-                                       menu2Expanded ? 'opacity-100 max-w-[999px]' : 'opacity-0 max-w-0 overflow-hidden'
-                                     }`}
-                                   >
-                                     {grp.groupLabel}
-                                   </span>
-                                   <span
-                                     className={`text-slate-600 transition-[opacity,max-width] duration-150 ${
-                                       menu2Expanded ? 'opacity-100 max-w-[999px]' : 'opacity-0 max-w-0 overflow-hidden'
-                                     }`}
-                                   >
-                                     ({grp.tabs.length})
-                                   </span>
-                                 </button>
-                               ) : null}
-                               {(!grp.groupLabel || !isCollapsed) && grp.tabs.map(tab => {
-                                 const isActive = activeTabLon === tab.id;
-                                 return (
-                                   <div key={tab.id} className="mb-1">
-                                    <button
-                                      onClick={() => handleSelectTabLon(tab.id)}
-                                      className={`w-full flex items-center rounded-lg transition-colors overflow-hidden whitespace-nowrap ${
-                                        menu2Expanded ? 'p-3 justify-start' : 'p-2 justify-center'
-                                      } ${isActive && !activeTabNho ? 'bg-amber-900/20 text-amber-400 border-l-2 border-amber-500' : 'text-slate-500 hover:bg-slate-800 border-l-2 border-transparent'}`}
-                                    >
-                                       <div className="w-5 flex justify-center flex-shrink-0">{getIconComponent(tab.iconName)}</div>
-                                       <span
-                                         className={`font-serif text-sm transition-[opacity,max-width,margin-left] duration-200 ${
-                                           menu2Expanded
-                                             ? 'ml-3 opacity-100 max-w-[999px]'
-                                             : 'ml-0 opacity-0 max-w-0 overflow-hidden'
-                                         }`}
-                                       >
-                                         {safeString(tab.label)}
-                                       </span>
-                                     </button>
-                                     {isActive && tab.subTabs?.length > 0 && menu2Expanded && (
-                                       <div className="mt-1 ml-6 border-l border-slate-700/50 pl-2 space-y-1 animate-fade-in">
-                                         {tab.subTabs.map(sub => {
-                                           const isActiveNho = activeTabNho === sub.id;
-                                           const hasTabCon = sub.tabCon && sub.tabCon.length > 0;
-                                           return (
-                                             <div key={sub.id}>
-                                               <button onClick={(e) => handleSelectTabNho(e, tab.id, sub)} className={`w-full text-left py-2 px-3 text-sm rounded-md font-serif flex items-center justify-between transition-colors ${isActiveNho ? 'bg-slate-800/80 text-amber-300' : 'text-slate-500 hover:text-slate-300'}`}>
-                                                 <span className="flex items-center gap-2 truncate">
-                                                   {sub.viewType === 'collection-track' && <LayoutGrid size={12} className="opacity-50 flex-shrink-0" />}
-                                                   <span className="truncate">{safeString(sub.label)}</span>
-                                                 </span>
-                                                 {hasTabCon && <ChevronDown size={14} className={`flex-shrink-0 transition-transform ${isActiveNho ? 'text-amber-400' : 'text-slate-600 -rotate-90'}`} />}
-                                               </button>
-                                               {isActiveNho && hasTabCon && sub.viewType !== 'collection-track' && (
-                                                 <div className="mt-1 ml-4 border-l border-dashed border-slate-700/50 pl-2 space-y-1 animate-fade-in">
-                                                   {sub.tabCon.map(con => (
-                                                     <button key={con.id} onClick={(e) => { e.stopPropagation(); setNavHistory(prev => [...prev, { lonId: activeTabLon, nhoId: activeTabNho, conId: activeTabCon, entityId: selectedEntityId, subTab: collectionSubTab }]); setActiveTabCon(con.id); setIsEditingMode(false); }} className={`w-full text-left py-1.5 px-3 text-xs rounded-md font-serif truncate transition-colors ${activeTabCon === con.id ? 'bg-amber-900/30 text-amber-400' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'}`}>
-                                                       {safeString(con.label)}
-                                                     </button>
-                                                   ))}
-                                                 </div>
-                                               )}
-                                             </div>
-                                           );
-                                         })}
-                                       </div>
-                                     )}
-                                   </div>
-                                 );
-                               })}
-                             </div>
-                           );
-                         })
-                       ) : (
-                         sortedTabs.map(tab => {
-                           const isActive = activeTabLon === tab.id;
-                           return (
-                            <div key={tab.id} className={`${menu2Expanded ? 'px-3' : 'px-1'} mb-1`}>
-                              <button
-                                onClick={() => handleSelectTabLon(tab.id)}
-                                className={`w-full flex items-center rounded-lg transition-colors overflow-hidden whitespace-nowrap ${
-                                  menu2Expanded ? 'p-3 justify-start' : 'p-2 justify-center'
-                                } ${isActive && !activeTabNho ? 'bg-amber-900/20 text-amber-400 border-l-2 border-amber-500' : 'text-slate-500 hover:bg-slate-800 border-l-2 border-transparent'}`}
-                              >
-                                 <div className="w-5 flex justify-center flex-shrink-0">{getIconComponent(tab.iconName)}</div>
-                                 <span
-                                   className={`font-serif text-sm transition-[opacity,max-width,margin-left] duration-200 ${
-                                     menu2Expanded
-                                       ? 'ml-3 opacity-100 max-w-[999px]'
-                                       : 'ml-0 opacity-0 max-w-0 overflow-hidden'
-                                   }`}
-                                 >
-                                   {safeString(tab.label)}
-                                 </span>
-                               </button>
-                               {isActive && tab.subTabs?.length > 0 && menu2Expanded && (
-                                 <div className="mt-1 ml-6 border-l border-slate-700/50 pl-2 space-y-1 animate-fade-in">
-                                   {tab.subTabs.map(sub => {
-                                     const isActiveNho = activeTabNho === sub.id;
-                                     const hasTabCon = sub.tabCon && sub.tabCon.length > 0;
-                                     return (
-                                       <div key={sub.id}>
-                                         <button onClick={(e) => handleSelectTabNho(e, tab.id, sub)} className={`w-full text-left py-2 px-3 text-sm rounded-md font-serif flex items-center justify-between transition-colors ${isActiveNho ? 'bg-slate-800/80 text-amber-300' : 'text-slate-500 hover:text-slate-300'}`}>
-                                           <span className="flex items-center gap-2 truncate">
-                                             {sub.viewType === 'collection-track' && <LayoutGrid size={12} className="opacity-50 flex-shrink-0" />}
-                                             <span className="truncate">{safeString(sub.label)}</span>
-                                           </span>
-                                           {hasTabCon && <ChevronDown size={14} className={`flex-shrink-0 transition-transform ${isActiveNho ? 'text-amber-400' : 'text-slate-600 -rotate-90'}`} />}
-                                         </button>
-                                         {isActiveNho && hasTabCon && sub.viewType !== 'collection-track' && (
-                                           <div className="mt-1 ml-4 border-l border-dashed border-slate-700/50 pl-2 space-y-1 animate-fade-in">
-                                             {sub.tabCon.map(con => (
-                                               <button key={con.id} onClick={(e) => { e.stopPropagation(); setNavHistory(prev => [...prev, { lonId: activeTabLon, nhoId: activeTabNho, conId: activeTabCon, entityId: selectedEntityId, subTab: collectionSubTab }]); setActiveTabCon(con.id); setIsEditingMode(false); }} className={`w-full text-left py-1.5 px-3 text-xs rounded-md font-serif truncate transition-colors ${activeTabCon === con.id ? 'bg-amber-900/30 text-amber-400' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'}`}>
-                                                 {safeString(con.label)}
-                                               </button>
-                                             ))}
-                                           </div>
-                                         )}
-                                       </div>
-                                     );
-                                   })}
-                                 </div>
-                               )}
-                             </div>
-                           );
-                         })
-                       )}
-                   </div>
-                </div>
-              </div>
+              <AppNovelTocRail
+                menu2Expanded={menu2Expanded}
+                setMenu2Expanded={setMenu2Expanded}
+                handleMenu2MouseEnter={handleMenu2MouseEnter}
+                handleMenu2MouseLeave={handleMenu2MouseLeave}
+                sidebarGrouped={sidebarGrouped}
+                setSidebarGrouped={setSidebarGrouped}
+                tabGroups={tabGroups}
+                sortedTabs={sortedTabs}
+                collapsedTabGroups={collapsedTabGroups}
+                toggleTabGroupCollapse={toggleTabGroupCollapse}
+                activeTabLon={activeTabLon}
+                activeTabNho={activeTabNho}
+                activeTabCon={activeTabCon}
+                handleSelectTabLon={handleSelectTabLon}
+                handleSelectTabNho={handleSelectTabNho}
+                handleSelectTabCon={handleSelectTabCon}
+                setIsManageTabsOpen={setIsManageTabsOpen}
+              />
 
               <div className="flex-1 flex flex-col overflow-hidden relative bg-slate-950">
                  <div
@@ -2562,7 +1801,7 @@ export default function App() {
                        
                        {navHistory.length > 0 && (
                            <div className="mb-4">
-                               <button onClick={handleGoBack} className="flex items-center gap-1 text-xs text-slate-400 hover:text-amber-400 transition-colors font-bold uppercase tracking-widest bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-800 w-fit shadow-sm"><ChevronLeft size={14}/> Quay Lại Dấu Vết Cũ</button>
+                               <button onClick={handleGoBack} className="flex items-center gap-1 text-xs text-slate-400 hover:text-amber-400 transition-colors font-bold uppercase tracking-widest bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-800 w-fit shadow-sm"><ChevronLeft size={14}/> Quay Láº¡i Dáº¥u Váº¿t CÅ©</button>
                            </div>
                        )}
                        
@@ -2604,12 +1843,15 @@ export default function App() {
                             tocRailExpanded={menu2Expanded}
                             activeTabLon={activeTabLon}
                             activeTabNho={activeTabNho}
-                            activeTabCon={activeTabCon}
-                            sortedTabs={sortedTabs}
-                            currentTabConfig={currentTabConfig}
-                            handleSelectTabLon={handleSelectTabLon}
-                            handleSelectTabNho={handleSelectTabNho}
-                            activeNovelData={activeNovelData}
+                             activeTabCon={activeTabCon}
+                             sortedTabs={sortedTabs}
+                             currentTabConfig={currentTabConfig}
+                             handleSelectTabLon={handleSelectTabLon}
+                             handleSelectTabNho={(event, lonId, sub) => {
+                               event.stopPropagation();
+                               handleSelectTabNho(lonId, sub.id);
+                             }}
+                             activeNovelData={activeNovelData}
                             currentContextDirHandle={currentContextDirHandle}
                             activeNovelDirHandle={activeNovelDirHandle}
                             dirHandle={dirHandle}

@@ -1,0 +1,226 @@
+// ==========================================
+// AppNovelTocRail.jsx
+// Purpose: render the active novel table-of-contents rail and its nested tab tree.
+// Imported by: App.jsx.
+// Notes: presentational only; navigation and collapse state are owned by App hooks.
+// ==========================================
+
+import React from 'react';
+import { ChevronDown, ChevronRight, LayoutGrid, Layers, Network } from 'lucide-react';
+import { getIconComponent, safeString } from './MasterUtils.jsx';
+
+export function AppNovelTocRail({
+  menu2Expanded,
+  setMenu2Expanded,
+  handleMenu2MouseEnter,
+  handleMenu2MouseLeave,
+  sidebarGrouped,
+  setSidebarGrouped,
+  tabGroups,
+  sortedTabs,
+  collapsedTabGroups,
+  toggleTabGroupCollapse,
+  activeTabLon,
+  activeTabNho,
+  activeTabCon,
+  handleSelectTabLon,
+  handleSelectTabNho,
+  handleSelectTabCon,
+  setIsManageTabsOpen,
+}) {
+  const renderSubTabChildren = (tab) => {
+    if (!(activeTabLon === tab.id && tab.subTabs?.length > 0 && menu2Expanded)) return null;
+    return (
+      <div className="mt-1 ml-6 border-l border-slate-700/50 pl-2 space-y-1 animate-fade-in">
+        {tab.subTabs.map((sub) => {
+          const isActiveNho = activeTabNho === sub.id;
+          const hasTabCon = sub.tabCon && sub.tabCon.length > 0;
+          return (
+            <div key={sub.id}>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleSelectTabNho(tab.id, sub.id);
+                }}
+                className={`w-full text-left py-2 px-3 text-sm rounded-md font-serif flex items-center justify-between transition-colors ${
+                  isActiveNho
+                    ? 'bg-slate-800/80 text-amber-300'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <span className="flex items-center gap-2 truncate">
+                  {sub.viewType === 'collection-track' && (
+                    <LayoutGrid size={12} className="opacity-50 flex-shrink-0" />
+                  )}
+                  <span className="truncate">{safeString(sub.label)}</span>
+                </span>
+                {hasTabCon && (
+                  <ChevronDown
+                    size={14}
+                    className={`flex-shrink-0 transition-transform ${
+                      isActiveNho ? 'text-amber-400' : 'text-slate-600 -rotate-90'
+                    }`}
+                  />
+                )}
+              </button>
+              {isActiveNho && hasTabCon && sub.viewType !== 'collection-track' && (
+                <div className="mt-1 ml-4 border-l border-dashed border-slate-700/50 pl-2 space-y-1 animate-fade-in">
+                  {sub.tabCon.map((con) => (
+                    <button
+                      key={con.id}
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleSelectTabCon(con.id);
+                      }}
+                      className={`w-full text-left py-1.5 px-3 text-xs rounded-md font-serif truncate transition-colors ${
+                        activeTabCon === con.id
+                          ? 'bg-amber-900/30 text-amber-400'
+                          : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
+                      }`}
+                    >
+                      {safeString(con.label)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderTabButton = (tab) => {
+    const isActive = activeTabLon === tab.id;
+    return (
+      <div key={tab.id} className="mb-1">
+        <button
+          type="button"
+          onClick={() => handleSelectTabLon(tab.id)}
+          className={`w-full flex items-center rounded-lg transition-colors overflow-hidden whitespace-nowrap ${
+            menu2Expanded ? 'p-3 justify-start' : 'p-2 justify-center'
+          } ${
+            isActive && !activeTabNho
+              ? 'bg-amber-900/20 text-amber-400 border-l-2 border-amber-500'
+              : 'text-slate-500 hover:bg-slate-800 border-l-2 border-transparent'
+          }`}
+        >
+          <div className="w-5 flex justify-center flex-shrink-0">{getIconComponent(tab.iconName)}</div>
+          <span
+            className={`font-serif text-sm transition-[opacity,max-width,margin-left] duration-200 ${
+              menu2Expanded ? 'ml-3 opacity-100 max-w-[999px]' : 'ml-0 opacity-0 max-w-0 overflow-hidden'
+            }`}
+          >
+            {safeString(tab.label)}
+          </span>
+        </button>
+        {renderSubTabChildren(tab)}
+      </div>
+    );
+  };
+
+  return (
+    <div
+      className={`bg-slate-900 border-r border-slate-800 transition-[width] duration-200 ease-out flex flex-col z-20 flex-shrink-0 h-full ${
+        menu2Expanded ? 'w-64' : 'w-12'
+      }`}
+      onMouseEnter={handleMenu2MouseEnter}
+      onMouseLeave={handleMenu2MouseLeave}
+    >
+      <div className="p-4 border-b border-slate-800 h-16 flex items-center justify-between overflow-hidden whitespace-nowrap">
+        <button
+          type="button"
+          onClick={() => setMenu2Expanded((prev) => !prev)}
+          className={`font-serif text-amber-500 font-bold text-[10px] uppercase tracking-widest transition-all flex items-center gap-2 ${
+            menu2Expanded ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'
+          }`}
+        >
+          Muc Luc
+        </button>
+        {!menu2Expanded && (
+          <button
+            type="button"
+            onClick={() => setMenu2Expanded(true)}
+            className="w-8 h-8 flex items-center justify-center text-amber-600 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors mx-auto"
+            title="Mo muc luc"
+          >
+            <ChevronRight size={16} />
+          </button>
+        )}
+        {menu2Expanded && (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setSidebarGrouped((prev) => !prev)}
+              className={`p-1.5 rounded-lg transition-colors ${
+                sidebarGrouped
+                  ? 'text-amber-500 bg-amber-900/30'
+                  : 'text-slate-500 hover:text-amber-500 hover:bg-slate-800'
+              }`}
+              title={sidebarGrouped ? 'Tat gom nhom' : 'Bat gom nhom'}
+            >
+              <Layers size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsManageTabsOpen(true)}
+              className="p-1.5 text-amber-600 hover:text-amber-400 rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <Network size={18} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
+        <div className="py-3 flex flex-col">
+          {sidebarGrouped
+            ? tabGroups
+                .filter((group) => group.tabs.length > 0)
+                .map((group) => {
+                  const isCollapsed =
+                    group.groupLabel && collapsedTabGroups.has(group.groupLabel);
+                  return (
+                    <div
+                      key={group.groupLabel || 'tong-quan'}
+                      className={`${menu2Expanded ? 'px-3' : 'px-1'} mb-1`}
+                    >
+                      {group.groupLabel ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleTabGroupCollapse(group.groupLabel)}
+                          className="w-full flex items-center gap-2 py-2 px-2 rounded-md text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-amber-500 hover:bg-slate-800/50 transition-colors"
+                        >
+                          {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                          <span
+                            className={`flex-1 min-w-0 text-left truncate transition-[opacity,max-width] duration-150 ${
+                              menu2Expanded ? 'opacity-100 max-w-[999px]' : 'opacity-0 max-w-0 overflow-hidden'
+                            }`}
+                          >
+                            {group.groupLabel}
+                          </span>
+                          <span
+                            className={`text-slate-600 transition-[opacity,max-width] duration-150 ${
+                              menu2Expanded ? 'opacity-100 max-w-[999px]' : 'opacity-0 max-w-0 overflow-hidden'
+                            }`}
+                          >
+                            ({group.tabs.length})
+                          </span>
+                        </button>
+                      ) : null}
+                      {(!group.groupLabel || !isCollapsed) && group.tabs.map(renderTabButton)}
+                    </div>
+                  );
+                })
+            : sortedTabs.map((tab) => (
+                <div key={tab.id} className={`${menu2Expanded ? 'px-3' : 'px-1'} mb-1`}>
+                  {renderTabButton(tab)}
+                </div>
+              ))}
+        </div>
+      </div>
+    </div>
+  );
+}

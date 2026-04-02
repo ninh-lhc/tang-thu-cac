@@ -5,7 +5,7 @@
 import React, { memo } from 'react';
 import { Search, Filter, ChevronDown, Plus, Cloud, Check, X } from 'lucide-react';
 import { GENRES } from './MasterEngines.js';
-import { safeString } from './MasterUtils.jsx';
+import { AsyncLocalImage, safeString } from './MasterUtils.jsx';
 
 const FIELD_OPTIONS = [
   { value: 'all',    label: 'Tất cả' },
@@ -36,8 +36,13 @@ export const AppLibrarySidebar = memo(function AppLibrarySidebar({
   sidebarListRef,
   handleSidebarScroll,
   totalSidebarItems,
-  SIDEBAR_ITEM_HEIGHT,
-  sidebarNovelItems,
+  sidebarItemHeight,
+  visibleSidebarNovels,
+  sidebarStartIndex,
+  activeNovelId,
+  onSelectNovel,
+  onHoverNovel,
+  onClearHover,
 }) {
   const hasActiveFilters = searchInput.trim() || selectedGenres.length > 0 || searchField !== 'all';
 
@@ -181,8 +186,68 @@ export const AppLibrarySidebar = memo(function AppLibrarySidebar({
             {hasActiveFilters ? 'Không có kết quả — thử xóa bộ lọc' : 'Không tìm thấy thư tịch...'}
           </div>
         ) : (
-          <div style={{ position: 'relative', height: totalSidebarItems * SIDEBAR_ITEM_HEIGHT }}>
-            {sidebarNovelItems}
+          <div style={{ position: 'relative', height: totalSidebarItems * sidebarItemHeight }}>
+            {visibleSidebarNovels.map((novel, idx) => {
+              const realIndex = sidebarStartIndex + idx;
+              let nGenres = [];
+              if (Array.isArray(novel.genres)) nGenres = novel.genres;
+              else if (typeof novel.genres === 'string') nGenres = [novel.genres];
+              else if (novel.genre) nGenres = [novel.genre];
+
+              return (
+                <div
+                  key={novel.id}
+                  style={{ position: 'absolute', top: realIndex * sidebarItemHeight, left: 0, right: 0 }}
+                  onClick={() => {
+                    void onSelectNovel(novel);
+                  }}
+                  onMouseEnter={(event) => onHoverNovel(novel.id, event.currentTarget)}
+                  onMouseLeave={onClearHover}
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors relative overflow-visible ${
+                    activeNovelId === novel.id
+                      ? 'bg-amber-900/20 border border-amber-800/50'
+                      : 'hover:bg-slate-800 border border-transparent'
+                  }`}
+                >
+                  <div className="w-10 h-14 bg-slate-800 rounded overflow-hidden border border-slate-700 flex-shrink-0">
+                    {novel.cover && (
+                      novel.cover.startsWith('local_image:') ? (
+                        <AsyncLocalImage
+                          filename={novel.cover.replace('local_image:', '')}
+                          alt=""
+                          dirHandle={dirHandle}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <img
+                          src={novel.cover}
+                          loading="lazy"
+                          className="w-full h-full object-cover"
+                          alt=""
+                          onError={(event) => {
+                            event.target.onerror = null;
+                          }}
+                        />
+                      )
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3
+                      className={`text-sm font-bold truncate font-serif ${
+                        activeNovelId === novel.id
+                          ? 'text-amber-400'
+                          : 'group-hover:text-amber-500'
+                      }`}
+                    >
+                      {safeString(novel.title)}
+                    </h3>
+                    <p className="text-[10px] text-slate-500 uppercase truncate">
+                      {safeString(nGenres.join(', '))} • {safeString(novel.author)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
