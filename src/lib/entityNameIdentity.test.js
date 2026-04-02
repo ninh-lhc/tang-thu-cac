@@ -17,6 +17,12 @@ describe('entityNameIdentity', () => {
     expect(hit?.entity?.id).toBe('e1');
   });
 
+  it('can skip exact same-name matches when creating a new entity', () => {
+    const entities = [{ id: 'e1', name: 'Lạc Gia', dynamicData: {} }];
+    const hit = findEquivalentEntityByName(entities, 'Lạc Gia', { allowExactNameMatch: false });
+    expect(hit).toBeNull();
+  });
+
   it('canonical fingerprint drops tier words only', () => {
     const a = buildEntityCanonicalFingerprint('Vũ Kỹ Huyền Cấp Trung Phẩm');
     const b = buildEntityCanonicalFingerprint('Huyền Cấp Vũ Kỹ');

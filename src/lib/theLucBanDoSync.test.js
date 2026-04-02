@@ -76,10 +76,11 @@ describe('theLucBanDoSync', () => {
     const ok = syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' });
     expect(ok).toBe(true);
     const mapInfo = nov.data['tai-nguyen']['dia-danh'].entities[0].info;
-    const firstLine = String(mapInfo)
+    const bulletLine = String(mapInfo)
       .split(/\r?\n/)
-      .find((line) => line.startsWith('1. '));
-    expect(firstLine).toContain('[[ZZZ]]');
+      .find((line) => line.startsWith('- [['));
+    expect(bulletLine).toBeTruthy();
+    expect(bulletLine).toContain('[[ZZZ]]');
   });
 
   it('syncs force info and map location entities', () => {
@@ -117,9 +118,20 @@ describe('theLucBanDoSync', () => {
     expect(ent.info).toContain('Tinh Cầu');
     const mapEntities = nov.data['tai-nguyen']['dia-danh'].entities;
     expect(mapEntities.length).toBe(2);
-    expect(mapEntities.some((m) => m.name === 'Băng Thiên Đại Lục')).toBe(true);
-    expect(mapEntities.some((m) => m.info.includes('### Gia Tộc'))).toBe(true);
-    expect(mapEntities.some((m) => m.info.includes('[[Lạc Gia]]'))).toBe(true);
+    const continent = mapEntities.find((m) => m.name === 'Băng Thiên Đại Lục');
+    const planet = mapEntities.find((m) => m.name === 'Việt Long Tinh Cầu');
+    const continentInfo = String(continent?.info || '');
+    const planetInfo = String(planet?.info || '');
+    expect(continent).toBeTruthy();
+    expect(continentInfo).toContain('# Vị trí');
+    expect(continentInfo).toContain('# [[Băng Thiên Đại Lục]]');
+    expect(continentInfo).toContain('## Gia Tộc');
+    expect(continentInfo).toContain('- [[Lạc Gia]] - Bát Cấp Thế Lực');
+    expect(continentInfo).not.toContain('1. [[Lạc Gia]] - Bát Cấp Thế Lực - Băng Thiên Đại Lục - Việt Long Tinh Cầu');
+    expect(planet).toBeTruthy();
+    expect(planetInfo).toContain('## Vị trí');
+    expect(planetInfo).toContain('### Gia Tộc');
+    expect(planetInfo).toContain('1. [[Lạc Gia]] - Bát Cấp Thế Lực - Băng Thiên Đại Lục > Việt Long Tinh Cầu');
   });
 
   it('rebuilds map auto blocks when location changes or force deleted', () => {

@@ -99,7 +99,9 @@ export function mutateNovelJournalSelections(nov, panel) {
         return;
       }
       const tabData = ensureTab(path.lonId, path.nhoId);
-      const matched = findEquivalentEntityByName(tabData.entities, name);
+      const matched = findEquivalentEntityByName(tabData.entities, name, {
+        allowExactNameMatch: false,
+      });
       if (matched?.entity) {
         const prevAlias = safeString(matched.entity.dynamicData?.f_alias);
         const mergedAlias = mergeAliasText(prevAlias, name);

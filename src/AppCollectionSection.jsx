@@ -23,6 +23,7 @@ import { AppEntityDetailNotes } from './AppEntityDetailNotes.jsx';
 import { AppEntityTimelinePanel } from './AppEntityTimelinePanel.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import { MarkdownToolbar } from './MasterComponents.jsx';
+import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
 
 export function AppCollectionSection({
   // nav state
@@ -127,10 +128,20 @@ export function AppCollectionSection({
   const [entitySearchDraft, setEntitySearchDraft] = React.useState(entitySearch || '');
   const [entityFilterValueDraft, setEntityFilterValueDraft] = React.useState(entityFilterValue || '');
   const [isCollectionSwitching, setIsCollectionSwitching] = React.useState(false);
-  const scopedEntityImageFileStemParts =
-    collectionSubTab === 'detail' && selectedEntity
-      ? [currentTabConfig?.label, selectedEntity?.name]
-      : [];
+  const currentTabEntities = React.useMemo(() => {
+    if (!activeNovelData || !activeTabLon || !activeTabNho) return [];
+    const tabData = activeNovelData.data?.[activeTabLon]?.[activeTabNho || 'default'];
+    return Array.isArray(tabData?.entities) ? tabData.entities : [];
+  }, [activeNovelData, activeTabLon, activeTabNho]);
+  const scopedEntityImageFileStemParts = React.useMemo(() => {
+    if (collectionSubTab !== 'detail' || !selectedEntity) return [];
+    return buildScopedEntityImageStemParts({
+      tabLabel: currentTabConfig?.label,
+      entityName: selectedEntity?.name,
+      entityId: selectedEntity?.id,
+      siblingEntities: currentTabEntities,
+    });
+  }, [collectionSubTab, currentTabConfig?.label, currentTabEntities, selectedEntity]);
   const standardImageFileStemParts = React.useMemo(() => {
     const parts = [];
     const currentLabel = safeString(currentTabConfig?.label);

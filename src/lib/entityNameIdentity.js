@@ -72,9 +72,10 @@ export function mergeAliasText(currentAlias, newAlias) {
   return out.join(', ');
 }
 
-export function findEquivalentEntityByName(entities, candidateName) {
+export function findEquivalentEntityByName(entities, candidateName, options = {}) {
   const candidateRaw = String(candidateName || '').trim();
   if (!candidateRaw) return null;
+  const allowExactNameMatch = options.allowExactNameMatch !== false;
   const candidateLower = candidateRaw.toLowerCase();
   const candidateFp = buildEntityNameFingerprint(candidateRaw);
   const candidateCanonicalFp = buildEntityCanonicalFingerprint(candidateRaw);
@@ -84,14 +85,22 @@ export function findEquivalentEntityByName(entities, candidateName) {
     const ent = list[i];
     const baseName = String(ent?.name || '').trim();
     if (!baseName) continue;
-    if (baseName.toLowerCase() === candidateLower) return { index: i, entity: ent, reason: 'exact' };
+    const baseLower = baseName.toLowerCase();
+    if (baseLower === candidateLower) {
+      if (allowExactNameMatch) return { index: i, entity: ent, reason: 'exact' };
+      continue;
+    }
     if (buildEntityNameFingerprint(baseName) === candidateFp) return { index: i, entity: ent, reason: 'fingerprint' };
     if (candidateCanonicalFp && buildEntityCanonicalFingerprint(baseName) === candidateCanonicalFp) {
       return { index: i, entity: ent, reason: 'canonical_fingerprint' };
     }
     const aliases = splitAliasValues(ent?.dynamicData?.f_alias);
     for (const alias of aliases) {
-      if (alias.toLowerCase() === candidateLower) return { index: i, entity: ent, reason: 'alias' };
+      const aliasLower = alias.toLowerCase();
+      if (aliasLower === candidateLower) {
+        if (allowExactNameMatch) return { index: i, entity: ent, reason: 'alias' };
+        continue;
+      }
       if (buildEntityNameFingerprint(alias) === candidateFp) return { index: i, entity: ent, reason: 'alias_fingerprint' };
       if (candidateCanonicalFp && buildEntityCanonicalFingerprint(alias) === candidateCanonicalFp) {
         return { index: i, entity: ent, reason: 'alias_canonical_fingerprint' };

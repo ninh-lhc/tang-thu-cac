@@ -164,7 +164,7 @@ describe('autoRelationDetailNote', () => {
     expect(text).not.toContain('\n- [[Bang Thien Dai Luc]]\n');
   });
 
-  it('renders nested child-map tree for larger maps', () => {
+  it('renders grouped map layout for larger maps', () => {
     const novel = {
       data: {
         a: {
@@ -192,14 +192,17 @@ describe('autoRelationDetailNote', () => {
       statusLine: 'Tong Mon - Cuu Cap the luc - Bang Thien Dai Luc - Viet Long Tinh Cau',
     });
     const text = novel.data.a.b.entities[3].info;
-    expect(text).toContain('- [[Bang Thien Dai Luc]]');
-    expect(text).toContain('  - [[Lac Gia]] (Gia Toc - Bat Cap the luc)');
-    expect(text).toContain('  - [[Thien Son Tien Canh]] (Tong Mon - Cuu Cap the luc)');
-    expect(text).not.toContain('## Gia Toc');
-    expect(text).not.toContain('Viet Long Tinh Cau)');
+    expect(text).toContain('## Vị trí');
+    expect(text).toContain('# [[Bang Thien Dai Luc]]');
+    expect(text).toContain('## Gia Toc');
+    expect(text).toContain('## Tong Mon');
+    expect(text).toContain('- [[Lac Gia]] - Bat Cap the luc');
+    expect(text).toContain('- [[Thien Son Tien Canh]] - Cuu Cap the luc');
+    expect(text).not.toContain('- [[Bang Thien Dai Luc]]');
+    expect(text).not.toContain('(Gia Toc - Bat Cap the luc)');
   });
 
-  it('builds recursive map tree for outer world levels', () => {
+  it('builds grouped layout for outer world levels', () => {
     const novel = {
       data: {
         a: {
@@ -221,9 +224,11 @@ describe('autoRelationDetailNote', () => {
       statusLine: 'Gia Toc - Ngu Cap the luc - Thanh Hoang Vuong Trieu - Tay Bac Chau - Nguyen Gioi',
     });
     const text = novel.data.a.b.entities[3].info;
-    expect(text).toContain('- [[Tay Bac Chau]]');
-    expect(text).toContain('  - [[Thanh Hoang Vuong Trieu]]');
-    expect(text).toContain('    - [[Lac Gia]] (Gia Toc - Ngu Cap the luc)');
+    expect(text).toContain('## Vị trí');
+    expect(text).toContain('# [[Tay Bac Chau]]');
+    expect(text).toContain('## Gia Toc');
+    expect(text).toContain('- [[Lac Gia]] - Ngu Cap the luc');
+    expect(text).not.toContain('- [[Thanh Hoang Vuong Trieu]]');
   });
 
   it('sorts related entries by rank then name', () => {

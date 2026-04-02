@@ -2,12 +2,13 @@
 // Hook này giữ nguyên logic mutate/undo và cảnh báo dữ liệu như phiên bản cũ.
 // App.jsx truyền toàn bộ state/ref/setter cần thiết, hook không giữ source state riêng.
 // Mục tiêu: tách gọn code mà không đổi hành vi runtime.
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { lockFieldsTemplateIfFirstEntity } from './MasterEngines.js';
 import { generateId, safeString } from './MasterUtils.jsx';
 import { countEntitiesInNovel } from './deepSearchCore.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { applyAutoRelationNotesForEntity } from './lib/autoRelationDetailNote.js';
+import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
 import {
   appendOwnerAcquisitionMilestone,
   parseOwnerTimelineHintDetailed,
@@ -59,6 +60,20 @@ export function useAppEntityMilestoneActions({
 
   const entityImageScopeLabel = safeString(currentTabConfig?.label);
   const entityImageName = safeString(selectedEntity?.name);
+  const currentTabEntities = useMemo(() => {
+    const tabData = activeNovelData?.data?.[activeTabLon]?.[activeTabNho || 'default'];
+    return Array.isArray(tabData?.entities) ? tabData.entities : [];
+  }, [activeNovelData, activeTabLon, activeTabNho]);
+  const entityImageStemParts = useMemo(
+    () =>
+      buildScopedEntityImageStemParts({
+        tabLabel: entityImageScopeLabel,
+        entityName: entityImageName,
+        entityId: selectedEntity?.id,
+        siblingEntities: currentTabEntities,
+      }),
+    [entityImageName, entityImageScopeLabel, currentTabEntities, selectedEntity?.id]
+  );
 
   const handleSaveEntity = useCallback(
     (formData, dynamicData, opts = null) => {
@@ -127,7 +142,9 @@ export function useAppEntityMilestoneActions({
           const mergedNew = { ...dynamicData };
           const statusLine = safeString(mergedNew.f_status).trim();
           const canonicalName = safeString(formData.name).trim();
-          const matched = findEquivalentEntityByName(tabData.entities, canonicalName);
+          const matched = findEquivalentEntityByName(tabData.entities, canonicalName, {
+            allowExactNameMatch: false,
+          });
           if (matched?.entity) {
             createTargetEntityId = matched.entity.id;
             createMergedToExisting = true;
@@ -261,7 +278,7 @@ export function useAppEntityMilestoneActions({
       showToast('Vui lòng chọn thẻ trước khi thêm ảnh.', 'warning');
       return;
     }
-    await handlePickLocalImage(
+      await handlePickLocalImage(
       (url) => {
         updateActiveNovelData((nov) => {
           if (!nov.data?.[activeTabLon]) return;
@@ -275,7 +292,7 @@ export function useAppEntityMilestoneActions({
       null,
       {
         filePrefix: 'gallery',
-        fileStemParts: [entityImageScopeLabel, entityImageName],
+        fileStemParts: entityImageStemParts,
       }
     );
   }, [
@@ -285,8 +302,7 @@ export function useAppEntityMilestoneActions({
     updateActiveNovelData,
     activeTabLon,
     activeTabNho,
-    entityImageScopeLabel,
-    entityImageName,
+    entityImageStemParts,
   ]);
 
   const handleRemoveImageFromSelectedEntity = useCallback(

@@ -1110,7 +1110,9 @@ export default function App() {
           let tabData = nov.data[lonId][nhoId];
           if (!tabData || typeof tabData === 'string') tabData = { overview: '', entities: [] };
           if (!tabData.entities) tabData.entities = [];
-          const matched = findEquivalentEntityByName(tabData.entities, quickName);
+          const matched = findEquivalentEntityByName(tabData.entities, quickName, {
+            allowExactNameMatch: false,
+          });
           if (matched?.entity) {
             targetExistingId = matched.entity.id;
             const prevAlias = safeString(matched.entity.dynamicData?.f_alias);

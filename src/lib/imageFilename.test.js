@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildScopedImageFileName,
   buildScopedImageStem,
+  buildScopedEntityImageStemParts,
   getScopedImageSequence,
   sanitizeImageFilePart,
 } from './imageFilename.js';
@@ -32,5 +33,26 @@ describe('imageFilename', () => {
   it('ignores files that do not match the current stem', () => {
     expect(getScopedImageSequence('Đạo lữ - Yên Nhược Tuyết -07.jpg', 'Đạo lữ - Yên Nhược Tuyết')).toBe(7);
     expect(getScopedImageSequence('Đạo lữ - Khác -03.jpg', 'Đạo lữ - Yên Nhược Tuyết')).toBeNull();
+  });
+
+  it('adds a short disambiguator when same-name entities would collide', () => {
+    const parts = buildScopedEntityImageStemParts({
+      tabLabel: 'Gia tộc',
+      entityName: 'Lạc Gia',
+      entityId: 'ent-abc123xyz',
+      siblingEntities: [
+        { id: 'ent-111', name: 'Lạc Gia' },
+        { id: 'ent-222', name: 'Lạc Gia' },
+      ],
+    });
+
+    expect(parts).toEqual(['Gia tộc', 'Lạc Gia', '123xyz']);
+    expect(
+      buildScopedImageFileName({
+        stemParts: parts,
+        originalFileName: 'photo.png',
+        existingFileNames: ['Gia tộc - Lạc Gia - 123xyz -01.png'],
+      })
+    ).toBe('Gia tộc - Lạc Gia - 123xyz -02.png');
   });
 });

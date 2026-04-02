@@ -90,11 +90,46 @@ function detectLocationLevelName(loc) {
   return { label: 'Địa Điểm', rank: 40 };
 }
 
+function isDetailedMapLayout(locationName) {
+  return detectLocationLevelName(locationName).label !== 'Tinh Cầu';
+}
+
 function buildLocationHierarchyLines(locations) {
   const enriched = (locations || [])
     .map((loc) => ({ raw: loc, ...detectLocationLevelName(loc) }))
     .sort((a, b) => b.rank - a.rank || normalizeAscii(a.raw).localeCompare(normalizeAscii(b.raw)));
   return enriched.map((x, idx) => `${idx + 1}. ${x.label}: [[${x.raw}]]`);
+}
+
+function buildMapAutoBlockLines(locationName, rows, { detailedLayout }) {
+  const byGroup = new Map(FORCE_TYPE_GROUP_ORDER.map((g) => [g, []]));
+  rows.forEach((r) => {
+    const g = classifyOrgType(r.meta.orgType);
+    byGroup.get(g).push(r);
+  });
+
+  const sectionLines = detailedLayout
+    ? ['# Vị trí', '', `# [[${locationName}]]`]
+    : ['## Vị trí'];
+
+  FORCE_TYPE_GROUP_ORDER.forEach((g) => {
+    const list = byGroup.get(g) || [];
+    if (list.length === 0) return;
+    if (detailedLayout) {
+      sectionLines.push('');
+      sectionLines.push(`## ${g}`);
+      list.forEach((r) => {
+        sectionLines.push(`- [[${r.name}]] - ${r.meta.rankText}`);
+      });
+      return;
+    }
+    sectionLines.push(`### ${g}`);
+    list.forEach((r, idx) => {
+      sectionLines.push(`${idx + 1}. [[${r.name}]] - ${r.meta.rankText} - ${r.meta.tailPath}`);
+    });
+  });
+
+  return sectionLines;
 }
 
 function findMapTabPath(nov) {
@@ -225,19 +260,8 @@ export function syncAllTheLucMapAutoBlocks(nov, { sourceLonId }) {
   for (const [, item] of rowsByLoc.entries()) {
     const locEnt = ensureMapEntityByName(mapTab, item.name);
     const rows = buildForceRowsForLocation(item.rows);
-    const byGroup = new Map(FORCE_TYPE_GROUP_ORDER.map((g) => [g, []]));
-    rows.forEach((r) => {
-      const g = classifyOrgType(r.meta.orgType);
-      byGroup.get(g).push(r);
-    });
-    const sectionLines = ['## Vị trí'];
-    FORCE_TYPE_GROUP_ORDER.forEach((g) => {
-      const list = byGroup.get(g) || [];
-      if (list.length === 0) return;
-      sectionLines.push(`### ${g}`);
-      list.forEach((r, idx) => {
-        sectionLines.push(`${idx + 1}. [[${r.name}]] - ${r.meta.rankText} - ${r.meta.tailPath}`);
-      });
+    const sectionLines = buildMapAutoBlockLines(item.name, rows, {
+      detailedLayout: isDetailedMapLayout(item.name),
     });
     locEnt.info = mergeAutoBlock(
       locEnt.info,

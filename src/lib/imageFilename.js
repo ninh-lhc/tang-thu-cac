@@ -32,6 +32,41 @@ export function buildScopedImageStem(stemParts) {
     .join(' - ');
 }
 
+function normalizeStemKey(value) {
+  return buildScopedImageStem([value]).toLowerCase();
+}
+
+function buildStableDisambiguator(entityId) {
+  return sanitizeImageFilePart(entityId)
+    .replace(/\s+/g, '')
+    .slice(-6);
+}
+
+export function buildScopedEntityImageStemParts({
+  tabLabel,
+  entityName,
+  entityId,
+  siblingEntities = [],
+}) {
+  const parts = [tabLabel, entityName].filter(Boolean);
+  const baseStem = buildScopedImageStem(parts);
+  if (!baseStem) return parts;
+
+  const baseKey = normalizeStemKey(baseStem);
+  const list = Array.isArray(siblingEntities) ? siblingEntities : [];
+  const hasCollision = list.some((sibling) => {
+    if (!sibling || sibling.id === entityId) return false;
+    const siblingStem = buildScopedImageStem([tabLabel, sibling.name]);
+    return siblingStem && normalizeStemKey(siblingStem) === baseKey;
+  });
+
+  if (!hasCollision) return parts;
+
+  const disambiguator = buildStableDisambiguator(entityId);
+  if (!disambiguator) return parts;
+  return [...parts, disambiguator];
+}
+
 export function getImageFileExtension(fileName) {
   const raw = String(fileName ?? '').trim();
   const match = raw.match(/(\.[^.]+)$/);

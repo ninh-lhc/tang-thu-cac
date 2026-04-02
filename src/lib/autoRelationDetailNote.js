@@ -154,6 +154,21 @@ function buildRelatedRenderContext(entry, targetName) {
   };
 }
 
+function isLeafMapHierarchyContext(entry) {
+  return (
+    entry?.targetIndex > 0 &&
+    Array.isArray(entry?.parsed?.chain) &&
+    entry.targetIndex === entry.parsed.chain.length - 1
+  );
+}
+
+function shouldRenderGroupedLocationBlock(entries, targetName) {
+  const contexts = (entries || []).map((entry) => buildRelatedRenderContext(entry, targetName));
+  const nestedContexts = contexts.filter((entry) => entry.targetIndex > 0 && entry.descendants.length > 0);
+  if (nestedContexts.length === 0) return false;
+  return nestedContexts.every(isLeafMapHierarchyContext);
+}
+
 function sortTreeItems(items) {
   return [...items].sort((a, b) => {
     const categoryCmp = compareNormalizedText(a.category, b.category);
@@ -165,6 +180,57 @@ function sortTreeItems(items) {
 
 function buildTreeItemMeta(entry) {
   return [entry.category, entry.parsed?.rankLabel].filter(Boolean).join(' - ');
+}
+
+function parseWikiHeadingLabel(headingText) {
+  const raw = String(headingText || '').trim();
+  const linkMatch = raw.match(/^\[\[([^\]]+)\]\]$/);
+  if (linkMatch) return String(linkMatch[1] || '').trim();
+  return raw;
+}
+
+function isRelatedBlockTitleHeading(headingText) {
+  const normalized = normalizeAsciiText(headingText);
+  const blockTitle = normalizeAsciiText(RELATED_TITLE.replace(/^#+\s*/, ''));
+  const legacyTitle = normalizeAsciiText(LEGACY_RELATED_TITLE.replace(/^#+\s*/, ''));
+  return normalized === blockTitle || normalized === legacyTitle;
+}
+
+function renderGroupedLocationBlock(entries, targetName) {
+  const lines = [RELATED_TITLE];
+  const groups = new Map();
+
+  (entries || [])
+    .map((entry) => buildRelatedRenderContext(entry, targetName))
+    .filter((entry) => isLeafMapHierarchyContext(entry))
+    .forEach((entry) => {
+      const parentLabel = String(entry.descendants[0] || '').trim();
+      if (!parentLabel) return;
+      const key = normalizeAsciiText(parentLabel);
+      if (!groups.has(key)) {
+        groups.set(key, { label: parentLabel, categories: new Map() });
+      }
+      const group = groups.get(key);
+      const category = String(entry.category || CATEGORY_OTHER).trim() || CATEGORY_OTHER;
+      if (!group.categories.has(category)) group.categories.set(category, []);
+      group.categories.get(category).push(entry);
+    });
+
+  const sortedGroups = [...groups.values()].sort((a, b) => compareNormalizedText(a.label, b.label));
+  sortedGroups.forEach((group, groupIdx) => {
+    if (groupIdx > 0) lines.push('');
+    lines.push(`# [[${group.label}]]`);
+    const sortedCategories = [...group.categories.keys()].sort((a, b) => compareNormalizedText(a, b));
+    sortedCategories.forEach((category) => {
+      lines.push(`## ${category}`);
+      sortRelatedEntries(group.categories.get(category)).forEach((entry) => {
+        lines.push(`- [[${entry.name}]] - ${entry.parsed?.rankLabel || FALLBACK_STATUS_LABEL}`);
+      });
+    });
+  });
+
+  lines.push(RELATED_END);
+  return lines.join('\n');
 }
 
 function renderTreeRelatedBlock(entries, targetName) {
@@ -237,6 +303,9 @@ function renderFlatRelatedBlock(entries) {
 }
 
 function renderRelatedBlock(entries, targetName = '') {
+  if (shouldRenderGroupedLocationBlock(entries, targetName)) {
+    return renderGroupedLocationBlock(entries, targetName);
+  }
   const hasNestedHierarchy = (entries || []).some((entry) => {
     const context = buildRelatedRenderContext(entry, targetName);
     return context.targetIndex > 0 && context.descendants.length > 0;
@@ -248,11 +317,11 @@ function renderRelatedBlock(entries, targetName = '') {
 function parseRelatedBlockEntries(blockText, targetName = '') {
   const lines = String(blockText || '').split(/\r?\n/);
   const out = [];
-  const itemRe = /^(\s*)-\s*\[\[([^\]]+)\]\]\s*\((.*)\)\s*$/;
+  const itemParenRe = /^(\s*)-\s*\[\[([^\]]+)\]\]\s*\((.*)\)\s*$/;
+  const itemDashRe = /^(\s*)-\s*\[\[([^\]]+)\]\]\s*-\s*(.+?)\s*$/;
   const nodeRe = /^(\s*)-\s*\[\[([^\]]+)\]\]\s*$/;
-  const relatedTitle = normalizeAsciiText(RELATED_TITLE.replace(/^##\s*/, ''));
-  const legacyRelatedTitle = normalizeAsciiText(LEGACY_RELATED_TITLE.replace(/^##\s*/, ''));
   let currentCategory = '';
+  let currentParent = '';
   const locationStack = [];
 
   const getDepth = (indentText) => {
@@ -261,13 +330,26 @@ function parseRelatedBlockEntries(blockText, targetName = '') {
   };
 
   lines.forEach((line) => {
-    const hm = line.match(/^\s*#{2,3}\s+(.+?)\s*$/);
+    const hm = line.match(/^(\s*)(#{1,3})\s+(.+?)\s*$/);
     if (hm) {
-      const heading = String(hm[1] || '').trim();
-      // Ignore the block title heading itself; only keep real category headings.
-      const headingNorm = normalizeAsciiText(heading);
-      currentCategory =
-        headingNorm === relatedTitle || headingNorm === legacyRelatedTitle ? '' : heading;
+      const heading = String(hm[3] || '').trim();
+      if (isRelatedBlockTitleHeading(heading)) {
+        currentCategory = '';
+        currentParent = '';
+        locationStack.length = 0;
+        return;
+      }
+      const level = String(hm[2] || '').length;
+      if (level === 1) {
+        const parentLabel = parseWikiHeadingLabel(heading);
+        if (parentLabel) {
+          currentParent = parentLabel;
+          currentCategory = '';
+          locationStack.length = 0;
+        }
+        return;
+      }
+      currentCategory = heading;
       return;
     }
 
@@ -276,21 +358,29 @@ function parseRelatedBlockEntries(blockText, targetName = '') {
       const depth = getDepth(nodeMatch[1]);
       locationStack.length = depth;
       locationStack[depth] = String(nodeMatch[2] || '').trim();
+      currentParent = '';
       return;
     }
 
-    const itemMatch = line.match(itemRe);
+    const itemParenMatch = line.match(itemParenRe);
+    const itemDashMatch = line.match(itemDashRe);
+    const itemMatch = itemParenMatch || itemDashMatch;
     if (!itemMatch) return;
     const depth = getDepth(itemMatch[1]);
     const pathLabels = locationStack.slice(0, depth).filter(Boolean);
     let statusText = String(itemMatch[3] || '').trim();
     const parsedStatus = parseRelationHierarchyFromStatus(statusText);
+    const isDashItem = !!itemDashMatch;
     const shouldReconstructStatus =
-      !!targetName && (pathLabels.length > 0 || (!currentCategory && !parsedStatus));
+      !!targetName && (pathLabels.length > 0 || (isDashItem && !!currentParent) || (!currentCategory && !parsedStatus));
     if (shouldReconstructStatus) {
-      const rebuiltTail = [...pathLabels].reverse();
+      const rebuiltTail = pathLabels.length > 0 ? [...pathLabels].reverse() : [];
+      if (rebuiltTail.length === 0 && currentParent) {
+        rebuiltTail.push(currentParent);
+      }
       rebuiltTail.push(targetName);
-      statusText = [statusText, ...rebuiltTail].filter(Boolean).join(' - ');
+      const rebuiltHead = isDashItem ? [currentCategory, statusText] : [statusText];
+      statusText = [...rebuiltHead, ...rebuiltTail].filter(Boolean).join(' - ');
     }
 
     const row = buildRelatedEntry(itemMatch[2], statusText);

@@ -94,7 +94,9 @@ export function useAppMotCuaCapNhat({
       const proc = safeString(result?.processedText);
       const rawText = stripWikiBracketSyntax(proc || raw);
       const ents = activeNovelData.data?.[lonId]?.[nhoId]?.entities || [];
-      const matched = findEquivalentEntityByName(ents, name);
+      const matched = findEquivalentEntityByName(ents, name, {
+        allowExactNameMatch: false,
+      });
       if (matched?.entity) {
         showToast(`«${name}» đã trùng thẻ «${safeString(matched.entity.name)}» — chuyển sang tab Cập nhật.`, 'warning');
         setOverviewHubTab('update');
@@ -130,7 +132,9 @@ export function useAppMotCuaCapNhat({
       return;
     }
     const ents = activeNovelData?.data?.[lonId]?.[nhoId]?.entities || [];
-    const matched = findEquivalentEntityByName(ents, name);
+    const matched = findEquivalentEntityByName(ents, name, {
+      allowExactNameMatch: false,
+    });
     if (matched?.entity) {
       updateActiveNovelData((nov) => {
         const tab = nov.data?.[lonId]?.[nhoId];
