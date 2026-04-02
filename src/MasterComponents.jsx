@@ -679,6 +679,16 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   const [formData, setFormData] = useState({ id: null, name: '', avatar: '', rawText: '' });
   const [dynamicData, setDynamicData] = useState({});
   const trapRef = useFocusTrap(isOpen);
+  const patchFormData = (patch) =>
+    setFormData((prev) => {
+      const nextPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
+      return { ...(prev || {}), ...nextPatch };
+    });
+  const patchDynamicData = (patch) =>
+    setDynamicData((prev) => {
+      const nextPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
+      return { ...(prev || {}), ...nextPatch };
+    });
 
   /* Reset form khi mở modal (đồng bộ từ initialData) */
   useEffect(() => {
@@ -738,7 +748,7 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
             <input
               autoFocus
               value={safeString(formData.name)}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              onChange={(e) => patchFormData({ name: e.target.value })}
               className="w-full bg-slate-950 border border-amber-600/50 rounded-xl p-3 text-amber-100 font-serif focus:border-amber-500 outline-none shadow-inner"
               placeholder="Bắt buộc nhập..."
             />
@@ -753,8 +763,8 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
             <div className="flex gap-4 items-center">
               <div
                 onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => handleAvatarDrop && handleAvatarDrop(e, (url) => setFormData({ ...formData, avatar: url }))}
-                onClick={() => handlePickLocalImage && handlePickLocalImage((url) => setFormData({ ...formData, avatar: url }), null, 'avatar')}
+                onDrop={(e) => handleAvatarDrop && handleAvatarDrop(e, (url) => patchFormData({ avatar: url }))}
+                onClick={() => handlePickLocalImage && handlePickLocalImage((url) => patchFormData({ avatar: url }), null, 'avatar')}
                 className="w-16 h-16 rounded-xl bg-slate-950 border border-dashed border-slate-700 flex items-center justify-center overflow-hidden flex-shrink-0 group cursor-pointer hover:border-amber-500 transition-colors"
                 title="Nhấp hoặc kéo thả ảnh vào đây"
               >
@@ -772,13 +782,13 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
                 <div className="flex gap-2">
                   <input
                     value={safeString(formData.avatar)}
-                    onChange={(e) => setFormData({ ...formData, avatar: e.target.value })}
+                    onChange={(e) => patchFormData({ avatar: e.target.value })}
                     className="flex-1 w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:border-amber-500 outline-none"
                     placeholder="https://..."
                   />
                   <button
                     type="button"
-                    onClick={() => handlePickLocalImage && handlePickLocalImage((url) => setFormData({ ...formData, avatar: url }), null, 'avatar')}
+                    onClick={() => handlePickLocalImage && handlePickLocalImage((url) => patchFormData({ avatar: url }), null, 'avatar')}
                     className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 text-xs font-bold"
                   >
                     Chọn File
@@ -790,13 +800,13 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
           </div>
 
           <div className="space-y-2">
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-snug">{safeString(fStatusLabel)}</label>
-            <input
-              value={safeString(dynamicData.f_status)}
-              onChange={(e) => setDynamicData({ ...dynamicData, f_status: e.target.value })}
-              className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3 text-sm text-slate-200 font-serif focus:border-amber-600/60 outline-none"
-              placeholder="Ví dụ: Kim Đan kỳ · Đang hoạt động · UI hệ thống… (một dòng, hiện dưới tên ở Hồ sơ)"
-            />
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-snug">{safeString(fStatusLabel)}</label>
+              <input
+                value={safeString(dynamicData.f_status)}
+                onChange={(e) => patchDynamicData({ f_status: e.target.value })}
+                className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3 text-sm text-slate-200 font-serif focus:border-amber-600/60 outline-none"
+                placeholder="Ví dụ: Kim Đan kỳ · Đang hoạt động · UI hệ thống… (một dòng, hiện dưới tên ở Hồ sơ)"
+              />
             <p className="text-[11px] text-slate-500 font-serif">Nhãn ô theo mục sưu tập (cảnh giới, cấp độ, loại chức năng…). Có thể để trống.</p>
           </div>
 
@@ -804,7 +814,7 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
             <label className="block text-[10px] font-bold text-indigo-400 uppercase tracking-widest leading-snug">{WIKI_ALIAS_FIELD.label}</label>
             <textarea
               value={safeString(dynamicData.f_alias)}
-              onChange={(e) => setDynamicData({ ...dynamicData, f_alias: e.target.value })}
+              onChange={(e) => patchDynamicData({ f_alias: e.target.value })}
               rows={3}
               className="w-full bg-slate-950/80 border border-indigo-800/50 rounded-xl p-3 text-sm text-slate-200 font-serif focus:border-indigo-500 outline-none resize-y min-h-[4.5rem]"
               placeholder="Nhiều tên: dùng dấu phẩy, / hoặc | — ví dụ: Kim Đan, Hệ Thống / Boss"
@@ -858,6 +868,16 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
   const dynamicFieldInputRefs = useRef({});
   const pendingWikiCaretRef = useRef(null);
   const trapRefMs = useFocusTrap(isOpen);
+  const patchFormData = (patch) =>
+    setFormData((prev) => {
+      const nextPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
+      return { ...(prev || {}), ...nextPatch };
+    });
+  const patchSnapshotData = (patch) =>
+    setSnapshotData((prev) => {
+      const nextPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
+      return { ...(prev || {}), ...nextPatch };
+    });
 
   useLayoutEffect(() => {
     const p = pendingWikiCaretRef.current;
@@ -927,7 +947,7 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
          if (result) {
              const newDyn = { ...snapshotData.dynamicData };
              fieldsTemplate.forEach(f => { if (result[f.id]) newDyn[f.id] = safeString(result[f.id]); });
-             setSnapshotData({ avatar: safeString(result.avatar) || snapshotData.avatar, dynamicData: newDyn });
+             patchSnapshotData({ avatar: safeString(result.avatar) || snapshotData.avatar, dynamicData: newDyn });
          }
          const linkRes = await suggestWikiLinkSpotsWithAI(formData.event, keys, geminiMode);
          const spots = Array.isArray(linkRes?.linkSpots) ? linkRes.linkSpots : [];
@@ -982,7 +1002,7 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
              <div className="flex-1 flex flex-col space-y-4">
                 <div>
                    <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-widest">Mốc Chương *</label>
-                   <input type="number" autoFocus value={safeString(formData.chapter)} onChange={e=>setFormData({...formData, chapter: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-amber-300 font-bold focus:border-amber-500 outline-none" placeholder="VD: 150" />
+                   <input type="number" autoFocus value={safeString(formData.chapter)} onChange={e=>patchFormData({ chapter: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-amber-300 font-bold focus:border-amber-500 outline-none" placeholder="VD: 150" />
                 </div>
                 {parentTabId === 'nhan-vat' && (
                   <div className="rounded-lg border border-cyan-800/50 bg-cyan-950/20 px-3 py-2">
@@ -1009,7 +1029,7 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
                            }
                            const { newText, selStart, selEnd } = applyWikiLinkWrap(cur, a, b);
                            pendingWikiCaretRef.current = { fieldId: EVENT_WIKI_FIELD_ID, selStart, selEnd };
-                           setFormData((p) => ({ ...p, event: newText }));
+                           patchFormData({ event: newText });
                          }}
                          className="text-[10px] font-bold text-amber-500 hover:text-amber-300 bg-amber-900/30 px-2 py-1 rounded border border-amber-700/40"
                          title="Chèn [[ ]] tại con trỏ hoặc bọc đoạn đang chọn"
@@ -1027,7 +1047,7 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
                            }
                            const { newText, selStart, selEnd } = applyWikiLinkUnwrap(cur, a, b);
                            pendingWikiCaretRef.current = { fieldId: EVENT_WIKI_FIELD_ID, selStart, selEnd };
-                           setFormData((p) => ({ ...p, event: newText }));
+                           patchFormData({ event: newText });
                          }}
                          className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-900/20 px-2 py-1 rounded border border-cyan-700/35"
                          title="Gỡ [[ ]] ở vùng chọn hoặc đoạn chứa con trỏ"
@@ -1038,7 +1058,7 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
                      <textarea
                        ref={(el) => { if (el) dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID] = el; else delete dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID]; }}
                        value={safeString(formData.event)}
-                       onChange={e=>setFormData({...formData, event: e.target.value})}
+                       onChange={e=>patchFormData({ event: e.target.value })}
                        className="w-full h-full min-h-[120px] bg-slate-900 border border-slate-700 rounded-lg p-4 text-sm text-slate-300 font-serif focus:border-amber-500 outline-none resize-none custom-scrollbar"
                        placeholder="Nhập sự kiện… Dùng [[Tên]] để liên kết wiki; [[]] / Bỏ để bọc hoặc gỡ link tại con trỏ."
                      />
@@ -1063,8 +1083,8 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
                 <div className="flex gap-4 mb-4">
                    <div
                       onDragOver={e => e.preventDefault()}
-                      onDrop={e => handleAvatarDrop && handleAvatarDrop(e, url => setSnapshotData(prev=>({...prev, avatar: url})))}
-                      onClick={() => handlePickLocalImage && handlePickLocalImage(url => setSnapshotData(prev=>({...prev, avatar: url})), null, 'avatar-snapshot')}
+                      onDrop={e => handleAvatarDrop && handleAvatarDrop(e, url => patchSnapshotData({ avatar: url }))}
+                      onClick={() => handlePickLocalImage && handlePickLocalImage(url => patchSnapshotData({ avatar: url }), null, 'avatar-snapshot')}
                       className="w-16 h-16 rounded-xl bg-slate-950 border border-dashed border-slate-600 flex items-center justify-center overflow-hidden flex-shrink-0 group cursor-pointer hover:border-amber-500 transition-colors"
                       title="Nhấp hoặc kéo thả ảnh vào đây"
                    >
@@ -1079,8 +1099,8 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
                          <span className="flex items-center gap-1"><Upload size={12}/> {terms.image} lúc này</span>
                       </label>
                       <div className="flex gap-2">
-                         <input value={safeString(snapshotData.avatar)} onChange={e=>setSnapshotData(prev=>({...prev, avatar: e.target.value}))} className="flex-1 w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:border-amber-500 outline-none" />
-                         <button onClick={() => handlePickLocalImage && handlePickLocalImage(url => setSnapshotData(prev=>({...prev, avatar: url})), null, 'avatar-snapshot')} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 text-xs font-bold">Chọn File</button>
+                         <input value={safeString(snapshotData.avatar)} onChange={e=>patchSnapshotData({ avatar: e.target.value })} className="flex-1 w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:border-amber-500 outline-none" />
+                         <button onClick={() => handlePickLocalImage && handlePickLocalImage(url => patchSnapshotData({ avatar: url }), null, 'avatar-snapshot')} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 text-xs font-bold">Chọn File</button>
                       </div>
                    </div>
                 </div>
@@ -1110,7 +1130,7 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
                           <input
                             ref={(el) => { if (el) dynamicFieldInputRefs.current[field.id] = el; else delete dynamicFieldInputRefs.current[field.id]; }}
                             value={safeString(snapshotData.dynamicData[field.id])}
-                            onChange={e=>setSnapshotData(prev => ({...prev, dynamicData: {...prev.dynamicData, [field.id]: e.target.value}}))}
+                            onChange={e=>patchSnapshotData((prev) => ({ dynamicData: { ...(prev.dynamicData || {}), [field.id]: e.target.value } }))}
                             onFocus={() => setLinkSuggestField(field.id)}
                             onBlur={() => setTimeout(() => setLinkSuggestField(null), 200)}
                             className="w-full bg-slate-950/80 border border-slate-700 rounded-lg p-2.5 pr-20 text-sm text-slate-200 font-serif focus:border-amber-500 outline-none"
@@ -1131,7 +1151,7 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
                                   }
                                   const { newText, selStart, selEnd } = applyWikiLinkWrap(cur, a, b);
                                   pendingWikiCaretRef.current = { fieldId: field.id, selStart, selEnd };
-                                  setSnapshotData(prev => ({ ...prev, dynamicData: { ...prev.dynamicData, [field.id]: newText } }));
+                                  patchSnapshotData((prev) => ({ dynamicData: { ...(prev.dynamicData || {}), [field.id]: newText } }));
                                 }}
                                 className="text-[10px] font-bold text-amber-500 hover:text-amber-300 bg-amber-900/30 px-1.5 py-0.5 rounded border border-amber-700/40"
                                 title="Chèn [[ ]] tại con trỏ hoặc bọc đoạn đang chọn"
@@ -1149,7 +1169,7 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
                                   }
                                   const { newText, selStart, selEnd } = applyWikiLinkUnwrap(cur, a, b);
                                   pendingWikiCaretRef.current = { fieldId: field.id, selStart, selEnd };
-                                  setSnapshotData(prev => ({ ...prev, dynamicData: { ...prev.dynamicData, [field.id]: newText } }));
+                                  patchSnapshotData((prev) => ({ dynamicData: { ...(prev.dynamicData || {}), [field.id]: newText } }));
                                 }}
                                 className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-900/20 px-1.5 py-0.5 rounded border border-cyan-700/35"
                                 title="Gỡ [[ ]] ở vùng chọn hoặc đoạn chứa con trỏ"
@@ -1558,14 +1578,20 @@ export const ModalInsertImage = ({ isOpen, onClose, imageForm, setImageForm, han
 export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, mode = "create", handlePickLocalImage, dirHandle }) => {
   const trapRefAddNovel = useFocusTrap(isOpen);
   if (!isOpen) return null;
+  const patchFormData = (patch) =>
+    setFormData((prev) => {
+      const nextPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
+      return { ...(prev || {}), ...nextPatch };
+    });
 
   const toggleGenre = (g) => {
-      let currentGenres = formData.genres || [];
-      if (currentGenres.includes(g)) {
-          setFormData({ ...formData, genres: currentGenres.filter(x => x !== g) });
-      } else {
-          setFormData({ ...formData, genres: [...currentGenres, g] });
-      }
+      setFormData((prev) => {
+          const currentGenres = Array.isArray(prev?.genres) ? prev.genres : [];
+          if (currentGenres.includes(g)) {
+              return { ...(prev || {}), genres: currentGenres.filter((x) => x !== g) };
+          }
+          return { ...(prev || {}), genres: [...currentGenres, g] };
+      });
   };
 
   return (
@@ -1582,7 +1608,7 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
           <div className="w-full md:w-2/5 bg-slate-950 p-8 flex flex-col items-center justify-center border-r border-slate-800 relative overflow-hidden">
              <div
                 className="w-full rounded-2xl border-2 border-dashed border-slate-700/80 flex flex-col items-center justify-center text-slate-500 relative overflow-hidden group bg-slate-900/50 z-10 shadow-2xl cursor-pointer hover:border-amber-600/50 transition-colors min-h-[180px]"
-                onClick={() => handlePickLocalImage && handlePickLocalImage(url => setFormData({...formData, cover: url}), null, 'cover')}
+                onClick={() => handlePickLocalImage && handlePickLocalImage((url) => patchFormData({ cover: url }), null, 'cover')}
                 title="Nhấp để chọn ảnh bìa từ máy tính"
              >
                 {formData.cover ? (
@@ -1620,17 +1646,17 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
              <div className="space-y-6 flex-1 overflow-y-auto custom-scrollbar pr-4 mt-6">
                 <div>
                    <label className="block text-[11px] font-bold text-slate-400 mb-2 uppercase tracking-widest">Tên Truyện / Bí Danh <span className="text-amber-500">*</span></label>
-                   <input autoFocus value={safeString(formData.title)} onChange={e=>setFormData({...formData, title: e.target.value})} className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-4 text-amber-100 font-heading text-xl focus:border-amber-500 outline-none" />
+                   <input autoFocus value={safeString(formData.title)} onChange={e=>patchFormData({ title: e.target.value })} className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-4 text-amber-100 font-heading text-xl focus:border-amber-500 outline-none" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-6">
                    <div>
                       <label className="block text-[11px] font-bold text-slate-400 mb-2 uppercase tracking-widest">Tác Giả</label>
-                      <input value={safeString(formData.author)} onChange={e=>setFormData({...formData, author: e.target.value})} className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3.5 text-slate-200 font-serif focus:border-amber-500 outline-none" />
+                      <input value={safeString(formData.author)} onChange={e=>patchFormData({ author: e.target.value })} className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3.5 text-slate-200 font-serif focus:border-amber-500 outline-none" />
                    </div>
                    <div>
                       <label className="block text-[11px] font-bold text-slate-400 mb-2 uppercase tracking-widest">Khí Chất Giao Diện (Theme)</label>
-                      <select value={safeString(formData.theme)} onChange={e=>setFormData({...formData, theme: e.target.value})} className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3.5 text-slate-200 font-serif focus:border-amber-500 outline-none appearance-none">
+                      <select value={safeString(formData.theme)} onChange={e=>patchFormData({ theme: e.target.value })} className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3.5 text-slate-200 font-serif focus:border-amber-500 outline-none appearance-none">
                          {THEMES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
                       </select>
                    </div>
@@ -1655,7 +1681,7 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
                          disabled={(formData.genres || []).length === 0}
                          onClick={() => {
                            const cfg = mergeTabsByGenres(formData.genres || []);
-                           if (cfg) setFormData({ ...formData, tabsConfig: cfg });
+                           if (cfg) patchFormData({ tabsConfig: cfg });
                          }}
                          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-serif bg-amber-900/30 border border-amber-600/40 text-amber-300 hover:bg-amber-800/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                        >
@@ -1671,7 +1697,7 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
                 <div className="grid grid-cols-2 gap-6">
                    <div>
                       <label className="block text-[11px] font-bold text-slate-400 mb-2 uppercase tracking-widest">Tiến Trình</label>
-                      <select value={safeString(formData.status)} onChange={e=>setFormData({...formData, status: e.target.value})} className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3.5 text-slate-200 font-serif focus:border-amber-500 outline-none appearance-none">
+                      <select value={safeString(formData.status)} onChange={e=>patchFormData({ status: e.target.value })} className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3.5 text-slate-200 font-serif focus:border-amber-500 outline-none appearance-none">
                          <option value="Đang đọc">Đang đọc</option>
                          <option value="Hoàn thành">Hoàn thành</option>
                          <option value="Tạm ngưng">Tạm ngưng</option>
@@ -1679,7 +1705,7 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
                    </div>
                    <div>
                       <label className="block text-[11px] font-bold text-slate-400 mb-2 uppercase tracking-widest">Tổng Số Chương</label>
-                      <input value={safeString(formData.chaptersTotal)} onChange={e=>setFormData({...formData, chaptersTotal: e.target.value})} className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3.5 text-slate-200 font-serif focus:border-amber-500 outline-none" />
+                      <input value={safeString(formData.chaptersTotal)} onChange={e=>patchFormData({ chaptersTotal: e.target.value })} className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3.5 text-slate-200 font-serif focus:border-amber-500 outline-none" />
                    </div>
                 </div>
 
@@ -1687,7 +1713,7 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
                    <label className="block text-[11px] font-bold text-slate-400 mb-2 uppercase tracking-widest">Hoặc nhập URL ảnh trực tiếp</label>
                    <input
                      value={safeString(formData.cover).startsWith('local_image:') ? '' : safeString(formData.cover)}
-                     onChange={e=>setFormData({...formData, cover: e.target.value})}
+                     onChange={e=>patchFormData({ cover: e.target.value })}
                      className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3.5 text-slate-200 text-sm focus:border-amber-500 outline-none"
                      placeholder="https://..."
                    />

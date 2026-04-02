@@ -148,7 +148,7 @@ export function useAppNovelCrud({
       return;
     }
 
-    updateActiveNovelData((novel) => {
+    await updateActiveNovelData((novel) => {
       novel.title = novelForm.title;
       novel.author = novelForm.author;
       novel.genres = novelForm.genres;

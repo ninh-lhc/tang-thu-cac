@@ -965,8 +965,9 @@ export default function App() {
 
   const updateActiveNovelData = useCallback(
     (updateFn) => {
-      if (!activeNovelData) return;
-      const updatedData = structuredClone(activeNovelData);
+      const currentData = activeNovelDataRef.current;
+      if (!currentData) return;
+      const updatedData = structuredClone(currentData);
       updateFn(updatedData);
       const nextStats = { ...novelStatsByIdRef.current };
       if (!updatedData.__partialData) {
@@ -974,12 +975,13 @@ export default function App() {
       }
       novelStatsByIdRef.current = nextStats;
       setNovelStatsById(nextStats);
+      activeNovelDataRef.current = updatedData;
       setActiveNovelData(updatedData);
       deepSearchIndexByNovelIdRef.current.set(
         updatedData.id,
         buildNovelSearchIndex(updatedData)
       );
-      syncNovel(updatedData, dirHandle);
+      const syncPromise = syncNovel(updatedData, dirHandle);
 
       const newMetaStr = JSON.stringify({
         title: updatedData.title,
@@ -993,15 +995,15 @@ export default function App() {
         folderName: updatedData.folderName,
       });
       const oldMetaStr = JSON.stringify({
-        title: activeNovelData.title,
-        cover: activeNovelData.cover,
-        tags: activeNovelData.tags,
-        review: activeNovelData.review,
-        status: activeNovelData.status,
-        genres: activeNovelData.genres || [activeNovelData.genre],
-        theme: activeNovelData.theme,
-        author: activeNovelData.author,
-        folderName: activeNovelData.folderName,
+        title: currentData.title,
+        cover: currentData.cover,
+        tags: currentData.tags,
+        review: currentData.review,
+        status: currentData.status,
+        genres: currentData.genres || [currentData.genre],
+        theme: currentData.theme,
+        author: currentData.author,
+        folderName: currentData.folderName,
       });
 
       if (oldMetaStr !== newMetaStr) {
@@ -1026,14 +1028,15 @@ export default function App() {
         novelsMetadataRef.current = newMetaList;
         syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
       }
+      return syncPromise;
     },
     [
-      activeNovelData,
       deepSearchIndexByNovelIdRef,
       dirHandle,
       globalTabsConfig,
       novelStatsByIdRef,
       novelsMetadata,
+      activeNovelDataRef,
       novelsMetadataRef,
       setActiveNovelData,
       setNovelStatsById,

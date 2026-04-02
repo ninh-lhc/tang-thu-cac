@@ -57,6 +57,17 @@ export function AppOverviewSection({
 }) {
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagValue, setNewTagValue] = useState('');
+  const patchOverviewForm = (patch) => setOverviewForm((prev) => ({ ...(prev || {}), ...patch }));
+  const commitOverviewField = (field, rawValue) => {
+    const nextValue =
+      field === 'chaptersRead'
+        ? Math.max(0, parseInt(rawValue, 10) || 0)
+        : safeString(rawValue);
+    patchOverviewForm({ [field]: nextValue });
+    updateActiveNovelData((n) => {
+      n[field] = nextValue;
+    });
+  };
 
   const anchor = Math.max(0, parseInt(activeNovelData.readingAnchorChapter ?? activeNovelData.chaptersRead ?? 0, 10) || 0);
   const lo = Math.max(0, anchor - 12);
@@ -162,8 +173,8 @@ export function AppOverviewSection({
                     type="number" min="0"
                     className="w-24 bg-slate-900/50 border border-slate-800 rounded-lg p-2 text-slate-200 text-sm focus:outline-none focus:border-amber-600/50 font-serif"
                     value={overviewForm?.chaptersRead || 0}
-                    onChange={(e) => setOverviewForm({ ...overviewForm, chaptersRead: parseInt(e.target.value, 10) || 0 })}
-                    onBlur={() => updateActiveNovelData((n) => { n.chaptersRead = Math.max(0, parseInt(overviewForm?.chaptersRead, 10) || 0); })}
+                    onChange={(e) => patchOverviewForm({ chaptersRead: parseInt(e.target.value, 10) || 0 })}
+                    onBlur={(e) => commitOverviewField('chaptersRead', e.currentTarget.value)}
                   />
                   <span className="text-slate-600 font-serif text-sm">/</span>
                   <span className="text-slate-300 font-serif text-sm">{safeString(activeNovelData.chaptersTotal) || '???'}</span>
@@ -237,7 +248,7 @@ export function AppOverviewSection({
                 <AppOverviewRatingStars
                   rating={overviewForm?.rating || 0}
                   onChange={(r) => {
-                    setOverviewForm((prev) => ({ ...(prev || {}), rating: r }));
+                    patchOverviewForm({ rating: r });
                     updateActiveNovelData((n) => { n.rating = r; });
                   }}
                 />
@@ -254,8 +265,8 @@ export function AppOverviewSection({
                 <textarea
                   className="mt-3 w-full bg-slate-900/50 border border-slate-800 rounded-xl p-3 text-slate-300 font-serif text-sm leading-relaxed focus:outline-none focus:border-amber-600/50 min-h-[80px] resize-none custom-scrollbar"
                   value={safeString(overviewForm?.ratingOpinion)}
-                  onChange={(e) => setOverviewForm({ ...(overviewForm || {}), ratingOpinion: e.target.value })}
-                  onBlur={() => updateActiveNovelData((n) => { n.ratingOpinion = safeString(overviewForm?.ratingOpinion); })}
+                  onChange={(e) => patchOverviewForm({ ratingOpinion: e.target.value })}
+                  onBlur={(e) => commitOverviewField('ratingOpinion', e.currentTarget.value)}
                   placeholder="Ghi ý kiến / bình luận cá nhân về truyện (khác với phần giới thiệu phía dưới)..."
                 />
               </div>
@@ -393,7 +404,7 @@ export function AppOverviewSection({
               setIsGeneratingReview(true);
               try {
                 const text = await generateReviewWithAI(activeNovelData, geminiApiKeys);
-                if (text) { setOverviewForm({ ...overviewForm, review: text }); updateActiveNovelData((n) => { n.review = text; }); showToast('Đã lĩnh ngộ thành công!'); }
+                if (text) { patchOverviewForm({ review: text }); updateActiveNovelData((n) => { n.review = text; }); showToast('Đã lĩnh ngộ thành công!'); }
                 else showToast('AI không trả về nội dung.', 'warning');
               } catch (e) { showToast(mapGeminiErrorToUserMessage(e), 'error'); }
               setIsGeneratingReview(false);
@@ -408,8 +419,8 @@ export function AppOverviewSection({
         <textarea
           className="w-full flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 text-slate-300 font-serif text-lg leading-relaxed focus:outline-none focus:border-amber-600/50 min-h-[200px] resize-none custom-scrollbar tt-kbd-focus"
           value={safeString(overviewForm?.review)}
-          onChange={(e) => setOverviewForm({ ...overviewForm, review: e.target.value })}
-          onBlur={() => updateActiveNovelData((n) => { n.review = overviewForm.review; })}
+          onChange={(e) => patchOverviewForm({ review: e.target.value })}
+          onBlur={(e) => commitOverviewField('review', e.currentTarget.value)}
           placeholder="Viết giới thiệu / tóm tắt nội dung truyện (AI có thể tổng hợp hộ). Tự động lưu khi nhấp ra ngoài."
         />
       </section>
