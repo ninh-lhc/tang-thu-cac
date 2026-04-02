@@ -138,6 +138,94 @@ describe('autoRelationDetailNote', () => {
     expect(novel.data.a.b.entities[1].info).toContain('## Vị trí');
   });
 
+  it('keeps flat rows for the direct map in the chain', () => {
+    const novel = {
+      data: {
+        a: {
+          b: {
+            entities: [
+              { id: 'src1', name: 'Lac Gia', info: '', dynamicData: {}, milestones: [] },
+              { id: 'm1', name: 'Bang Thien Dai Luc', info: '', dynamicData: {}, milestones: [] },
+              { id: 'm2', name: 'Viet Long Tinh Cau', info: '', dynamicData: {}, milestones: [] },
+            ],
+          },
+        },
+      },
+    };
+    applyAutoRelationNotesForEntity(novel, {
+      sourceEntity: novel.data.a.b.entities[0],
+      sourceLonId: 'gia-toc',
+      sourceParentLabel: 'The Luc',
+      statusLine: 'Gia Toc - Bat Cap the luc - Bang Thien Dai Luc - Viet Long Tinh Cau',
+    });
+    const text = novel.data.a.b.entities[1].info;
+    expect(text).toContain('## Gia Toc');
+    expect(text).toContain('[[Lac Gia]] (Bat Cap the luc - Bang Thien Dai Luc - Viet Long Tinh Cau)');
+    expect(text).not.toContain('\n- [[Bang Thien Dai Luc]]\n');
+  });
+
+  it('renders nested child-map tree for larger maps', () => {
+    const novel = {
+      data: {
+        a: {
+          b: {
+            entities: [
+              { id: 'src1', name: 'Lac Gia', info: '', dynamicData: {}, milestones: [] },
+              { id: 'src2', name: 'Thien Son Tien Canh', info: '', dynamicData: {}, milestones: [] },
+              { id: 'm1', name: 'Bang Thien Dai Luc', info: '', dynamicData: {}, milestones: [] },
+              { id: 'm2', name: 'Viet Long Tinh Cau', info: '', dynamicData: {}, milestones: [] },
+            ],
+          },
+        },
+      },
+    };
+    applyAutoRelationNotesForEntity(novel, {
+      sourceEntity: novel.data.a.b.entities[0],
+      sourceLonId: 'gia-toc',
+      sourceParentLabel: 'The Luc',
+      statusLine: 'Gia Toc - Bat Cap the luc - Bang Thien Dai Luc - Viet Long Tinh Cau',
+    });
+    applyAutoRelationNotesForEntity(novel, {
+      sourceEntity: novel.data.a.b.entities[1],
+      sourceLonId: 'tong-mon',
+      sourceParentLabel: 'The Luc',
+      statusLine: 'Tong Mon - Cuu Cap the luc - Bang Thien Dai Luc - Viet Long Tinh Cau',
+    });
+    const text = novel.data.a.b.entities[3].info;
+    expect(text).toContain('- [[Bang Thien Dai Luc]]');
+    expect(text).toContain('  - [[Lac Gia]] (Gia Toc - Bat Cap the luc)');
+    expect(text).toContain('  - [[Thien Son Tien Canh]] (Tong Mon - Cuu Cap the luc)');
+    expect(text).not.toContain('## Gia Toc');
+    expect(text).not.toContain('Viet Long Tinh Cau)');
+  });
+
+  it('builds recursive map tree for outer world levels', () => {
+    const novel = {
+      data: {
+        a: {
+          b: {
+            entities: [
+              { id: 'src1', name: 'Lac Gia', info: '', dynamicData: {}, milestones: [] },
+              { id: 'm1', name: 'Thanh Hoang Vuong Trieu', info: '', dynamicData: {}, milestones: [] },
+              { id: 'm2', name: 'Tay Bac Chau', info: '', dynamicData: {}, milestones: [] },
+              { id: 'm3', name: 'Nguyen Gioi', info: '', dynamicData: {}, milestones: [] },
+            ],
+          },
+        },
+      },
+    };
+    applyAutoRelationNotesForEntity(novel, {
+      sourceEntity: novel.data.a.b.entities[0],
+      sourceLonId: 'gia-toc',
+      sourceParentLabel: 'The Luc',
+      statusLine: 'Gia Toc - Ngu Cap the luc - Thanh Hoang Vuong Trieu - Tay Bac Chau - Nguyen Gioi',
+    });
+    const text = novel.data.a.b.entities[3].info;
+    expect(text).toContain('- [[Tay Bac Chau]]');
+    expect(text).toContain('  - [[Thanh Hoang Vuong Trieu]]');
+    expect(text).toContain('    - [[Lac Gia]] (Gia Toc - Ngu Cap the luc)');
+  });
+
   it('sorts related entries by rank then name', () => {
     const novel = {
       data: {

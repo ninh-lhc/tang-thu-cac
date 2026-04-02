@@ -1,4 +1,4 @@
-import { findEquivalentEntityByName } from './entityNameIdentity.js';
+﻿import { findEquivalentEntityByName } from './entityNameIdentity.js';
 import {
   isBeyondRankLabel,
   normalizeAsciiText,
@@ -7,10 +7,10 @@ import {
   splitStatusHierarchyTokens,
 } from './statusHierarchyParser.js';
 
-const AUTO_REL_TITLE = '## Quan hệ bản đồ - thế lực (tự động)';
-const AUTO_REL_END = '> (Khối tự động, không cần sửa tay)';
-const RELATED_TITLE = '## Vị trí';
-const RELATED_END = '> (Tự động cập nhật từ các thẻ liên quan)';
+const AUTO_REL_TITLE = '## Quan há»‡ báº£n Ä‘á»“ - tháº¿ lá»±c (tá»± Ä‘á»™ng)';
+const AUTO_REL_END = '> (Khá»‘i tá»± Ä‘á»™ng, khÃ´ng cáº§n sá»­a tay)';
+const RELATED_TITLE = '## Vá»‹ trÃ­';
+const RELATED_END = '> (Tá»± Ä‘á»™ng cáº­p nháº­t tá»« cÃ¡c tháº» liÃªn quan)';
 
 function escapeRegExp(text) {
   return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -48,7 +48,7 @@ function buildRelatedBlockRegexGlobal() {
 }
 
 function buildLegacyRelatedBlockRegexGlobal() {
-  const legacyBlockPattern = `${escapeRegExp('## Liên kết liên quan (tự động)')}[\\s\\S]*?${escapeRegExp(RELATED_END)}`;
+  const legacyBlockPattern = `${escapeRegExp('## LiÃªn káº¿t liÃªn quan (tá»± Ä‘á»™ng)')}[\\s\\S]*?${escapeRegExp(RELATED_END)}`;
   return new RegExp(legacyBlockPattern, 'g');
 }
 
@@ -64,10 +64,10 @@ export function isAutoRelationScopeLonId(lonId, parentLabel = '') {
 }
 
 function relationLabelAt(index) {
-  if (index === 0) return 'Trực thuộc';
-  if (index === 1) return 'Khu vực';
-  if (index === 2) return 'Thế giới';
-  return `Tầng mở rộng ${index - 2}`;
+  if (index === 0) return 'Trá»±c thuá»™c';
+  if (index === 1) return 'Khu vá»±c';
+  if (index === 2) return 'Tháº¿ giá»›i';
+  return `Táº§ng má»Ÿ rá»™ng ${index - 2}`;
 }
 
 function rankScoreFromStatus(statusLine) {
@@ -82,8 +82,8 @@ function rankScoreFromStatus(statusLine) {
 function buildAutoRelationBlock(parsed) {
   const lines = [
     AUTO_REL_TITLE,
-    parsed.categoryLabel ? `- Loại hình: ${parsed.categoryLabel}` : null,
-    `- Cấp bậc: ${parsed.rankLabel}`,
+    parsed.categoryLabel ? `- Loáº¡i hÃ¬nh: ${parsed.categoryLabel}` : null,
+    `- Cáº¥p báº­c: ${parsed.rankLabel}`,
   ].filter(Boolean);
   parsed.chain.forEach((name, idx) => {
     lines.push(`- ${relationLabelAt(idx)}: [[${name}]]`);
@@ -113,7 +113,7 @@ export function upsertAutoRelationDetailNote(infoText, statusLine) {
 
 function buildRelatedEntry(sourceName, statusLine) {
   const parsed = parseRelationHierarchyFromStatus(statusLine);
-  const category = String(parsed?.categoryLabel || 'Khác').trim() || 'Khác';
+  const category = String(parsed?.categoryLabel || 'KhÃ¡c').trim() || 'KhÃ¡c';
   return {
     name: String(sourceName || '').trim(),
     status: String(statusLine || '').trim(),
@@ -122,24 +122,106 @@ function buildRelatedEntry(sourceName, statusLine) {
   };
 }
 
-function renderRelatedBlock(entries) {
-  const lines = [RELATED_TITLE];
-  const stripDuplicatedCategoryPrefix = (status, category) => {
-    const raw = String(status || '').trim();
-    if (!raw) return '';
-    const catNorm = normalizeAsciiText(category);
-    const tokens = splitStatusHierarchyTokens(raw);
-    if (tokens.length <= 1) return raw;
-    if (normalizeAsciiText(tokens[0]) !== catNorm) return raw;
-    return tokens.slice(1).join(' - ');
+function compareNormalizedText(a, b) {
+  return normalizeAsciiText(a).localeCompare(normalizeAsciiText(b));
+}
+
+function stripDuplicatedCategoryPrefix(status, category) {
+  const raw = String(status || '').trim();
+  if (!raw) return '';
+  const catNorm = normalizeAsciiText(category);
+  const tokens = splitStatusHierarchyTokens(raw);
+  if (tokens.length <= 1) return raw;
+  if (normalizeAsciiText(tokens[0]) !== catNorm) return raw;
+  return tokens.slice(1).join(' - ');
+}
+
+function buildRelatedRenderContext(entry, targetName) {
+  const parsed = parseRelationHierarchyFromStatus(entry?.status);
+  const chain = Array.isArray(parsed?.chain) ? parsed.chain : [];
+  const targetNorm = normalizeAsciiText(targetName);
+  const targetIndex = targetNorm
+    ? chain.findIndex((name) => normalizeAsciiText(name) === targetNorm)
+    : -1;
+  return {
+    ...entry,
+    parsed,
+    targetIndex,
+    descendants: targetIndex > 0 ? chain.slice(0, targetIndex).reverse() : [],
   };
+}
+
+function sortTreeItems(items) {
+  return [...items].sort((a, b) => {
+    const categoryCmp = compareNormalizedText(a.category, b.category);
+    if (categoryCmp !== 0) return categoryCmp;
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    return compareNormalizedText(a.name, b.name);
+  });
+}
+
+function buildTreeItemMeta(entry) {
+  return [entry.category, entry.parsed?.rankLabel].filter(Boolean).join(' - ');
+}
+
+function renderTreeRelatedBlock(entries, targetName) {
+  const lines = [RELATED_TITLE];
+  const root = { children: new Map(), items: [] };
+
+  const getOrCreateChildNode = (parent, label) => {
+    const key = normalizeAsciiText(label);
+    if (!parent.children.has(key)) {
+      parent.children.set(key, { label, children: new Map(), items: [] });
+    }
+    return parent.children.get(key);
+  };
+
+  entries
+    .map((entry) => buildRelatedRenderContext(entry, targetName))
+    .forEach((entry) => {
+      if (entry.descendants.length === 0) {
+        root.items.push(entry);
+        return;
+      }
+      let cursor = root;
+      entry.descendants.forEach((nodeLabel) => {
+        cursor = getOrCreateChildNode(cursor, nodeLabel);
+      });
+      cursor.items.push(entry);
+    });
+
+  const renderNode = (node, depth) => {
+    const indent = '  '.repeat(depth);
+    lines.push(`${indent}- [[${node.label}]]`);
+    [...node.children.values()]
+      .sort((a, b) => compareNormalizedText(a.label, b.label))
+      .forEach((child) => renderNode(child, depth + 1));
+    sortTreeItems(node.items).forEach((entry) => {
+      const itemIndent = '  '.repeat(depth + 1);
+      lines.push(`${itemIndent}- [[${entry.name}]] (${buildTreeItemMeta(entry)})`);
+    });
+  };
+
+  sortTreeItems(root.items).forEach((entry) => {
+    lines.push(`- [[${entry.name}]] (${buildTreeItemMeta(entry)})`);
+  });
+  [...root.children.values()]
+    .sort((a, b) => compareNormalizedText(a.label, b.label))
+    .forEach((child) => renderNode(child, 0));
+
+  lines.push(RELATED_END);
+  return lines.join('\n');
+}
+
+function renderFlatRelatedBlock(entries) {
+  const lines = [RELATED_TITLE];
   const grouped = new Map();
   entries.forEach((e) => {
     const k = String(e.category || 'Khác').trim() || 'Khác';
     if (!grouped.has(k)) grouped.set(k, []);
     grouped.get(k).push(e);
   });
-  const categories = [...grouped.keys()].sort((a, b) => normalizeAsciiText(a).localeCompare(normalizeAsciiText(b)));
+  const categories = [...grouped.keys()].sort((a, b) => compareNormalizedText(a, b));
   categories.forEach((cat) => {
     lines.push(`## ${cat}`);
     grouped.get(cat).forEach((e) => {
@@ -151,13 +233,30 @@ function renderRelatedBlock(entries) {
   return lines.join('\n');
 }
 
-function parseRelatedBlockEntries(blockText) {
+function renderRelatedBlock(entries, targetName = '') {
+  const hasNestedHierarchy = (entries || []).some((entry) => {
+    const context = buildRelatedRenderContext(entry, targetName);
+    return context.targetIndex > 0 && context.descendants.length > 0;
+  });
+  if (hasNestedHierarchy) return renderTreeRelatedBlock(entries, targetName);
+  return renderFlatRelatedBlock(entries);
+}
+
+function parseRelatedBlockEntries(blockText, targetName = '') {
   const lines = String(blockText || '').split(/\r?\n/);
   const out = [];
-  const re = /^\s*-\s*\[\[([^\]]+)\]\]\s*\((.*)\)\s*$/;
+  const itemRe = /^(\s*)-\s*\[\[([^\]]+)\]\]\s*\((.*)\)\s*$/;
+  const nodeRe = /^(\s*)-\s*\[\[([^\]]+)\]\]\s*$/;
   const relatedTitle = normalizeAsciiText(RELATED_TITLE.replace(/^##\s*/, ''));
-  const legacyRelatedTitle = normalizeAsciiText('Liên kết liên quan (tự động)');
+  const legacyRelatedTitle = normalizeAsciiText('LiÃªn káº¿t liÃªn quan (tá»± Ä‘á»™ng)');
   let currentCategory = '';
+  const locationStack = [];
+
+  const getDepth = (indentText) => {
+    const normalizedIndent = String(indentText || '').replace(/\t/g, '  ');
+    return Math.floor(normalizedIndent.length / 2);
+  };
+
   lines.forEach((line) => {
     const hm = line.match(/^\s*#{2,3}\s+(.+?)\s*$/);
     if (hm) {
@@ -168,9 +267,30 @@ function parseRelatedBlockEntries(blockText) {
         headingNorm === relatedTitle || headingNorm === legacyRelatedTitle ? '' : heading;
       return;
     }
-    const m = line.match(re);
-    if (!m) return;
-    const row = buildRelatedEntry(m[1], m[2]);
+
+    const nodeMatch = line.match(nodeRe);
+    if (nodeMatch) {
+      const depth = getDepth(nodeMatch[1]);
+      locationStack.length = depth;
+      locationStack[depth] = String(nodeMatch[2] || '').trim();
+      return;
+    }
+
+    const itemMatch = line.match(itemRe);
+    if (!itemMatch) return;
+    const depth = getDepth(itemMatch[1]);
+    const pathLabels = locationStack.slice(0, depth).filter(Boolean);
+    let statusText = String(itemMatch[3] || '').trim();
+    const parsedStatus = parseRelationHierarchyFromStatus(statusText);
+    const shouldReconstructStatus =
+      !!targetName && (pathLabels.length > 0 || (!currentCategory && !parsedStatus));
+    if (shouldReconstructStatus) {
+      const rebuiltTail = [...pathLabels].reverse();
+      rebuiltTail.push(targetName);
+      statusText = [statusText, ...rebuiltTail].filter(Boolean).join(' - ');
+    }
+
+    const row = buildRelatedEntry(itemMatch[2], statusText);
     if (currentCategory) row.category = currentCategory;
     out.push(row);
   });
@@ -186,7 +306,7 @@ function sortRelatedEntries(entries) {
   });
 }
 
-function upsertRelatedBacklinkNote(infoText, sourceName, statusLine) {
+function upsertRelatedBacklinkNote(infoText, targetName, sourceName, statusLine) {
   const source = String(sourceName || '').trim();
   if (!source) return String(infoText || '');
   const src = String(infoText || '').trimEnd();
@@ -197,18 +317,18 @@ function upsertRelatedBacklinkNote(infoText, sourceName, statusLine) {
   const legacyBlocks = src.match(legacyBlockReGlobal) || [];
 
   if (currentBlocks.length === 0 && legacyBlocks.length === 0) {
-    const block = renderRelatedBlock([nextEntry]);
+    const block = renderRelatedBlock([nextEntry], targetName);
     return src ? `${src}\n\n${block}` : block;
   }
 
   const existing = dedupeRelatedEntriesByName(
-    [...currentBlocks, ...legacyBlocks].flatMap((blockText) => parseRelatedBlockEntries(blockText))
+    [...currentBlocks, ...legacyBlocks].flatMap((blockText) => parseRelatedBlockEntries(blockText, targetName))
   );
   const byName = new Map(existing.map((entry) => [normalizeAsciiText(entry.name), entry]));
   byName.set(normalizeAsciiText(source), nextEntry);
   const mergedEntries = [...byName.values()];
   const sorted = sortRelatedEntries(mergedEntries);
-  const merged = renderRelatedBlock(sorted);
+  const merged = renderRelatedBlock(sorted, targetName);
   const cleanedSrc = src
     .replace(blockReGlobal, '')
     .replace(legacyBlockReGlobal, '')
@@ -217,7 +337,7 @@ function upsertRelatedBacklinkNote(infoText, sourceName, statusLine) {
   return cleanedSrc ? `${cleanedSrc}\n\n${merged}` : merged;
 }
 
-export function cleanupAutoRelationLegacyInfoText(infoText) {
+export function cleanupAutoRelationLegacyInfoText(infoText, targetName = '') {
   let next = String(infoText || '')
     .replace(/<!--ttc:auto-rel:start-->/g, '')
     .replace(/<!--ttc:auto-rel:end-->/g, '')
@@ -240,10 +360,10 @@ export function cleanupAutoRelationLegacyInfoText(infoText) {
   const legacyRelatedBlocks = next.match(legacyBlockReGlobal) || [];
   if (relatedBlocks.length > 0 || legacyRelatedBlocks.length > 0) {
     const allEntries = [...relatedBlocks, ...legacyRelatedBlocks]
-      .flatMap((blockText) => parseRelatedBlockEntries(blockText));
+      .flatMap((blockText) => parseRelatedBlockEntries(blockText, targetName));
     const deduped = dedupeRelatedEntriesByName(allEntries);
     const merged = deduped.length > 0
-      ? renderRelatedBlock(sortRelatedEntries(deduped))
+      ? renderRelatedBlock(sortRelatedEntries(deduped), targetName)
       : [...relatedBlocks, ...legacyRelatedBlocks].slice(-1)[0];
     const base = next
       .replace(blockReGlobal, '')
@@ -268,7 +388,7 @@ export function cleanupAutoRelationLegacyInfoForNovel(novelData) {
       entities.forEach((entity) => {
         if (!entity || typeof entity !== 'object') return;
         const before = String(entity.info || '');
-        const after = cleanupAutoRelationLegacyInfoText(before);
+        const after = cleanupAutoRelationLegacyInfoText(before, entity.name || '');
         if (after !== before) {
           entity.info = after;
           touched += 1;
@@ -317,7 +437,7 @@ export function applyAutoRelationNotesForEntity(novelData, options) {
     const target = findEntityGlobalByName(novelData, name);
     if (!target || target.id === sourceEntity.id) return;
     const before = String(target.info || '');
-    const after = upsertRelatedBacklinkNote(before, sourceEntity.name, statusLine);
+    const after = upsertRelatedBacklinkNote(before, target.name || '', sourceEntity.name, statusLine);
     if (after !== before) {
       target.info = after;
       touchedTargets++;
