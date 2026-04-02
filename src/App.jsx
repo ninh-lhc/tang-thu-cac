@@ -18,6 +18,7 @@
 //   useAppDirectoryBackup.js - folder connect + import/export backup handlers
 //   useAppImageWorkflow.js - image upload/picker/modal workflow
 //   AppShellOverlays.jsx - lightbox, toast, spinner
+//   entityProfilePrint.js - template + popup print cho export hồ sơ PDF
 //   lib/appTabGroups, appDashboardStats, buildEntityLinkMap, filterNovelsForLibrary, buildCurrentContextDirHandle
 //   useAppNovelCrud.js - novel modal state + create/edit/delete handlers
 //   useAppPhimTatToanCuc.js - phím tắt Ctrl+K, /, Escape...
@@ -78,6 +79,7 @@ import { buildXrefEntityCatalogText } from './lib/xrefBangDanhMucThucThe.js';
 import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
+import { exportEntityProfilePdf } from './entityProfilePrint.js';
 import { AppMainPane } from './AppMainPane.jsx';
 import { AppModalLayer } from './AppModalLayer.jsx';
 
@@ -1293,76 +1295,21 @@ export default function App() {
     setTimeout(() => { setEditingMilestoneData(null); setIsMilestoneModalOpen(true); }, 100);
   }, [setCollectionSubTab, setEditingMilestoneData, setIsMilestoneModalOpen, setSelectedEntityId]);
 
-  const handleExportEntityPDF = (entity, tabConfig) => {
+  const handleExportEntityPDF = useCallback((entity, tabConfig) => {
     if (!entity) return;
     const fields =
       tabConfig && activeTabLon
         ? resolveFieldsTemplate(tabConfig, activeTabLon, tabConfig._parentLabel || '')
         : tabConfig?.fieldsTemplate || DEFAULT_ENTITY_FIELDS;
-    const escHtml = (str) => String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-    const getVal = (fid) => {
-      if (entity.dynamicData?.[fid]) return entity.dynamicData[fid];
-      if (fid === 'f_status') return entity.status || '';
-      if (fid === 'f_title') return entity.title || '';
-      if (fid === 'f_desc') return entity.description || '';
-      return '';
-    };
-    const fieldsHTML = fields.map(f => {
-      const val = getVal(f.id);
-      if (!val) return '';
-      return '<div class="field-row"><div class="field-label">' + escHtml(f.label) + '</div><div class="field-value">' + escHtml(val) + '</div></div>';
-    }).filter(Boolean).join('');
 
-    const milestonesHTML = (entity.milestones || []).sort((a,b) => a.chapter - b.chapter).map(ms =>
-      '<div class="milestone"><div class="ms-chapter">Chương ' + escHtml(ms.chapter) + '</div><div class="ms-event">' + escHtml(ms.event || '') + '</div></div>'
-    ).join('');
-
-    const infoHTML = escHtml(entity.info || '').replace(/\n/g, '<br/>');
-    const novelTitle = activeNovelData?.title || '';
-    const tabLabel = currentTabConfig?.label || '';
-    const firstFieldVal = fields[0] ? getVal(fields[0].id) : '';
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) { showToast('Trình duyệt chặn popup. Vui lòng cho phép popup!', 'warning'); return; }
-
-    const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Hồ Sơ: ' + escHtml(entity.name || '') + '</title>'
-      + '<style>'
-      + '@import url(\'https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400&family=Playfair+Display:wght@700;800&display=swap\');'
-      + '* { box-sizing: border-box; margin: 0; padding: 0; }'
-      + 'body { font-family: Lora, serif; background: #fff; color: #1e293b; padding: 40px; max-width: 800px; margin: 0 auto; }'
-      + '.header { border-bottom: 3px solid #b45309; padding-bottom: 20px; margin-bottom: 28px; }'
-      + '.novel-name { font-size: 11px; text-transform: uppercase; letter-spacing: .2em; color: #92400e; font-weight: bold; margin-bottom: 6px; }'
-      + '.entity-name { font-family: Playfair Display, serif; font-size: 36px; font-weight: 800; color: #0f172a; line-height: 1.1; }'
-      + '.section { margin-bottom: 28px; }'
-      + '.section-title { font-family: Playfair Display, serif; font-size: 14px; font-weight: 700; color: #b45309; text-transform: uppercase; letter-spacing: .15em; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid #fde68a; }'
-      + '.field-row { display: flex; margin-bottom: 10px; gap: 12px; }'
-      + '.field-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .1em; min-width: 160px; padding-top: 2px; }'
-      + '.field-value { font-size: 14px; color: #1e293b; flex: 1; line-height: 1.6; }'
-      + '.info-text { font-size: 14px; line-height: 1.8; color: #334155; }'
-      + '.milestone { padding: 12px 16px; border-left: 3px solid #fbbf24; margin-bottom: 10px; background: #fffbeb; border-radius: 0 6px 6px 0; }'
-      + '.ms-chapter { font-size: 11px; font-weight: 700; color: #92400e; text-transform: uppercase; margin-bottom: 4px; }'
-      + '.ms-event { font-size: 13px; color: #374151; line-height: 1.6; }'
-      + '.no-print { background:#1e293b; color:#f8fafc; padding:12px 20px; margin:-40px -40px 30px; display:flex; justify-content:space-between; align-items:center; }'
-      + '.print-btn { background:#b45309;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-weight:bold; }'
-      + '.footer { margin-top:40px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8;text-align:center; }'
-      + '@media print { .no-print { display:none; } body { padding:20px; } }'
-      + '</style></head><body>'
-      + '<div class="no-print"><span>Xem trước — Nhấn In để lưu PDF</span>'
-      + '<button class="print-btn" onclick="window.print()">In / Lưu PDF</button></div>'
-      + '<div class="header">'
-      + '<div class="novel-name">' + escHtml(novelTitle) + (tabLabel ? ' · ' + escHtml(tabLabel) : '') + '</div>'
-      + '<div class="entity-name">' + escHtml(entity.name || 'Vô Danh') + '</div>'
-      + (firstFieldVal ? '<div style="color:#64748b;font-size:12px;margin-top:6px;text-transform:uppercase;letter-spacing:.1em">' + escHtml(firstFieldVal) + '</div>' : '')
-      + '</div>'
-      + (fieldsHTML ? '<div class="section"><div class="section-title">Căn Cơ & Thuộc Tính</div>' + fieldsHTML + '</div>' : '')
-      + (infoHTML ? '<div class="section"><div class="section-title">Ghi Chép Chi Tiết</div><div class="info-text">' + infoHTML + '</div></div>' : '')
-      + (milestonesHTML ? '<div class="section"><div class="section-title">Dòng Thời Gian (' + (entity.milestones||[]).length + ' mốc)</div>' + milestonesHTML + '</div>' : '')
-      + '<div class="footer">Xuất từ Tàng Thư Các · ' + new Date().toLocaleDateString('vi-VN') + '</div>'
-      + '</body></html>';
-
-    printWindow.document.write(html);
-    printWindow.document.close();
-  };
+    exportEntityProfilePdf({
+      entity,
+      fields,
+      novelTitle: activeNovelData?.title || '',
+      tabLabel: currentTabConfig?.label || '',
+      onPopupBlocked: () => showToast('Trình duyệt chặn popup. Vui lòng cho phép popup!', 'warning'),
+    });
+  }, [activeNovelData, activeTabLon, currentTabConfig, showToast]);
 
   const getFieldValue = (fieldId, ent) => {
      if (!ent) return '';

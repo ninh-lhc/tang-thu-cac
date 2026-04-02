@@ -8,35 +8,26 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { INITIAL_TABS_CONFIG, MOCK_METADATA } from './MasterEngines.js';
 import { migrateIndex } from './dataMigration.js';
 import { safeString } from './MasterUtils.jsx';
+import {
+  readLocalBooleanSafe,
+  readLocalJsonWithBackup,
+  readLocalStringSafe,
+  writeLocalJsonWithBackup,
+  writeLocalStringSafe,
+} from './storageSafe.js';
 import { useToast } from './useToast.js';
 
 function readLocalString(key, fallback = '') {
-  try {
-    const value = localStorage.getItem(key);
-    return value ?? fallback;
-  } catch {
-    return fallback;
-  }
+  return readLocalStringSafe(key, fallback);
 }
 
 function readLocalBoolean(key, fallback = false) {
-  try {
-    return localStorage.getItem(key) === '1';
-  } catch {
-    return fallback;
-  }
+  return readLocalBooleanSafe(key, fallback);
 }
 
 function readGeminiApiKeys() {
-  try {
-    const stored = localStorage.getItem('tangthu_apikeys');
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {
-    void 0;
-  }
+  const { value: parsed } = readLocalJsonWithBackup('tangthu_apikeys', 'tangthu_apikeys_backup', []);
+  if (Array.isArray(parsed) && parsed.length > 0) return parsed;
 
   const legacyKey = readLocalString('tangthu_apikey', '');
   return legacyKey ? [legacyKey] : [];
@@ -53,10 +44,9 @@ function isEmbeddedPreview() {
 export function useAppShellState() {
   const embeddedPreviewBootstrap = useMemo(() => {
     if (!isEmbeddedPreview()) return null;
-    const localIndex = readLocalString('tangthu_index', '');
-    if (!localIndex) return null;
+    const { value: parsed } = readLocalJsonWithBackup('tangthu_index', 'tangthu_index_backup', null);
+    if (!parsed) return null;
     try {
-      const parsed = JSON.parse(localIndex);
       return migrateIndex(parsed);
     } catch {
       return null;
@@ -155,8 +145,8 @@ export function useAppShellState() {
   const handleSaveApiKeys = useCallback((keys) => {
     const filtered = keys.map((k) => k.trim()).filter(Boolean);
     setGeminiApiKeys(filtered);
-    localStorage.setItem('tangthu_apikeys', JSON.stringify(filtered));
-    if (filtered.length > 0) localStorage.setItem('tangthu_apikey', filtered[0]);
+    writeLocalJsonWithBackup('tangthu_apikeys', 'tangthu_apikeys_backup', filtered);
+    if (filtered.length > 0) writeLocalStringSafe('tangthu_apikey', filtered[0]);
   }, []);
   const [aiMode, setAiMode] = useState(() => {
     const saved = readLocalString('tangthu_ai_mode', 'standard');
@@ -199,35 +189,19 @@ export function useAppShellState() {
   ]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('tangthu_wiki_exact', wikiExactMatchOnly ? '1' : '0');
-    } catch {
-      void 0;
-    }
+    writeLocalStringSafe('tangthu_wiki_exact', wikiExactMatchOnly ? '1' : '0');
   }, [wikiExactMatchOnly]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('tangthu_ai_mode', aiMode);
-    } catch {
-      void 0;
-    }
+    writeLocalStringSafe('tangthu_ai_mode', aiMode);
   }, [aiMode]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('tangthu_perf_mode', performanceMode ? '1' : '0');
-    } catch {
-      void 0;
-    }
+    writeLocalStringSafe('tangthu_perf_mode', performanceMode ? '1' : '0');
   }, [performanceMode]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('tangthu_autolink_toast', autoLinkToastEnabled ? '1' : '0');
-    } catch {
-      void 0;
-    }
+    writeLocalStringSafe('tangthu_autolink_toast', autoLinkToastEnabled ? '1' : '0');
   }, [autoLinkToastEnabled]);
 
   useEffect(() => {

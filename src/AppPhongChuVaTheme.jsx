@@ -25,7 +25,7 @@
 import React from 'react';
 
 const APP_GLOBAL_CSS = `
-        @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400&family=Playfair+Display:wght@700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400&family=Playfair+Display:wght@700&family=Noto+Sans:wght@400;500;600;700&family=Noto+Serif:ital,wght@0,400;0,700;1,400;1,700&display=swap');
 
         /* ============================================================
            DESIGN TOKENS — nguồn duy nhất cho màu/khoảng/bo góc/shadow
@@ -60,8 +60,8 @@ const APP_GLOBAL_CSS = `
           outline: 2px solid rgba(217, 119, 6, 0.55);
           outline-offset: 2px;
         }
-        .font-serif { font-family: 'Lora', serif; }
-        .font-heading { font-family: 'Playfair Display', serif; }
+        .font-serif { font-family: 'Lora', 'Noto Serif', Georgia, 'Times New Roman', serif; }
+        .font-heading { font-family: 'Playfair Display', 'Noto Serif', Georgia, serif; }
         .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.3); border-radius: 10px; }

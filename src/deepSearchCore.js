@@ -1,13 +1,41 @@
-/** Logic tìm kiếm thư viện — dùng chung cho Worker và fallback main thread */
+/**
+ * Logic tìm kiếm thư viện dùng chung cho Worker và fallback main thread.
+ * Gom chuẩn hóa query và metadata hit vào một chỗ để giảm lệch behavior.
+ * Giữ file này thuần để test nhanh và tái sử dụng ở nhiều luồng.
+ */
+function normalizeSearchQuery(query) {
+  return String(query || '')
+    .trim()
+    .toLowerCase();
+}
+
+function appendMetadataHits(novelsMetadata, q, res) {
+  (novelsMetadata || []).forEach((novel) => {
+    if (
+      novel.title?.toLowerCase().includes(q) ||
+      novel.author?.toLowerCase().includes(q) ||
+      novel.review?.toLowerCase().includes(q) ||
+      novel.tags?.some((tag) => tag.toLowerCase().includes(q))
+    ) {
+      res.push({
+        novelId: novel.id,
+        novelTitle: novel.title,
+        location: 'Thông tin truyện',
+        snippet: novel.review || novel.title,
+      });
+    }
+  });
+}
 
 export function searchNovelData(novel, q, res) {
-  if (!novel?.data) return;
+  const normalizedQuery = normalizeSearchQuery(q);
+  if (!normalizedQuery || !novel?.data) return;
   Object.keys(novel.data).forEach((lonId) => {
     const lonData = novel.data[lonId];
     if (typeof lonData !== 'object' || !lonData) return;
     Object.keys(lonData).forEach((nhoId) => {
       const nhoData = lonData[nhoId];
-      if (typeof nhoData === 'string' && nhoData.toLowerCase().includes(q)) {
+      if (typeof nhoData === 'string' && nhoData.toLowerCase().includes(normalizedQuery)) {
         res.push({
           novelId: novel.id,
           tabLonId: lonId,
@@ -17,7 +45,7 @@ export function searchNovelData(novel, q, res) {
           snippet: nhoData,
         });
       } else if (nhoData && typeof nhoData === 'object') {
-        if (nhoData.overview?.toLowerCase().includes(q))
+        if (nhoData.overview?.toLowerCase().includes(normalizedQuery))
           res.push({
             novelId: novel.id,
             tabLonId: lonId,
@@ -26,14 +54,14 @@ export function searchNovelData(novel, q, res) {
             location: 'Tổng quan mục',
             snippet: nhoData.overview,
           });
-        if (nhoData.entities) {
+        if (Array.isArray(nhoData.entities)) {
           nhoData.entities.forEach((ent) => {
             const hit =
-              ent.name?.toLowerCase().includes(q) ||
-              ent.info?.toLowerCase().includes(q) ||
+              ent.name?.toLowerCase().includes(normalizedQuery) ||
+              ent.info?.toLowerCase().includes(normalizedQuery) ||
               (ent.dynamicData &&
                 Object.values(ent.dynamicData).some(
-                  (v) => typeof v === 'string' && v.toLowerCase().includes(q)
+                  (v) => typeof v === 'string' && v.toLowerCase().includes(normalizedQuery)
                 ));
             if (hit)
               res.push({
@@ -46,7 +74,7 @@ export function searchNovelData(novel, q, res) {
                 snippet: ent.info || ent.name,
               });
             ent.milestones?.forEach((ms) => {
-              if (ms.event?.toLowerCase().includes(q))
+              if (ms.event?.toLowerCase().includes(normalizedQuery))
                 res.push({
                   novelId: novel.id,
                   tabLonId: lonId,
@@ -64,7 +92,7 @@ export function searchNovelData(novel, q, res) {
             key !== 'overview' &&
             key !== 'entities' &&
             typeof nhoData[key] === 'string' &&
-            nhoData[key].toLowerCase().includes(q)
+            nhoData[key].toLowerCase().includes(normalizedQuery)
           )
             res.push({
               novelId: novel.id,
@@ -118,7 +146,8 @@ export function buildNovelSearchIndex(novel) {
           },
         });
       }
-      (nhoData.entities || []).forEach((ent) => {
+      const entities = Array.isArray(nhoData.entities) ? nhoData.entities : [];
+      entities.forEach((ent) => {
         const chunks = [ent.name, ent.info];
         if (ent.dynamicData && typeof ent.dynamicData === 'object') {
           Object.values(ent.dynamicData).forEach((v) => {
@@ -177,34 +206,20 @@ export function buildNovelSearchIndex(novel) {
 
 /** Tìm trong chỉ mục đã dựng sẵn của một truyện. */
 export function searchNovelIndex(rows, q, res) {
-  if (!Array.isArray(rows) || !q) return;
+  const normalizedQuery = normalizeSearchQuery(q);
+  if (!Array.isArray(rows) || !normalizedQuery) return;
   for (const row of rows) {
-    if (row?.haystack?.includes(q)) {
+    if (row?.haystack?.includes(normalizedQuery)) {
       res.push(row.result);
     }
   }
 }
 
 export function runDeepSearch({ novelsMetadata, allNovelsCache, activeNovelData, query }) {
-  const q = String(query || '')
-    .trim()
-    .toLowerCase();
+  const q = normalizeSearchQuery(query);
   if (!q) return [];
   const res = [];
-  (novelsMetadata || []).forEach((novel) => {
-    if (
-      novel.title?.toLowerCase().includes(q) ||
-      novel.author?.toLowerCase().includes(q) ||
-      novel.review?.toLowerCase().includes(q) ||
-      novel.tags?.some((t) => t.toLowerCase().includes(q))
-    )
-      res.push({
-        novelId: novel.id,
-        novelTitle: novel.title,
-        location: 'Thông tin truyện',
-        snippet: novel.review || novel.title,
-      });
-  });
+  appendMetadataHits(novelsMetadata, q, res);
   const searchedIds = new Set();
   Object.values(allNovelsCache || {}).forEach((nd) => {
     searchedIds.add(nd.id);
@@ -265,25 +280,9 @@ export function dedupeDeepSearchResults(res) {
 
 /** Kết quả trùng metadata (tiêu đề/tác giả/...) trước khi đọc từng file */
 export function metadataSearchHits(novelsMetadata, q) {
-  const ql = String(q || '')
-    .trim()
-    .toLowerCase();
+  const ql = normalizeSearchQuery(q);
   if (!ql) return [];
   const res = [];
-  (novelsMetadata || []).forEach((novel) => {
-    if (
-      novel.title?.toLowerCase().includes(ql) ||
-      novel.author?.toLowerCase().includes(ql) ||
-      novel.review?.toLowerCase().includes(ql) ||
-      novel.tags?.some((t) => t.toLowerCase().includes(ql))
-    ) {
-      res.push({
-        novelId: novel.id,
-        novelTitle: novel.title,
-        location: 'Thông tin truyện',
-        snippet: novel.review || novel.title,
-      });
-    }
-  });
+  appendMetadataHits(novelsMetadata, ql, res);
   return res;
 }

@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build --configLoader native",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "vitest run --configLoader native --pool threads --poolOptions.threads.singleThread",
     "preview": "vite preview"
   },
   "dependencies": {

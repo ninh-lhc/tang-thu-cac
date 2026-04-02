@@ -6,6 +6,11 @@ import { useCallback, useEffect, useRef } from 'react';
 import { migrateNovel } from './dataMigration.js';
 import { countEntitiesInNovel } from './deepSearchCore.js';
 import {
+  isQuotaExceededError,
+  readLocalJsonWithBackup,
+  writeLocalJsonWithBackup,
+} from './storageSafe.js';
+import {
   NOVEL_STORAGE_SHARDED,
   buildDiskManifest,
   listShardKeysFromData,
@@ -23,6 +28,18 @@ function restoreShardedLayoutIfNeeded(parsedBeforeMigrate, migrated) {
   return migrated;
 }
 
+const INDEX_STORAGE_KEY = 'tangthu_index';
+const INDEX_STORAGE_BACKUP_KEY = 'tangthu_index_backup';
+const NOVEL_STORAGE_PREFIX = 'tangthu_novel_';
+
+function novelStorageKey(id) {
+  return `${NOVEL_STORAGE_PREFIX}${id}`;
+}
+
+function novelStorageBackupKey(id) {
+  return `${NOVEL_STORAGE_PREFIX}${id}_backup`;
+}
+
 export function useAppPersistence({
   novelStatsByIdRef,
   novelsMetadataRef,
@@ -33,6 +50,7 @@ export function useAppPersistence({
 }) {
   const persistIndexStatsTimerRef = useRef(null);
   const syncNovelRef = useRef(null);
+  const recoveredNovelToastIdsRef = useRef(new Set());
 
   useEffect(
     () => () => {
@@ -49,13 +67,11 @@ export function useAppPersistence({
           : { ...novelStatsByIdRef.current };
       const payload = { metadata: newMetadata, config: newConfig, novelStats };
       if (!dir || dir === 'LOCAL_STORAGE') {
-        try {
-          localStorage.setItem('tangthu_index', JSON.stringify(payload));
-        } catch (e) {
-          if (e.name === 'QuotaExceededError' || e.message.includes('quota'))
-            setTimeout(() => {
-              showToast('CẢNH BÁO: Bộ nhớ đệm đã đầy!', 'warning');
-            }, 500);
+        const writeRes = writeLocalJsonWithBackup(INDEX_STORAGE_KEY, INDEX_STORAGE_BACKUP_KEY, payload);
+        if (!writeRes.ok && isQuotaExceededError(writeRes.error)) {
+          setTimeout(() => {
+            showToast('CẢNH BÁO: Bộ nhớ đệm đã đầy!', 'warning');
+          }, 500);
         }
         return;
       }
@@ -106,14 +122,16 @@ export function useAppPersistence({
   const syncNovel = useCallback(
     async (novelData, rootDir) => {
       if (!rootDir || rootDir === 'LOCAL_STORAGE') {
-        try {
-          localStorage.setItem(`tangthu_novel_${novelData.id}`, JSON.stringify(novelData));
-          bumpNovelStatsAfterWrite(novelData);
-        } catch (e) {
-          if (e.name === 'QuotaExceededError' || e.message.includes('quota'))
-            setTimeout(() => {
-              showToast('CẢNH BÁO: Tràn bộ nhớ! Hãy dùng Thư Mục Máy Tính!', 'warning');
-            }, 500);
+        const writeRes = writeLocalJsonWithBackup(
+          novelStorageKey(novelData.id),
+          novelStorageBackupKey(novelData.id),
+          novelData
+        );
+        if (writeRes.ok) bumpNovelStatsAfterWrite(novelData);
+        if (!writeRes.ok && isQuotaExceededError(writeRes.error)) {
+          setTimeout(() => {
+            showToast('CẢNH BÁO: Tràn bộ nhớ! Hãy dùng Thư Mục Máy Tính!', 'warning');
+          }, 500);
         }
         return;
       }
@@ -253,16 +271,24 @@ export function useAppPersistence({
     };
 
     if (!rootDir || rootDir === 'LOCAL_STORAGE') {
-      const data = localStorage.getItem(`tangthu_novel_${meta.id}`);
-      if (!data) return null;
-      try {
-        const parsed = JSON.parse(data);
-        const novel = finalizeParsed(parsed, `LS:${meta.id}`);
-        return novel ? { novel, novelDir: null } : null;
-      } catch (e) {
-        console.warn(`[TTC] Dữ liệu bị hỏng cho truyện ${meta.id}, bỏ qua.`, e);
-        return null;
+      const { value: parsed, source } = readLocalJsonWithBackup(
+        novelStorageKey(meta.id),
+        novelStorageBackupKey(meta.id),
+        null
+      );
+      if (!parsed) return null;
+      const novel = finalizeParsed(parsed, `LS:${meta.id}:${source}`);
+      if (!novel) return null;
+      if (source === 'backup') {
+        const id = String(meta?.id || '');
+        if (id && !recoveredNovelToastIdsRef.current.has(id)) {
+          recoveredNovelToastIdsRef.current.add(id);
+          setTimeout(() => {
+            showToast('Đã khôi phục dữ liệu truyện từ bản dự phòng local.', 'warning');
+          }, 0);
+        }
       }
+      return { novel, novelDir: null };
     }
 
     const tryDirWithBase = async (novelDir, manifestBaseName) => {
@@ -315,7 +341,7 @@ export function useAppPersistence({
       console.warn(`[TTC] Lỗi đọc novels/${meta.id}.json`, e);
       return null;
     }
-  }, []);
+  }, [showToast]);
 
   return {
     syncIndex,
