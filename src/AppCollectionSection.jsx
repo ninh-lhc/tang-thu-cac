@@ -127,6 +127,10 @@ export function AppCollectionSection({
   const [entitySearchDraft, setEntitySearchDraft] = React.useState(entitySearch || '');
   const [entityFilterValueDraft, setEntityFilterValueDraft] = React.useState(entityFilterValue || '');
   const [isCollectionSwitching, setIsCollectionSwitching] = React.useState(false);
+  const scopedEntityImageFileStemParts =
+    collectionSubTab === 'detail' && selectedEntity
+      ? [currentTabConfig?.label, selectedEntity?.name]
+      : [];
   React.useEffect(() => { setEntitySearchDraft(entitySearch || ''); }, [entitySearch]);
   React.useEffect(() => { setEntityFilterValueDraft(entityFilterValue || ''); }, [entityFilterValue]);
   React.useEffect(() => {
@@ -413,7 +417,10 @@ export function AppCollectionSection({
               <div
                 className="flex flex-col w-full animate-fade-in pb-10"
                 onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => handleImageDrop(e, 'entity-info-editor')}
+                onDrop={(e) => handleImageDrop(e, 'entity-info-editor', {
+                  filePrefix: 'entity-info',
+                  fileStemParts: scopedEntityImageFileStemParts,
+                })}
               >
                 <div className="flex justify-between items-start mb-8 pb-8 border-b border-slate-800/80">
                   <div className="flex items-center gap-6">
@@ -498,6 +505,7 @@ export function AppCollectionSection({
                   setImageForm={setImageForm}
                   setIsInsertImageModalOpen={setIsInsertImageModalOpen}
                   handlePickLocalImage={handlePickLocalImage}
+                  imageFileStemParts={scopedEntityImageFileStemParts}
                   debouncedMarkdownPreview={debouncedMarkdownPreview}
                   currentContextDirHandle={currentContextDirHandle}
                   entityMap={entityMap}

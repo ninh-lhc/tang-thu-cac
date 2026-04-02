@@ -29,6 +29,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   setImageForm,
   setIsInsertImageModalOpen,
   handlePickLocalImage,
+  imageFileStemParts,
   handleUpdateEntityInfo,
   setIsEntityEditing,
   debouncedMarkdownPreview,
@@ -115,6 +116,16 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
 
   const undoDisabled = notesEdit.hIndex <= 0;
   const redoDisabled = notesEdit.hIndex >= notesEdit.history.length - 1;
+  const handlePickScopedLocalImage = useCallback(
+    (setAvatarCallback, editorId = null) => {
+      const fileNameOptions =
+        Array.isArray(imageFileStemParts) && imageFileStemParts.some((part) => String(part || '').trim())
+          ? { filePrefix: 'img', fileStemParts: imageFileStemParts }
+          : 'img';
+      return handlePickLocalImage(setAvatarCallback, editorId, fileNameOptions);
+    },
+    [handlePickLocalImage, imageFileStemParts]
+  );
 
   return (
     <>
@@ -186,7 +197,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               setImageForm({ url: '', alt: '', editorId: eid });
               setIsInsertImageModalOpen(true);
             }}
-            onPickLocalImage={handlePickLocalImage}
+            onPickLocalImage={handlePickScopedLocalImage}
             onUndo={undo}
             onRedo={redo}
             undoDisabled={undoDisabled}
@@ -263,6 +274,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   setImageForm,
   setIsInsertImageModalOpen,
   handlePickLocalImage,
+  imageFileStemParts,
   debouncedMarkdownPreview,
   currentContextDirHandle,
   entityMap,
@@ -326,6 +338,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             setImageForm={setImageForm}
             setIsInsertImageModalOpen={setIsInsertImageModalOpen}
             handlePickLocalImage={handlePickLocalImage}
+            imageFileStemParts={imageFileStemParts}
             handleUpdateEntityInfo={handleUpdateEntityInfo}
             setIsEntityEditing={setIsEntityEditing}
             debouncedMarkdownPreview={debouncedMarkdownPreview}

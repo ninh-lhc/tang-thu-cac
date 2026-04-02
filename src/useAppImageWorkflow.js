@@ -7,6 +7,10 @@
 
 import { useCallback, useState } from 'react';
 import { handleToolbarClick } from './MasterUtils.jsx';
+import {
+  buildScopedImageFileName,
+  listDirectoryFileNames,
+} from './lib/imageFilename.js';
 
 const DEFAULT_IMAGE_FORM = { url: '', alt: '', editorId: 'standard-editor' };
 
@@ -27,6 +31,24 @@ async function saveImageToImagesDir(baseHandle, file, fileName) {
   await writable.close();
 }
 
+async function buildImageFileName(baseHandle, file, options = {}) {
+  const fileStemParts = Array.isArray(options.fileStemParts) ? options.fileStemParts : [];
+  if (fileStemParts.some((part) => String(part || '').trim())) {
+    const imagesDir = await baseHandle.getDirectoryHandle('images', { create: true });
+    const existingFileNames = await listDirectoryFileNames(imagesDir);
+    const scopedFileName = buildScopedImageFileName({
+      stemParts: fileStemParts,
+      originalFileName: file.name,
+      existingFileNames,
+    });
+    if (scopedFileName) return scopedFileName;
+  }
+
+  const filePrefix = String(options.filePrefix || 'img').trim() || 'img';
+  const ext = file.name.split('.').pop().replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
+  return `${filePrefix}-${Date.now()}.${ext}`;
+}
+
 function insertImageMarkdown({ handleToolbarClick, editorId, altText, imageUrl }) {
   handleToolbarClick(`\n\n![${altText}](${imageUrl})\n\n`, '', editorId);
 }
@@ -42,7 +64,7 @@ export function useAppImageWorkflow({
   const [isInsertImageModalOpen, setIsInsertImageModalOpen] = useState(false);
   const [imageForm, setImageForm] = useState(DEFAULT_IMAGE_FORM);
 
-  const handleImageDrop = useCallback(async (event, editorId = 'standard-editor') => {
+  const handleImageDrop = useCallback(async (event, editorId = 'standard-editor', fileNameOptions = null) => {
     event.preventDefault();
     if (!isEditingMode && !isEntityEditing) return;
     if (!dirHandle) {
@@ -67,7 +89,7 @@ export function useAppImageWorkflow({
         return;
       }
 
-      const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const fileName = await buildImageFileName(currentContextDirHandle, file, fileNameOptions || {});
       await saveImageToImagesDir(currentContextDirHandle, file, fileName);
       insertImageMarkdown({
         handleToolbarClick,
@@ -154,7 +176,7 @@ export function useAppImageWorkflow({
     }
   }, [dirHandle, showToast]);
 
-  const handlePickLocalImage = useCallback(async (setAvatarCallback, editorId = null, filePrefix = 'img') => {
+  const handlePickLocalImage = useCallback(async (setAvatarCallback, editorId = null, filePrefixOrOptions = 'img') => {
     try {
       const [fileHandle] = await window.showOpenFilePicker({
         types: [
@@ -185,8 +207,11 @@ export function useAppImageWorkflow({
           return;
         }
 
-        const ext = file.name.split('.').pop().replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
-        const fileName = `${filePrefix}-${Date.now()}.${ext}`;
+        const fileNameOptions =
+          typeof filePrefixOrOptions === 'string'
+            ? { filePrefix: filePrefixOrOptions }
+            : (filePrefixOrOptions || {});
+        const fileName = await buildImageFileName(currentContextDirHandle, file, fileNameOptions);
         await saveImageToImagesDir(currentContextDirHandle, file, fileName);
 
         if (editorId) {

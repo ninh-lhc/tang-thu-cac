@@ -57,6 +57,9 @@ export function useAppEntityMilestoneActions({
     setIsEntityModalOpen(true);
   }, [selectedEntity, setEditingEntityData, setIsEntityModalOpen]);
 
+  const entityImageScopeLabel = safeString(currentTabConfig?.label);
+  const entityImageName = safeString(selectedEntity?.name);
+
   const handleSaveEntity = useCallback(
     (formData, dynamicData, opts = null) => {
       const copyRawToInfo = Boolean(opts && opts.copyRawToInfo);
@@ -270,7 +273,10 @@ export function useAppEntityMilestoneActions({
         });
       },
       null,
-      'gallery'
+      {
+        filePrefix: 'gallery',
+        fileStemParts: [entityImageScopeLabel, entityImageName],
+      }
     );
   }, [
     selectedEntityId,
@@ -279,6 +285,8 @@ export function useAppEntityMilestoneActions({
     updateActiveNovelData,
     activeTabLon,
     activeTabNho,
+    entityImageScopeLabel,
+    entityImageName,
   ]);
 
   const handleRemoveImageFromSelectedEntity = useCallback(

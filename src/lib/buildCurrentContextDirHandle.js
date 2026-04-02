@@ -23,6 +23,17 @@ export function buildCurrentContextDirHandle(dirHandle, activeNovelDirHandle) {
         }
 
         if (!novelImagesDir && !rootImagesDir) throw new Error('Images dir not found');
+        const resolveEntries = async function* () {
+          const seen = new Set();
+          for (const candidate of [novelImagesDir, rootImagesDir]) {
+            if (!candidate || typeof candidate.entries !== 'function') continue;
+            for await (const [entryName, entryHandle] of candidate.entries()) {
+              if (seen.has(entryName)) continue;
+              seen.add(entryName);
+              yield [entryName, entryHandle];
+            }
+          }
+        };
 
         return {
           getFileHandle: async (filename, fileOptions) => {
@@ -38,6 +49,7 @@ export function buildCurrentContextDirHandle(dirHandle, activeNovelDirHandle) {
               throw e;
             }
           },
+          entries: resolveEntries,
         };
       }
       return activeNovelDirHandle.getDirectoryHandle(name, options);
