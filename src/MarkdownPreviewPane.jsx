@@ -8,11 +8,12 @@ export const MarkdownPreviewPane = memo(function MarkdownPreviewPane({
   entityMap,
   linkRegex,
   onNavigate,
+  selfEntityId = null,
   className = '',
 }) {
   return (
     <div className={className}>
-      {renderMarkdown(text || '', dirHandle, entityMap, linkRegex, onNavigate)}
+      {renderMarkdown(text || '', dirHandle, entityMap, linkRegex, onNavigate, selfEntityId)}
     </div>
   );
 });

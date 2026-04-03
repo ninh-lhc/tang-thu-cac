@@ -40,6 +40,14 @@ function novelStorageBackupKey(id) {
   return `${NOVEL_STORAGE_PREFIX}${id}_backup`;
 }
 
+function persistIndexShadow(payload) {
+  try {
+    localStorage.setItem('tangthu_index_shadow', JSON.stringify(payload));
+  } catch {
+    /* best-effort shadow copy */
+  }
+}
+
 export function useAppPersistence({
   novelStatsByIdRef,
   novelsMetadataRef,
@@ -73,6 +81,7 @@ export function useAppPersistence({
             showToast('CẢNH BÁO: Bộ nhớ đệm đã đầy!', 'warning');
           }, 500);
         }
+        persistIndexShadow(payload);
         return;
       }
       try {
@@ -93,6 +102,8 @@ export function useAppPersistence({
         setTimeout(() => {
           showToast('Lỗi đồng bộ danh mục!', 'error');
         }, 0);
+      } finally {
+        persistIndexShadow(payload);
       }
     },
     [novelStatsByIdRef, showToast]

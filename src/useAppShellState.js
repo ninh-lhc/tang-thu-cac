@@ -15,6 +15,11 @@ import {
   writeLocalJsonWithBackup,
   writeLocalStringSafe,
 } from './storageSafe.js';
+import {
+  clearPersistedDirectoryHandle,
+  isPersistedDirectoryHandleUsable,
+  loadPersistedDirectoryHandle,
+} from './lib/directoryHandleStore.js';
 import { useToast } from './useToast.js';
 
 function readLocalString(key, fallback = '') {
@@ -171,6 +176,7 @@ export function useAppShellState() {
   const lazyTabLoadInFlightRef = useRef(new Set());
   const lazyFullHydrateInFlightRef = useRef(new Set());
   const confirmDeleteEntityRef = useRef(null);
+  const directoryRestoreAttemptedRef = useRef(false);
 
   useEffect(() => {
     commandPaletteOpenRef.current = isCommandPaletteOpen;
@@ -186,6 +192,106 @@ export function useAppShellState() {
     isCommandPaletteOpen,
     novelStatsById,
     novelsMetadata,
+  ]);
+
+  useEffect(() => {
+    if (directoryRestoreAttemptedRef.current) return;
+    if (isEmbeddedPreview()) {
+      directoryRestoreAttemptedRef.current = true;
+      return;
+    }
+    if (dirHandle) {
+      directoryRestoreAttemptedRef.current = true;
+      return;
+    }
+
+    directoryRestoreAttemptedRef.current = true;
+    let cancelled = false;
+
+    const applySnapshot = (snapshot) => {
+      if (!snapshot || typeof snapshot !== 'object') return false;
+      try {
+        const parsed = migrateIndex(snapshot);
+        const nextMetadata = Array.isArray(parsed.metadata) ? parsed.metadata : [];
+        const nextConfig = Array.isArray(parsed.config) && parsed.config.length > 0
+          ? parsed.config
+          : INITIAL_TABS_CONFIG;
+        const nextStats =
+          parsed.novelStats && typeof parsed.novelStats === 'object' ? parsed.novelStats : {};
+        setNovelsMetadata(nextMetadata);
+        setGlobalTabsConfig(nextConfig);
+        setNovelStatsById(nextStats);
+        setActiveNovelData(null);
+        setActiveNovelDirHandle(null);
+        novelsMetadataRef.current = nextMetadata;
+        globalTabsConfigRef.current = nextConfig;
+        novelStatsByIdRef.current = nextStats;
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const loadSnapshotFromHandle = async (handle) => {
+      for (const filename of ['index.json', 'index.backup.json']) {
+        try {
+          const fileHandle = await handle.getFileHandle(filename);
+          const file = await fileHandle.getFile();
+          const snapshot = JSON.parse(await file.text());
+          if (applySnapshot(snapshot)) return true;
+        } catch {
+          /* try next source */
+        }
+      }
+      return false;
+    };
+
+    const loadShadowSnapshot = () => {
+      try {
+        const raw = localStorage.getItem('tangthu_index_shadow');
+        if (!raw) return false;
+        return applySnapshot(JSON.parse(raw));
+      } catch {
+        return false;
+      }
+    };
+
+    const run = async () => {
+      const storedHandle = await loadPersistedDirectoryHandle();
+      if (cancelled) return;
+
+      if (storedHandle) {
+        const usable = await isPersistedDirectoryHandleUsable(storedHandle);
+        if (cancelled) return;
+        if (usable) {
+          setDirHandle(storedHandle);
+          const hydrated = await loadSnapshotFromHandle(storedHandle);
+          if (cancelled) return;
+          if (hydrated) return;
+        } else {
+          await clearPersistedDirectoryHandle();
+        }
+      }
+
+      if (!cancelled) {
+        loadShadowSnapshot();
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    dirHandle,
+    globalTabsConfigRef,
+    novelStatsByIdRef,
+    novelsMetadataRef,
+    setDirHandle,
+    setGlobalTabsConfig,
+    setNovelStatsById,
+    setNovelsMetadata,
   ]);
 
   useEffect(() => {

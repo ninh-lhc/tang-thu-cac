@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { FALLBACK_IMG } from './MasterEngines.js';
 import { splitTextByWikiMatcher } from './lib/wikiLinkMatcher.js';
-import { buildEntityCanonicalFingerprint, buildEntityNameFingerprint } from './lib/entityNameIdentity.js';
+import { buildEntityNameLookup, resolveEntityLookup } from './lib/entityWikiLookup.js';
 
 export const generateId = (prefix) => `${prefix}-${Math.random().toString(36).substring(2, 11)}`;
 
@@ -560,39 +560,18 @@ export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className, styl
   return <img src={src} alt={alt} className={imgClass} style={style} onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />;
 });
 
-export const buildEntityNameLookup = (entityMap) => {
-  const m = new Map();
-  if (!entityMap) return m;
-  const arr = Array.isArray(entityMap) ? entityMap : [];
-  for (const e of arr) {
-    if (!e?.name) continue;
-    const name = String(e.name);
-    const lower = name.toLowerCase();
-    m.set(lower, e);
-    const fp = buildEntityNameFingerprint(name);
-    if (fp && !m.has(`__fp:${fp}`)) m.set(`__fp:${fp}`, e);
-    const canonicalFp = buildEntityCanonicalFingerprint(name);
-    if (canonicalFp && !m.has(`__cfp:${canonicalFp}`)) m.set(`__cfp:${canonicalFp}`, e);
-  }
-  return m;
+const getWikiLinkClassName = (isSelfLink, variant = 'inline') => {
+  const colorClasses = isSelfLink
+    ? 'text-cyan-300 bg-cyan-900/25 hover:bg-cyan-600 hover:text-white hover:shadow-[0_0_15px_rgba(34,211,238,0.6)]'
+    : 'text-amber-400 bg-amber-900/20 hover:bg-amber-600 hover:text-white hover:shadow-[0_0_15px_rgba(217,119,6,0.6)]';
+  const sizeClasses = variant === 'plain'
+    ? 'gap-0.5 px-1 rounded'
+    : 'gap-1 px-1.5 py-0.5 rounded-md';
+  return `transition-all font-bold cursor-pointer inline-flex items-center ${sizeClasses} ${colorClasses}`;
 };
 
-const resolveEntityLookup = (lookup, rawName) => {
-  if (!lookup || !rawName) return null;
-  const lower = String(rawName).toLowerCase();
-  const exact = lookup.get(lower);
-  if (exact) return exact;
-  const fp = buildEntityNameFingerprint(rawName);
-  if (!fp) return null;
-  const byFp = lookup.get(`__fp:${fp}`);
-  if (byFp) return byFp;
-  const canonicalFp = buildEntityCanonicalFingerprint(rawName);
-  if (!canonicalFp) return null;
-  return lookup.get(`__cfp:${canonicalFp}`) || null;
-};
-
-export const processPlainTextWithLinks = (text, lookup, linkRegex, onNavigate) => {
-    if (!text || !lookup || lookup.size === 0 || !linkRegex) return text;
+export const processPlainTextWithLinks = (text, lookup, linkRegex, onNavigate, selfEntityId = null) => {
+    if (!text || !lookup || lookup.totalItems === 0 || !linkRegex) return text;
     const usingRegex = linkRegex instanceof RegExp;
     const parts = usingRegex ? text.split(linkRegex) : splitTextByWikiMatcher(text, linkRegex);
     if (parts.length === 1) return text;
@@ -601,10 +580,11 @@ export const processPlainTextWithLinks = (text, lookup, linkRegex, onNavigate) =
         const rawText = usingRegex ? part : part.text;
         const isMatch = usingRegex ? (i % 2 !== 0) : part.isMatch;
         if (!isMatch) return rawText;
-        const match = resolveEntityLookup(lookup, rawText);
+        const match = resolveEntityLookup(lookup, rawText, { selfEntityId });
         if (match) {
+            const isSelfLink = !!selfEntityId && match.dest?.entityId === selfEntityId;
             return (
-               <span key={i} onClick={(e) => { e.stopPropagation(); onNavigate(match.dest); }} className="text-amber-400 bg-amber-900/20 px-1 rounded hover:bg-amber-600 hover:text-white hover:shadow-[0_0_10px_rgba(217,119,6,0.5)] transition-all font-bold cursor-pointer inline-flex items-center gap-0.5">
+               <span key={i} onClick={(e) => { e.stopPropagation(); onNavigate(match.dest); }} className={getWikiLinkClassName(isSelfLink, 'plain')}>
                   <Link2 size={12}/>{rawText}
                </span>
             );
@@ -616,9 +596,9 @@ export const processPlainTextWithLinks = (text, lookup, linkRegex, onNavigate) =
 const INLINE_MARK_SPLIT =
   /(\*\*[\s\S]*?\*\*|`[^`\n]+`|~~[\s\S]*?~~|==[\s\S]*?==|<u>[\s\S]*?<\/u>|\*[^*\n]+?\*|!\[.*?\]\(.*?\)|\[\[.*?\]\])/g;
 
-export const processInline = (text, dirHandle, entityLookup, linkRegex, onNavigate) => {
+export const processInline = (text, dirHandle, entityLookup, linkRegex, onNavigate, selfEntityId = null) => {
   if (!text) return null;
-  const lookup = entityLookup instanceof Map ? entityLookup : buildEntityNameLookup(entityLookup);
+  const lookup = entityLookup?.__isEntityLookup ? entityLookup : buildEntityNameLookup(entityLookup);
   const parts = text.split(INLINE_MARK_SPLIT);
 
   return parts.map((part, i) => {
@@ -645,8 +625,9 @@ export const processInline = (text, dirHandle, entityLookup, linkRegex, onNaviga
       }
       if (part.startsWith('[[') && part.endsWith(']]')) {
         const innerText = safeString(part.slice(2, -2)).trim();
-        const match = resolveEntityLookup(lookup, innerText);
+        const match = resolveEntityLookup(lookup, innerText, { selfEntityId });
         if (match) {
+          const isSelfLink = !!selfEntityId && match.dest?.entityId === selfEntityId;
           return (
             <span
               key={i}
@@ -654,7 +635,7 @@ export const processInline = (text, dirHandle, entityLookup, linkRegex, onNaviga
                 e.stopPropagation();
                 onNavigate(match.dest);
               }}
-              className="text-amber-400 bg-amber-900/20 px-1.5 py-0.5 rounded-md hover:bg-amber-600 hover:text-white hover:shadow-[0_0_15px_rgba(217,119,6,0.6)] transition-all font-bold cursor-pointer inline-flex items-center gap-1"
+              className={getWikiLinkClassName(isSelfLink)}
               title={`Mở hồ sơ: ${innerText}`}
             >
               <Link2 size={12} />
@@ -680,28 +661,28 @@ export const processInline = (text, dirHandle, entityLookup, linkRegex, onNaviga
       if (part.startsWith('**') && part.endsWith('**')) {
         return (
           <strong key={i} className="text-amber-400">
-            {processPlainTextWithLinks(safeString(part.slice(2, -2)), lookup, linkRegex, onNavigate)}
+            {processPlainTextWithLinks(safeString(part.slice(2, -2)), lookup, linkRegex, onNavigate, selfEntityId)}
           </strong>
         );
       }
       if (part.startsWith('~~') && part.endsWith('~~')) {
         return (
           <del key={i} className="text-slate-400 line-through">
-            {processPlainTextWithLinks(safeString(part.slice(2, -2)), lookup, linkRegex, onNavigate)}
+            {processPlainTextWithLinks(safeString(part.slice(2, -2)), lookup, linkRegex, onNavigate, selfEntityId)}
           </del>
         );
       }
       if (part.startsWith('==') && part.endsWith('==')) {
         return (
           <mark key={i} className="bg-amber-500/35 text-amber-100 px-0.5 rounded">
-            {processPlainTextWithLinks(safeString(part.slice(2, -2)), lookup, linkRegex, onNavigate)}
+            {processPlainTextWithLinks(safeString(part.slice(2, -2)), lookup, linkRegex, onNavigate, selfEntityId)}
           </mark>
         );
       }
       if (part.startsWith('<u>') && part.endsWith('</u>')) {
         return (
           <u key={i} className="underline decoration-amber-500/80">
-            {processPlainTextWithLinks(safeString(part.slice(3, -4)), lookup, linkRegex, onNavigate)}
+            {processPlainTextWithLinks(safeString(part.slice(3, -4)), lookup, linkRegex, onNavigate, selfEntityId)}
           </u>
         );
       }
@@ -715,27 +696,27 @@ export const processInline = (text, dirHandle, entityLookup, linkRegex, onNaviga
       if (part.startsWith('*') && part.endsWith('*')) {
         return (
           <em key={i} className="text-amber-200/70 italic">
-            {processPlainTextWithLinks(safeString(part.slice(1, -1)), lookup, linkRegex, onNavigate)}
+            {processPlainTextWithLinks(safeString(part.slice(1, -1)), lookup, linkRegex, onNavigate, selfEntityId)}
           </em>
         );
       }
     }
-    return <span key={i}>{processPlainTextWithLinks(safeString(part), lookup, linkRegex, onNavigate)}</span>;
+    return <span key={i}>{processPlainTextWithLinks(safeString(part), lookup, linkRegex, onNavigate, selfEntityId)}</span>;
   });
 };
 
-export const renderMarkdown = (text, dirHandle, entityMap, linkRegex, onNavigate) => {
+export const renderMarkdown = (text, dirHandle, entityMap, linkRegex, onNavigate, selfEntityId = null) => {
   if (!text || typeof text !== 'string') return <div className="text-slate-600 italic mt-10 font-serif flex flex-col items-center gap-4"><ScrollText size={48} className="opacity-30"/><span>Chưa có ghi chép nào...</span></div>;
   const lookup = buildEntityNameLookup(entityMap);
   const lines = text.split('\n');
   return lines.map((line, i) => {
-    if (line.startsWith('# ')) return <h1 key={`h1-${i}`} className="text-3xl font-heading font-bold text-amber-500 mb-4 border-b border-slate-800 pb-2 mt-6">{processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate)}</h1>;
-    if (line.startsWith('## ')) return <h2 key={`h2-${i}`} className="text-2xl font-heading font-bold text-amber-600 mb-3 mt-4">{processInline(line.slice(3), dirHandle, lookup, linkRegex, onNavigate)}</h2>;
-    if (line.startsWith('- ')) return <li key={`li-${i}`} className="ml-6 list-disc mb-2 text-slate-300 font-serif">{processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate)}</li>;
+    if (line.startsWith('# ')) return <h1 key={`h1-${i}`} className="text-3xl font-heading font-bold text-amber-500 mb-4 border-b border-slate-800 pb-2 mt-6">{processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</h1>;
+    if (line.startsWith('## ')) return <h2 key={`h2-${i}`} className="text-2xl font-heading font-bold text-amber-600 mb-3 mt-4">{processInline(line.slice(3), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</h2>;
+    if (line.startsWith('- ')) return <li key={`li-${i}`} className="ml-6 list-disc mb-2 text-slate-300 font-serif">{processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</li>;
     if (/^\d+\.\s/.test(line)) {
       return (
         <li key={`oli-${i}`} className="ml-6 list-decimal mb-2 text-slate-300 font-serif">
-          {processInline(line.replace(/^\d+\.\s/, ''), dirHandle, lookup, linkRegex, onNavigate)}
+          {processInline(line.replace(/^\d+\.\s/, ''), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
         </li>
       );
     }
@@ -745,12 +726,12 @@ export const renderMarkdown = (text, dirHandle, entityMap, linkRegex, onNavigate
           key={`bq-${i}`}
           className="border-l-4 border-amber-700/50 pl-4 my-2 text-slate-400 italic font-serif"
         >
-          {processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate)}
+          {processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
         </blockquote>
       );
     }
     if (line.trim() === '') return <div key={`empty-${i}`} className="h-4"></div>;
-    return <p key={`p-${i}`} className="mb-3 text-slate-300 font-serif leading-relaxed text-lg">{processInline(line, dirHandle, lookup, linkRegex, onNavigate)}</p>;
+    return <p key={`p-${i}`} className="mb-3 text-slate-300 font-serif leading-relaxed text-lg">{processInline(line, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</p>;
   });
 };
 

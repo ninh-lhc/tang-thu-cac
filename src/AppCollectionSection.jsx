@@ -24,6 +24,7 @@ import { AppEntityTimelinePanel } from './AppEntityTimelinePanel.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import { MarkdownToolbar } from './MasterComponents.jsx';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
+import { isMapCollectionScope } from './lib/mapHierarchySync.js';
 
 export function AppCollectionSection({
   // nav state
@@ -439,9 +440,14 @@ export function AppCollectionSection({
 
             {collectionSubTab === 'detail' && selectedEntity && (() => {
               const tabTerms = getTerms(activeTabLon);
-              const profileSubtitle =
+              const isMapDetail = isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig });
+              const mapParentLine = safeString(selectedEntity.dynamicData?.f_vi_tri).trim();
+              const statusLine =
                 safeString(selectedEntity.status).trim() ||
                 safeString(selectedEntity.dynamicData?.f_status).trim();
+              const profileSubtitle = isMapDetail
+                ? [...new Set([mapParentLine, statusLine].filter(Boolean))].join(' · ')
+                : statusLine;
               return (
               <div
                 className="flex flex-col w-full animate-fade-in pb-10"

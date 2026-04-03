@@ -526,7 +526,8 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                 currentContextDirHandle,
                 entityMap,
                 globalLinkRegex,
-                onNavigate
+                onNavigate,
+                selectedEntity?.id
               )}
             </div>
           );
@@ -588,7 +589,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                   </div>
                 </div>
                 <div className="prose prose-invert max-w-none relative z-10 text-[17px] text-slate-200 font-serif leading-loose whitespace-pre-wrap">
-                  {renderMarkdown(safeString(selectedParsed.body || selectedMs.event), currentContextDirHandle, entityMap, globalLinkRegex, onNavigate)}
+                  {renderMarkdown(safeString(selectedParsed.body || selectedMs.event), currentContextDirHandle, entityMap, globalLinkRegex, onNavigate, selectedEntity?.id)}
                 </div>
               </div>
 

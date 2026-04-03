@@ -16,6 +16,7 @@ import {
   removeOwnerAcquisitionMilestonesByItem,
   syncAutoOwnerMilestonesItemRename,
 } from './lib/autoOwnerMilestone.js';
+import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks, syncMapHierarchyNameReferences } from './lib/mapHierarchySync.js';
 import { syncAllTheLucMapAutoBlocks, syncTheLucMapAutoBlocks } from './lib/theLucBanDoSync.js';
 
 export function useAppEntityMilestoneActions({
@@ -94,6 +95,8 @@ export function useAppEntityMilestoneActions({
       let ownerMilestoneAutoApplied = false;
       let ownerMilestoneRenameSynced = 0;
       let forceMapAutoApplied = false;
+      let mapHierarchyAutoApplied = false;
+      let mapHierarchyRenameSynced = 0;
 
       updateActiveNovelData((nov) => {
         if (!nov.data) nov.data = {};
@@ -132,6 +135,13 @@ export function useAppEntityMilestoneActions({
             const nextName = safeString(formData.name).trim();
             if (activeTabLon !== 'nhan-vat' && prevName && nextName && prevName !== nextName) {
               ownerMilestoneRenameSynced = syncAutoOwnerMilestonesItemRename(nov, {
+                entityId: formData.id,
+                oldName: prevName,
+                newName: nextName,
+              });
+            }
+            if (isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig }) && prevName && nextName && prevName !== nextName) {
+              mapHierarchyRenameSynced = syncMapHierarchyNameReferences(nov, {
                 entityId: formData.id,
                 oldName: prevName,
                 newName: nextName,
@@ -207,6 +217,9 @@ export function useAppEntityMilestoneActions({
               entityId: targetIdForSync,
             }) || forceMapAutoApplied;
         }
+        if (isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig })) {
+          mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
+        }
       });
 
       // UX: tạo thẻ xong thì tự vào tab Hồ Sơ + bật chế độ ghi chép chi tiết.
@@ -248,6 +261,12 @@ export function useAppEntityMilestoneActions({
       }
       if (forceMapAutoApplied) {
         showToast('Đã đồng bộ quan hệ Thế Lực ↔ Bản đồ (AUTO).', 'success');
+      }
+      if (mapHierarchyAutoApplied) {
+        showToast('Đã đồng bộ cây Bản đồ (AUTO).', 'success');
+      }
+      if (mapHierarchyRenameSynced > 0) {
+        showToast(`Đã cập nhật ${mapHierarchyRenameSynced} thẻ Bản đồ theo tên mới.`, 'success');
       }
       const ownerWarn = ownerTimelineHintReasonToMessage(ownerTimelineHintDetail?.reason);
       if (!ownerMilestoneAutoApplied && ownerWarn && activeTabLon !== 'nhan-vat') {
@@ -533,6 +552,7 @@ export function useAppEntityMilestoneActions({
         let removed = false;
         let removedEntityName = '';
         let removedLonId = '';
+        let removedNhoId = '';
         for (const lonId of Object.keys(updated.data || {})) {
           const lonData = updated.data[lonId];
           if (!lonData || typeof lonData !== 'object') continue;
@@ -544,6 +564,7 @@ export function useAppEntityMilestoneActions({
               removedEntityName = safeString(tabData.entities[idx]?.name).trim();
               tabData.entities.splice(idx, 1);
               removedLonId = lonId;
+              removedNhoId = nhoId;
               removed = true;
               break;
             }
@@ -553,6 +574,7 @@ export function useAppEntityMilestoneActions({
         if (removed) {
           let removedAutoMsCount = 0;
           let forceMapResynced = false;
+          let mapHierarchyResynced = false;
           if (removedEntityName) {
             removedAutoMsCount = removeOwnerAcquisitionMilestonesByItem(updated, {
               name: removedEntityName,
@@ -562,6 +584,18 @@ export function useAppEntityMilestoneActions({
           if (removedLonId === 'the-luc') {
             forceMapResynced =
               syncAllTheLucMapAutoBlocks(updated, { sourceLonId: 'the-luc' }) || forceMapResynced;
+          }
+          const removedLonConfig = (updated.tabsConfig || []).find((tab) => tab.id === removedLonId);
+          const removedNhoConfig = removedLonConfig?.subTabs?.find((tab) => tab.id === removedNhoId) || null;
+          if (
+            isMapCollectionScope({
+              activeTabLon: removedLonId,
+              activeTabNho: removedNhoId,
+              currentTabConfig: removedNhoConfig,
+              parentLabel: removedLonConfig?.label || '',
+            })
+          ) {
+            mapHierarchyResynced = syncAllMapHierarchyAutoBlocks(updated) || mapHierarchyResynced;
           }
           const nextStats = { ...novelStatsByIdRef.current, [updated.id]: countEntitiesInNovel(updated) };
           novelStatsByIdRef.current = nextStats;
@@ -583,6 +617,9 @@ export function useAppEntityMilestoneActions({
           });
           if (forceMapResynced) {
             showToast('Đã đồng bộ lại AUTO Thế Lực ↔ Bản đồ sau khi xóa thẻ.', 'success');
+          }
+          if (mapHierarchyResynced) {
+            showToast('Đã đồng bộ lại AUTO cây Bản đồ sau khi xóa thẻ.', 'success');
           }
         }
         confirmDeleteEntityRef.current = null;
@@ -627,6 +664,7 @@ export function useAppEntityMilestoneActions({
         onConfirm: () => {
           const prev = activeNovelData ? structuredClone(activeNovelData) : null;
           // Tính mergedKeys trước khi updateActiveNovelData để tránh stale closure.
+          let mapHierarchyAutoApplied = false;
           const mergedKeys = new Set();
           if (snapshot.dynamicData) {
             Object.entries(snapshot.dynamicData).forEach(([key, val]) => {
@@ -649,6 +687,12 @@ export function useAppEntityMilestoneActions({
             if (mergedKeys.has('f_status')) {
               ent.status = safeString(ent.dynamicData.f_status).trim();
             }
+            if (
+              isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig }) &&
+              (mergedKeys.has('f_title') || mergedKeys.has('f_status') || mergedKeys.has('f_vi_tri'))
+            ) {
+              mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
+            }
           });
 
           setRecentlyMergedFields(mergedKeys);
@@ -663,6 +707,9 @@ export function useAppEntityMilestoneActions({
                 }
               : undefined,
           });
+          if (mapHierarchyAutoApplied) {
+            showToast('Đã đồng bộ cây Bản đồ (AUTO).', 'success');
+          }
         },
       });
     },
@@ -673,6 +720,7 @@ export function useAppEntityMilestoneActions({
       updateActiveNovelData,
       activeTabLon,
       activeTabNho,
+      currentTabConfig,
       selectedEntityId,
       setRecentlyMergedFields,
       setCollectionSubTab,

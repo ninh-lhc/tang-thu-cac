@@ -37,6 +37,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   entityMap,
   globalLinkRegex,
   onNavigate,
+  selfEntityId,
 }) {
   const s0 = safeString(initialInfo);
   const [notesEdit, setNotesEdit] = useState(() => ({
@@ -246,6 +247,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               entityMap={entityMap}
               linkRegex={globalLinkRegex}
               onNavigate={onNavigate}
+              selfEntityId={selfEntityId}
               className="w-1/2 overflow-y-auto custom-scrollbar border-l border-slate-700 pl-4 font-serif min-h-[300px]"
             />
           )}
@@ -346,6 +348,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             entityMap={entityMap}
             globalLinkRegex={globalLinkRegex}
             onNavigate={onNavigate}
+            selfEntityId={selectedEntity.id}
           />
         ) : (
           <div className="font-serif prose prose-invert max-w-none animate-fade-in min-h-[200px]">

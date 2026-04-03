@@ -1,4 +1,6 @@
 /** Giống MasterUtils.safeString — tách ra để module này không import React. */
+import { buildEntityNameLookup, resolveEntityLookup } from './entityWikiLookup.js';
+
 function safeString(val) {
   if (val == null || val === 'null' || val === 'undefined') return '';
   if (typeof val === 'object') {
@@ -153,18 +155,18 @@ export function computeRelatedEntities({
     }
   }
 
-  const lowerEntityMap = entityMap.map((e) => ({ ...e, lower: e.name.toLowerCase() }));
+  const wikiLookup = buildEntityNameLookup(entityMap);
   const resolveWikiDest = (linkInner) => {
     const label = safeString(linkInner).trim();
     if (!label) return null;
-    const low = label.toLowerCase();
-    const exact = lowerEntityMap.find((e) => e.lower === low);
-    if (exact) return { dest: exact.dest, matched: exact.name };
+    const resolved = resolveEntityLookup(wikiLookup, label, { selfEntityId: selectedEntity.id });
+    if (resolved) return { dest: resolved.dest, matched: resolved.name };
     if (wikiExactMatchOnly) return null;
-    for (const e of lowerEntityMap) {
-      const en = e.lower;
+    const low = label.toLowerCase();
+    for (const item of entityMap) {
+      const en = safeString(item?.name).toLowerCase();
       if (en.length < 2) continue;
-      if (low.includes(en) || en.includes(low)) return { dest: e.dest, matched: e.name };
+      if (low.includes(en) || en.includes(low)) return { dest: item.dest, matched: item.name };
     }
     return null;
   };

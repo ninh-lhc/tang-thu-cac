@@ -7,6 +7,7 @@
 
 import { useCallback, useState } from 'react';
 import { migrateIndex, migrateBackup, migrateNovel } from './dataMigration.js';
+import { savePersistedDirectoryHandle } from './lib/directoryHandleStore.js';
 
 function downloadJsonFile(filename, payload) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -131,6 +132,7 @@ export function useAppDirectoryBackup({
             setNovelsMetadata(newMeta);
             setGlobalTabsConfig(safeConfig);
             setDirHandle(pickedDirHandle);
+            void savePersistedDirectoryHandle(pickedDirHandle);
             setShowConnectReminder(true);
             setActiveNovelData(null);
             setActiveNovelDirHandle(null);
@@ -139,6 +141,7 @@ export function useAppDirectoryBackup({
           }
         } catch {
           setDirHandle(pickedDirHandle);
+          void savePersistedDirectoryHandle(pickedDirHandle);
           setShowConnectReminder(true);
           setActiveNovelData(null);
           setActiveNovelDirHandle(null);
@@ -170,6 +173,7 @@ export function useAppDirectoryBackup({
         }
 
         setDirHandle(pickedDirHandle);
+        void savePersistedDirectoryHandle(pickedDirHandle);
         setShowConnectReminder(true);
         setActiveNovelData(null);
         setActiveNovelDirHandle(null);

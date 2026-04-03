@@ -80,6 +80,7 @@ import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { exportEntityProfilePdf } from './entityProfilePrint.js';
+import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
 import { AppMainPane } from './AppMainPane.jsx';
 import { AppModalLayer } from './AppModalLayer.jsx';
 
@@ -1101,6 +1102,8 @@ export default function App() {
 
   const handleConfirmQuickCreate = (name, path) => {
       const [lonId, nhoId] = path.split('|');
+      const lon = activeTabs.find((tab) => tab.id === lonId);
+      const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
       const quickName = safeString(name).trim();
       if (!quickName) return;
       const newEntityId = generateId('ent');
@@ -1126,6 +1129,9 @@ export default function App() {
           }
           nov.data[lonId][nhoId] = tabData;
           if (!targetExistingId) lockFieldsTemplateIfFirstEntity(nov, lonId, nhoId);
+          if (isMapCollectionScope({ activeTabLon: lonId, activeTabNho: nhoId, currentTabConfig: nho, parentLabel: lon?.label || '' })) {
+            syncAllMapHierarchyAutoBlocks(nov);
+          }
       });
       if (targetExistingId) {
         showToast(`"${quickName}" đã trùng thẻ có sẵn - đã thêm vào bí danh và liên kết về thẻ cũ.`, 'warning');
@@ -1568,7 +1574,7 @@ export default function App() {
 
   const memoizedEntityInfo = useMemo(() => {
       if (!selectedEntity || collectionSubTab !== 'detail' || isEntityEditing) return null;
-      return <div className="font-serif prose prose-invert max-w-none animate-fade-in min-h-[200px]">{renderMarkdown(safeString(selectedEntity.info), currentContextDirHandle, entityMap, globalLinkRegex, (dest) => { if(navFnRef.current) navFnRef.current(dest); })}</div>;
+      return <div className="font-serif prose prose-invert max-w-none animate-fade-in min-h-[200px]">{renderMarkdown(safeString(selectedEntity.info), currentContextDirHandle, entityMap, globalLinkRegex, (dest) => { if(navFnRef.current) navFnRef.current(dest); }, selectedEntity?.id)}</div>;
   }, [selectedEntity, collectionSubTab, isEntityEditing, currentContextDirHandle, entityMap, globalLinkRegex]);
 
   const memoizedStandardData = useMemo(() => {

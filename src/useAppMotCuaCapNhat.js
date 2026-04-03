@@ -19,6 +19,7 @@ import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
 import { mutateNovelJournalSelections } from './appNhatKyVaGoiThe.js';
 import { buildHubExtendedCatalogLines } from './lib/hubBangDanhMucCacMucNhatKy.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
+import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
 
 export function useAppMotCuaCapNhat({
   activeNovelData,
@@ -126,6 +127,8 @@ export function useAppMotCuaCapNhat({
   const hubSaveCreateEntity = useCallback(() => {
     if (!hubCreatePreview || !hubCreatePath.includes('|')) return;
     const [lonId, nhoId] = hubCreatePath.split('|');
+    const lon = activeTabs.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
     const name = safeString(hubCreatePreview.name).trim();
     if (!name || name === 'Chưa đặt tên') {
       showToast('Điền tên thẻ trước khi lưu.', 'warning');
@@ -173,6 +176,9 @@ export function useAppMotCuaCapNhat({
       });
       nov.data[lonId][nhoId] = td;
       lockFieldsTemplateIfFirstEntity(nov, lonId, nhoId);
+      if (isMapCollectionScope({ activeTabLon: lonId, activeTabNho: nhoId, currentTabConfig: nho, parentLabel: lon?.label || '' })) {
+        syncAllMapHierarchyAutoBlocks(nov);
+      }
     });
     showToast(`Đã tạo «${name}». Ảnh avatar: mở đúng mục → thẻ để thêm.`, 'success');
     setHubCreatePreview(null);
@@ -181,6 +187,7 @@ export function useAppMotCuaCapNhat({
     hubCreatePreview,
     hubCreatePath,
     activeNovelData,
+    activeTabs,
     showToast,
     updateActiveNovelData,
     setOverviewHubTab,
@@ -261,6 +268,7 @@ export function useAppMotCuaCapNhat({
     const prevNovel = activeNovelData ? structuredClone(activeNovelData) : null;
     let ok = 0;
     let fails = [];
+    let mapHierarchyAutoApplied = false;
     updateActiveNovelData((nov) => {
       const r = mutateNovelJournalSelections(nov, panel);
       ok = r.ok;
@@ -276,6 +284,9 @@ export function useAppMotCuaCapNhat({
         });
         if (nov.readingJournal.length > 50) nov.readingJournal.length = 50;
       }
+      if (r.ok > 0) {
+        mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
+      }
     });
     setHubUpdatePanel(null);
     setHubUpdateText('');
@@ -289,6 +300,9 @@ export function useAppMotCuaCapNhat({
               }
             : undefined,
       });
+      if (mapHierarchyAutoApplied) {
+        showToast('Đã đồng bộ cây Bản đồ (AUTO).', 'success');
+      }
     } else {
       showToast(fails.length ? fails.slice(0, 4).join('; ') : 'Không áp dụng được.', 'warning');
     }
