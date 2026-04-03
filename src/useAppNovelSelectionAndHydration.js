@@ -10,7 +10,17 @@ import {
   mergeFieldsTemplate,
 } from './MasterEngines.js';
 import { buildNovelSearchIndex, countEntitiesInNovel } from './deepSearchCore.js';
-import { cleanupAutoRelationLegacyInfoForNovel } from './lib/autoRelationDetailNote.js';
+import { cleanupAutoRelationLegacyInfoForNovel, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
+import { syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
+import { syncAllTheLucMapAutoBlocks } from './lib/theLucBanDoSync.js';
+
+function syncFullNovelAutoBlocks(novelData) {
+  let changed = false;
+  changed = syncAllTheLucMapAutoBlocks(novelData, { sourceLonId: 'the-luc' }) || changed;
+  changed = syncAllAutoRelationNotesForNovel(novelData) || changed;
+  changed = syncAllMapHierarchyAutoBlocks(novelData) || changed;
+  return changed;
+}
 
 export function useAppNovelSelectionAndHydration({
   dirHandle,
@@ -96,6 +106,7 @@ export function useAppNovelSelectionAndHydration({
           if (recoveredFromBackup) delete data.__recoveredFromBackup;
           setActiveNovelDirHandle(loaded.novelDir ?? null);
           if (!data.tabsConfig) data.tabsConfig = structuredClone(globalTabsConfig);
+          const autoBlocksResynced = !data.__partialData ? syncFullNovelAutoBlocks(data) : false;
           const migrated = migrateTabsFieldTemplates(data);
           setActiveNovelData(migrated);
           if (recoveredFromBackup) {
@@ -118,7 +129,7 @@ export function useAppNovelSelectionAndHydration({
               );
             }
           }
-          if (migrated !== data || legacyAutoInfoCleanedCount > 0) {
+          if (migrated !== data || legacyAutoInfoCleanedCount > 0 || autoBlocksResynced) {
             void syncNovel(migrated, dirHandle);
           }
           if (tabAt?.lonId) {
@@ -224,6 +235,8 @@ export function useAppNovelSelectionAndHydration({
         const fullData = fullLoaded?.novel;
         if (fullData && !fullData.__partialData) {
           const legacyAutoInfoCleanedCount = cleanupAutoRelationLegacyInfoForNovel(fullData);
+          if (!fullData.tabsConfig) fullData.tabsConfig = structuredClone(globalTabsConfig);
+          const autoBlocksResynced = syncFullNovelAutoBlocks(fullData);
           setActiveNovelData((prev) => {
             if (!prev || prev.id !== key) return prev;
             return fullData;
@@ -234,7 +247,7 @@ export function useAppNovelSelectionAndHydration({
           novelStatsByIdRef.current = nextStats;
           setNovelStatsById(nextStats);
           void syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, dirHandle, nextStats);
-          if (legacyAutoInfoCleanedCount > 0) {
+          if (legacyAutoInfoCleanedCount > 0 || autoBlocksResynced) {
             void syncNovel(fullData, dirHandle);
           }
         }
@@ -247,6 +260,7 @@ export function useAppNovelSelectionAndHydration({
     activeNovelData,
     activeTabLon,
     dirHandle,
+    globalTabsConfig,
     loadNovelData,
     syncIndex,
     syncNovel,

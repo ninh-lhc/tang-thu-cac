@@ -177,6 +177,46 @@ describe('theLucBanDoSync', () => {
     });
   });
 
+  it('uses contextual wiki labels for duplicate force names inside map auto blocks', () => {
+    const nov = {
+      tabsConfig: [
+        { id: 'the-luc', label: 'Thế Lực', subTabs: [{ id: 'gia-toc', label: 'Gia tộc', viewType: 'collection-track' }] },
+        { id: 'tai-nguyen', label: 'Tài Nguyên', subTabs: [{ id: 'dia-danh', label: 'Bản đồ / Bí cảnh', viewType: 'collection-track' }] },
+      ],
+      data: {
+        'the-luc': {
+          'gia-toc': {
+            overview: '',
+            entities: [
+              {
+                id: 'tl-man-hoang',
+                name: 'Lạc Gia',
+                dynamicData: { f_status: 'Gia Tộc - Bát Cấp Thế Lực - Man Hoang Đại Lục - Việt Long Tinh Cầu' },
+                info: '',
+              },
+              {
+                id: 'tl-bang-thien',
+                name: 'Lạc Gia',
+                dynamicData: { f_status: 'Gia Tộc - Bát Cấp Thế Lực - Băng Thiên Đại Lục - Việt Long Tinh Cầu' },
+                info: '',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const ok = syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' });
+    expect(ok).toBe(true);
+
+    const mapEntities = nov.data['tai-nguyen']['dia-danh'].entities;
+    const manHoang = mapEntities.find((m) => m.name === 'Man Hoang Đại Lục');
+    const bangThien = mapEntities.find((m) => m.name === 'Băng Thiên Đại Lục');
+
+    expect(String(manHoang?.info || '')).toContain('[[Lạc Gia - Man Hoang Đại Lục]]');
+    expect(String(bangThien?.info || '')).toContain('[[Lạc Gia - Băng Thiên Đại Lục]]');
+  });
+
   it('preserves manual info while replacing AUTO blocks on resync', () => {
     const nov = {
       tabsConfig: [

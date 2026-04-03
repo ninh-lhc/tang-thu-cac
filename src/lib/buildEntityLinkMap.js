@@ -4,6 +4,7 @@
  * co the chon dung dich khi mot wiki-link bi mo ho.
  */
 import { normalizeAsciiText, parseStatusHierarchy, splitStatusHierarchyTokens } from './statusHierarchyParser.js';
+import { buildSyntheticWikiNames } from './entityWikiDisambiguation.js';
 
 const NAME_SPLIT_RE = /[,/|()]/;
 
@@ -69,6 +70,14 @@ export function buildEntityLinkMap(activeNovelData) {
         };
         addNames(ent.name, sharedMeta);
         if (ent.dynamicData) addNames(ent.dynamicData.f_alias, sharedMeta);
+        addNames(
+          buildSyntheticWikiNames({
+            name: ent?.name,
+            statusLine: ent?.dynamicData?.f_status || ent?.status || '',
+            pathLine: ent?.dynamicData?.f_vi_tri || '',
+          }).join(' | '),
+          sharedMeta
+        );
       });
     });
   });

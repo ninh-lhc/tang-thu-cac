@@ -17,9 +17,11 @@ import {
 } from './MasterUtils.jsx';
 import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
 import { mutateNovelJournalSelections } from './appNhatKyVaGoiThe.js';
+import { isAutoRelationScopeLonId, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
 import { buildHubExtendedCatalogLines } from './lib/hubBangDanhMucCacMucNhatKy.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
+import { syncAllTheLucMapAutoBlocks } from './lib/theLucBanDoSync.js';
 
 export function useAppMotCuaCapNhat({
   activeNovelData,
@@ -176,6 +178,12 @@ export function useAppMotCuaCapNhat({
       });
       nov.data[lonId][nhoId] = td;
       lockFieldsTemplateIfFirstEntity(nov, lonId, nhoId);
+      if (lonId === 'the-luc') {
+        syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' });
+      }
+      if (isAutoRelationScopeLonId(lonId, lon?.label || '')) {
+        syncAllAutoRelationNotesForNovel(nov);
+      }
       if (isMapCollectionScope({ activeTabLon: lonId, activeTabNho: nhoId, currentTabConfig: nho, parentLabel: lon?.label || '' })) {
         syncAllMapHierarchyAutoBlocks(nov);
       }
@@ -268,6 +276,8 @@ export function useAppMotCuaCapNhat({
     const prevNovel = activeNovelData ? structuredClone(activeNovelData) : null;
     let ok = 0;
     let fails = [];
+    let relationAutoApplied = false;
+    let forceMapAutoApplied = false;
     let mapHierarchyAutoApplied = false;
     updateActiveNovelData((nov) => {
       const r = mutateNovelJournalSelections(nov, panel);
@@ -285,6 +295,8 @@ export function useAppMotCuaCapNhat({
         if (nov.readingJournal.length > 50) nov.readingJournal.length = 50;
       }
       if (r.ok > 0) {
+        relationAutoApplied = syncAllAutoRelationNotesForNovel(nov) || relationAutoApplied;
+        forceMapAutoApplied = syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' }) || forceMapAutoApplied;
         mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
       }
     });
@@ -302,6 +314,12 @@ export function useAppMotCuaCapNhat({
       });
       if (mapHierarchyAutoApplied) {
         showToast('Đã đồng bộ cây Bản đồ (AUTO).', 'success');
+      }
+      if (forceMapAutoApplied) {
+        showToast('Đã đồng bộ quan hệ Thế Lực ↔ Bản đồ (AUTO).', 'success');
+      }
+      if (relationAutoApplied) {
+        showToast('Đã đồng bộ lại liên kết AUTO trên các thẻ liên quan.', 'success');
       }
     } else {
       showToast(fails.length ? fails.slice(0, 4).join('; ') : 'Không áp dụng được.', 'warning');

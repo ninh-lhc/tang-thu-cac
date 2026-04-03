@@ -492,6 +492,15 @@ export function cleanupAutoRelationLegacyInfoForNovel(novelData) {
   return touched;
 }
 
+function stripAllAutoRelationBlocks(infoText) {
+  return String(infoText || '')
+    .replace(buildAutoRelationBlockRegexGlobal(), '')
+    .replace(buildRelatedBlockRegexGlobal(), '')
+    .replace(buildLegacyRelatedBlockRegexGlobal(), '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function iterAllCollectionEntities(novelData, cb) {
   const data = novelData?.data || {};
   for (const [, lonData] of Object.entries(data)) {
@@ -538,6 +547,50 @@ export function applyAutoRelationNotesForEntity(novelData, options) {
   });
 
   return { applied: true, touchedTargets };
+}
+
+export function syncAllAutoRelationNotesForNovel(novelData) {
+  const data = novelData?.data;
+  if (!data || typeof data !== 'object') return false;
+
+  const tabsConfig = Array.isArray(novelData?.tabsConfig) ? novelData.tabsConfig : [];
+  const parentLabelByLonId = new Map(tabsConfig.map((tab) => [tab.id, tab.label || '']));
+  const sources = [];
+  let changed = false;
+
+  for (const [lonId, lonData] of Object.entries(data)) {
+    if (!lonData || typeof lonData !== 'object') continue;
+    const parentLabel = parentLabelByLonId.get(lonId) || '';
+    for (const [nhoId, nhoData] of Object.entries(lonData)) {
+      const entities = Array.isArray(nhoData?.entities) ? nhoData.entities : [];
+      entities.forEach((entity) => {
+        const before = String(entity?.info || '');
+        const after = stripAllAutoRelationBlocks(before);
+        if (after !== before) {
+          entity.info = after;
+          changed = true;
+        }
+        const statusLine = String(entity?.dynamicData?.f_status || entity?.status || '').trim();
+        if (!statusLine) return;
+        if (!isAutoRelationScopeLonId(lonId, parentLabel)) return;
+        if (!parseRelationHierarchyFromStatus(statusLine)) return;
+        sources.push({
+          sourceEntity: entity,
+          sourceLonId: lonId,
+          sourceNhoId: nhoId,
+          sourceParentLabel: parentLabel,
+          statusLine,
+        });
+      });
+    }
+  }
+
+  sources.forEach((item) => {
+    const result = applyAutoRelationNotesForEntity(novelData, item);
+    if (result.applied || result.touchedTargets > 0) changed = true;
+  });
+
+  return changed;
 }
 
 

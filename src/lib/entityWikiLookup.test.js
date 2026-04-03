@@ -40,8 +40,11 @@ describe('entityWikiLookup', () => {
   it('keeps duplicate wiki names instead of collapsing to the first entity', () => {
     const entityMap = buildEntityLinkMap(createNovelWithDuplicateFamily());
     const lacGiaEntries = entityMap.filter((item) => item.name === 'Lac Gia');
+    const syntheticEntries = entityMap.filter((item) => item.name === 'Lac Gia - Man Hoang Dai Luc');
 
     expect(lacGiaEntries).toHaveLength(2);
+    expect(syntheticEntries).toHaveLength(1);
+    expect(syntheticEntries[0]?.dest?.entityId).toBe('lac-gia-man-hoang');
     expect(new Set(lacGiaEntries.map((item) => item.dest.entityId))).toEqual(
       new Set(['lac-gia-bang-thien', 'lac-gia-man-hoang'])
     );
@@ -52,7 +55,11 @@ describe('entityWikiLookup', () => {
     const lookup = buildEntityNameLookup(entityMap);
 
     const resolved = resolveEntityLookup(lookup, 'Lac Gia', { selfEntityId: 'map-man-hoang' });
+    const resolvedSynthetic = resolveEntityLookup(lookup, 'Lac Gia - Man Hoang Dai Luc', {
+      selfEntityId: 'map-man-hoang',
+    });
 
     expect(resolved?.dest?.entityId).toBe('lac-gia-man-hoang');
+    expect(resolvedSynthetic?.dest?.entityId).toBe('lac-gia-man-hoang');
   });
 });

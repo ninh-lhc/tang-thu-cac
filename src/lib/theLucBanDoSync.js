@@ -10,6 +10,7 @@ import {
   parseRankNumber as parseStatusRankNumber,
   splitStatusHierarchyTokens,
 } from './statusHierarchyParser.js';
+import { buildPreferredWikiName } from './entityWikiDisambiguation.js';
 
 const AUTO_FORCE_BLOCK_START = '<!-- AUTO_THE_LUC_META:START -->';
 const AUTO_FORCE_BLOCK_END = '<!-- AUTO_THE_LUC_META:END -->';
@@ -101,7 +102,18 @@ function buildLocationHierarchyLines(locations) {
   return enriched.map((x, idx) => `${idx + 1}. ${x.label}: [[${x.raw}]]`);
 }
 
-function buildMapAutoBlockLines(locationName, rows, { detailedLayout }) {
+function buildForceWikiLabel(row, duplicateNameCounts) {
+  const baseName = safeString(row?.name).trim();
+  if (!baseName) return '';
+  const nameKey = normalizeAscii(baseName);
+  if ((duplicateNameCounts?.get(nameKey) || 0) < 2) return baseName;
+  const statusLine = [row?.meta?.orgType, row?.meta?.rankText, ...(row?.meta?.locations || [])]
+    .filter(Boolean)
+    .join(' - ');
+  return buildPreferredWikiName({ name: baseName, statusLine });
+}
+
+function buildMapAutoBlockLines(locationName, rows, { detailedLayout, duplicateNameCounts }) {
   const byGroup = new Map(FORCE_TYPE_GROUP_ORDER.map((g) => [g, []]));
   rows.forEach((r) => {
     const g = classifyOrgType(r.meta.orgType);
@@ -119,13 +131,13 @@ function buildMapAutoBlockLines(locationName, rows, { detailedLayout }) {
       sectionLines.push('');
       sectionLines.push(`## ${g}`);
       list.forEach((r) => {
-        sectionLines.push(`- [[${r.name}]] - ${r.meta.rankText}`);
+        sectionLines.push(`- [[${buildForceWikiLabel(r, duplicateNameCounts)}]] - ${r.meta.rankText}`);
       });
       return;
     }
     sectionLines.push(`### ${g}`);
     list.forEach((r, idx) => {
-      sectionLines.push(`${idx + 1}. [[${r.name}]] - ${r.meta.rankText} - ${r.meta.tailPath}`);
+      sectionLines.push(`${idx + 1}. [[${buildForceWikiLabel(r, duplicateNameCounts)}]] - ${r.meta.rankText} - ${r.meta.tailPath}`);
     });
   });
 
@@ -242,6 +254,13 @@ export function syncAllTheLucMapAutoBlocks(nov, { sourceLonId }) {
     }
   }
 
+  const duplicateNameCounts = new Map();
+  allForceEntities.forEach((item) => {
+    const key = normalizeAscii(item.name);
+    if (!key) return;
+    duplicateNameCounts.set(key, (duplicateNameCounts.get(key) || 0) + 1);
+  });
+
   const rowsByLoc = new Map();
   allForceEntities.forEach((r) => {
     (r.meta.locations || []).forEach((loc) => {
@@ -262,6 +281,7 @@ export function syncAllTheLucMapAutoBlocks(nov, { sourceLonId }) {
     const rows = buildForceRowsForLocation(item.rows);
     const sectionLines = buildMapAutoBlockLines(item.name, rows, {
       detailedLayout: isDetailedMapLayout(item.name),
+      duplicateNameCounts,
     });
     locEnt.info = mergeAutoBlock(
       locEnt.info,

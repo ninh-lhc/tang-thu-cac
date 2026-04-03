@@ -7,7 +7,7 @@ import { lockFieldsTemplateIfFirstEntity } from './MasterEngines.js';
 import { generateId, safeString } from './MasterUtils.jsx';
 import { countEntitiesInNovel } from './deepSearchCore.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
-import { applyAutoRelationNotesForEntity } from './lib/autoRelationDetailNote.js';
+import { applyAutoRelationNotesForEntity, isAutoRelationScopeLonId, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
 import {
   appendOwnerAcquisitionMilestone,
@@ -95,6 +95,7 @@ export function useAppEntityMilestoneActions({
       let ownerMilestoneAutoApplied = false;
       let ownerMilestoneRenameSynced = 0;
       let forceMapAutoApplied = false;
+      let relationAutoResynced = false;
       let mapHierarchyAutoApplied = false;
       let mapHierarchyRenameSynced = 0;
 
@@ -217,6 +218,9 @@ export function useAppEntityMilestoneActions({
               entityId: targetIdForSync,
             }) || forceMapAutoApplied;
         }
+        if (isAutoRelationScopeLonId(activeTabLon, currentTabConfig?._parentLabel || '')) {
+          relationAutoResynced = syncAllAutoRelationNotesForNovel(nov) || relationAutoResynced;
+        }
         if (isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig })) {
           mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
         }
@@ -261,6 +265,9 @@ export function useAppEntityMilestoneActions({
       }
       if (forceMapAutoApplied) {
         showToast('Đã đồng bộ quan hệ Thế Lực ↔ Bản đồ (AUTO).', 'success');
+      }
+      if (relationAutoResynced) {
+        showToast('Đã đồng bộ lại liên kết Thế Lực ↔ Bản đồ trên toàn bộ thẻ.', 'success');
       }
       if (mapHierarchyAutoApplied) {
         showToast('Đã đồng bộ cây Bản đồ (AUTO).', 'success');
@@ -574,6 +581,7 @@ export function useAppEntityMilestoneActions({
         if (removed) {
           let removedAutoMsCount = 0;
           let forceMapResynced = false;
+          let relationAutoResynced = false;
           let mapHierarchyResynced = false;
           if (removedEntityName) {
             removedAutoMsCount = removeOwnerAcquisitionMilestonesByItem(updated, {
@@ -587,6 +595,9 @@ export function useAppEntityMilestoneActions({
           }
           const removedLonConfig = (updated.tabsConfig || []).find((tab) => tab.id === removedLonId);
           const removedNhoConfig = removedLonConfig?.subTabs?.find((tab) => tab.id === removedNhoId) || null;
+          if (isAutoRelationScopeLonId(removedLonId, removedLonConfig?.label || '')) {
+            relationAutoResynced = syncAllAutoRelationNotesForNovel(updated) || relationAutoResynced;
+          }
           if (
             isMapCollectionScope({
               activeTabLon: removedLonId,
@@ -617,6 +628,9 @@ export function useAppEntityMilestoneActions({
           });
           if (forceMapResynced) {
             showToast('Đã đồng bộ lại AUTO Thế Lực ↔ Bản đồ sau khi xóa thẻ.', 'success');
+          }
+          if (relationAutoResynced) {
+            showToast('Đã dọn và đồng bộ lại liên kết AUTO trên các thẻ liên quan.', 'success');
           }
           if (mapHierarchyResynced) {
             showToast('Đã đồng bộ lại AUTO cây Bản đồ sau khi xóa thẻ.', 'success');
@@ -664,6 +678,7 @@ export function useAppEntityMilestoneActions({
         onConfirm: () => {
           const prev = activeNovelData ? structuredClone(activeNovelData) : null;
           // Tính mergedKeys trước khi updateActiveNovelData để tránh stale closure.
+          let relationAutoResynced = false;
           let mapHierarchyAutoApplied = false;
           const mergedKeys = new Set();
           if (snapshot.dynamicData) {
@@ -688,6 +703,12 @@ export function useAppEntityMilestoneActions({
               ent.status = safeString(ent.dynamicData.f_status).trim();
             }
             if (
+              isAutoRelationScopeLonId(activeTabLon, currentTabConfig?._parentLabel || '') &&
+              mergedKeys.has('f_status')
+            ) {
+              relationAutoResynced = syncAllAutoRelationNotesForNovel(nov) || relationAutoResynced;
+            }
+            if (
               isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig }) &&
               (mergedKeys.has('f_title') || mergedKeys.has('f_status') || mergedKeys.has('f_vi_tri'))
             ) {
@@ -709,6 +730,9 @@ export function useAppEntityMilestoneActions({
           });
           if (mapHierarchyAutoApplied) {
             showToast('Đã đồng bộ cây Bản đồ (AUTO).', 'success');
+          }
+          if (relationAutoResynced) {
+            showToast('Đã đồng bộ lại liên kết AUTO trên các thẻ liên quan.', 'success');
           }
         },
       });
