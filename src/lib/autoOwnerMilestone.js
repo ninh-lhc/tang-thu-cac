@@ -5,6 +5,21 @@ const OWNER_LABEL_RE = /(nguoi\s*so\s*huu|ch[uủ]\s*nh[aâ]n)/i;
 const OWNER_LINE_PREFIX_RE = /^\s*[-*]?\s*(nguoi\s*so\s*huu|chu\s*nhan)\s*:\s*/i;
 const OWNER_VALUE_RE = /^(.*?)\s*\((\d{1,6})\)\s*(\[(?:!!|!|\?|\.\.\.|x)\]|!!|!|\?|\.\.\.|x)?\s*$/i;
 const OWNER_ALLOWED_SUFFIX_RE = /^\s*(\[(?:!!|!|\?|\.\.\.|x)\]|!!|!|\?|\.\.\.|x)?\s*$/i;
+const OWNER_LABEL_FLEX_RE =
+  /(nguoi\s*so\s*huu|chu\s*nhan|nguoi\s*su\s*dung|nguoi\s*tu\s*luyen|truyen\s*nhan|khe\s*chu)/i;
+const OWNER_LINE_PREFIX_FLEX_RE =
+  /^\s*[-*]?\s*(nguoi\s*so\s*huu|chu\s*nhan|nguoi\s*su\s*dung|nguoi\s*tu\s*luyen|truyen\s*nhan|khe\s*chu)\s*:\s*/i;
+const OWNER_LABEL_EFFECTIVE_RE = OWNER_LABEL_FLEX_RE || OWNER_LABEL_RE;
+const OWNER_LINE_PREFIX_EFFECTIVE_RE = OWNER_LINE_PREFIX_FLEX_RE || OWNER_LINE_PREFIX_RE;
+const OWNER_FALLBACK_FIELD_IDS = new Set([
+  'f_chu',
+  'f_owner',
+  'f_nguoi_so_huu',
+  'f_nguoi_su_dung',
+  'f_nguoi_tu_luyen',
+  'f_truyen_nhan',
+  'f_khe_chu',
+]);
 
 const LABEL_RANK = {
   critical: 5,
@@ -75,7 +90,7 @@ export function parseOwnerTimelineHintDetailed({ dynamicData, fieldsTemplate, ra
   let sawOwnerField = false;
   for (const f of fields) {
     const label = normalizeAscii(f?.label || '');
-    if (!OWNER_LABEL_RE.test(label)) continue;
+    if (!OWNER_LABEL_EFFECTIVE_RE.test(label)) continue;
     sawOwnerField = true;
     const rawVal = String(dyn?.[f.id] || '').trim();
     if (!rawVal) continue;
@@ -84,11 +99,21 @@ export function parseOwnerTimelineHintDetailed({ dynamicData, fieldsTemplate, ra
     return { hint: null, reason: parsed.reason || 'invalid_owner_format', source: 'field' };
   }
 
+  // Fallback cho tab/field custom: khong can trung label, chi can key quen thuoc.
+  for (const fieldId of OWNER_FALLBACK_FIELD_IDS) {
+    const rawVal = String(dyn?.[fieldId] || '').trim();
+    if (!rawVal) continue;
+    sawOwnerField = true;
+    const parsed = parseOwnerValueWithReason(rawVal);
+    if (parsed.hint) return { hint: parsed.hint, reason: null, source: 'field-id' };
+    return { hint: null, reason: parsed.reason || 'invalid_owner_format', source: 'field-id' };
+  }
+
   const lines = String(rawText || '').split(/\r?\n/);
   let sawOwnerLine = false;
   for (const line of lines) {
     const normalized = normalizeAscii(line);
-    if (!OWNER_LINE_PREFIX_RE.test(normalized)) continue;
+    if (!OWNER_LINE_PREFIX_EFFECTIVE_RE.test(normalized)) continue;
     sawOwnerLine = true;
     const value = line.replace(/^\s*[-*]?\s*[^:]+:\s*/, '');
     const parsed = parseOwnerValueWithReason(value);
@@ -101,16 +126,16 @@ export function parseOwnerTimelineHintDetailed({ dynamicData, fieldsTemplate, ra
 
 export function ownerTimelineHintReasonToMessage(reason) {
   if (!reason || reason === 'no_owner_hint' || reason === 'empty') return '';
-  const sample = 'Người sở hữu: [[Tên]] (10) ?';
+  const sample = 'Lạc Nam (26) ?';
   switch (reason) {
     case 'missing_chapter':
       return `Không tự tạo mốc được: thiếu chương. Mẫu: ${sample}`;
     case 'invalid_chapter':
       return `Không tự tạo mốc được: chương chưa đúng dạng (số trong ngoặc). Mẫu: ${sample}`;
     case 'empty_owner':
-      return `Không tự tạo mốc được: thiếu tên chủ sở hữu (phần trước ngoặc). Mẫu: ${sample}`;
+      return `Không tự tạo mốc được: thiếu tên nhân vật (phần trước ngoặc). Mẫu: ${sample}`;
     case 'invalid_label_token':
-      return 'Không tự tạo mốc được: nhãn chỉ nhận ?, !, !!, ..., x. Mẫu: Người sở hữu: [[Tên]] (10) ?';
+      return `Không tự tạo mốc được: nhãn chỉ nhận ?, !, !!, ..., x. Mẫu: ${sample}`;
     default:
       return `Không tự tạo mốc được: định dạng chưa đúng. Mẫu: ${sample}`;
   }
@@ -349,3 +374,6 @@ export function syncAutoOwnerMilestonesItemRename(novelData, itemRef) {
 export const OWNER_TOKEN_GUIDE_TEXT =
   '[?] Chưa rõ · [!] Quan trọng · [!!] Bước ngoặt · [...] Xuyên suốt · [x] Tạm bỏ';
 
+export const OWNER_HINT_INPUT_FORMAT_TEXT = 'Định dạng chung: Tên nhân vật (số chương) ?';
+export const OWNER_HINT_PREFIX_GUIDE_TEXT =
+  'Prefix hỗ trợ: Người sở hữu:, Chủ nhân:, Người sử dụng:, Người tu luyện:, Truyền nhân:, Khế chủ:';

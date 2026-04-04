@@ -34,7 +34,13 @@ import {
 import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
 import { autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
 import { MILESTONE_LABELS } from './lib/milestoneLabels.js';
-import { OWNER_TOKEN_GUIDE_TEXT } from './lib/autoOwnerMilestone.js';
+import {
+  OWNER_HINT_INPUT_FORMAT_TEXT,
+  OWNER_HINT_PREFIX_GUIDE_TEXT,
+  OWNER_TOKEN_GUIDE_TEXT,
+} from './lib/autoOwnerMilestone.js';
+import { isCultivationRelationScope } from './lib/cultivationRelationSync.js';
+import { normalizeAsciiText } from './lib/statusHierarchyParser.js';
 import { mergeTabsByGenres } from './genreTabsMap.js';
 import { searchNovelData, dedupeDeepSearchResults, metadataSearchHits } from './deepSearchCore.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
@@ -676,6 +682,20 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
     const f = fieldsTemplate.find((x) => x.id === 'f_status');
     return f?.label || 'Tóm tắt dưới tên';
   }, [fieldsTemplate]);
+  const parentScopeKey = useMemo(
+    () => normalizeAsciiText(`${safeString(parentTabId)} ${safeString(parentLabel)}`),
+    [parentTabId, parentLabel]
+  );
+  const isForceScope = parentScopeKey.includes('the luc');
+  const isCultivationScope = useMemo(
+    () =>
+      isCultivationRelationScope({
+        activeTabLon: parentTabId,
+        activeTabNho: tabConfig?.id || '',
+        currentTabConfig: tabConfig || null,
+      }),
+    [parentTabId, tabConfig]
+  );
   const [formData, setFormData] = useState({ id: null, name: '', avatar: '', rawText: '' });
   const [dynamicData, setDynamicData] = useState({});
   const trapRef = useFocusTrap(isOpen);
@@ -828,10 +848,37 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
             <div className="rounded-xl border border-cyan-800/40 bg-cyan-950/15 px-3 py-2">
               <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-300 mb-1">Token nhãn cuối dòng (auto mốc Nhân Vật)</p>
               <p className="text-[11px] text-slate-300 font-serif leading-relaxed">
-                Ở dòng <strong>Người sở hữu</strong>, dùng cú pháp: <code className="text-cyan-300">Lạc Nam (26) ?</code> hoặc <code className="text-cyan-300">Lạc Nam (26) !!</code>.
+                <strong className="text-cyan-200">Chuẩn chung:</strong>{' '}
+                <code className="text-cyan-300">{OWNER_HINT_INPUT_FORMAT_TEXT}</code>
+              </p>
+              <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
+                {OWNER_HINT_PREFIX_GUIDE_TEXT}
               </p>
               <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
                 {OWNER_TOKEN_GUIDE_TEXT}
+              </p>
+            </div>
+          )}
+
+          {isForceScope && (
+            <div className="rounded-xl border border-fuchsia-800/40 bg-fuchsia-950/10 px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-fuchsia-300 mb-1">Chuẩn AUTO Thế Lực ↔ Bản Đồ</p>
+              <p className="text-[11px] text-slate-300 font-serif leading-relaxed">
+                Nhập trong <strong>{safeString(fStatusLabel)}</strong> theo mẫu{' '}
+                <code className="text-fuchsia-200">Loai - Cap bac - Dia diem 1 - Dia diem 2</code>.
+              </p>
+              <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
+                Nếu đang dùng mẫu tách trường, hệ thống vẫn đọc từ <code className="text-fuchsia-200">f_status</code> (cấp bậc) + <code className="text-fuchsia-200">f_dia_ban</code> (địa bàn).
+              </p>
+            </div>
+          )}
+
+          {isCultivationScope && (
+            <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/10 px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-300 mb-1">Chuẩn AUTO Hệ Thống ↔ Cảnh Giới</p>
+              <p className="text-[11px] text-slate-300 font-serif leading-relaxed">
+                Ở tab Cảnh Giới, nhập <code className="text-emerald-200">f_status</code> theo mẫu{' '}
+                <code className="text-emerald-200">De Nhat - Linh Canh Bat Bo</code> để app tự ghép sang Hệ Thống Tu Luyện.
               </p>
             </div>
           )}

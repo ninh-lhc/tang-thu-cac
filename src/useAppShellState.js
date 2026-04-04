@@ -140,6 +140,9 @@ export function useAppShellState() {
 
   const [dirHandle, setDirHandle] = useState(embeddedPreviewBootstrap ? 'LOCAL_STORAGE' : null);
   const [activeNovelDirHandle, setActiveNovelDirHandle] = useState(null);
+  const [isDirectoryConnectionBootstrapping, setIsDirectoryConnectionBootstrapping] = useState(
+    () => !embeddedPreviewBootstrap
+  );
 
   const { toastMessage, setToastMessage, toastTimerRef, showToast } = useToast();
 
@@ -198,10 +201,12 @@ export function useAppShellState() {
     if (directoryRestoreAttemptedRef.current) return;
     if (isEmbeddedPreview()) {
       directoryRestoreAttemptedRef.current = true;
+      setIsDirectoryConnectionBootstrapping(false);
       return;
     }
     if (dirHandle) {
       directoryRestoreAttemptedRef.current = true;
+      setIsDirectoryConnectionBootstrapping(false);
       return;
     }
 
@@ -260,21 +265,36 @@ export function useAppShellState() {
       const storedHandle = await loadPersistedDirectoryHandle();
       if (cancelled) return;
 
+      let restoredConnection = false;
+      let hydratedFromDisk = false;
       if (storedHandle) {
         const usable = await isPersistedDirectoryHandleUsable(storedHandle);
         if (cancelled) return;
         if (usable) {
+          restoredConnection = true;
           setDirHandle(storedHandle);
-          const hydrated = await loadSnapshotFromHandle(storedHandle);
+          hydratedFromDisk = await loadSnapshotFromHandle(storedHandle);
           if (cancelled) return;
-          if (hydrated) return;
         } else {
           await clearPersistedDirectoryHandle();
         }
       }
 
-      if (!cancelled) {
+      if (!cancelled && !hydratedFromDisk) {
         loadShadowSnapshot();
+      }
+
+      if (!cancelled) {
+        setIsDirectoryConnectionBootstrapping(false);
+        if (restoredConnection) {
+          const restoredLabel = safeString(storedHandle?.name || '').trim();
+          showToast(
+            restoredLabel
+              ? `Đã khôi phục thư mục "${restoredLabel}" từ lần trước.`
+              : 'Đã khôi phục thư mục đã kết nối từ lần trước.',
+            'success'
+          );
+        }
       }
     };
 
@@ -288,6 +308,7 @@ export function useAppShellState() {
     globalTabsConfigRef,
     novelStatsByIdRef,
     novelsMetadataRef,
+    showToast,
     setDirHandle,
     setGlobalTabsConfig,
     setNovelStatsById,
@@ -449,6 +470,7 @@ export function useAppShellState() {
     setDirHandle,
     activeNovelDirHandle,
     setActiveNovelDirHandle,
+    isDirectoryConnectionBootstrapping,
     toastMessage,
     setToastMessage,
     toastTimerRef,

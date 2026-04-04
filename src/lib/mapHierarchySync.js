@@ -48,6 +48,7 @@ function detectMapLevelInfo(...inputs) {
     if (!n) continue;
     if (n.includes('vi dien')) return { label: 'Vị Diện', rank: 120 };
     if (n.includes('tinh cau') || n.includes('tinh vuc')) return { label: 'Tinh Cầu', rank: 110 };
+    if (n.includes('gioi') && !n.includes('bien gioi')) return { label: 'Giới', rank: 105 };
     if (n.includes('dai luc')) return { label: 'Đại Lục', rank: 100 };
     if (n.includes('chau')) return { label: 'Châu', rank: 90 };
     if (n.includes('de quoc') || n.includes('vuong trieu') || n.includes('quoc')) return { label: 'Đế Quốc', rank: 80 };
@@ -126,16 +127,17 @@ export function isMapCollectionScope({ activeTabLon = '', activeTabNho = '', cur
   return parent.includes('ban do');
 }
 
-function findMapTabPath(nov) {
+function findMapTabPaths(nov) {
+  const out = [];
   for (const lon of nov?.tabsConfig || []) {
     for (const nho of lon?.subTabs || []) {
       if (nho?.viewType !== 'collection-track') continue;
       if (isMapCollectionScope({ activeTabLon: lon.id, activeTabNho: nho.id, currentTabConfig: nho, parentLabel: lon.label })) {
-        return { lonId: lon.id, nhoId: nho.id, parentLabel: lon.label || '' };
+        out.push({ lonId: lon.id, nhoId: nho.id, parentLabel: lon.label || '' });
       }
     }
   }
-  return null;
+  return out;
 }
 
 function ensureCollectionTabData(nov, lonId, nhoId) {
@@ -317,13 +319,8 @@ function buildMapChildrenBlock(targetRecord, allRecords, byName) {
   return lines.join('\n');
 }
 
-export function syncAllMapHierarchyAutoBlocks(nov) {
-  if (!nov) return false;
-  const mapPath = findMapTabPath(nov);
-  if (!mapPath) return false;
-  const mapTab = ensureCollectionTabData(nov, mapPath.lonId, mapPath.nhoId);
-  if (!Array.isArray(mapTab.entities) || mapTab.entities.length === 0) return false;
-
+function syncMapHierarchyInTab(mapTab) {
+  if (!Array.isArray(mapTab?.entities) || mapTab.entities.length === 0) return false;
   let changed = false;
   const referencedParents = new Set();
   (mapTab.entities || []).forEach((ent) => {
@@ -371,38 +368,53 @@ export function syncAllMapHierarchyAutoBlocks(nov) {
   return changed;
 }
 
+export function syncAllMapHierarchyAutoBlocks(nov) {
+  if (!nov) return false;
+  const mapPaths = findMapTabPaths(nov);
+  if (mapPaths.length === 0) return false;
+
+  let changed = false;
+  mapPaths.forEach((mapPath) => {
+    const mapTab = ensureCollectionTabData(nov, mapPath.lonId, mapPath.nhoId);
+    changed = syncMapHierarchyInTab(mapTab) || changed;
+  });
+  return changed;
+}
+
 export function syncMapHierarchyNameReferences(nov, { entityId = '', oldName = '', newName = '' } = {}) {
   if (!nov) return 0;
-  const mapPath = findMapTabPath(nov);
-  if (!mapPath) return 0;
-  const mapTab = ensureCollectionTabData(nov, mapPath.lonId, mapPath.nhoId);
+  const mapPaths = findMapTabPaths(nov);
+  if (mapPaths.length === 0) return 0;
   const oldKey = normalizeAscii(oldName);
   const nextName = safeString(newName).trim();
   if (!oldKey || !nextName || oldKey === normalizeAscii(nextName)) return 0;
 
   let touched = 0;
-  (mapTab.entities || []).forEach((entity) => {
-    if (!entity || entity.id === entityId) return;
-    if (!entity.dynamicData || typeof entity.dynamicData !== 'object') entity.dynamicData = {};
+  mapPaths.forEach((mapPath) => {
+    const mapTab = ensureCollectionTabData(nov, mapPath.lonId, mapPath.nhoId);
+    (mapTab.entities || []).forEach((entity) => {
+      if (!entity || entity.id === entityId) return;
+      if (!entity.dynamicData || typeof entity.dynamicData !== 'object') entity.dynamicData = {};
 
-    const explicitPath = safeString(entity.dynamicData.f_vi_tri).trim();
-    if (explicitPath) {
-      const replaced = replaceMapPathNames(explicitPath, oldName, nextName);
-      if (replaced.changed) {
-        entity.dynamicData.f_vi_tri = replaced.text;
-        touched += 1;
+      const explicitPath = safeString(entity.dynamicData.f_vi_tri).trim();
+      if (explicitPath) {
+        const replaced = replaceMapPathNames(explicitPath, oldName, nextName);
+        if (replaced.changed) {
+          entity.dynamicData.f_vi_tri = replaced.text;
+          touched += 1;
+        }
+        return;
       }
-      return;
-    }
 
-    const fallback = extractMapParentPath(entity);
-    if (!fallback.fromStatusFallback) return;
-    const rawStatus = safeString(entity.dynamicData.f_status || entity.status).trim();
-    const replaced = replaceMapPathNames(rawStatus, oldName, nextName);
-    if (!replaced.changed) return;
-    entity.dynamicData.f_status = replaced.text;
-    entity.status = replaced.text;
-    touched += 1;
+      const fallback = extractMapParentPath(entity);
+      if (!fallback.fromStatusFallback) return;
+      const rawStatus = safeString(entity.dynamicData.f_status || entity.status).trim();
+      const replaced = replaceMapPathNames(rawStatus, oldName, nextName);
+      if (!replaced.changed) return;
+      entity.dynamicData.f_status = replaced.text;
+      entity.status = replaced.text;
+      touched += 1;
+    });
   });
 
   return touched;
@@ -410,11 +422,13 @@ export function syncMapHierarchyNameReferences(nov, { entityId = '', oldName = '
 
 export function syncMapHierarchyAutoBlocks(nov, { entityId } = {}) {
   if (!nov) return false;
+  const mapPaths = findMapTabPaths(nov);
+  if (mapPaths.length === 0) return false;
   if (entityId) {
-    const mapPath = findMapTabPath(nov);
-    if (!mapPath) return false;
-    const mapTab = ensureCollectionTabData(nov, mapPath.lonId, mapPath.nhoId);
-    const found = (mapTab.entities || []).some((ent) => ent?.id === entityId);
+    const found = mapPaths.some((mapPath) => {
+      const mapTab = ensureCollectionTabData(nov, mapPath.lonId, mapPath.nhoId);
+      return (mapTab.entities || []).some((ent) => ent?.id === entityId);
+    });
     if (!found) return false;
   }
   return syncAllMapHierarchyAutoBlocks(nov);

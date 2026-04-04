@@ -265,6 +265,106 @@ describe('theLucBanDoSync', () => {
     expect(mapEnt.info).not.toContain('old auto');
   });
 
+  it('syncs and creates location cards across all map subtabs under Ban Do', () => {
+    const nov = {
+      tabsConfig: [
+        { id: 'the-luc', label: 'The Luc', subTabs: [{ id: 'gia-toc', label: 'Gia Toc', viewType: 'collection-track' }] },
+        {
+          id: 'ban-do',
+          label: 'Ban Do',
+          subTabs: [
+            { id: 'ha-gioi-tinh-cau', label: 'Ha Gioi Tinh Cau / Tieu The Gioi', viewType: 'collection-track' },
+            { id: 'tien-ma-gioi', label: 'Tien Ma Gioi / Tieu Vu Tru', viewType: 'collection-track' },
+          ],
+        },
+      ],
+      data: {
+        'the-luc': {
+          'gia-toc': {
+            overview: '',
+            entities: [
+              {
+                id: 'tl-huyet',
+                name: 'Huyet Linh Tong',
+                dynamicData: { f_status: 'Tong Mon - Bat Cap the luc - Huyet Gioi - Huyet Hoang Dia' },
+                info: '',
+              },
+            ],
+          },
+        },
+        'ban-do': {
+          'ha-gioi-tinh-cau': {
+            overview: '',
+            entities: [{ id: 'm-1', name: 'Da Lang Tien Tinh', info: '' }],
+          },
+          'tien-ma-gioi': {
+            overview: '',
+            entities: [{ id: 'm-2', name: 'Huyet Gioi', info: 'manual map note' }],
+          },
+        },
+      },
+    };
+
+    const ok = syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' });
+    expect(ok).toBe(true);
+
+    const tienMaMap = nov.data['ban-do']['tien-ma-gioi'].entities;
+    const haGioiMap = nov.data['ban-do']['ha-gioi-tinh-cau'].entities;
+    const huyetGioi = tienMaMap.find((x) => x.name === 'Huyet Gioi');
+    const huyetHoangDia = tienMaMap.find((x) => x.name === 'Huyet Hoang Dia');
+    const wrongTabCard = haGioiMap.find((x) => x.name === 'Huyet Hoang Dia');
+
+    expect(String(huyetGioi?.info || '')).toContain('manual map note');
+    expect(String(huyetGioi?.info || '')).toContain('AUTO_MAP_THE_LUC_LIST');
+    expect(String(huyetGioi?.info || '')).toContain('[[Huyet Linh Tong]]');
+    expect(huyetHoangDia).toBeTruthy();
+    expect(String(huyetHoangDia?.info || '')).toContain('AUTO_MAP_THE_LUC_LIST');
+    expect(String(huyetHoangDia?.info || '')).toContain('[[Huyet Linh Tong]]');
+    expect(wrongTabCard).toBeFalsy();
+  });
+
+  it('supports split force inputs (rank + location fields) for auto sync', () => {
+    const nov = {
+      tabsConfig: [
+        { id: 'the-luc', label: 'The Luc', subTabs: [{ id: 'gia-toc', label: 'Gia Toc', viewType: 'collection-track' }] },
+        {
+          id: 'ban-do',
+          label: 'Ban Do',
+          subTabs: [{ id: 'ha-gioi', label: 'Ha Gioi', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'the-luc': {
+          'gia-toc': {
+            overview: '',
+            entities: [
+              {
+                id: 'tl-01',
+                name: 'Huyet Linh Tong',
+                dynamicData: {
+                  f_status: 'Bat Cap the luc',
+                  f_dia_ban: 'Huyet Gioi - Huyet Hoang Dia',
+                },
+                info: '',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const ok = syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' });
+    expect(ok).toBe(true);
+    const mapEntities = nov.data['ban-do']['ha-gioi'].entities;
+    const huyetGioi = mapEntities.find((x) => x.name === 'Huyet Gioi');
+    const huyetHoangDia = mapEntities.find((x) => x.name === 'Huyet Hoang Dia');
+    expect(huyetGioi).toBeTruthy();
+    expect(huyetHoangDia).toBeTruthy();
+    expect(String(huyetGioi?.info || '')).toContain('AUTO_MAP_THE_LUC_LIST');
+    expect(String(huyetGioi?.info || '')).toContain('[[Huyet Linh Tong]]');
+    expect(String(huyetHoangDia?.info || '')).toContain('AUTO_MAP_THE_LUC_LIST');
+  });
+
   it('returns false and does not mutate when force status format is invalid', () => {
     const nov = {
       tabsConfig: [

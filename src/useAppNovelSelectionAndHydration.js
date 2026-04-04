@@ -11,6 +11,8 @@ import {
 } from './MasterEngines.js';
 import { buildNovelSearchIndex, countEntitiesInNovel } from './deepSearchCore.js';
 import { cleanupAutoRelationLegacyInfoForNovel, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
+import { syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
+import { syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
 import { syncAllTheLucMapAutoBlocks } from './lib/theLucBanDoSync.js';
 
@@ -18,6 +20,8 @@ function syncFullNovelAutoBlocks(novelData) {
   let changed = false;
   changed = syncAllTheLucMapAutoBlocks(novelData, { sourceLonId: 'the-luc' }) || changed;
   changed = syncAllAutoRelationNotesForNovel(novelData) || changed;
+  changed = syncAllMainCharacterRelationBlocks(novelData) || changed;
+  changed = syncAllCultivationRelationBlocks(novelData) || changed;
   changed = syncAllMapHierarchyAutoBlocks(novelData) || changed;
   return changed;
 }

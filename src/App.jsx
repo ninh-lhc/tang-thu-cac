@@ -81,6 +81,8 @@ import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { exportEntityProfilePdf } from './entityProfilePrint.js';
 import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
+import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
+import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { AppMainPane } from './AppMainPane.jsx';
 import { AppModalLayer } from './AppModalLayer.jsx';
 
@@ -208,6 +210,7 @@ export default function App() {
     setNovelStatsById,
     isStatsBackfilling,
     setIsStatsBackfilling,
+    isDirectoryConnectionBootstrapping,
     novelStatsByIdRef,
     novelsMetadataRef,
     globalTabsConfigRef,
@@ -1132,6 +1135,19 @@ export default function App() {
           if (isMapCollectionScope({ activeTabLon: lonId, activeTabNho: nhoId, currentTabConfig: nho, parentLabel: lon?.label || '' })) {
             syncAllMapHierarchyAutoBlocks(nov);
           }
+          if (isCultivationRelationScope({ activeTabLon: lonId, activeTabNho: nhoId, currentTabConfig: nho })) {
+            syncAllCultivationRelationBlocks(nov);
+          }
+          if (
+            isMainCharacterRelationScope({
+              activeTabLon: lonId,
+              activeTabNho: nhoId,
+              currentTabConfig: nho,
+              parentLabel: lon?.label || '',
+            })
+          ) {
+            syncAllMainCharacterRelationBlocks(nov);
+          }
       });
       if (targetExistingId) {
         showToast(`"${quickName}" đã trùng thẻ có sẵn - đã thêm vào bí danh và liên kết về thẻ cũ.`, 'warning');
@@ -1958,6 +1974,7 @@ export default function App() {
         setToastMessage={setToastMessage}
         isUploading={isUploading}
         importProgress={importProgress}
+        isDirectoryConnectionBootstrapping={isDirectoryConnectionBootstrapping}
         currentContextDirHandle={currentContextDirHandle}
       />
 

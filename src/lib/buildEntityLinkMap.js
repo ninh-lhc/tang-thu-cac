@@ -7,6 +7,26 @@ import { normalizeAsciiText, parseStatusHierarchy, splitStatusHierarchyTokens } 
 import { buildSyntheticWikiNames } from './entityWikiDisambiguation.js';
 
 const NAME_SPLIT_RE = /[,/|()]/;
+const REALM_TIER_SUFFIXES = [
+  'Sơ Kỳ',
+  'Trung Kỳ',
+  'Hậu Kỳ',
+  'Viên Mãn',
+  'Đỉnh Phong',
+  'Sơ',
+  'Trung',
+  'Hậu',
+  'Đệ Nhất',
+  'Đệ Nhị',
+  'Đệ Tam',
+  'Đệ Tứ',
+  'Đệ Ngũ',
+  'Đệ Lục',
+  'Đệ Thất',
+  'Đệ Bát',
+  'Đệ Cửu',
+  'Đệ Thập',
+];
 
 function splitNames(nameText) {
   return String(nameText || '')
@@ -47,6 +67,23 @@ function collectEntityContextKeys(entity) {
   return out;
 }
 
+function isRealmSubTabPath(activeNovelData, lonId, nhoId) {
+  const nhoKey = normalizeContextKey(String(nhoId || '').replace(/-/g, ' '));
+  if (nhoKey.includes('canh gioi')) return true;
+
+  const tabs = Array.isArray(activeNovelData?.tabsConfig) ? activeNovelData.tabsConfig : [];
+  const lon = tabs.find((tab) => tab?.id === lonId);
+  const nho = (lon?.subTabs || []).find((sub) => sub?.id === nhoId);
+  const labelKey = normalizeContextKey(String(nho?.label || '').replace(/-/g, ' '));
+  return labelKey.includes('canh gioi');
+}
+
+function buildRealmTierAliasNames(baseName) {
+  const base = String(baseName || '').trim();
+  if (!base) return [];
+  return REALM_TIER_SUFFIXES.map((suffix) => `${base} ${suffix}`);
+}
+
 export function buildEntityLinkMap(activeNovelData) {
   if (!activeNovelData) return [];
   const map = [];
@@ -70,6 +107,9 @@ export function buildEntityLinkMap(activeNovelData) {
         };
         addNames(ent.name, sharedMeta);
         if (ent.dynamicData) addNames(ent.dynamicData.f_alias, sharedMeta);
+        if (isRealmSubTabPath(activeNovelData, lonId, nhoId)) {
+          addNames(buildRealmTierAliasNames(ent?.name).join(' | '), sharedMeta);
+        }
         addNames(
           buildSyntheticWikiNames({
             name: ent?.name,

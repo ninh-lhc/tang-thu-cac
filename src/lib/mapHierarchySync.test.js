@@ -5,6 +5,7 @@ import {
   syncMapHierarchyAutoBlocks,
   syncMapHierarchyNameReferences,
 } from './mapHierarchySync.js';
+import { normalizeAsciiText } from './statusHierarchyParser.js';
 
 function createNovelWithMapEntities(entities) {
   return {
@@ -40,6 +41,47 @@ function createNovelWithCustomMapTab(entities) {
         'world-map-custom': {
           overview: '',
           entities,
+        },
+      },
+    },
+  };
+}
+
+function createNovelWithMultipleMapSubtabs() {
+  return {
+    tabsConfig: [
+      {
+        id: 'ban-do',
+        label: 'Ban Do',
+        subTabs: [
+          { id: 'ha-gioi-tinh-cau', label: 'Ha Gioi Tinh Cau / Tieu The Gioi', viewType: 'collection-track' },
+          { id: 'tien-ma-gioi', label: 'Tien Ma Gioi / Tieu Vu Tru', viewType: 'collection-track' },
+        ],
+      },
+    ],
+    data: {
+      'ban-do': {
+        'ha-gioi-tinh-cau': {
+          overview: '',
+          entities: [
+            {
+              id: 'hg-1',
+              name: 'Man Hoang Dai Luc',
+              info: '',
+              dynamicData: { f_title: 'Dai Luc', f_vi_tri: 'Viet Long Tinh Cau' },
+            },
+          ],
+        },
+        'tien-ma-gioi': {
+          overview: '',
+          entities: [
+            {
+              id: 'tm-1',
+              name: 'Huyet Hoang Dia',
+              info: '',
+              dynamicData: { f_title: 'Dia Danh', f_vi_tri: 'Huyet Gioi' },
+            },
+          ],
         },
       },
     },
@@ -218,5 +260,53 @@ describe('mapHierarchySync', () => {
 
     const child = novel.data['tai-nguyen']['dia-danh'].entities.find((ent) => ent.id === 'm1');
     expect(child.dynamicData.f_vi_tri).toBe('Hạ Giới Tinh Cầu - Hạ Giới Vị Diện');
+  });
+
+  it('syncs map hierarchy across all map subtabs under a Ban Do parent', () => {
+    expect(
+      isMapCollectionScope({
+        activeTabLon: 'ban-do',
+        activeTabNho: 'ha-gioi-tinh-cau',
+        currentTabConfig: { id: 'ha-gioi-tinh-cau', label: 'Ha Gioi Tinh Cau / Tieu The Gioi', viewType: 'collection-track' },
+        parentLabel: 'Ban Do',
+      })
+    ).toBe(true);
+
+    const novel = createNovelWithMultipleMapSubtabs();
+    const ok = syncAllMapHierarchyAutoBlocks(novel);
+    expect(ok).toBe(true);
+
+    const haGioiEntities = novel.data['ban-do']['ha-gioi-tinh-cau'].entities;
+    const tienMaEntities = novel.data['ban-do']['tien-ma-gioi'].entities;
+    const haGioiChild = haGioiEntities.find((ent) => ent.id === 'hg-1');
+    const haGioiParent = haGioiEntities.find((ent) => ent.name === 'Viet Long Tinh Cau');
+    const tienMaChild = tienMaEntities.find((ent) => ent.id === 'tm-1');
+    const tienMaParent = tienMaEntities.find((ent) => ent.name === 'Huyet Gioi');
+
+    expect(haGioiParent).toBeTruthy();
+    expect(tienMaParent).toBeTruthy();
+    expect(String(haGioiChild?.info || '')).toContain('AUTO_MAP_HIERARCHY_META');
+    expect(String(tienMaChild?.info || '')).toContain('AUTO_MAP_HIERARCHY_META');
+    expect(String(haGioiParent?.info || '')).toContain('AUTO_MAP_CHILDREN_LIST');
+    expect(String(tienMaParent?.info || '')).toContain('AUTO_MAP_CHILDREN_LIST');
+  });
+
+  it('classifies "... Gioi" map names as Gioi level in AUTO meta', () => {
+    const novel = createNovelWithMapEntities([
+      {
+        id: 'm-gioi',
+        name: 'Huyet Gioi',
+        info: '',
+        dynamicData: {
+          f_vi_tri: 'Tien Ma Vi Dien',
+        },
+      },
+    ]);
+
+    const ok = syncAllMapHierarchyAutoBlocks(novel);
+    expect(ok).toBe(true);
+    const source = novel.data['tai-nguyen']['dia-danh'].entities.find((ent) => ent.id === 'm-gioi');
+    const normalizedInfo = normalizeAsciiText(String(source?.info || ''));
+    expect(normalizedInfo).toContain('loai dia danh: gioi');
   });
 });

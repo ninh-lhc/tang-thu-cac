@@ -8,6 +8,8 @@ import { generateId, safeString } from './MasterUtils.jsx';
 import { countEntitiesInNovel } from './deepSearchCore.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { applyAutoRelationNotesForEntity, isAutoRelationScopeLonId, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
+import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
+import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
 import {
   appendOwnerAcquisitionMilestone,
@@ -96,6 +98,8 @@ export function useAppEntityMilestoneActions({
       let ownerMilestoneRenameSynced = 0;
       let forceMapAutoApplied = false;
       let relationAutoResynced = false;
+      let mainCharacterRelationResynced = false;
+      let cultivationRelationAutoResynced = false;
       let mapHierarchyAutoApplied = false;
       let mapHierarchyRenameSynced = 0;
 
@@ -221,6 +225,21 @@ export function useAppEntityMilestoneActions({
         if (isAutoRelationScopeLonId(activeTabLon, currentTabConfig?._parentLabel || '')) {
           relationAutoResynced = syncAllAutoRelationNotesForNovel(nov) || relationAutoResynced;
         }
+        if (isCultivationRelationScope({ activeTabLon, activeTabNho, currentTabConfig })) {
+          cultivationRelationAutoResynced =
+            syncAllCultivationRelationBlocks(nov) || cultivationRelationAutoResynced;
+        }
+        if (
+          isMainCharacterRelationScope({
+            activeTabLon,
+            activeTabNho,
+            currentTabConfig,
+            parentLabel: currentTabConfig?._parentLabel || '',
+          })
+        ) {
+          mainCharacterRelationResynced =
+            syncAllMainCharacterRelationBlocks(nov) || mainCharacterRelationResynced;
+        }
         if (isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig })) {
           mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
         }
@@ -269,11 +288,17 @@ export function useAppEntityMilestoneActions({
       if (relationAutoResynced) {
         showToast('Đã đồng bộ lại liên kết Thế Lực ↔ Bản đồ trên toàn bộ thẻ.', 'success');
       }
+      if (mainCharacterRelationResynced) {
+        showToast('Đã đồng bộ quan hệ Nhân Vật Chính ↔ các tab nhân vật liên quan (AUTO).', 'success');
+      }
       if (mapHierarchyAutoApplied) {
         showToast('Đã đồng bộ cây Bản đồ (AUTO).', 'success');
       }
       if (mapHierarchyRenameSynced > 0) {
         showToast(`Đã cập nhật ${mapHierarchyRenameSynced} thẻ Bản đồ theo tên mới.`, 'success');
+      }
+      if (cultivationRelationAutoResynced) {
+        showToast('Đã đồng bộ lại liên kết Hệ Thống Tu Luyện ↔ Cảnh Giới Tu Vi (AUTO).', 'success');
       }
       const ownerWarn = ownerTimelineHintReasonToMessage(ownerTimelineHintDetail?.reason);
       if (!ownerMilestoneAutoApplied && ownerWarn && activeTabLon !== 'nhan-vat') {
@@ -582,6 +607,8 @@ export function useAppEntityMilestoneActions({
           let removedAutoMsCount = 0;
           let forceMapResynced = false;
           let relationAutoResynced = false;
+          let mainCharacterRelationResynced = false;
+          let cultivationRelationResynced = false;
           let mapHierarchyResynced = false;
           if (removedEntityName) {
             removedAutoMsCount = removeOwnerAcquisitionMilestonesByItem(updated, {
@@ -597,6 +624,27 @@ export function useAppEntityMilestoneActions({
           const removedNhoConfig = removedLonConfig?.subTabs?.find((tab) => tab.id === removedNhoId) || null;
           if (isAutoRelationScopeLonId(removedLonId, removedLonConfig?.label || '')) {
             relationAutoResynced = syncAllAutoRelationNotesForNovel(updated) || relationAutoResynced;
+          }
+          if (
+            isCultivationRelationScope({
+              activeTabLon: removedLonId,
+              activeTabNho: removedNhoId,
+              currentTabConfig: removedNhoConfig,
+            })
+          ) {
+            cultivationRelationResynced =
+              syncAllCultivationRelationBlocks(updated) || cultivationRelationResynced;
+          }
+          if (
+            isMainCharacterRelationScope({
+              activeTabLon: removedLonId,
+              activeTabNho: removedNhoId,
+              currentTabConfig: removedNhoConfig,
+              parentLabel: removedLonConfig?.label || '',
+            })
+          ) {
+            mainCharacterRelationResynced =
+              syncAllMainCharacterRelationBlocks(updated) || mainCharacterRelationResynced;
           }
           if (
             isMapCollectionScope({
@@ -631,6 +679,12 @@ export function useAppEntityMilestoneActions({
           }
           if (relationAutoResynced) {
             showToast('Đã dọn và đồng bộ lại liên kết AUTO trên các thẻ liên quan.', 'success');
+          }
+          if (mainCharacterRelationResynced) {
+            showToast('Đã đồng bộ lại quan hệ Nhân Vật Chính ↔ các tab nhân vật liên quan.', 'success');
+          }
+          if (cultivationRelationResynced) {
+            showToast('Đã đồng bộ lại liên kết Hệ Thống Tu Luyện ↔ Cảnh Giới Tu Vi (AUTO).', 'success');
           }
           if (mapHierarchyResynced) {
             showToast('Đã đồng bộ lại AUTO cây Bản đồ sau khi xóa thẻ.', 'success');
@@ -679,6 +733,8 @@ export function useAppEntityMilestoneActions({
           const prev = activeNovelData ? structuredClone(activeNovelData) : null;
           // Tính mergedKeys trước khi updateActiveNovelData để tránh stale closure.
           let relationAutoResynced = false;
+          let mainCharacterRelationResynced = false;
+          let cultivationRelationAutoResynced = false;
           let mapHierarchyAutoApplied = false;
           const mergedKeys = new Set();
           if (snapshot.dynamicData) {
@@ -709,6 +765,29 @@ export function useAppEntityMilestoneActions({
               relationAutoResynced = syncAllAutoRelationNotesForNovel(nov) || relationAutoResynced;
             }
             if (
+              isCultivationRelationScope({
+                activeTabLon,
+                activeTabNho,
+                currentTabConfig,
+              }) &&
+              (mergedKeys.has('f_status') || mergedKeys.has('f_alias'))
+            ) {
+              cultivationRelationAutoResynced =
+                syncAllCultivationRelationBlocks(nov) || cultivationRelationAutoResynced;
+            }
+            if (
+              isMainCharacterRelationScope({
+                activeTabLon,
+                activeTabNho,
+                currentTabConfig,
+                parentLabel: currentTabConfig?._parentLabel || '',
+              }) &&
+              mergedKeys.has('f_quan_he')
+            ) {
+              mainCharacterRelationResynced =
+                syncAllMainCharacterRelationBlocks(nov) || mainCharacterRelationResynced;
+            }
+            if (
               isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig }) &&
               (mergedKeys.has('f_title') || mergedKeys.has('f_status') || mergedKeys.has('f_vi_tri'))
             ) {
@@ -733,6 +812,12 @@ export function useAppEntityMilestoneActions({
           }
           if (relationAutoResynced) {
             showToast('Đã đồng bộ lại liên kết AUTO trên các thẻ liên quan.', 'success');
+          }
+          if (mainCharacterRelationResynced) {
+            showToast('Đã đồng bộ quan hệ Nhân Vật Chính ↔ các tab nhân vật liên quan (AUTO).', 'success');
+          }
+          if (cultivationRelationAutoResynced) {
+            showToast('Đã đồng bộ lại liên kết Hệ Thống Tu Luyện ↔ Cảnh Giới Tu Vi (AUTO).', 'success');
           }
         },
       });

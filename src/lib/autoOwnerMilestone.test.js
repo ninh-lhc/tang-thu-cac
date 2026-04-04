@@ -34,6 +34,33 @@ describe('autoOwnerMilestone', () => {
     expect(out).toEqual({ ownerName: 'Lạc Nam', chapter: 2, labelId: 'critical' });
   });
 
+  it('parses owner hint from flexible owner field labels', () => {
+    const out = parseOwnerTimelineHint({
+      dynamicData: { f_nguoi_su_dung: 'Lạc Nam (35) !' },
+      fieldsTemplate: [{ id: 'f_nguoi_su_dung', label: 'Người sử dụng' }],
+      rawText: '',
+    });
+    expect(out).toEqual({ ownerName: 'Lạc Nam', chapter: 35, labelId: 'important' });
+  });
+
+  it('parses owner hint from fallback owner field ids without label match', () => {
+    const out = parseOwnerTimelineHint({
+      dynamicData: { f_nguoi_tu_luyen: 'Lạc Nam (99) ?' },
+      fieldsTemplate: [{ id: 'f_nguoi_tu_luyen', label: 'Nhân vật liên kết' }],
+      rawText: '',
+    });
+    expect(out).toEqual({ ownerName: 'Lạc Nam', chapter: 99, labelId: 'uncertain' });
+  });
+
+  it('parses owner hint from flexible note prefixes', () => {
+    const out = parseOwnerTimelineHint({
+      dynamicData: {},
+      fieldsTemplate: [],
+      rawText: 'Mô tả...\nTruyền nhân: Lạc Nam (18) !!',
+    });
+    expect(out).toEqual({ ownerName: 'Lạc Nam', chapter: 18, labelId: 'critical' });
+  });
+
   it('parses owner hint with wiki name wrapper', () => {
     const out = parseOwnerTimelineHint({
       dynamicData: {},

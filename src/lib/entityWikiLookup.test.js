@@ -4,6 +4,18 @@ import { buildEntityNameLookup, resolveEntityLookup } from './entityWikiLookup.j
 
 function createNovelWithDuplicateFamily() {
   return {
+    tabsConfig: [
+      {
+        id: 'tai-nguyen',
+        label: 'Tai Nguyen',
+        subTabs: [{ id: 'dia-danh', label: 'Dia Danh', viewType: 'collection-track' }],
+      },
+      {
+        id: 'the-luc',
+        label: 'The Luc',
+        subTabs: [{ id: 'gia-toc', label: 'Gia Toc', viewType: 'collection-track' }],
+      },
+    ],
     data: {
       'tai-nguyen': {
         'dia-danh': {
@@ -28,6 +40,31 @@ function createNovelWithDuplicateFamily() {
               id: 'lac-gia-man-hoang',
               name: 'Lac Gia',
               dynamicData: { f_status: 'Gia Toc - Bat Cap The Luc - Man Hoang Dai Luc - Viet Long Tinh Cau' },
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+function createNovelWithRealmCards() {
+  return {
+    tabsConfig: [
+      {
+        id: 'tu-luyen',
+        label: 'Tu Luyen',
+        subTabs: [{ id: 'canh-gioi-tu-vi', label: 'Canh Gioi Tu Vi', viewType: 'collection-track' }],
+      },
+    ],
+    data: {
+      'tu-luyen': {
+        'canh-gioi-tu-vi': {
+          entities: [
+            {
+              id: 'realm-luyen-hu',
+              name: 'Luyen Hu',
+              dynamicData: {},
             },
           ],
         },
@@ -61,5 +98,20 @@ describe('entityWikiLookup', () => {
 
     expect(resolved?.dest?.entityId).toBe('lac-gia-man-hoang');
     expect(resolvedSynthetic?.dest?.entityId).toBe('lac-gia-man-hoang');
+  });
+
+  it('resolves realm tier variants to the base realm card', () => {
+    const entityMap = buildEntityLinkMap(createNovelWithRealmCards());
+    const lookup = buildEntityNameLookup(entityMap);
+
+    const mappedVariants = entityMap.filter(
+      (item) => item.dest?.entityId === 'realm-luyen-hu' && String(item.name || '').startsWith('Luyen Hu ')
+    );
+    const resolvedTier = resolveEntityLookup(lookup, 'Luyen Hu Vien Man');
+    const resolvedMid = resolveEntityLookup(lookup, 'Luyen Hu Hau Ky');
+
+    expect(mappedVariants.length).toBeGreaterThan(0);
+    expect(resolvedTier?.dest?.entityId).toBe('realm-luyen-hu');
+    expect(resolvedMid?.dest?.entityId).toBe('realm-luyen-hu');
   });
 });

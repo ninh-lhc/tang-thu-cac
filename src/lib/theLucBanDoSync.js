@@ -1,9 +1,11 @@
 /**
- * Đồng bộ quan hệ Thế Lực -> Bản đồ từ chuỗi f_status:
- *   "Loại - Cấp bậc - Địa điểm 1 - Địa điểm 2 ..."
+ * Đồng bộ quan hệ Thế Lực -> Bản đồ.
  *
- * - Ghi block AUTO vào info của thẻ Thế Lực (không đè phần user tự viết).
- * - Upsert thẻ địa điểm ở tab Bản đồ/Bí cảnh và ghi block AUTO danh sách thế lực tọa lạc.
+ * Hỗ trợ 2 kiểu nhập:
+ * - Chuỗi gộp trong `f_status`: "Loại - Cấp bậc - Địa điểm 1 - Địa điểm 2 ..."
+ * - Trường tách: `f_status` (cấp bậc) + `f_dia_ban` (địa bàn), loại suy từ tab/field.
+ *
+ * Chỉ ghi vào khối AUTO, không ghi đè phần người dùng viết tay.
  */
 import {
   normalizeAsciiText,
@@ -11,6 +13,7 @@ import {
   splitStatusHierarchyTokens,
 } from './statusHierarchyParser.js';
 import { buildPreferredWikiName } from './entityWikiDisambiguation.js';
+import { isMapCollectionScope } from './mapHierarchySync.js';
 
 const AUTO_FORCE_BLOCK_START = '<!-- AUTO_THE_LUC_META:START -->';
 const AUTO_FORCE_BLOCK_END = '<!-- AUTO_THE_LUC_META:END -->';
@@ -54,24 +57,46 @@ function parseRankNumber(rankText) {
   return parseStatusRankNumber(rankText);
 }
 
-function parseForceStatus(statusText) {
-  const parts = splitStatusParts(statusText);
-  if (parts.length < 3) return null;
-  const orgType = parts[0];
-  const rankText = parts[1];
-  const locations = parts.slice(2);
-  if (!orgType || !rankText || locations.length === 0) return null;
+function isLikelyRankText(text) {
+  const raw = safeString(text).trim();
+  if (!raw) return false;
+  if (Number.isFinite(parseRankNumber(raw))) return true;
+  const n = normalizeAscii(raw).replace(/[^a-z0-9]+/g, ' ');
+  if (/\b(cap|bac|tang|pham|giai)\b/.test(n)) return true;
+  if (/\b(de nhat|de nhi|de tam|de tu|de ngu|de luc|de that|de bat|de cuu|de thap)\b/.test(n)) return true;
+  if (/\b(so ky|trung ky|hau ky|vien man|dinh phong|dot pha)\b/.test(n)) return true;
+  return false;
+}
+
+function dedupeNameList(list) {
+  const out = [];
+  const seen = new Set();
+  (list || []).forEach((item) => {
+    const name = safeString(item).trim();
+    const key = normalizeAscii(name);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(name);
+  });
+  return out;
+}
+
+function buildForceMeta(orgType, rankText, locations) {
+  const org = safeString(orgType).trim();
+  const rank = safeString(rankText).trim();
+  const locs = dedupeNameList(locations);
+  if (!org || !rank || locs.length === 0) return null;
   return {
-    orgType,
-    rankText,
-    rankNum: parseRankNumber(rankText),
-    locations,
-    tailPath: locations.join(' > '),
+    orgType: org,
+    rankText: rank,
+    rankNum: parseRankNumber(rank),
+    locations: locs,
+    tailPath: locs.join(' > '),
   };
 }
 
 function classifyOrgType(rawType) {
-  const n = normalizeAscii(rawType);
+  const n = normalizeAscii(rawType).replace(/[^a-z0-9]+/g, ' ');
   if (n.includes('de quoc') || n.includes('quoc gia') || n.includes('trieu')) return 'Đế Quốc';
   if (n.includes('gia toc')) return 'Gia Tộc';
   if (n.includes('hoc vien')) return 'Học Viện';
@@ -80,10 +105,79 @@ function classifyOrgType(rawType) {
   return 'Thế Lực Khác';
 }
 
+function inferOrgTypeFromContext({ dynamicData, sourceNhoId = '', sourceNhoLabel = '' } = {}) {
+  const dyn = dynamicData && typeof dynamicData === 'object' ? dynamicData : {};
+  const candidates = [
+    dyn.f_loai_to_chuc,
+    dyn.f_loai,
+    dyn.f_to_chuc,
+    dyn.f_title,
+    sourceNhoLabel,
+    sourceNhoId,
+  ];
+  for (const candidate of candidates) {
+    const raw = safeString(candidate).trim();
+    if (!raw) continue;
+    const mapped = classifyOrgType(raw);
+    if (mapped !== 'Thế Lực Khác') return mapped;
+  }
+  return 'Thế Lực Khác';
+}
+
+function splitLocationTokens(locationText) {
+  const raw = safeString(locationText)
+    .replace(/[>→»|]+/g, ' - ')
+    .replace(/[,\n;]+/g, ' - ')
+    .trim();
+  if (!raw) return [];
+  return dedupeNameList(splitStatusParts(raw));
+}
+
+function parseForceStatus(statusText, { fallbackOrgType = '' } = {}) {
+  const parts = splitStatusParts(statusText);
+  const fallbackType = safeString(fallbackOrgType).trim();
+  if (parts.length === 0) return null;
+
+  if (parts.length >= 3 && !isLikelyRankText(parts[0])) {
+    return buildForceMeta(parts[0], parts[1], parts.slice(2));
+  }
+  if (fallbackType && parts.length >= 2 && isLikelyRankText(parts[0])) {
+    return buildForceMeta(fallbackType, parts[0], parts.slice(1));
+  }
+  if (parts.length >= 3) {
+    return buildForceMeta(parts[0], parts[1], parts.slice(2));
+  }
+  return null;
+}
+
+function parseForceMetaFromEntity(entity, context = {}) {
+  const dyn = entity?.dynamicData && typeof entity.dynamicData === 'object' ? entity.dynamicData : {};
+  const fallbackOrgType = inferOrgTypeFromContext({
+    dynamicData: dyn,
+    sourceNhoId: context.sourceNhoId,
+    sourceNhoLabel: context.sourceNhoLabel,
+  });
+
+  const statusLine = safeString(dyn.f_status || entity?.status).trim();
+  const statusMeta = parseForceStatus(statusLine, { fallbackOrgType });
+  if (statusMeta) return statusMeta;
+
+  const rankFromStatus = safeString(dyn.f_status).trim();
+  const rankFromCap = safeString(dyn.f_cap).trim();
+  const rankText = isLikelyRankText(rankFromStatus)
+    ? rankFromStatus
+    : (isLikelyRankText(rankFromCap) ? rankFromCap : '');
+  const locationText = safeString(dyn.f_dia_ban || dyn.f_vi_tri).trim();
+  const locations = splitLocationTokens(locationText);
+  if (!rankText || locations.length === 0) return null;
+  return buildForceMeta(fallbackOrgType, rankText, locations);
+}
+
 function detectLocationLevelName(loc) {
   const n = normalizeAscii(loc);
   if (n.includes('tinh cau') || n.includes('tinh vuc')) return { label: 'Tinh Cầu', rank: 100 };
   if (n.includes('dai luc')) return { label: 'Đại Lục', rank: 90 };
+  if (n.includes('gioi') && !n.includes('bien gioi')) return { label: 'Giới', rank: 85 };
   if (n.includes('chau')) return { label: 'Châu', rank: 80 };
   if (n.includes('de quoc') || n.includes('quoc') || n.includes('trieu')) return { label: 'Đế Quốc', rank: 70 };
   if (n.includes('vuc') || n.includes('bien gioi') || n.includes('khu')) return { label: 'Khu Vực', rank: 60 };
@@ -144,23 +238,24 @@ function buildMapAutoBlockLines(locationName, rows, { detailedLayout, duplicateN
   return sectionLines;
 }
 
-function findMapTabPath(nov) {
+function findMapTabPaths(nov) {
+  const out = [];
   for (const lon of nov.tabsConfig || []) {
     for (const nho of lon.subTabs || []) {
       if (nho.viewType !== 'collection-track') continue;
-      const idNorm = normalizeAscii(nho.id);
-      const lbNorm = normalizeAscii(nho.label);
       if (
-        idNorm === 'dia-danh' ||
-        lbNorm.includes('ban do') ||
-        lbNorm.includes('dia danh') ||
-        lbNorm.includes('bi canh')
+        isMapCollectionScope({
+          activeTabLon: lon.id,
+          activeTabNho: nho.id,
+          currentTabConfig: nho,
+          parentLabel: lon.label || '',
+        })
       ) {
-        return { lonId: lon.id, nhoId: nho.id };
+        out.push({ lonId: lon.id, nhoId: nho.id });
       }
     }
   }
-  return null;
+  return out;
 }
 
 function ensureCollectionTabData(nov, lonId, nhoId) {
@@ -195,6 +290,21 @@ function ensureMapEntityByName(tabData, name) {
   return ent;
 }
 
+function pickPreferredMapTabForLocation(item, targetsByName, fallbackMapTab) {
+  const fallback = fallbackMapTab || null;
+  const targetNameKey = normalizeAscii(item?.name);
+  for (const row of item?.rows || []) {
+    const locations = Array.isArray(row?.meta?.locations) ? row.meta.locations : [];
+    for (const locName of locations) {
+      const key = normalizeAscii(locName);
+      if (!key || key === targetNameKey) continue;
+      const targets = targetsByName.get(key) || [];
+      if (targets.length > 0 && targets[0]?.mapTab) return targets[0].mapTab;
+    }
+  }
+  return fallback;
+}
+
 export function buildForceRowsForLocation(forceEntities) {
   return forceEntities
     .filter((x) => x.meta)
@@ -218,7 +328,12 @@ export function syncTheLucMapAutoBlocks(nov, { sourceLonId, sourceNhoId, entityI
   const source = (sourceTab.entities || []).find((e) => e.id === entityId);
   if (!source) return false;
 
-  const meta = parseForceStatus(source.dynamicData?.f_status);
+  const sourceLonCfg = (nov.tabsConfig || []).find((lon) => lon?.id === sourceLonId);
+  const sourceNhoCfg = (sourceLonCfg?.subTabs || []).find((nho) => nho?.id === sourceNhoId);
+  const meta = parseForceMetaFromEntity(source, {
+    sourceNhoId,
+    sourceNhoLabel: safeString(sourceNhoCfg?.label || sourceNhoId),
+  });
   if (!meta) return false;
 
   source.info = mergeAutoBlock(
@@ -240,15 +355,22 @@ export function syncTheLucMapAutoBlocks(nov, { sourceLonId, sourceNhoId, entityI
 
 export function syncAllTheLucMapAutoBlocks(nov, { sourceLonId }) {
   if (!nov || !sourceLonId) return false;
-  const mapPath = findMapTabPath(nov);
-  if (!mapPath) return false;
-  const mapTab = ensureCollectionTabData(nov, mapPath.lonId, mapPath.nhoId);
+  const mapPaths = findMapTabPaths(nov);
+  if (mapPaths.length === 0) return false;
+  const mapTabs = mapPaths.map((path) => ensureCollectionTabData(nov, path.lonId, path.nhoId));
+  const sourceLonCfg = (nov.tabsConfig || []).find((lon) => lon?.id === sourceLonId);
+  const sourceNhoLabelById = new Map(
+    (sourceLonCfg?.subTabs || []).map((nho) => [nho.id, safeString(nho.label || nho.id)])
+  );
 
   const allForceEntities = [];
-  for (const td of Object.values(nov.data?.[sourceLonId] || {})) {
+  for (const [sourceNhoId, td] of Object.entries(nov.data?.[sourceLonId] || {})) {
     const ents = Array.isArray(td?.entities) ? td.entities : [];
     for (const ent of ents) {
-      const m = parseForceStatus(ent?.dynamicData?.f_status);
+      const m = parseForceMetaFromEntity(ent, {
+        sourceNhoId,
+        sourceNhoLabel: sourceNhoLabelById.get(sourceNhoId) || sourceNhoId,
+      });
       if (!m) continue;
       allForceEntities.push({ id: ent.id, name: safeString(ent.name), meta: m });
     }
@@ -272,23 +394,46 @@ export function syncAllTheLucMapAutoBlocks(nov, { sourceLonId }) {
   });
 
   // Clear old AUTO location blocks first so moved/deleted force data does not linger.
-  (mapTab.entities || []).forEach((ent) => {
-    ent.info = removeAutoBlock(ent.info, AUTO_MAP_BLOCK_START, AUTO_MAP_BLOCK_END);
+  mapTabs.forEach((mapTab) => {
+    (mapTab.entities || []).forEach((ent) => {
+      ent.info = removeAutoBlock(ent.info, AUTO_MAP_BLOCK_START, AUTO_MAP_BLOCK_END);
+    });
+  });
+
+  const mapEntityTargetsByName = new Map();
+  mapTabs.forEach((mapTab) => {
+    (mapTab.entities || []).forEach((ent) => {
+      const key = normalizeAscii(ent?.name);
+      if (!key) return;
+      if (!mapEntityTargetsByName.has(key)) mapEntityTargetsByName.set(key, []);
+      mapEntityTargetsByName.get(key).push({ mapTab, entity: ent });
+    });
   });
 
   for (const [, item] of rowsByLoc.entries()) {
-    const locEnt = ensureMapEntityByName(mapTab, item.name);
+    const locKey = normalizeAscii(item.name);
+    let targetEntities = mapEntityTargetsByName.get(locKey) || [];
+    if (targetEntities.length === 0) {
+      const fallbackMapTab = pickPreferredMapTabForLocation(item, mapEntityTargetsByName, mapTabs[0]);
+      const created = ensureMapEntityByName(fallbackMapTab, item.name);
+      targetEntities = [{ mapTab: fallbackMapTab, entity: created }];
+      mapEntityTargetsByName.set(locKey, targetEntities);
+    }
+
     const rows = buildForceRowsForLocation(item.rows);
     const sectionLines = buildMapAutoBlockLines(item.name, rows, {
       detailedLayout: isDetailedMapLayout(item.name),
       duplicateNameCounts,
     });
-    locEnt.info = mergeAutoBlock(
-      locEnt.info,
-      AUTO_MAP_BLOCK_START,
-      AUTO_MAP_BLOCK_END,
-      sectionLines.join('\n')
-    );
+    targetEntities.forEach((target) => {
+      if (!target?.entity) return;
+      target.entity.info = mergeAutoBlock(
+        target.entity.info,
+        AUTO_MAP_BLOCK_START,
+        AUTO_MAP_BLOCK_END,
+        sectionLines.join('\n')
+      );
+    });
   }
 
   return true;

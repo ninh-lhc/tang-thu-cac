@@ -18,6 +18,8 @@ import {
 import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
 import { mutateNovelJournalSelections } from './appNhatKyVaGoiThe.js';
 import { isAutoRelationScopeLonId, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
+import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
+import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { buildHubExtendedCatalogLines } from './lib/hubBangDanhMucCacMucNhatKy.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
@@ -184,6 +186,19 @@ export function useAppMotCuaCapNhat({
       if (isAutoRelationScopeLonId(lonId, lon?.label || '')) {
         syncAllAutoRelationNotesForNovel(nov);
       }
+      if (isCultivationRelationScope({ activeTabLon: lonId, activeTabNho: nhoId, currentTabConfig: nho })) {
+        syncAllCultivationRelationBlocks(nov);
+      }
+      if (
+        isMainCharacterRelationScope({
+          activeTabLon: lonId,
+          activeTabNho: nhoId,
+          currentTabConfig: nho,
+          parentLabel: lon?.label || '',
+        })
+      ) {
+        syncAllMainCharacterRelationBlocks(nov);
+      }
       if (isMapCollectionScope({ activeTabLon: lonId, activeTabNho: nhoId, currentTabConfig: nho, parentLabel: lon?.label || '' })) {
         syncAllMapHierarchyAutoBlocks(nov);
       }
@@ -277,6 +292,8 @@ export function useAppMotCuaCapNhat({
     let ok = 0;
     let fails = [];
     let relationAutoApplied = false;
+    let mainCharacterRelationApplied = false;
+    let cultivationRelationAutoApplied = false;
     let forceMapAutoApplied = false;
     let mapHierarchyAutoApplied = false;
     updateActiveNovelData((nov) => {
@@ -296,6 +313,10 @@ export function useAppMotCuaCapNhat({
       }
       if (r.ok > 0) {
         relationAutoApplied = syncAllAutoRelationNotesForNovel(nov) || relationAutoApplied;
+        mainCharacterRelationApplied =
+          syncAllMainCharacterRelationBlocks(nov) || mainCharacterRelationApplied;
+        cultivationRelationAutoApplied =
+          syncAllCultivationRelationBlocks(nov) || cultivationRelationAutoApplied;
         forceMapAutoApplied = syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' }) || forceMapAutoApplied;
         mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
       }
@@ -320,6 +341,12 @@ export function useAppMotCuaCapNhat({
       }
       if (relationAutoApplied) {
         showToast('Đã đồng bộ lại liên kết AUTO trên các thẻ liên quan.', 'success');
+      }
+      if (mainCharacterRelationApplied) {
+        showToast('Đã đồng bộ quan hệ Nhân Vật Chính ↔ các tab nhân vật liên quan (AUTO).', 'success');
+      }
+      if (cultivationRelationAutoApplied) {
+        showToast('Đã đồng bộ lại liên kết Hệ Thống Tu Luyện ↔ Cảnh Giới Tu Vi (AUTO).', 'success');
       }
     } else {
       showToast(fails.length ? fails.slice(0, 4).join('; ') : 'Không áp dụng được.', 'warning');
