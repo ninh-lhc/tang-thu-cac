@@ -3,7 +3,7 @@
 // App.jsx truyền toàn bộ state/ref/setter cần thiết, hook không giữ source state riêng.
 // Mục tiêu: tách gọn code mà không đổi hành vi runtime.
 import { useCallback, useMemo } from 'react';
-import { lockFieldsTemplateIfFirstEntity } from './MasterEngines.js';
+import { lockFieldsTemplateIfFirstEntity, resolveFieldsTemplate } from './MasterEngines.js';
 import { generateId, safeString } from './MasterUtils.jsx';
 import { countEntitiesInNovel } from './deepSearchCore.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
@@ -26,6 +26,7 @@ import {
   syncAllTheLucMapAutoBlocksDetailed,
   syncTheLucMapAutoBlocksDetailed,
 } from './lib/theLucBanDoSync.js';
+import { buildEntityNoteTemplate } from './lib/entityNoteTemplate.js';
 
 export function useAppEntityMilestoneActions({
   activeNovelData,
@@ -184,7 +185,14 @@ export function useAppEntityMilestoneActions({
               statusLine,
             });
           } else {
-            const baseInfo = copyRawToInfo ? formData.rawText : '';
+            const createInfoTemplate = buildEntityNoteTemplate({
+              entityName: canonicalName,
+              tabLabel: currentTabConfig?.label || '',
+              parentLabel: currentTabConfig?._parentLabel || '',
+              fieldsTemplate: resolveFieldsTemplate(currentTabConfig, activeTabLon, currentTabConfig?._parentLabel || ''),
+              dynamicData: mergedNew,
+            });
+            const baseInfo = copyRawToInfo ? formData.rawText : createInfoTemplate;
             tabData.entities.push({
               id: newEntityId,
               name: canonicalName,
