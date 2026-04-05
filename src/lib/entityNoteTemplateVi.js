@@ -64,18 +64,23 @@ function buildAutoHintLines(tabLabel, parentLabel) {
 }
 
 export function buildEntityNoteTemplate({
+  entityName = '',
   tabLabel = '',
   parentLabel = '',
   fieldsTemplate = [],
   dynamicData = {},
 }) {
   const scopeLabel = [parentLabel, tabLabel].map((part) => safeString(part).trim()).filter(Boolean).join(' › ');
+  const canonicalName = safeString(entityName).trim();
   const fields = Array.isArray(fieldsTemplate) ? fieldsTemplate : [];
   const lines = [];
 
   lines.push(scopeLabel ? `## Mẫu nhập nhanh - ${scopeLabel}` : '## Mẫu nhập nhanh');
   lines.push('> Xóa dòng không cần, thêm dòng cần bổ sung.');
   lines.push('');
+  if (canonicalName) {
+    lines.push(`- Danh xưng / Tên gọi: ${canonicalName}`);
+  }
 
   if (fields.length === 0) {
     lines.push('- Nội dung:');
