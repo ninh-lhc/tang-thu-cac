@@ -669,7 +669,22 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
   );
 });
 
-export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, parentLabel, geminiApiKey, geminiMode = 'standard' }) => {
+export const ModalEntity = ({
+  isOpen,
+  onClose,
+  onSave,
+  initialData,
+  tabConfig,
+  onUpdateTemplate,
+  handleAvatarDrop,
+  handlePickLocalImage,
+  dirHandle,
+  parentTabId,
+  parentLabel,
+  geminiApiKey,
+  geminiMode = 'standard',
+  onOpenAutoSyncGuide,
+}) => {
   void onUpdateTemplate;
   void geminiApiKey;
   void geminiMode;
@@ -757,9 +772,22 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
       aria-label={initialData ? `Tu bổ ${terms.entity}` : `Khởi tạo ${terms.entity}`}
     >
       <div data-testid="modal-entity-root" ref={trapRef} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-2xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col max-h-[85vh] min-h-0">
-        <div className="px-6 pt-6 pb-4 flex-shrink-0 border-b border-slate-800 flex justify-between items-center bg-slate-900">
+        <div className="px-6 pt-6 pb-4 flex-shrink-0 border-b border-slate-800 flex justify-between items-center gap-3 bg-slate-900">
           <h2 className="text-2xl font-heading font-bold text-slate-100">{initialData ? `Tu Bổ ${terms.entity}` : `Khởi Tạo ${terms.entity}`}</h2>
-          <button type="button" onClick={onClose} className="text-slate-500 hover:text-white"><X size={20}/></button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {onOpenAutoSyncGuide && (
+              <button
+                type="button"
+                onClick={onOpenAutoSyncGuide}
+                className="inline-flex items-center gap-2 rounded-xl border border-cyan-800/40 bg-cyan-950/20 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-cyan-300 transition-colors hover:border-cyan-500/60 hover:bg-cyan-900/30 hover:text-cyan-200"
+              >
+                <BookOpen size={14} /> Quy chuẩn
+              </button>
+            )}
+            <button type="button" onClick={onClose} className="text-slate-500 hover:text-white">
+              <X size={20}/>
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 custom-scrollbar space-y-5 bg-slate-900">
@@ -900,7 +928,26 @@ export const ModalEntity = ({ isOpen, onClose, onSave, initialData, tabConfig, o
   );
 };
 
-export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultChapterWhenNew, tabConfig, onUpdateTemplate, handleAvatarDrop, handlePickLocalImage, dirHandle, parentTabId, parentLabel, geminiApiKey, geminiMode = 'standard', entityMap = [], showToast, autoLinkToastEnabled = true }) => {
+export const ModalMilestone = ({
+  isOpen,
+  onClose,
+  onSave,
+  initialData,
+  defaultChapterWhenNew,
+  tabConfig,
+  onUpdateTemplate,
+  handleAvatarDrop,
+  handlePickLocalImage,
+  dirHandle,
+  parentTabId,
+  parentLabel,
+  geminiApiKey,
+  geminiMode = 'standard',
+  entityMap = [],
+  showToast,
+  autoLinkToastEnabled = true,
+  onOpenAutoSyncGuide,
+}) => {
   const fieldsTemplate = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const [editingFieldId, setEditingFieldId] = useState(null);
   const [editingFieldLabel, setEditingFieldLabel] = useState('');
@@ -1124,7 +1171,18 @@ export const ModalMilestone = ({ isOpen, onClose, onSave, initialData, defaultCh
                    <h2 className="text-2xl font-heading font-bold text-slate-100">Trạng Thái Tại Mốc Này</h2>
                    <p className="text-xs text-slate-400 font-serif mt-1 italic">{terms.snapshotHint}</p>
                 </div>
-                <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={20}/></button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {onOpenAutoSyncGuide && (
+                    <button
+                      type="button"
+                      onClick={onOpenAutoSyncGuide}
+                      className="inline-flex items-center gap-2 rounded-xl border border-cyan-800/40 bg-cyan-950/20 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-cyan-300 transition-colors hover:border-cyan-500/60 hover:bg-cyan-900/30 hover:text-cyan-200"
+                    >
+                      <BookOpen size={14} /> Quy chuẩn
+                    </button>
+                  )}
+                  <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={20}/></button>
+                </div>
              </div>
              <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-5">
                 <div className="flex gap-4 mb-4">

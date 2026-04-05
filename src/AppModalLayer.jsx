@@ -22,6 +22,7 @@ const AppModalMotCua = lazy(() => import('./AppModalMotCua.jsx').then((m) => ({ 
 const AppModalQuanLyTab = lazy(() => import('./AppModalQuanLyTab.jsx').then((m) => ({ default: m.AppModalQuanLyTab })));
 const AppModalLenhNhanh = lazy(() => import('./AppModalLenhNhanh.jsx').then((m) => ({ default: m.AppModalLenhNhanh })));
 const AppModalGoiYNoiTraCuu = lazy(() => import('./AppModalGoiYNoiTraCuu.jsx').then((m) => ({ default: m.AppModalGoiYNoiTraCuu })));
+const AppModalAutoSyncGuide = lazy(() => import('./AppModalAutoSyncGuide.jsx').then((m) => ({ default: m.AppModalAutoSyncGuide })));
 
 export function AppModalLayer({
   isEntityModalOpen,
@@ -38,6 +39,8 @@ export function AppModalLayer({
   aiMode,
   isMilestoneModalOpen,
   setIsMilestoneModalOpen,
+  isAutoSyncGuideOpen,
+  setIsAutoSyncGuideOpen,
   handleSaveMilestone,
   editingMilestoneData,
   activeNovelData,
@@ -137,6 +140,7 @@ export function AppModalLayer({
       <ModalEntity
         isOpen={isEntityModalOpen}
         onClose={() => setIsEntityModalOpen(false)}
+        onOpenAutoSyncGuide={setIsAutoSyncGuideOpen ? () => setIsAutoSyncGuideOpen(true) : undefined}
         onSave={handleSaveEntity}
         initialData={editingEntityData}
         tabConfig={currentTabConfig}
@@ -152,6 +156,7 @@ export function AppModalLayer({
       <ModalMilestone
         isOpen={isMilestoneModalOpen}
         onClose={() => setIsMilestoneModalOpen(false)}
+        onOpenAutoSyncGuide={setIsAutoSyncGuideOpen ? () => setIsAutoSyncGuideOpen(true) : undefined}
         onSave={handleSaveMilestone}
         initialData={editingMilestoneData}
         defaultChapterWhenNew={
@@ -191,6 +196,10 @@ export function AppModalLayer({
         setPerformanceMode={setPerformanceMode}
         autoLinkToastEnabled={autoLinkToastEnabled}
         setAutoLinkToastEnabled={setAutoLinkToastEnabled}
+      />
+      <AppModalAutoSyncGuide
+        isOpen={isAutoSyncGuideOpen}
+        onClose={() => setIsAutoSyncGuideOpen?.(false)}
       />
       {isCommandPaletteOpen && (
         <AppModalLenhNhanh

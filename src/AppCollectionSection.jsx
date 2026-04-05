@@ -63,6 +63,7 @@ export function AppCollectionSection({
   AdvancedFieldSelect,
   getTerms,
   handleOpenCreateEntity,
+  onOpenAutoSyncGuide,
   // collection list/gallery
   collectionSubTab,
   setCollectionSubTab,
@@ -547,6 +548,7 @@ export function AppCollectionSection({
                   globalLinkRegex={globalLinkRegex}
                   onNavigate={handleNavigate}
                   memoizedEntityInfo={memoizedEntityInfo}
+                  onOpenAutoSyncGuide={onOpenAutoSyncGuide}
                 />
 
                 <AppEntitySummaryBlocks

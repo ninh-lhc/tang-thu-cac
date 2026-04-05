@@ -170,6 +170,8 @@ export default function App() {
     setEditingEntityData,
     isMilestoneModalOpen,
     setIsMilestoneModalOpen,
+    isAutoSyncGuideOpen,
+    setIsAutoSyncGuideOpen,
     quickCreateData,
     setQuickCreateData,
     confirmDialog,
@@ -1376,6 +1378,10 @@ export default function App() {
     setSelectedEntityId,
   ]);
 
+  const openAutoSyncGuide = useCallback(() => {
+    setIsAutoSyncGuideOpen(true);
+  }, [setIsAutoSyncGuideOpen]);
+
   // Migration: gộp fieldsTemplate — thêm trường mới, giữ nhãn tùy chỉnh của người dùng
   const { handleSelectNovel } = useAppNovelSelectionAndHydration({
     dirHandle,
@@ -1675,6 +1681,7 @@ export default function App() {
     AdvancedFieldSelect,
     getTerms,
     handleOpenCreateEntity,
+    onOpenAutoSyncGuide: openAutoSyncGuide,
     collectionSubTab,
     setCollectionSubTab,
     entitiesList,
@@ -1779,6 +1786,8 @@ export default function App() {
     aiMode,
     isMilestoneModalOpen,
     setIsMilestoneModalOpen,
+    isAutoSyncGuideOpen,
+    setIsAutoSyncGuideOpen,
     handleSaveMilestone,
     editingMilestoneData,
     activeNovelData,
