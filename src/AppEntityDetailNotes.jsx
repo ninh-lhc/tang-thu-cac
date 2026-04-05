@@ -38,6 +38,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   globalLinkRegex,
   onNavigate,
   selfEntityId,
+  onOpenAutoSyncGuide,
 }) {
   const s0 = safeString(initialInfo);
   const [notesEdit, setNotesEdit] = useState(() => ({
@@ -131,6 +132,16 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   return (
     <>
       <div className="flex items-center gap-3 flex-wrap justify-end mb-2 w-full">
+        {onOpenAutoSyncGuide && (
+          <button
+            type="button"
+            onClick={onOpenAutoSyncGuide}
+            className="px-3 py-2.5 rounded-[40px] text-[11px] font-bold transition-all shadow-md flex items-center gap-1.5 bg-cyan-950/30 text-cyan-300 hover:bg-cyan-900/40 border border-cyan-800/40"
+            title="Mở quy chuẩn nhập liệu ngay trong app"
+          >
+            <BookOpen size={13} /> Mở quy chuẩn
+          </button>
+        )}
         <button
           disabled={isExtractingAI}
           onClick={async () => {
@@ -359,6 +370,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             globalLinkRegex={globalLinkRegex}
             onNavigate={onNavigate}
             selfEntityId={selectedEntity.id}
+            onOpenAutoSyncGuide={onOpenAutoSyncGuide}
           />
         ) : (
           <div className="font-serif prose prose-invert max-w-none animate-fade-in min-h-[200px]">
