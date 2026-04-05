@@ -140,9 +140,9 @@ export function useAppShellState() {
 
   const [dirHandle, setDirHandle] = useState(embeddedPreviewBootstrap ? 'LOCAL_STORAGE' : null);
   const [activeNovelDirHandle, setActiveNovelDirHandle] = useState(null);
-  const [isDirectoryConnectionBootstrapping, setIsDirectoryConnectionBootstrapping] = useState(
-    () => !embeddedPreviewBootstrap
-  );
+  const isDirectoryConnectionBootstrapping = false;
+  const setIsDirectoryConnectionBootstrapping = () => {};
+  const shouldAutoRestoreDirectory = false;
 
   const { toastMessage, setToastMessage, toastTimerRef, showToast } = useToast();
 
@@ -199,6 +199,8 @@ export function useAppShellState() {
 
   useEffect(() => {
     if (directoryRestoreAttemptedRef.current) return;
+    directoryRestoreAttemptedRef.current = true;
+    if (shouldAutoRestoreDirectory) {
     if (isEmbeddedPreview()) {
       directoryRestoreAttemptedRef.current = true;
       setIsDirectoryConnectionBootstrapping(false);
@@ -310,11 +312,13 @@ export function useAppShellState() {
     return () => {
       cancelled = true;
     };
+    }
   }, [
     dirHandle,
     globalTabsConfigRef,
     novelStatsByIdRef,
     novelsMetadataRef,
+    shouldAutoRestoreDirectory,
     showToast,
     setDirHandle,
     setGlobalTabsConfig,
@@ -340,7 +344,6 @@ export function useAppShellState() {
 
   useEffect(() => {
     if (activeNovelData) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOverviewForm({
         status: activeNovelData.status,
         chaptersRead: activeNovelData.chaptersRead,
