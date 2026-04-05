@@ -262,38 +262,45 @@ export function useAppShellState() {
     };
 
     const run = async () => {
-      const storedHandle = await loadPersistedDirectoryHandle();
-      if (cancelled) return;
-
+      let storedHandle = null;
       let restoredConnection = false;
       let hydratedFromDisk = false;
-      if (storedHandle) {
-        const usable = await isPersistedDirectoryHandleUsable(storedHandle);
+
+      try {
+        storedHandle = await loadPersistedDirectoryHandle();
         if (cancelled) return;
-        if (usable) {
-          restoredConnection = true;
-          setDirHandle(storedHandle);
-          hydratedFromDisk = await loadSnapshotFromHandle(storedHandle);
+
+        if (storedHandle) {
+          const usable = await isPersistedDirectoryHandleUsable(storedHandle);
           if (cancelled) return;
-        } else {
-          await clearPersistedDirectoryHandle();
+          if (usable) {
+            restoredConnection = true;
+            setDirHandle(storedHandle);
+            hydratedFromDisk = await loadSnapshotFromHandle(storedHandle);
+            if (cancelled) return;
+          } else {
+            await clearPersistedDirectoryHandle();
+          }
         }
-      }
 
-      if (!cancelled && !hydratedFromDisk) {
-        loadShadowSnapshot();
-      }
-
-      if (!cancelled) {
-        setIsDirectoryConnectionBootstrapping(false);
-        if (restoredConnection) {
-          const restoredLabel = safeString(storedHandle?.name || '').trim();
-          showToast(
-            restoredLabel
-              ? `Đã khôi phục thư mục "${restoredLabel}" từ lần trước.`
-              : 'Đã khôi phục thư mục đã kết nối từ lần trước.',
-            'success'
-          );
+        if (!cancelled && !hydratedFromDisk) {
+          loadShadowSnapshot();
+        }
+      } catch (error) {
+        console.warn('[TTC] Failed to restore directory connection:', error);
+        if (!cancelled) loadShadowSnapshot();
+      } finally {
+        if (!cancelled) {
+          setIsDirectoryConnectionBootstrapping(false);
+          if (restoredConnection) {
+            const restoredLabel = safeString(storedHandle?.name || '').trim();
+            showToast(
+              restoredLabel
+                ? `Đã khôi phục thư mục "${restoredLabel}" từ lần trước.`
+                : 'Đã khôi phục thư mục đã kết nối từ lần trước.',
+              'success'
+            );
+          }
         }
       }
     };

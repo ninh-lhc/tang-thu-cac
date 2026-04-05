@@ -8,12 +8,22 @@ const DB_NAME = 'tangthu_directory_connection';
 const DB_VERSION = 1;
 const STORE_NAME = 'handles';
 const LAST_HANDLE_KEY = 'last_root_directory';
+const OPEN_DB_TIMEOUT_MS = 4000;
 
 function openDatabase() {
   if (typeof indexedDB === 'undefined') return null;
 
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
+    let timeoutId = null;
+    let settled = false;
+
+    const settle = (handler, value) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      handler(value);
+    };
 
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -23,12 +33,20 @@ function openDatabase() {
     };
 
     request.onerror = () => {
-      reject(request.error || new Error('Failed to open directory handle store'));
+      settle(reject, request.error || new Error('Failed to open directory handle store'));
+    };
+
+    request.onblocked = () => {
+      settle(reject, new Error('Opening directory handle store was blocked by another browser context'));
     };
 
     request.onsuccess = () => {
-      resolve(request.result);
+      settle(resolve, request.result);
     };
+
+    timeoutId = setTimeout(() => {
+      settle(reject, new Error('Timed out while opening directory handle store'));
+    }, OPEN_DB_TIMEOUT_MS);
   });
 }
 
@@ -79,42 +97,57 @@ function deleteValue(db, key) {
 export async function savePersistedDirectoryHandle(handle) {
   if (!handle || handle === 'LOCAL_STORAGE') return;
 
-  const db = await openDatabase();
-  if (!db) return;
+  let db = null;
 
   try {
+    db = await openDatabase();
+    if (!db) return;
     await writeValue(db, LAST_HANDLE_KEY, handle);
   } catch (error) {
     console.warn('[TTC] Failed to persist directory handle:', error);
   } finally {
-    db.close();
+    try {
+      db?.close();
+    } catch {
+      void 0;
+    }
   }
 }
 
 export async function loadPersistedDirectoryHandle() {
-  const db = await openDatabase();
-  if (!db) return null;
+  let db = null;
 
   try {
+    db = await openDatabase();
+    if (!db) return null;
     return await readValue(db, LAST_HANDLE_KEY);
   } catch (error) {
     console.warn('[TTC] Failed to load persisted directory handle:', error);
     return null;
   } finally {
-    db.close();
+    try {
+      db?.close();
+    } catch {
+      void 0;
+    }
   }
 }
 
 export async function clearPersistedDirectoryHandle() {
-  const db = await openDatabase();
-  if (!db) return;
+  let db = null;
 
   try {
+    db = await openDatabase();
+    if (!db) return;
     await deleteValue(db, LAST_HANDLE_KEY);
   } catch (error) {
     console.warn('[TTC] Failed to clear persisted directory handle:', error);
   } finally {
-    db.close();
+    try {
+      db?.close();
+    } catch {
+      void 0;
+    }
   }
 }
 
