@@ -22,7 +22,7 @@ const AppModalMotCua = lazy(() => import('./AppModalMotCua.jsx').then((m) => ({ 
 const AppModalQuanLyTab = lazy(() => import('./AppModalQuanLyTab.jsx').then((m) => ({ default: m.AppModalQuanLyTab })));
 const AppModalLenhNhanh = lazy(() => import('./AppModalLenhNhanh.jsx').then((m) => ({ default: m.AppModalLenhNhanh })));
 const AppModalGoiYNoiTraCuu = lazy(() => import('./AppModalGoiYNoiTraCuu.jsx').then((m) => ({ default: m.AppModalGoiYNoiTraCuu })));
-const AppModalAutoSyncGuide = lazy(() => import('./AppModalAutoSyncGuide.jsx').then((m) => ({ default: m.AppModalAutoSyncGuide })));
+const AppModalAutoSyncGuide = lazy(() => import('./AppModalAutoSyncGuideVi.jsx').then((m) => ({ default: m.AppModalAutoSyncGuide })));
 
 export function AppModalLayer({
   isEntityModalOpen,

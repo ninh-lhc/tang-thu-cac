@@ -26,7 +26,7 @@ import {
   syncAllTheLucMapAutoBlocksDetailed,
   syncTheLucMapAutoBlocksDetailed,
 } from './lib/theLucBanDoSync.js';
-import { buildEntityNoteTemplate } from './lib/entityNoteTemplate.js';
+import { buildEntityNoteTemplate } from './lib/entityNoteTemplateVi.js';
 
 export function useAppEntityMilestoneActions({
   activeNovelData,

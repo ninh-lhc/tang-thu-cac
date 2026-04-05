@@ -1,10 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { buildEntityNoteTemplate } from './entityNoteTemplate.js';
+﻿import { describe, expect, it } from 'vitest';
+import { buildEntityNoteTemplate } from './entityNoteTemplateVi.js';
 
 describe('entityNoteTemplate', () => {
   it('prefills a tab-aware editable skeleton with existing values', () => {
     const text = buildEntityNoteTemplate({
-      entityName: 'Luyện Khí',
       tabLabel: 'Cảnh Giới Tu Vi',
       parentLabel: 'Tu Luyện',
       fieldsTemplate: [
@@ -18,16 +17,18 @@ describe('entityNoteTemplate', () => {
       },
     });
 
-    expect(text).toContain('## Mẫu nhập nhanh — Tu Luyện › Cảnh Giới Tu Vi');
+    expect(text).toContain('## Mẫu nhập nhanh - Tu Luyện › Cảnh Giới Tu Vi');
     expect(text).toContain('- Cảnh giới / Trạng thái: Đệ Nhất - Linh Cảnh Bát Bộ');
     expect(text).toContain('- Danh hiệu / Phân loại: Tu luyện');
     expect(text).toContain('- Biệt danh / tên khác:');
     expect(text).toContain('## Ghi chép chi tiết');
+    expect(text).toContain('## AUTO');
+    expect(text).toContain('Phần này hệ thống tự sinh và tự cập nhật');
   });
 
   it('falls back to a generic content line when no fields are provided', () => {
     const text = buildEntityNoteTemplate({
-      entityName: 'Vô Danh',
+      tabLabel: 'Cảnh Giới Tu Vi',
       fieldsTemplate: [],
       dynamicData: {},
     });
