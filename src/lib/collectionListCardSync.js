@@ -8,8 +8,7 @@ import { normalizeAsciiText, parseRankNumber } from './statusHierarchyParser.js'
 
 const AUTO_LIST_START = '<!-- AUTO_COLLECTION_LIST:START -->';
 const AUTO_LIST_END = '<!-- AUTO_COLLECTION_LIST:END -->';
-const AUTO_LIST_TITLE = '## Danh m\u1ee5c th\u1ebb (AUTO)';
-const AUTO_LIST_FOOTER = '> (T\u1ef1 \u0111\u1ed9ng c\u1eadp nh\u1eadt theo danh s\u00e1ch th\u1ebb trong tab)';
+const AUTO_LIST_TITLE = '# Danh m\u1ee5c th\u1ebb (AUTO)';
 
 const ATTRIBUTE_GROUP_ORDER = [
   'bang',
@@ -170,12 +169,12 @@ function computeGroupOrder(kind, label) {
 
 function buildAutoLines(records, strategy) {
   const items = Array.isArray(records) ? records : [];
-  const lines = [AUTO_LIST_TITLE, `- T\u1ed5ng s\u1ed1 th\u1ebb: ${items.length}`, ''];
+  const lines = [AUTO_LIST_TITLE, '', `- T\u1ed5ng s\u1ed1 th\u1ebb: ${items.length}`, ''];
 
   if (items.length === 0) {
-    lines.push('- Ch\u01b0a c\u00f3 th\u1ebb n\u00e0o trong tab n\u00e0y.');
+    lines.push('## Ch\u01b0a ph\u00e2n lo\u1ea1i (0)');
     lines.push('');
-    lines.push(AUTO_LIST_FOOTER);
+    lines.push('- Ch\u01b0a c\u00f3 th\u1ebb n\u00e0o trong tab n\u00e0y.');
     return lines;
   }
 
@@ -194,7 +193,8 @@ function buildAutoLines(records, strategy) {
 
   groupEntries.forEach(([groupLabel, entities], index) => {
     if (index > 0) lines.push('');
-    lines.push(`### ${groupLabel} (${entities.length})`);
+    lines.push(`## ${groupLabel} (${entities.length})`);
+    lines.push('');
     [...entities]
       .sort((a, b) => safeString(a?.name).localeCompare(safeString(b?.name), 'vi'))
       .forEach((entity) => {
@@ -204,8 +204,6 @@ function buildAutoLines(records, strategy) {
       });
   });
 
-  lines.push('');
-  lines.push(AUTO_LIST_FOOTER);
   return lines;
 }
 

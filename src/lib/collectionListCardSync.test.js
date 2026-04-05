@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { syncAllCollectionListCards } from './collectionListCardSync.js';
 
 function buildNovel() {
@@ -59,10 +59,12 @@ describe('collectionListCardSync', () => {
     expect(changed).toBe(true);
     expect(String(listCard.info || '')).toContain('Ghi chu tay');
     expect(String(listCard.info || '')).toContain('AUTO_COLLECTION_LIST');
+    expect(String(listCard.info || '')).toContain('# Danh mục thẻ (AUTO)');
+    expect(String(listCard.info || '')).toContain('- Tổng số thẻ: 2');
     expect(String(listCard.info || '')).toContain('[[Le Bao Tan Thu]]');
     expect(String(listCard.info || '')).toContain('[[Ruong Dai Le]]');
-    expect(String(listCard.info || '')).toContain('### Dia cap (1)');
-    expect(String(listCard.info || '')).toContain('### Huyen cap (1)');
+    expect(String(listCard.info || '')).toContain('## Dia cap (1)');
+    expect(String(listCard.info || '')).toContain('## Huyen cap (1)');
   });
 
   it('refreshes the AUTO block when the underlying collection changes', () => {
@@ -78,6 +80,7 @@ describe('collectionListCardSync', () => {
 
     expect(changed).toBe(true);
     expect(String(listCard.info || '')).not.toContain('[[Le Bao Tan Thu]]');
+    expect(String(listCard.info || '')).toContain('## Chưa phân loại (0)');
     expect(String(listCard.info || '')).toContain('Chưa có thẻ nào trong tab này.');
   });
 });
