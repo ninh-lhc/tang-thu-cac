@@ -49,6 +49,15 @@ export function buildEntityCanonicalFingerprint(value) {
   return fingerprintFromNormalized(stripped);
 }
 
+const REASON_SCORE = {
+  exact: 6,
+  alias: 5,
+  fingerprint: 4,
+  alias_fingerprint: 3,
+  canonical_fingerprint: 2,
+  alias_canonical_fingerprint: 1,
+};
+
 function splitAliasValues(aliasText) {
   return String(aliasText || '')
     .split(/[,/|()]/)
@@ -72,40 +81,57 @@ export function mergeAliasText(currentAlias, newAlias) {
   return out.join(', ');
 }
 
-export function findEquivalentEntityByName(entities, candidateName, options = {}) {
+function pickBetterReason(currentReason, nextReason) {
+  const currentScore = REASON_SCORE[currentReason] ?? 0;
+  const nextScore = REASON_SCORE[nextReason] ?? 0;
+  return nextScore > currentScore ? nextReason : currentReason;
+}
+
+export function findEquivalentEntitiesByName(entities, candidateName, options = {}) {
   const candidateRaw = String(candidateName || '').trim();
-  if (!candidateRaw) return null;
+  if (!candidateRaw) return [];
   const allowExactNameMatch = options.allowExactNameMatch !== false;
   const candidateLower = candidateRaw.toLowerCase();
   const candidateFp = buildEntityNameFingerprint(candidateRaw);
   const candidateCanonicalFp = buildEntityCanonicalFingerprint(candidateRaw);
-  if (!candidateFp) return null;
+  if (!candidateFp) return [];
   const list = Array.isArray(entities) ? entities : [];
+  const results = [];
   for (let i = 0; i < list.length; i += 1) {
     const ent = list[i];
     const baseName = String(ent?.name || '').trim();
     if (!baseName) continue;
+    let bestReason = null;
     const baseLower = baseName.toLowerCase();
     if (baseLower === candidateLower) {
-      if (allowExactNameMatch) return { index: i, entity: ent, reason: 'exact' };
-      continue;
-    }
-    if (buildEntityNameFingerprint(baseName) === candidateFp) return { index: i, entity: ent, reason: 'fingerprint' };
-    if (candidateCanonicalFp && buildEntityCanonicalFingerprint(baseName) === candidateCanonicalFp) {
-      return { index: i, entity: ent, reason: 'canonical_fingerprint' };
+      if (allowExactNameMatch) bestReason = pickBetterReason(bestReason, 'exact');
+    } else if (buildEntityNameFingerprint(baseName) === candidateFp) {
+      bestReason = pickBetterReason(bestReason, 'fingerprint');
+    } else if (candidateCanonicalFp && buildEntityCanonicalFingerprint(baseName) === candidateCanonicalFp) {
+      bestReason = pickBetterReason(bestReason, 'canonical_fingerprint');
     }
     const aliases = splitAliasValues(ent?.dynamicData?.f_alias);
     for (const alias of aliases) {
       const aliasLower = alias.toLowerCase();
       if (aliasLower === candidateLower) {
-        if (allowExactNameMatch) return { index: i, entity: ent, reason: 'alias' };
+        if (allowExactNameMatch) bestReason = pickBetterReason(bestReason, 'alias');
         continue;
       }
-      if (buildEntityNameFingerprint(alias) === candidateFp) return { index: i, entity: ent, reason: 'alias_fingerprint' };
+      if (buildEntityNameFingerprint(alias) === candidateFp) {
+        bestReason = pickBetterReason(bestReason, 'alias_fingerprint');
+        continue;
+      }
       if (candidateCanonicalFp && buildEntityCanonicalFingerprint(alias) === candidateCanonicalFp) {
-        return { index: i, entity: ent, reason: 'alias_canonical_fingerprint' };
+        bestReason = pickBetterReason(bestReason, 'alias_canonical_fingerprint');
       }
     }
+    if (!bestReason) continue;
+    results.push({ index: i, entity: ent, reason: bestReason });
   }
-  return null;
+  return results;
+}
+
+export function findEquivalentEntityByName(entities, candidateName, options = {}) {
+  const matches = findEquivalentEntitiesByName(entities, candidateName, options);
+  return matches[0] || null;
 }

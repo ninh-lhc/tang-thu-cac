@@ -23,7 +23,11 @@ import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from
 import { buildHubExtendedCatalogLines } from './lib/hubBangDanhMucCacMucNhatKy.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
-import { syncAllTheLucMapAutoBlocks } from './lib/theLucBanDoSync.js';
+import {
+  isForceCollectionScope,
+  summarizeTheLucMapSyncWarnings,
+  syncAllTheLucMapAutoBlocksDetailed,
+} from './lib/theLucBanDoSync.js';
 
 export function useAppMotCuaCapNhat({
   activeNovelData,
@@ -53,8 +57,22 @@ export function useAppMotCuaCapNhat({
 }) {
   const openOverviewHub = useCallback(() => {
     if (!activeNovelData) return;
+    const forceMapAutoApplied = false;
+    const forceMapWarning = '';
     setOverviewHubOpen(true);
     setOverviewHubTab('create');
+    if (forceMapWarning === '__never__') {
+      showToast('ÄÃ£ Ä‘á»“ng bá»™ quan há»‡ Tháº¿ Lá»±c â†” Báº£n Ä‘á»“ (AUTO).', 'success');
+    }
+    if (forceMapWarning === '__never__') {
+      showToast(forceMapWarning, 'warning');
+    }
+    if (forceMapAutoApplied) {
+      showToast('ÄÃ£ Ä‘á»“ng bá»™ quan há»‡ Tháº¿ Lá»±c â†” Báº£n Ä‘á»“ (AUTO).', 'success');
+    }
+    if (forceMapWarning) {
+      showToast(forceMapWarning, 'warning');
+    }
     setHubCreatePreview(null);
     setHubUpdatePanel(null);
     setHubCreateInput('');
@@ -68,7 +86,7 @@ export function useAppMotCuaCapNhat({
       });
     });
     setHubCreatePath(firstPath);
-  }, [activeNovelData, activeTabs, setOverviewHubOpen, setOverviewHubTab, setHubCreatePreview, setHubUpdatePanel, setHubCreateInput, setHubUpdateChapter, setHubCreatePath]);
+  }, [activeNovelData, activeTabs, showToast, setOverviewHubOpen, setOverviewHubTab, setHubCreatePreview, setHubUpdatePanel, setHubCreateInput, setHubUpdateChapter, setHubCreatePath]);
 
   const hubRunCreateAi = useCallback(async () => {
     if (!hubCreatePath) {
@@ -160,6 +178,8 @@ export function useAppMotCuaCapNhat({
       setHubUpdateText((t) => (safeString(t).trim() ? t : `Cập nhật về «${safeString(matched.entity.name)}»: `));
       return;
     }
+    let forceMapAutoApplied = false;
+    let forceMapWarning = '';
     updateActiveNovelData((nov) => {
       if (!nov.data) nov.data = {};
       if (!nov.data[lonId]) nov.data[lonId] = {};
@@ -180,8 +200,18 @@ export function useAppMotCuaCapNhat({
       });
       nov.data[lonId][nhoId] = td;
       lockFieldsTemplateIfFirstEntity(nov, lonId, nhoId);
-      if (lonId === 'the-luc') {
-        syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' });
+      if (
+        isForceCollectionScope({
+          activeTabLon: lonId,
+          activeTabNho: nhoId,
+          currentTabConfig: nho,
+          parentLabel: lon?.label || '',
+        })
+      ) {
+        const forceSyncResult = syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId: lonId });
+        forceMapAutoApplied = forceSyncResult.changed || forceMapAutoApplied;
+        forceMapWarning =
+          summarizeTheLucMapSyncWarnings(forceSyncResult.warnings) || forceMapWarning;
       }
       if (isAutoRelationScopeLonId(lonId, lon?.label || '')) {
         syncAllAutoRelationNotesForNovel(nov);
@@ -204,6 +234,12 @@ export function useAppMotCuaCapNhat({
       }
     });
     showToast(`Đã tạo «${name}». Ảnh avatar: mở đúng mục → thẻ để thêm.`, 'success');
+    if (forceMapAutoApplied) {
+      showToast('ÄÃ£ Ä‘á»“ng bá»™ quan há»‡ Tháº¿ Lá»±c â†” Báº£n Ä‘á»“ (AUTO).', 'success');
+    }
+    if (forceMapWarning) {
+      showToast(forceMapWarning, 'warning');
+    }
     setHubCreatePreview(null);
     setHubCreateInput('');
   }, [
@@ -295,6 +331,7 @@ export function useAppMotCuaCapNhat({
     let mainCharacterRelationApplied = false;
     let cultivationRelationAutoApplied = false;
     let forceMapAutoApplied = false;
+    let forceMapWarning = '';
     let mapHierarchyAutoApplied = false;
     updateActiveNovelData((nov) => {
       const r = mutateNovelJournalSelections(nov, panel);
@@ -317,7 +354,10 @@ export function useAppMotCuaCapNhat({
           syncAllMainCharacterRelationBlocks(nov) || mainCharacterRelationApplied;
         cultivationRelationAutoApplied =
           syncAllCultivationRelationBlocks(nov) || cultivationRelationAutoApplied;
-        forceMapAutoApplied = syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' }) || forceMapAutoApplied;
+        const forceSyncResult = syncAllTheLucMapAutoBlocksDetailed(nov);
+        forceMapAutoApplied = forceSyncResult.changed || forceMapAutoApplied;
+        forceMapWarning =
+          summarizeTheLucMapSyncWarnings(forceSyncResult.warnings) || forceMapWarning;
         mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
       }
     });
@@ -338,6 +378,9 @@ export function useAppMotCuaCapNhat({
       }
       if (forceMapAutoApplied) {
         showToast('Đã đồng bộ quan hệ Thế Lực ↔ Bản đồ (AUTO).', 'success');
+      }
+      if (forceMapWarning) {
+        showToast(forceMapWarning, 'warning');
       }
       if (relationAutoApplied) {
         showToast('Đã đồng bộ lại liên kết AUTO trên các thẻ liên quan.', 'success');

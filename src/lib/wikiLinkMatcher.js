@@ -4,6 +4,18 @@
  */
 
 const normalizeName = (value) => String(value || '').trim().toLowerCase();
+const WORD_CHAR_RE = /[\p{L}\p{N}_]/u;
+
+function isWordChar(ch) {
+  if (!ch) return false;
+  return WORD_CHAR_RE.test(ch);
+}
+
+function isBoundary(text, start, end) {
+  const left = start > 0 ? text[start - 1] : '';
+  const right = end < text.length ? text[end] : '';
+  return !isWordChar(left) && !isWordChar(right);
+}
 
 export const buildWikiLinkMatcher = (entityMap) => {
   if (!Array.isArray(entityMap) || entityMap.length === 0) return null;
@@ -44,7 +56,7 @@ export const splitTextByWikiMatcher = (text, matcher) => {
     let matchedName = null;
     if (bucket) {
       for (const candidate of bucket) {
-        if (sourceLower.startsWith(candidate, i)) {
+        if (sourceLower.startsWith(candidate, i) && isBoundary(text, i, i + candidate.length)) {
           matchedName = candidate;
           break;
         }

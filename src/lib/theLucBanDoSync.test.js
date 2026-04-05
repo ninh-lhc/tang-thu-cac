@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildForceRowsForLocation, syncAllTheLucMapAutoBlocks, syncTheLucMapAutoBlocks } from './theLucBanDoSync.js';
+import {
+  buildForceRowsForLocation,
+  isForceCollectionScope,
+  syncAllTheLucMapAutoBlocks,
+  syncAllTheLucMapAutoBlocksDetailed,
+  syncTheLucMapAutoBlocks,
+} from './theLucBanDoSync.js';
 
 describe('theLucBanDoSync', () => {
   it('sorts force rows by type > rank > name > path', () => {
@@ -363,6 +369,99 @@ describe('theLucBanDoSync', () => {
     expect(String(huyetGioi?.info || '')).toContain('AUTO_MAP_THE_LUC_LIST');
     expect(String(huyetGioi?.info || '')).toContain('[[Huyet Linh Tong]]');
     expect(String(huyetHoangDia?.info || '')).toContain('AUTO_MAP_THE_LUC_LIST');
+  });
+
+  it('detects force scope by parent label even when tab id is custom', () => {
+    expect(
+      isForceCollectionScope({
+        activeTabLon: 'luc-luong-custom',
+        activeTabNho: 'gia-toc',
+        currentTabConfig: { id: 'gia-toc', viewType: 'collection-track' },
+        parentLabel: 'The Luc',
+      })
+    ).toBe(true);
+
+    const nov = {
+      tabsConfig: [
+        { id: 'luc-luong-custom', label: 'The Luc', subTabs: [{ id: 'gia-toc', label: 'Gia Toc', viewType: 'collection-track' }] },
+        { id: 'ban-do', label: 'Ban Do', subTabs: [{ id: 'ha-gioi', label: 'Ha Gioi', viewType: 'collection-track' }] },
+      ],
+      data: {
+        'luc-luong-custom': {
+          'gia-toc': {
+            overview: '',
+            entities: [{ id: 'tl1', name: 'Huyet Linh Tong', dynamicData: { f_status: 'Tong Mon - Bat Cap the luc - Huyet Gioi' }, info: '' }],
+          },
+        },
+      },
+    };
+
+    const result = syncAllTheLucMapAutoBlocksDetailed(nov);
+    expect(result.applied).toBe(true);
+    expect(nov.data['ban-do']['ha-gioi'].entities.some((entity) => entity.name === 'Huyet Gioi')).toBe(true);
+    expect(String(nov.data['luc-luong-custom']['gia-toc'].entities[0].info || '')).toContain('AUTO_THE_LUC_META');
+  });
+
+  it('warns and skips when a map location exists in multiple tabs', () => {
+    const nov = {
+      tabsConfig: [
+        { id: 'the-luc', label: 'The Luc', subTabs: [{ id: 'gia-toc', label: 'Gia Toc', viewType: 'collection-track' }] },
+        {
+          id: 'ban-do',
+          label: 'Ban Do',
+          subTabs: [
+            { id: 'ha-gioi', label: 'Ha Gioi', viewType: 'collection-track' },
+            { id: 'tien-gioi', label: 'Tien Gioi', viewType: 'collection-track' },
+          ],
+        },
+      ],
+      data: {
+        'the-luc': {
+          'gia-toc': {
+            overview: '',
+            entities: [{ id: 'tl1', name: 'Huyet Linh Tong', dynamicData: { f_status: 'Tong Mon - Bat Cap the luc - Huyet Gioi' }, info: '' }],
+          },
+        },
+        'ban-do': {
+          'ha-gioi': { overview: '', entities: [{ id: 'm1', name: 'Huyet Gioi', info: 'manual a' }] },
+          'tien-gioi': { overview: '', entities: [{ id: 'm2', name: 'Huyet Gioi', info: 'manual b' }] },
+        },
+      },
+    };
+
+    const result = syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId: 'the-luc' });
+    expect(result.warnings.some((warning) => warning.type === 'ambiguous_existing_location')).toBe(true);
+    expect(String(nov.data['ban-do']['ha-gioi'].entities[0].info || '')).not.toContain('AUTO_MAP_THE_LUC_LIST');
+    expect(String(nov.data['ban-do']['tien-gioi'].entities[0].info || '')).not.toContain('AUTO_MAP_THE_LUC_LIST');
+  });
+
+  it('warns and skips auto-create when multiple map tabs could receive the new location', () => {
+    const nov = {
+      tabsConfig: [
+        { id: 'the-luc', label: 'The Luc', subTabs: [{ id: 'gia-toc', label: 'Gia Toc', viewType: 'collection-track' }] },
+        {
+          id: 'ban-do',
+          label: 'Ban Do',
+          subTabs: [
+            { id: 'ha-gioi', label: 'Ha Gioi', viewType: 'collection-track' },
+            { id: 'tien-gioi', label: 'Tien Gioi', viewType: 'collection-track' },
+          ],
+        },
+      ],
+      data: {
+        'the-luc': {
+          'gia-toc': {
+            overview: '',
+            entities: [{ id: 'tl1', name: 'Huyet Linh Tong', dynamicData: { f_status: 'Tong Mon - Bat Cap the luc - Huyet Hoang Dia' }, info: '' }],
+          },
+        },
+      },
+    };
+
+    const result = syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId: 'the-luc' });
+    expect(result.warnings.some((warning) => warning.type === 'ambiguous_target_tab')).toBe(true);
+    expect((nov.data['ban-do']['ha-gioi']?.entities || []).some((entity) => entity.name === 'Huyet Hoang Dia')).toBe(false);
+    expect((nov.data['ban-do']['tien-gioi']?.entities || []).some((entity) => entity.name === 'Huyet Hoang Dia')).toBe(false);
   });
 
   it('returns false and does not mutate when force status format is invalid', () => {

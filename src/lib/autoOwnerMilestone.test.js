@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   appendOwnerAcquisitionMilestone,
+  appendOwnerAcquisitionMilestoneDetailed,
+  ownerMilestoneApplyReasonToMessage,
   parseOwnerTimelineHint,
   removeOwnerAcquisitionMilestonesByItem,
   syncAutoOwnerMilestonesItemRename,
@@ -122,6 +124,36 @@ describe('autoOwnerMilestone', () => {
     const ms = novel.data['nhan-vat-custom'].chinh.entities[0].milestones;
     expect(ms.length).toBe(1);
     expect(ms[0].event).toContain('[[Thiên Nguyệt Trảm]]');
+  });
+
+  it('reports ambiguity instead of attaching auto milestone to the first matching character', () => {
+    const novel = {
+      tabsConfig: [
+        { id: 'nhan-vat', label: 'Nhan Vat', subTabs: [{ id: 'chinh', viewType: 'collection-track' }] },
+      ],
+      data: {
+        'nhan-vat': {
+          chinh: {
+            entities: [
+              { id: 'nv1', name: 'Lac Nam', dynamicData: {}, milestones: [] },
+              { id: 'nv2', name: 'Lac Nam', dynamicData: {}, milestones: [] },
+            ],
+          },
+        },
+      },
+    };
+
+    const result = appendOwnerAcquisitionMilestoneDetailed(
+      novel,
+      { ownerName: 'Lac Nam', chapter: 26, labelId: 'important' },
+      { name: 'Thien Dia Cong', entityId: 'cp-001' }
+    );
+
+    expect(result.applied).toBe(false);
+    expect(result.reason).toBe('owner_ambiguous');
+    expect(ownerMilestoneApplyReasonToMessage(result)).toContain('Lac Nam');
+    const allMilestones = novel.data['nhan-vat'].chinh.entities.flatMap((entity) => entity.milestones);
+    expect(allMilestones).toHaveLength(0);
   });
 
   it('upserts same item to new chapter instead of duplicating milestone', () => {

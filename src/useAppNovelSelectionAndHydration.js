@@ -14,16 +14,23 @@ import { cleanupAutoRelationLegacyInfoForNovel, syncAllAutoRelationNotesForNovel
 import { syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
 import { syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
-import { syncAllTheLucMapAutoBlocks } from './lib/theLucBanDoSync.js';
+import {
+  summarizeTheLucMapSyncWarnings,
+  syncAllTheLucMapAutoBlocksDetailed,
+} from './lib/theLucBanDoSync.js';
 
 function syncFullNovelAutoBlocks(novelData) {
   let changed = false;
-  changed = syncAllTheLucMapAutoBlocks(novelData, { sourceLonId: 'the-luc' }) || changed;
+  const forceSyncResult = syncAllTheLucMapAutoBlocksDetailed(novelData);
+  changed = forceSyncResult.changed || changed;
   changed = syncAllAutoRelationNotesForNovel(novelData) || changed;
   changed = syncAllMainCharacterRelationBlocks(novelData) || changed;
   changed = syncAllCultivationRelationBlocks(novelData) || changed;
   changed = syncAllMapHierarchyAutoBlocks(novelData) || changed;
-  return changed;
+  return {
+    changed,
+    forceWarning: summarizeTheLucMapSyncWarnings(forceSyncResult.warnings),
+  };
 }
 
 export function useAppNovelSelectionAndHydration({
@@ -110,9 +117,15 @@ export function useAppNovelSelectionAndHydration({
           if (recoveredFromBackup) delete data.__recoveredFromBackup;
           setActiveNovelDirHandle(loaded.novelDir ?? null);
           if (!data.tabsConfig) data.tabsConfig = structuredClone(globalTabsConfig);
-          const autoBlocksResynced = !data.__partialData ? syncFullNovelAutoBlocks(data) : false;
+          const autoSyncResult = !data.__partialData
+            ? syncFullNovelAutoBlocks(data)
+            : { changed: false, forceWarning: '' };
+          const autoBlocksResynced = autoSyncResult.changed;
           const migrated = migrateTabsFieldTemplates(data);
           setActiveNovelData(migrated);
+          if (autoSyncResult.forceWarning) {
+            showToast(autoSyncResult.forceWarning, 'warning');
+          }
           if (recoveredFromBackup) {
             showToast('Đã tự khôi phục dữ liệu truyện từ file backup.', 'warning');
           }
@@ -240,7 +253,8 @@ export function useAppNovelSelectionAndHydration({
         if (fullData && !fullData.__partialData) {
           const legacyAutoInfoCleanedCount = cleanupAutoRelationLegacyInfoForNovel(fullData);
           if (!fullData.tabsConfig) fullData.tabsConfig = structuredClone(globalTabsConfig);
-          const autoBlocksResynced = syncFullNovelAutoBlocks(fullData);
+          const autoSyncResult = syncFullNovelAutoBlocks(fullData);
+          const autoBlocksResynced = autoSyncResult.changed;
           setActiveNovelData((prev) => {
             if (!prev || prev.id !== key) return prev;
             return fullData;
@@ -253,6 +267,9 @@ export function useAppNovelSelectionAndHydration({
           void syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, dirHandle, nextStats);
           if (legacyAutoInfoCleanedCount > 0 || autoBlocksResynced) {
             void syncNovel(fullData, dirHandle);
+          }
+          if (autoSyncResult.forceWarning) {
+            showToast(autoSyncResult.forceWarning, 'warning');
           }
         }
       } finally {
@@ -275,6 +292,7 @@ export function useAppNovelSelectionAndHydration({
     novelsMetadataRef,
     globalTabsConfigRef,
     lazyFullHydrateInFlightRef,
+    showToast,
   ]);
 
   return {

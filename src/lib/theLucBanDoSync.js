@@ -19,6 +19,7 @@ const AUTO_FORCE_BLOCK_START = '<!-- AUTO_THE_LUC_META:START -->';
 const AUTO_FORCE_BLOCK_END = '<!-- AUTO_THE_LUC_META:END -->';
 const AUTO_MAP_BLOCK_START = '<!-- AUTO_MAP_THE_LUC_LIST:START -->';
 const AUTO_MAP_BLOCK_END = '<!-- AUTO_MAP_THE_LUC_LIST:END -->';
+const FORCE_SYNC_WARNING_LIMIT = 3;
 const FORCE_TYPE_GROUP_ORDER = ['Đế Quốc', 'Gia Tộc', 'Học Viện', 'Tông Môn', 'Thương Minh', 'Thế Lực Khác'];
 
 function safeString(v) {
@@ -28,6 +29,27 @@ function safeString(v) {
 
 function normalizeAscii(v) {
   return normalizeAsciiText(v);
+}
+
+function isForceParentKey(value) {
+  const key = normalizeAscii(value).replace(/-/g, ' ');
+  return key === 'the luc' || key.includes('the luc');
+}
+
+export function isForceCollectionScope({
+  activeTabLon = '',
+  activeTabNho = '',
+  currentTabConfig = null,
+  parentLabel = '',
+} = {}) {
+  if (currentTabConfig?.viewType && currentTabConfig.viewType !== 'collection-track') return false;
+  const candidates = [
+    parentLabel,
+    currentTabConfig?._parentLabel,
+    activeTabLon,
+  ];
+  if (!currentTabConfig?.viewType) candidates.push(activeTabNho);
+  return candidates.some((value) => isForceParentKey(value));
 }
 
 function mergeAutoBlock(baseText, start, end, blockBody) {
@@ -238,6 +260,46 @@ function buildMapAutoBlockLines(locationName, rows, { detailedLayout, duplicateN
   return sectionLines;
 }
 
+function buildForceMetaBlockLines(meta) {
+  return [
+    '## Đồng bộ Thế Lực (AUTO)',
+    `Loại Hình: ${meta.orgType}`,
+    `Cấp Bậc: ${meta.rankText}`,
+    'Vị Trí:',
+    ...buildLocationHierarchyLines(meta.locations),
+  ];
+}
+
+export function summarizeTheLucMapSyncWarnings(warnings) {
+  const list = dedupeSyncWarnings(warnings);
+  if (list.length === 0) return '';
+
+  const summarizeGroup = (type, intro) => {
+    const items = list.filter((warning) => warning.type === type);
+    if (items.length === 0) return '';
+    const sample = items
+      .slice(0, FORCE_SYNC_WARNING_LIMIT)
+      .map((warning) => safeString(warning.locationName).trim())
+      .filter(Boolean)
+      .join(', ');
+    const more = items.length > FORCE_SYNC_WARNING_LIMIT ? ` và ${items.length - FORCE_SYNC_WARNING_LIMIT} mục khác` : '';
+    return `${intro}: ${sample}${more}.`;
+  };
+
+  return [
+    summarizeGroup(
+      'ambiguous_existing_location',
+      'AUTO Thế Lực ↔ Bản Đồ bỏ qua vì có nhiều thẻ bản đồ trùng tên'
+    ),
+    summarizeGroup(
+      'ambiguous_target_tab',
+      'AUTO Thế Lực ↔ Bản Đồ bỏ qua vì không xác định chắc tab bản đồ đích'
+    ),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 function findMapTabPaths(nov) {
   const out = [];
   for (const lon of nov.tabsConfig || []) {
@@ -251,8 +313,39 @@ function findMapTabPaths(nov) {
           parentLabel: lon.label || '',
         })
       ) {
-        out.push({ lonId: lon.id, nhoId: nho.id });
+        out.push({
+          lonId: lon.id,
+          nhoId: nho.id,
+          lonLabel: safeString(lon.label || lon.id),
+          nhoLabel: safeString(nho.label || nho.id),
+        });
       }
+    }
+  }
+  return out;
+}
+
+function findForceTabPaths(nov, { sourceLonId = '' } = {}) {
+  const out = [];
+  for (const lon of nov.tabsConfig || []) {
+    if (sourceLonId && lon?.id !== sourceLonId) continue;
+    for (const nho of lon.subTabs || []) {
+      if (
+        !isForceCollectionScope({
+          activeTabLon: lon.id,
+          activeTabNho: nho.id,
+          currentTabConfig: nho,
+          parentLabel: lon.label || '',
+        })
+      ) {
+        continue;
+      }
+      out.push({
+        lonId: lon.id,
+        nhoId: nho.id,
+        lonLabel: safeString(lon.label || lon.id),
+        nhoLabel: safeString(nho.label || nho.id),
+      });
     }
   }
   return out;
@@ -273,6 +366,7 @@ function ensureCollectionTabData(nov, lonId, nhoId) {
 function ensureMapEntityByName(tabData, name) {
   const key = normalizeAscii(name);
   let ent = (tabData.entities || []).find((e) => normalizeAscii(e.name) === key);
+  let created = false;
   if (!ent) {
     ent = {
       id: `ent-${Math.random().toString(36).slice(2, 10)}`,
@@ -286,23 +380,75 @@ function ensureMapEntityByName(tabData, name) {
       images: [],
     };
     tabData.entities.push(ent);
+    created = true;
   }
-  return ent;
+  return { entity: ent, created };
 }
 
-function pickPreferredMapTabForLocation(item, targetsByName, fallbackMapTab) {
-  const fallback = fallbackMapTab || null;
+function buildTabPathKey(path) {
+  return `${safeString(path?.lonId)}::${safeString(path?.nhoId)}`;
+}
+
+function buildTabPathLabel(path) {
+  const lonLabel = safeString(path?.lonLabel).trim();
+  const nhoLabel = safeString(path?.nhoLabel).trim();
+  if (lonLabel && nhoLabel) return lonLabel === nhoLabel ? lonLabel : `${lonLabel} > ${nhoLabel}`;
+  return lonLabel || nhoLabel || buildTabPathKey(path);
+}
+
+function pushSyncWarning(warnings, warning) {
+  if (!warning?.type) return;
+  warnings.push({
+    type: warning.type,
+    locationName: safeString(warning.locationName).trim(),
+    tabLabels: Array.isArray(warning.tabLabels) ? dedupeNameList(warning.tabLabels) : [],
+  });
+}
+
+function dedupeSyncWarnings(warnings) {
+  const out = [];
+  const seen = new Set();
+  for (const warning of warnings || []) {
+    const key = [
+      safeString(warning?.type),
+      normalizeAscii(warning?.locationName),
+      (warning?.tabLabels || []).map((label) => normalizeAscii(label)).sort().join('|'),
+    ].join('::');
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(warning);
+  }
+  return out;
+}
+
+function pickPreferredMapTabForLocation(item, targetsByName, mapPaths) {
   const targetNameKey = normalizeAscii(item?.name);
+  const candidatePaths = [];
+  const seenPathKeys = new Set();
   for (const row of item?.rows || []) {
     const locations = Array.isArray(row?.meta?.locations) ? row.meta.locations : [];
     for (const locName of locations) {
       const key = normalizeAscii(locName);
       if (!key || key === targetNameKey) continue;
       const targets = targetsByName.get(key) || [];
-      if (targets.length > 0 && targets[0]?.mapTab) return targets[0].mapTab;
+      if (targets.length !== 1) continue;
+      const path = targets[0]?.path;
+      const pathKey = buildTabPathKey(path);
+      if (!path || seenPathKeys.has(pathKey)) continue;
+      seenPathKeys.add(pathKey);
+      candidatePaths.push(path);
     }
   }
-  return fallback;
+  if (candidatePaths.length === 1) {
+    return { mapPath: candidatePaths[0], reason: 'inferred_parent' };
+  }
+  if (candidatePaths.length > 1) {
+    return { mapPath: null, reason: 'ambiguous_target_tab', candidatePaths };
+  }
+  if (mapPaths.length === 1) {
+    return { mapPath: mapPaths[0], reason: 'single_map_tab' };
+  }
+  return { mapPath: null, reason: 'ambiguous_target_tab', candidatePaths: mapPaths };
 }
 
 export function buildForceRowsForLocation(forceEntities) {
@@ -322,20 +468,42 @@ export function buildForceRowsForLocation(forceEntities) {
     });
 }
 
-export function syncTheLucMapAutoBlocks(nov, { sourceLonId, sourceNhoId, entityId }) {
-  if (!nov || !sourceLonId || !sourceNhoId || !entityId) return false;
-  const sourceTab = ensureCollectionTabData(nov, sourceLonId, sourceNhoId);
-  const source = (sourceTab.entities || []).find((e) => e.id === entityId);
-  if (!source) return false;
+export function syncTheLucMapAutoBlocksDetailed(nov, { sourceLonId, sourceNhoId, entityId } = {}) {
+  if (!nov || !sourceLonId || !sourceNhoId || !entityId) {
+    return { changed: false, warnings: [], applied: false, reason: 'invalid_input' };
+  }
 
   const sourceLonCfg = (nov.tabsConfig || []).find((lon) => lon?.id === sourceLonId);
-  const sourceNhoCfg = (sourceLonCfg?.subTabs || []).find((nho) => nho?.id === sourceNhoId);
+  const sourceNhoCfg = (sourceLonCfg?.subTabs || []).find((nho) => nho?.id === sourceNhoId) || null;
+  if (
+    !isForceCollectionScope({
+      activeTabLon: sourceLonId,
+      activeTabNho: sourceNhoId,
+      currentTabConfig: sourceNhoCfg,
+      parentLabel: sourceLonCfg?.label || '',
+    })
+  ) {
+    return { changed: false, warnings: [], applied: false, reason: 'not_force_scope' };
+  }
+
+  const sourceTab = ensureCollectionTabData(nov, sourceLonId, sourceNhoId);
+  const source = (sourceTab.entities || []).find((entity) => entity.id === entityId);
+  if (!source) return { changed: false, warnings: [], applied: false, reason: 'source_not_found' };
+
   const meta = parseForceMetaFromEntity(source, {
     sourceNhoId,
     sourceNhoLabel: safeString(sourceNhoCfg?.label || sourceNhoId),
   });
-  if (!meta) return false;
+  if (!meta) return { changed: false, warnings: [], applied: false, reason: 'invalid_force_meta' };
 
+  const result = syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId });
+  return { ...result, applied: true };
+}
+
+export function syncTheLucMapAutoBlocks(nov, { sourceLonId, sourceNhoId, entityId }) {
+  const result = syncTheLucMapAutoBlocksDetailed(nov, { sourceLonId, sourceNhoId, entityId });
+  return Boolean(result.applied || result.changed);
+  /*
   source.info = mergeAutoBlock(
     source.info,
     AUTO_FORCE_BLOCK_START,
@@ -351,9 +519,164 @@ export function syncTheLucMapAutoBlocks(nov, { sourceLonId, sourceNhoId, entityI
 
   syncAllTheLucMapAutoBlocks(nov, { sourceLonId });
   return true;
+  */
+}
+
+export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
+  if (!nov) return { changed: false, warnings: [], applied: false };
+
+  const mapPaths = findMapTabPaths(nov).map((path) => ({
+    ...path,
+    tabData: ensureCollectionTabData(nov, path.lonId, path.nhoId),
+  }));
+  if (mapPaths.length === 0) return { changed: false, warnings: [], applied: false };
+
+  const sourcePaths = findForceTabPaths(nov, { sourceLonId }).map((path) => ({
+    ...path,
+    tabData: ensureCollectionTabData(nov, path.lonId, path.nhoId),
+  }));
+  if (sourcePaths.length === 0) return { changed: false, warnings: [], applied: false };
+
+  const warnings = [];
+  let changed = false;
+  const allForceEntities = [];
+
+  sourcePaths.forEach((path) => {
+    const entities = Array.isArray(path.tabData?.entities) ? path.tabData.entities : [];
+    entities.forEach((entity) => {
+      const cleanedInfo = removeAutoBlock(entity.info, AUTO_FORCE_BLOCK_START, AUTO_FORCE_BLOCK_END);
+      if (cleanedInfo !== safeString(entity.info).trim()) {
+        entity.info = cleanedInfo;
+        changed = true;
+      }
+
+      const meta = parseForceMetaFromEntity(entity, {
+        sourceNhoId: path.nhoId,
+        sourceNhoLabel: safeString(path.nhoLabel || path.nhoId),
+      });
+      if (!meta) return;
+
+      const nextInfo = mergeAutoBlock(
+        cleanedInfo,
+        AUTO_FORCE_BLOCK_START,
+        AUTO_FORCE_BLOCK_END,
+        buildForceMetaBlockLines(meta).join('\n')
+      );
+      if (nextInfo !== cleanedInfo) {
+        entity.info = nextInfo;
+        changed = true;
+      }
+
+      allForceEntities.push({
+        id: entity.id,
+        name: safeString(entity.name),
+        meta,
+        sourcePath: path,
+      });
+    });
+  });
+
+  const duplicateNameCounts = new Map();
+  allForceEntities.forEach((item) => {
+    const key = normalizeAscii(item.name);
+    if (!key) return;
+    duplicateNameCounts.set(key, (duplicateNameCounts.get(key) || 0) + 1);
+  });
+
+  const rowsByLoc = new Map();
+  allForceEntities.forEach((row) => {
+    (row.meta.locations || []).forEach((loc) => {
+      const key = normalizeAscii(loc);
+      if (!key) return;
+      if (!rowsByLoc.has(key)) rowsByLoc.set(key, { name: loc, rows: [] });
+      rowsByLoc.get(key).rows.push(row);
+    });
+  });
+
+  mapPaths.forEach((path) => {
+    const entities = Array.isArray(path.tabData?.entities) ? path.tabData.entities : [];
+    entities.forEach((entity) => {
+      const cleanedInfo = removeAutoBlock(entity.info, AUTO_MAP_BLOCK_START, AUTO_MAP_BLOCK_END);
+      if (cleanedInfo !== safeString(entity.info).trim()) {
+        entity.info = cleanedInfo;
+        changed = true;
+      }
+    });
+  });
+
+  const mapEntityTargetsByName = new Map();
+  mapPaths.forEach((path) => {
+    const entities = Array.isArray(path.tabData?.entities) ? path.tabData.entities : [];
+    entities.forEach((entity) => {
+      const key = normalizeAscii(entity?.name);
+      if (!key) return;
+      if (!mapEntityTargetsByName.has(key)) mapEntityTargetsByName.set(key, []);
+      mapEntityTargetsByName.get(key).push({ path, entity });
+    });
+  });
+
+  for (const [, item] of rowsByLoc.entries()) {
+    const locationKey = normalizeAscii(item.name);
+    let targetEntities = mapEntityTargetsByName.get(locationKey) || [];
+
+    if (targetEntities.length > 1) {
+      pushSyncWarning(warnings, {
+        type: 'ambiguous_existing_location',
+        locationName: item.name,
+        tabLabels: targetEntities.map((target) => buildTabPathLabel(target.path)),
+      });
+      continue;
+    }
+
+    if (targetEntities.length === 0) {
+      const preferredTarget = pickPreferredMapTabForLocation(item, mapEntityTargetsByName, mapPaths);
+      if (!preferredTarget.mapPath) {
+        pushSyncWarning(warnings, {
+          type: 'ambiguous_target_tab',
+          locationName: item.name,
+          tabLabels: (preferredTarget.candidatePaths || []).map((path) => buildTabPathLabel(path)),
+        });
+        continue;
+      }
+
+      const ensured = ensureMapEntityByName(preferredTarget.mapPath.tabData, item.name);
+      if (ensured.created) changed = true;
+      targetEntities = [{ path: preferredTarget.mapPath, entity: ensured.entity }];
+      mapEntityTargetsByName.set(locationKey, targetEntities);
+    }
+
+    const rows = buildForceRowsForLocation(item.rows);
+    const nextBlock = buildMapAutoBlockLines(item.name, rows, {
+      detailedLayout: isDetailedMapLayout(item.name),
+      duplicateNameCounts,
+    }).join('\n');
+
+    targetEntities.forEach((target) => {
+      if (!target?.entity) return;
+      const nextInfo = mergeAutoBlock(
+        target.entity.info,
+        AUTO_MAP_BLOCK_START,
+        AUTO_MAP_BLOCK_END,
+        nextBlock
+      );
+      if (nextInfo !== safeString(target.entity.info).trim()) {
+        target.entity.info = nextInfo;
+        changed = true;
+      }
+    });
+  }
+
+  return {
+    changed,
+    warnings: dedupeSyncWarnings(warnings),
+    applied: allForceEntities.length > 0 || changed,
+  };
 }
 
 export function syncAllTheLucMapAutoBlocks(nov, { sourceLonId }) {
+  const result = syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId });
+  return Boolean(result.applied || result.changed);
+  /*
   if (!nov || !sourceLonId) return false;
   const mapPaths = findMapTabPaths(nov);
   if (mapPaths.length === 0) return false;
@@ -435,7 +758,7 @@ export function syncAllTheLucMapAutoBlocks(nov, { sourceLonId }) {
       );
     });
   }
-
   return true;
+  */
 }
 

@@ -28,4 +28,22 @@ describe('wikiLinkMatcher', () => {
   it('returns full text when matcher is empty', () => {
     expect(splitTextByWikiMatcher('abc', null)).toEqual([{ text: 'abc', isMatch: false }]);
   });
+
+  it('does not match entity names inside a longer word', () => {
+    const matcher = buildWikiLinkMatcher([{ name: 'Linh' }]);
+    expect(splitTextByWikiMatcher('LinhLuc rat manh', matcher)).toEqual([
+      { text: 'LinhLuc rat manh', isMatch: false },
+    ]);
+  });
+
+  it('still matches when surrounded by punctuation boundaries', () => {
+    const matcher = buildWikiLinkMatcher([{ name: 'Linh' }]);
+    expect(splitTextByWikiMatcher('(Linh), Linh!', matcher)).toEqual([
+      { text: '(', isMatch: false },
+      { text: 'Linh', isMatch: true },
+      { text: '), ', isMatch: false },
+      { text: 'Linh', isMatch: true },
+      { text: '!', isMatch: false },
+    ]);
+  });
 });

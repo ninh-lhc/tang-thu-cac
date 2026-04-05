@@ -2,7 +2,7 @@
 // Tách logic history + scroll reset khỏi file trục để dễ theo dõi.
 // App.jsx truyền state hiện tại và toàn bộ setter cần thiết.
 // Dùng cho wiki-link navigate, quick-create và nút quay lại.
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
 export function useAppNavigationAndHistory({
   activeTabLon,
@@ -23,6 +23,26 @@ export function useAppNavigationAndHistory({
   setIsEntityEditing,
   setQuickCreateData,
 }) {
+  const pendingScrollResetRef = useRef({
+    raf1: 0,
+    raf2: 0,
+    timeoutId: 0,
+  });
+
+  const cancelPendingScrollReset = useCallback(() => {
+    const pending = pendingScrollResetRef.current;
+    if (pending.raf1 && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(pending.raf1);
+    }
+    if (pending.raf2 && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(pending.raf2);
+    }
+    if (pending.timeoutId) {
+      clearTimeout(pending.timeoutId);
+    }
+    pendingScrollResetRef.current = { raf1: 0, raf2: 0, timeoutId: 0 };
+  }, []);
+
   const scrollAppContentToTop = useCallback(() => {
     if (typeof document === 'undefined') return;
     const mainScroller = document.getElementById('main-scroll-container');
@@ -40,6 +60,23 @@ export function useAppNavigationAndHistory({
       }
     }
   }, []);
+
+  const scheduleScrollAppContentToTop = useCallback(() => {
+    cancelPendingScrollReset();
+    scrollAppContentToTop();
+    if (typeof requestAnimationFrame === 'function') {
+      pendingScrollResetRef.current.raf1 = requestAnimationFrame(() => {
+        scrollAppContentToTop();
+        pendingScrollResetRef.current.raf2 = requestAnimationFrame(() => {
+          scrollAppContentToTop();
+        });
+      });
+    }
+    pendingScrollResetRef.current.timeoutId = setTimeout(() => {
+      scrollAppContentToTop();
+      pendingScrollResetRef.current.timeoutId = 0;
+    }, 120);
+  }, [cancelPendingScrollReset, scrollAppContentToTop]);
 
   const handleNavigate = useCallback(
     (dest) => {
@@ -77,12 +114,7 @@ export function useAppNavigationAndHistory({
       setIsEditingMode(false);
       setIsEntityEditing(false);
       // Link navigation should always land at top, including same-tab hops.
-      scrollAppContentToTop();
-      if (typeof requestAnimationFrame === 'function') {
-        requestAnimationFrame(() => scrollAppContentToTop());
-      } else {
-        setTimeout(() => scrollAppContentToTop(), 0);
-      }
+      scheduleScrollAppContentToTop();
     },
     [
       activeTabLon,
@@ -101,7 +133,7 @@ export function useAppNavigationAndHistory({
       setIsEditingMode,
       setIsEntityEditing,
       setQuickCreateData,
-      scrollAppContentToTop,
+      scheduleScrollAppContentToTop,
     ]
   );
 
@@ -124,20 +156,21 @@ export function useAppNavigationAndHistory({
     setCollectionSubTab,
   ]);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      scrollAppContentToTop();
+  useLayoutEffect(() => {
+    scheduleScrollAppContentToTop();
       // Tránh tích lũy nhiều animation "smooth" khi chuyển tab nhanh.
-    }, 50);
-    return () => clearTimeout(timer);
+    return cancelPendingScrollReset;
   }, [
     activeTabLon,
     activeTabNho,
     activeTabCon,
     selectedEntityId,
     collectionSubTab,
-    scrollAppContentToTop,
+    scheduleScrollAppContentToTop,
+    cancelPendingScrollReset,
   ]);
+
+  useEffect(() => cancelPendingScrollReset, [cancelPendingScrollReset]);
 
   return {
     handleNavigate,

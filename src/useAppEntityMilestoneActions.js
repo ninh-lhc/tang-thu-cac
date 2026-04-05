@@ -12,14 +12,20 @@ import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './
 import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
 import {
-  appendOwnerAcquisitionMilestone,
+  appendOwnerAcquisitionMilestoneDetailed,
+  ownerMilestoneApplyReasonToMessage,
   parseOwnerTimelineHintDetailed,
   ownerTimelineHintReasonToMessage,
   removeOwnerAcquisitionMilestonesByItem,
   syncAutoOwnerMilestonesItemRename,
 } from './lib/autoOwnerMilestone.js';
 import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks, syncMapHierarchyNameReferences } from './lib/mapHierarchySync.js';
-import { syncAllTheLucMapAutoBlocks, syncTheLucMapAutoBlocks } from './lib/theLucBanDoSync.js';
+import {
+  isForceCollectionScope,
+  summarizeTheLucMapSyncWarnings,
+  syncAllTheLucMapAutoBlocksDetailed,
+  syncTheLucMapAutoBlocksDetailed,
+} from './lib/theLucBanDoSync.js';
 
 export function useAppEntityMilestoneActions({
   activeNovelData,
@@ -95,8 +101,10 @@ export function useAppEntityMilestoneActions({
       let createTargetEntityId = null;
       let createMergedToExisting = false;
       let ownerMilestoneAutoApplied = false;
+      let ownerMilestoneApplyWarning = '';
       let ownerMilestoneRenameSynced = 0;
       let forceMapAutoApplied = false;
+      let forceMapAutoWarning = '';
       let relationAutoResynced = false;
       let mainCharacterRelationResynced = false;
       let cultivationRelationAutoResynced = false;
@@ -198,10 +206,13 @@ export function useAppEntityMilestoneActions({
             createTargetEntityId = newEntityId;
             lockFieldsTemplateIfFirstEntity(nov, activeTabLon, activeTabNho || 'default');
             if (activeTabLon !== 'nhan-vat' && ownerTimelineHint) {
-              ownerMilestoneAutoApplied = appendOwnerAcquisitionMilestone(nov, ownerTimelineHint, {
+              const ownerApplyResult = appendOwnerAcquisitionMilestoneDetailed(nov, ownerTimelineHint, {
                 name: canonicalName,
                 entityId: newEntityId,
               });
+              ownerMilestoneAutoApplied = ownerApplyResult.applied;
+              ownerMilestoneApplyWarning =
+                ownerMilestoneApplyReasonToMessage(ownerApplyResult) || ownerMilestoneApplyWarning;
             }
           }
         }
@@ -214,13 +225,23 @@ export function useAppEntityMilestoneActions({
 
         nov.data[activeTabLon][activeTabNho || 'default'] = tabData;
         const targetIdForSync = formData.id || createTargetEntityId;
-        if (activeTabLon === 'the-luc' && targetIdForSync) {
-          forceMapAutoApplied =
-            syncTheLucMapAutoBlocks(nov, {
-              sourceLonId: activeTabLon,
-              sourceNhoId: activeTabNho || 'default',
-              entityId: targetIdForSync,
-            }) || forceMapAutoApplied;
+        if (
+          isForceCollectionScope({
+            activeTabLon,
+            activeTabNho,
+            currentTabConfig,
+            parentLabel: currentTabConfig?._parentLabel || '',
+          }) &&
+          targetIdForSync
+        ) {
+          const forceSyncResult = syncTheLucMapAutoBlocksDetailed(nov, {
+            sourceLonId: activeTabLon,
+            sourceNhoId: activeTabNho || 'default',
+            entityId: targetIdForSync,
+          });
+          forceMapAutoApplied = forceSyncResult.changed || forceMapAutoApplied;
+          forceMapAutoWarning =
+            summarizeTheLucMapSyncWarnings(forceSyncResult.warnings) || forceMapAutoWarning;
         }
         if (isAutoRelationScopeLonId(activeTabLon, currentTabConfig?._parentLabel || '')) {
           relationAutoResynced = syncAllAutoRelationNotesForNovel(nov) || relationAutoResynced;
@@ -300,7 +321,11 @@ export function useAppEntityMilestoneActions({
       if (cultivationRelationAutoResynced) {
         showToast('Đã đồng bộ lại liên kết Hệ Thống Tu Luyện ↔ Cảnh Giới Tu Vi (AUTO).', 'success');
       }
-      const ownerWarn = ownerTimelineHintReasonToMessage(ownerTimelineHintDetail?.reason);
+      if (forceMapAutoWarning) {
+        showToast(forceMapAutoWarning, 'warning');
+      }
+      const ownerWarn =
+        ownerMilestoneApplyWarning || ownerTimelineHintReasonToMessage(ownerTimelineHintDetail?.reason);
       if (!ownerMilestoneAutoApplied && ownerWarn && activeTabLon !== 'nhan-vat') {
         showToast(ownerWarn, 'warning');
       }
@@ -383,6 +408,7 @@ export function useAppEntityMilestoneActions({
           : { hint: null, reason: 'no_owner_hint' };
       const ownerTimelineHint = ownerTimelineHintDetail?.hint || null;
       let ownerMilestoneAutoApplied = false;
+      let ownerMilestoneApplyWarning = '';
 
       updateActiveNovelData((nov) => {
         if (!nov.data?.[activeTabLon]) return;
@@ -393,10 +419,13 @@ export function useAppEntityMilestoneActions({
           // Network "Mạng Lưới Nhân Quả" đọc [[...]] từ rawText, cần đồng bộ theo info.
           ent.rawText = content;
           if (ownerTimelineHint) {
-            ownerMilestoneAutoApplied = appendOwnerAcquisitionMilestone(nov, ownerTimelineHint, {
+            const ownerApplyResult = appendOwnerAcquisitionMilestoneDetailed(nov, ownerTimelineHint, {
               name: ent.name,
               entityId: ent.id,
             });
+            ownerMilestoneAutoApplied = ownerApplyResult.applied;
+            ownerMilestoneApplyWarning =
+              ownerMilestoneApplyReasonToMessage(ownerApplyResult) || ownerMilestoneApplyWarning;
           }
         }
       });
@@ -406,7 +435,8 @@ export function useAppEntityMilestoneActions({
           ? 'Ghi chép hồ sơ thành công! Đã tự ghi mốc sở hữu vào timeline Nhân Vật.'
           : 'Ghi chép hồ sơ thành công!'
       );
-      const ownerWarn = ownerTimelineHintReasonToMessage(ownerTimelineHintDetail?.reason);
+      const ownerWarn =
+        ownerMilestoneApplyWarning || ownerTimelineHintReasonToMessage(ownerTimelineHintDetail?.reason);
       if (!ownerMilestoneAutoApplied && ownerWarn && activeTabLon !== 'nhan-vat') {
         showToast(ownerWarn, 'warning');
       }
@@ -603,9 +633,11 @@ export function useAppEntityMilestoneActions({
           }
           if (removed) break;
         }
+        let forceMapWarning = '';
         if (removed) {
           let removedAutoMsCount = 0;
           let forceMapResynced = false;
+          forceMapWarning = '';
           let relationAutoResynced = false;
           let mainCharacterRelationResynced = false;
           let cultivationRelationResynced = false;
@@ -616,12 +648,23 @@ export function useAppEntityMilestoneActions({
               entityId: entityIdToDelete,
             });
           }
-          if (removedLonId === 'the-luc') {
-            forceMapResynced =
-              syncAllTheLucMapAutoBlocks(updated, { sourceLonId: 'the-luc' }) || forceMapResynced;
-          }
           const removedLonConfig = (updated.tabsConfig || []).find((tab) => tab.id === removedLonId);
           const removedNhoConfig = removedLonConfig?.subTabs?.find((tab) => tab.id === removedNhoId) || null;
+          if (
+            isForceCollectionScope({
+              activeTabLon: removedLonId,
+              activeTabNho: removedNhoId,
+              currentTabConfig: removedNhoConfig,
+              parentLabel: removedLonConfig?.label || '',
+            })
+          ) {
+            const forceSyncResult = syncAllTheLucMapAutoBlocksDetailed(updated, {
+              sourceLonId: removedLonId,
+            });
+            forceMapResynced = forceSyncResult.changed || forceMapResynced;
+            forceMapWarning =
+              summarizeTheLucMapSyncWarnings(forceSyncResult.warnings) || forceMapWarning;
+          }
           if (isAutoRelationScopeLonId(removedLonId, removedLonConfig?.label || '')) {
             relationAutoResynced = syncAllAutoRelationNotesForNovel(updated) || relationAutoResynced;
           }
@@ -677,6 +720,18 @@ export function useAppEntityMilestoneActions({
           if (forceMapResynced) {
             showToast('Đã đồng bộ lại AUTO Thế Lực ↔ Bản đồ sau khi xóa thẻ.', 'success');
           }
+          if (forceMapWarning === '__never__') {
+            showToast('ÄÃ£ Ä‘á»“ng bá»™ quan há»‡ Tháº¿ Lá»±c â†” Báº£n Ä‘á»“ (AUTO).', 'success');
+          }
+          if (forceMapWarning === '__never__') {
+            showToast(forceMapWarning, 'warning');
+          }
+          if (forceMapWarning === '__never__') {
+            showToast('ÄÃ£ Ä‘á»“ng bá»™ quan há»‡ Tháº¿ Lá»±c â†” Báº£n Ä‘á»“ (AUTO).', 'success');
+          }
+          if (forceMapWarning === '__never__') {
+            showToast(forceMapWarning, 'warning');
+          }
           if (relationAutoResynced) {
             showToast('Đã dọn và đồng bộ lại liên kết AUTO trên các thẻ liên quan.', 'success');
           }
@@ -689,6 +744,9 @@ export function useAppEntityMilestoneActions({
           if (mapHierarchyResynced) {
             showToast('Đã đồng bộ lại AUTO cây Bản đồ sau khi xóa thẻ.', 'success');
           }
+        }
+        if (removed && forceMapWarning) {
+          showToast(forceMapWarning, 'warning');
         }
         confirmDeleteEntityRef.current = null;
       };
@@ -735,6 +793,8 @@ export function useAppEntityMilestoneActions({
           let relationAutoResynced = false;
           let mainCharacterRelationResynced = false;
           let cultivationRelationAutoResynced = false;
+          let forceMapAutoApplied = false;
+          let forceMapAutoWarning = '';
           let mapHierarchyAutoApplied = false;
           const mergedKeys = new Set();
           if (snapshot.dynamicData) {
@@ -774,6 +834,24 @@ export function useAppEntityMilestoneActions({
             ) {
               cultivationRelationAutoResynced =
                 syncAllCultivationRelationBlocks(nov) || cultivationRelationAutoResynced;
+            }
+            if (
+              isForceCollectionScope({
+                activeTabLon,
+                activeTabNho,
+                currentTabConfig,
+                parentLabel: currentTabConfig?._parentLabel || '',
+              }) &&
+              (mergedKeys.has('f_status') || mergedKeys.has('f_dia_ban') || mergedKeys.has('f_vi_tri'))
+            ) {
+              const forceSyncResult = syncTheLucMapAutoBlocksDetailed(nov, {
+                sourceLonId: activeTabLon,
+                sourceNhoId: activeTabNho || 'default',
+                entityId: selectedEntityId,
+              });
+              forceMapAutoApplied = forceSyncResult.changed || forceMapAutoApplied;
+              forceMapAutoWarning =
+                summarizeTheLucMapSyncWarnings(forceSyncResult.warnings) || forceMapAutoWarning;
             }
             if (
               isMainCharacterRelationScope({

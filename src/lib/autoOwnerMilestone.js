@@ -1,4 +1,4 @@
-import { findEquivalentEntityByName } from './entityNameIdentity.js';
+import { findEquivalentEntitiesByName, findEquivalentEntityByName } from './entityNameIdentity.js';
 import { applyMilestoneLabel, parseMilestoneLabel } from './milestoneLabels.js';
 
 const OWNER_LABEL_RE = /(nguoi\s*so\s*huu|ch[uủ]\s*nh[aâ]n)/i;
@@ -138,6 +138,23 @@ export function ownerTimelineHintReasonToMessage(reason) {
       return `Không tự tạo mốc được: nhãn chỉ nhận ?, !, !!, ..., x. Mẫu: ${sample}`;
     default:
       return `Không tự tạo mốc được: định dạng chưa đúng. Mẫu: ${sample}`;
+  }
+}
+
+export function ownerMilestoneApplyReasonToMessage(result) {
+  if (!result || result.applied) return '';
+  const ownerName = String(result.ownerName || '').trim();
+  switch (result.reason) {
+    case 'owner_ambiguous':
+      return ownerName
+        ? `Khong tu tao moc AUTO: "${ownerName}" dang khop nhieu the nhan vat. Hay doi ten/alias ro hon.`
+        : 'Khong tu tao moc AUTO: ten nhan vat dang khop nhieu the.';
+    case 'owner_not_found':
+      return ownerName
+        ? `Khong tu tao moc AUTO: khong tim thay the nhan vat "${ownerName}".`
+        : 'Khong tu tao moc AUTO: khong tim thay the nhan vat.';
+    default:
+      return '';
   }
 }
 
@@ -301,6 +318,66 @@ export function appendOwnerAcquisitionMilestone(novelData, hint, itemRef) {
 
   targetEntity.milestones.sort((a, b) => (parseInt(a?.chapter, 10) || 0) - (parseInt(b?.chapter, 10) || 0));
   return true;
+}
+
+export function appendOwnerAcquisitionMilestoneDetailed(novelData, hint, itemRef) {
+  const { itemName, itemEntityId } = normalizeItemRef(itemRef);
+  if (!novelData?.data || !hint?.ownerName || !Number.isFinite(hint?.chapter) || !itemName) {
+    return { applied: false, reason: 'invalid_input', ownerName: String(hint?.ownerName || '').trim() };
+  }
+  const tabsConfig = Array.isArray(novelData.tabsConfig) ? novelData.tabsConfig : [];
+  const tabLabelByLonId = new Map();
+  for (const t of tabsConfig) {
+    if (t?.id) tabLabelByLonId.set(t.id, String(t.label || t.id));
+  }
+  const entryCandidates = [];
+  for (const [lonId, lonData] of Object.entries(novelData.data || {})) {
+    for (const [nhoId, tabData] of Object.entries(lonData || {})) {
+      const entities = Array.isArray(tabData?.entities) ? tabData.entities : [];
+      if (entities.length === 0) continue;
+      const lonLabel = String(tabLabelByLonId.get(lonId) || lonId || '');
+      const normLabel = normalizeAscii(lonLabel);
+      const priority = lonId === 'nhan-vat' || /nhan\s*vat/.test(normLabel) ? 0 : 1;
+      entryCandidates.push({ priority, entities, lonId, nhoId });
+    }
+  }
+  entryCandidates.sort((a, b) => a.priority - b.priority);
+
+  let bestPriority = Number.POSITIVE_INFINITY;
+  const matchedEntities = [];
+  const seenEntities = new Set();
+  for (const entry of entryCandidates) {
+    const matches = findEquivalentEntitiesByName(entry.entities, hint.ownerName);
+    if (matches.length === 0) continue;
+    if (entry.priority > bestPriority) break;
+    bestPriority = entry.priority;
+    matches.forEach((match) => {
+      const key = String(match?.entity?.id || `${entry.lonId}|${entry.nhoId}|${match?.index ?? ''}`);
+      if (!key || seenEntities.has(key)) return;
+      seenEntities.add(key);
+      matchedEntities.push(match.entity);
+    });
+  }
+
+  if (matchedEntities.length === 0) {
+    return { applied: false, reason: 'owner_not_found', ownerName: String(hint.ownerName || '').trim() };
+  }
+  if (matchedEntities.length > 1) {
+    return {
+      applied: false,
+      reason: 'owner_ambiguous',
+      ownerName: String(hint.ownerName || '').trim(),
+      candidateNames: matchedEntities.map((entity) => String(entity?.name || '').trim()).filter(Boolean),
+    };
+  }
+
+  const ok = appendOwnerAcquisitionMilestone(novelData, hint, { name: itemName, entityId: itemEntityId });
+  return {
+    applied: ok,
+    reason: ok ? null : 'owner_not_found',
+    ownerName: String(hint.ownerName || '').trim(),
+    ownerEntityId: ok ? String(matchedEntities[0]?.id || '').trim() : '',
+  };
 }
 
 export function removeOwnerAcquisitionMilestonesByItem(novelData, itemRef) {
