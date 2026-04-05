@@ -8,6 +8,7 @@ import { generateId, safeString } from './MasterUtils.jsx';
 import { countEntitiesInNovel } from './deepSearchCore.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { applyAutoRelationNotesForEntity, isAutoRelationScopeLonId, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
+import { syncAllCollectionListCards } from './lib/collectionListCardSync.js';
 import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
 import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
@@ -272,6 +273,7 @@ export function useAppEntityMilestoneActions({
         if (isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig })) {
           mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
         }
+        syncAllCollectionListCards(nov);
       });
 
       // UX: tạo thẻ xong thì tự vào tab Hồ Sơ + bật chế độ ghi chép chi tiết.
@@ -436,6 +438,7 @@ export function useAppEntityMilestoneActions({
               ownerMilestoneApplyReasonToMessage(ownerApplyResult) || ownerMilestoneApplyWarning;
           }
         }
+        syncAllCollectionListCards(nov);
       });
 
       showToast(
@@ -707,6 +710,7 @@ export function useAppEntityMilestoneActions({
           ) {
             mapHierarchyResynced = syncAllMapHierarchyAutoBlocks(updated) || mapHierarchyResynced;
           }
+          syncAllCollectionListCards(updated);
           const nextStats = { ...novelStatsByIdRef.current, [updated.id]: countEntitiesInNovel(updated) };
           novelStatsByIdRef.current = nextStats;
           setNovelStatsById(nextStats);
@@ -879,6 +883,7 @@ export function useAppEntityMilestoneActions({
             ) {
               mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
             }
+            syncAllCollectionListCards(nov);
           });
 
           setRecentlyMergedFields(mergedKeys);

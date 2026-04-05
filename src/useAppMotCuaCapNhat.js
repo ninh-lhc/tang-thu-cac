@@ -18,6 +18,7 @@ import {
 import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
 import { mutateNovelJournalSelections } from './appNhatKyVaGoiThe.js';
 import { isAutoRelationScopeLonId, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
+import { syncAllCollectionListCards } from './lib/collectionListCardSync.js';
 import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
 import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { buildHubExtendedCatalogLines } from './lib/hubBangDanhMucCacMucNhatKy.js';
@@ -232,6 +233,7 @@ export function useAppMotCuaCapNhat({
       if (isMapCollectionScope({ activeTabLon: lonId, activeTabNho: nhoId, currentTabConfig: nho, parentLabel: lon?.label || '' })) {
         syncAllMapHierarchyAutoBlocks(nov);
       }
+      syncAllCollectionListCards(nov);
     });
     showToast(`Đã tạo «${name}». Ảnh avatar: mở đúng mục → thẻ để thêm.`, 'success');
     if (forceMapAutoApplied) {
@@ -359,6 +361,7 @@ export function useAppMotCuaCapNhat({
         forceMapWarning =
           summarizeTheLucMapSyncWarnings(forceSyncResult.warnings) || forceMapWarning;
         mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
+        syncAllCollectionListCards(nov);
       }
     });
     setHubUpdatePanel(null);

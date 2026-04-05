@@ -60,6 +60,7 @@ import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
 import { buildTabGroups } from './lib/appTabGroups.js';
 import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
+import { syncAllCollectionListCards } from './lib/collectionListCardSync.js';
 import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
 import { useAppPersistence } from './useAppPersistence.js';
 import { useAppShellState } from './useAppShellState.js';
@@ -1150,6 +1151,7 @@ export default function App() {
           ) {
             syncAllMainCharacterRelationBlocks(nov);
           }
+          syncAllCollectionListCards(nov);
       });
       if (targetExistingId) {
         showToast(`"${quickName}" đã trùng thẻ có sẵn - đã thêm vào bí danh và liên kết về thẻ cũ.`, 'warning');
