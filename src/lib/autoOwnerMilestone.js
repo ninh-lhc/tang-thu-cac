@@ -54,7 +54,7 @@ function parseOwnerValue(raw) {
   const ownerName = String(m[1] || '')
     .trim()
     .replace(/^\[\[|\]\]$/g, '')
-    .replace(/^[^\p{L}\p{N}\[]+/u, '')
+    .replace(/^[^\p{L}\p{N}\u005b]+/u, '')
     .trim();
   if (!ownerName) return null;
   const chapter = parseInt(m[2], 10);

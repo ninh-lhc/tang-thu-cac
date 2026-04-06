@@ -86,7 +86,7 @@ function extractOwnerName(rawValue) {
   const noWiki = raw.replace(/^\[\[|\]\]$/g, '').trim();
   const chapterIdx = noWiki.search(/\(\d{1,6}\)/);
   const base = chapterIdx > 0 ? noWiki.slice(0, chapterIdx).trim() : noWiki;
-  return base.replace(/^[^\p{L}\p{N}\[]+/u, '').trim();
+  return base.replace(/^[^\p{L}\p{N}\u005b]+/u, '').trim();
 }
 
 function resolveOwnerLabel(entity, ownerLookupEntities = []) {
