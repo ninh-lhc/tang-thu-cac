@@ -157,6 +157,41 @@ describe('dataMigration', () => {
       expect(ms.meta?.itemEntityId).toBeUndefined();
     });
 
+    it('refreshes collection list cards (strip legacy markers, rebuild AUTO list)', () => {
+      const out = migrateNovel({
+        id: 'n1',
+        tabsConfig: [
+          {
+            id: 'he-thong',
+            label: 'He thong',
+            subTabs: [{ id: 'goi-qua', label: 'Goi', viewType: 'collection-track' }],
+          },
+        ],
+        data: {
+          'he-thong': {
+            'goi-qua': {
+              entities: [
+                {
+                  id: 'list-1',
+                  name: 'Danh sach goi qua',
+                  info: 'note\n\n<!-- AUTO_COLLECTION_LIST:START -->\n# Danh mục thẻ (AUTO)\n\n- Tổng số thẻ: 0\n<!-- AUTO_COLLECTION_LIST:END -->',
+                  dynamicData: {},
+                  milestones: [],
+                },
+                { id: 'a', name: 'Item A', info: '', dynamicData: { f_cap: 'Huyen cap' }, milestones: [] },
+              ],
+            },
+          },
+        },
+      });
+      const info = String(out.data['he-thong']['goi-qua'].entities[0].info || '');
+      expect(info).not.toMatch(/<!--\s*AUTO_COLLECTION_LIST/i);
+      expect(info).toContain('note');
+      expect(info).toContain('# Danh mục thẻ (AUTO)');
+      expect(info).toContain('Item A');
+      expect(info).toContain('- Tổng số thẻ: 1');
+    });
+
     it('normalizes duplicated AUTO relation blocks during novel migration', () => {
       const out = migrateNovel({
         id: 'n1',

@@ -83,7 +83,7 @@ describe('collectionListCardSync', () => {
 
     expect(changed).toBe(true);
     expect(String(listCard.info || '')).toContain('Ghi chu tay');
-    expect(String(listCard.info || '')).toContain('AUTO_COLLECTION_LIST');
+    expect(String(listCard.info || '')).not.toMatch(/<!--\s*AUTO_COLLECTION_LIST/i);
     expect(String(listCard.info || '')).toContain('# Danh mục thẻ (AUTO)');
     expect(String(listCard.info || '')).toContain('- Tổng số thẻ: 2');
     expect(String(listCard.info || '')).toContain('[[Le Bao Tan Thu]]');
@@ -120,5 +120,19 @@ describe('collectionListCardSync', () => {
     const listCard = novel.data['he-thong']['goi-qua'].entities[0];
 
     expect(String(listCard.info || '')).toContain('[[Ruong Dai Le]] - Lạc Nam');
+  });
+
+  it('migrates legacy HTML comment wrappers away on sync', () => {
+    const novel = buildNovel();
+    const listCard = novel.data['he-thong']['goi-qua'].entities[0];
+    listCard.info =
+      'Ghi chu\n\n<!-- AUTO_COLLECTION_LIST:START -->\n# Danh mục thẻ (AUTO)\n\n- Tổng số thẻ: 0\n\n## X (0)\n\n- x\n<!-- AUTO_COLLECTION_LIST:END -->';
+
+    syncAllCollectionListCards(novel);
+
+    expect(String(listCard.info || '')).not.toMatch(/<!--\s*AUTO_COLLECTION_LIST/i);
+    expect(String(listCard.info || '')).toContain('Ghi chu');
+    expect(String(listCard.info || '')).toContain('# Danh mục thẻ (AUTO)');
+    expect(String(listCard.info || '')).toContain('- Tổng số thẻ: 2');
   });
 });

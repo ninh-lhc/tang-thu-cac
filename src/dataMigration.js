@@ -2,10 +2,12 @@
  * Migration dữ liệu — đảm bảo dữ liệu cũ vẫn dùng được khi cập nhật tính năng.
  *
  * Ai dùng: App.jsx (load tangthu_index, loadNovelData, handleImportBackup).
+ * migrateNovel: đồng bộ thẻ Danh sách (AUTO) toàn truyện khi nạp dữ liệu.
  * Sau khi sửa: chạy `npm run test` (dataMigration.test.js).
  */
 
 import { cleanupAutoRelationLegacyInfoForNovel } from './lib/autoRelationDetailNote.js';
+import { syncAllCollectionListCards } from './lib/collectionListCardSync.js';
 
 export const INDEX_DATA_VERSION = 1;
 export const NOVEL_DATA_VERSION = 1;
@@ -252,6 +254,7 @@ export function migrateNovel(raw) {
 
   backfillAutoOwnerItemEntityIdForNovel(nov);
   cleanupAutoRelationLegacyInfoForNovel(nov);
+  syncAllCollectionListCards(nov);
 
   delete nov.storageLayout;
 

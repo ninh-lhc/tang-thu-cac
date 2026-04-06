@@ -2,14 +2,16 @@
  * Auto-sync list-card notes inside each collection tab.
  * A list card is any entity whose name starts with "Danh sach".
  * The helper keeps manual notes intact and only rewrites its AUTO block.
+ * Ranh giới khối: dòng tiêu đề # Danh mục thẻ (AUTO) (không dùng <!-- --> để giao diện gọn).
+ * Dữ liệu cũ có <!-- AUTO_COLLECTION_LIST:... --> vẫn được đọc và xóa khi đồng bộ lại.
  */
 
 import { normalizeAsciiText, parseRankNumber } from './statusHierarchyParser.js';
 import { parseOwnerTimelineHint } from './autoOwnerMilestone.js';
 import { findEquivalentEntityByName } from './entityNameIdentity.js';
 
-const AUTO_LIST_START = '<!-- AUTO_COLLECTION_LIST:START -->';
-const AUTO_LIST_END = '<!-- AUTO_COLLECTION_LIST:END -->';
+const LEGACY_AUTO_LIST_START = '<!-- AUTO_COLLECTION_LIST:START -->';
+const LEGACY_AUTO_LIST_END = '<!-- AUTO_COLLECTION_LIST:END -->';
 const AUTO_LIST_TITLE = '# Danh m\u1ee5c th\u1ebb (AUTO)';
 
 const ATTRIBUTE_GROUP_ORDER = [
@@ -45,23 +47,68 @@ function normalize(value) {
   return normalizeAsciiText(value);
 }
 
-function mergeAutoBlock(baseText, start, end, blockBody) {
-  const text = safeString(baseText);
-  const sIdx = text.indexOf(start);
-  const eIdx = text.indexOf(end);
-  const payload = `${start}\n${blockBody}\n${end}`;
-  if (sIdx >= 0 && eIdx > sIdx) {
-    return `${text.slice(0, sIdx)}${payload}${text.slice(eIdx + end.length)}`.trim();
-  }
-  return `${text.trim()}\n\n${payload}`.trim();
+function findLegacyAutoListRange(text) {
+  const s = text.indexOf(LEGACY_AUTO_LIST_START);
+  const e = text.indexOf(LEGACY_AUTO_LIST_END);
+  if (s < 0 || e <= s) return null;
+  return { start: s, end: e + LEGACY_AUTO_LIST_END.length };
 }
 
-function removeAutoBlock(baseText, start, end) {
-  const text = safeString(baseText);
-  const sIdx = text.indexOf(start);
-  const eIdx = text.indexOf(end);
-  if (sIdx < 0 || eIdx <= sIdx) return text.trim();
-  return `${text.slice(0, sIdx)}${text.slice(eIdx + end.length)}`.trim();
+/** Khối danh sách AUTO (định dạng mới): từ dòng tiêu đề tới hết các dòng trống / ## / - */
+function findTitleAutoListRange(text) {
+  const title = AUTO_LIST_TITLE;
+  let pos = 0;
+  while (pos < text.length) {
+    const nl = text.indexOf('\n', pos);
+    const lineEnd = nl === -1 ? text.length : nl;
+    let line = text.slice(pos, lineEnd);
+    if (line.endsWith('\r')) line = line.slice(0, -1);
+    if (line === title) {
+      const blockStart = pos;
+      let scan = nl === -1 ? text.length : nl + 1;
+      while (scan < text.length) {
+        const nl2 = text.indexOf('\n', scan);
+        const le = nl2 === -1 ? text.length : nl2;
+        let ln = text.slice(scan, le);
+        if (ln.endsWith('\r')) ln = ln.slice(0, -1);
+        const trimmed = ln.trimEnd();
+        if (trimmed === '') {
+          scan = nl2 === -1 ? text.length : nl2 + 1;
+          continue;
+        }
+        if (trimmed.startsWith('## ') || trimmed.startsWith('- ')) {
+          scan = nl2 === -1 ? text.length : nl2 + 1;
+          continue;
+        }
+        break;
+      }
+      return { start: blockStart, end: scan };
+    }
+    if (nl === -1) break;
+    pos = nl + 1;
+  }
+  return null;
+}
+
+function removeCollectionListAutoBlock(baseText) {
+  let text = safeString(baseText);
+  const legacy = findLegacyAutoListRange(text);
+  if (legacy) {
+    text = `${text.slice(0, legacy.start)}${text.slice(legacy.end)}`;
+  }
+  const titleRange = findTitleAutoListRange(text);
+  if (titleRange) {
+    text = `${text.slice(0, titleRange.start)}${text.slice(titleRange.end)}`;
+  }
+  return text.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function mergeCollectionListAutoBlock(baseText, blockBody) {
+  const body = safeString(blockBody).trim();
+  const cleaned = removeCollectionListAutoBlock(baseText);
+  const prefix = cleaned.trimEnd();
+  const sep = prefix ? '\n\n' : '';
+  return `${prefix}${sep}${body}`.trim();
 }
 
 function isCollectionTab(tabConfig) {
@@ -256,12 +303,7 @@ function syncListCardsInTab(tabData, context, ownerLookupEntities) {
   let changed = false;
 
   listCards.forEach((listCard) => {
-    const nextInfo = mergeAutoBlock(
-      removeAutoBlock(listCard.info, AUTO_LIST_START, AUTO_LIST_END),
-      AUTO_LIST_START,
-      AUTO_LIST_END,
-      blockText
-    );
+    const nextInfo = mergeCollectionListAutoBlock(listCard.info, blockText);
     if (safeString(nextInfo) !== safeString(listCard.info)) {
       listCard.info = nextInfo;
       changed = true;
