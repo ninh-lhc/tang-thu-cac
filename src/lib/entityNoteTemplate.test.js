@@ -25,7 +25,8 @@ describe('entityNoteTemplate', () => {
     expect(text).toContain('- Biệt danh / tên khác:');
     expect(text).toContain('## Ghi chép chi tiết');
     expect(text).toContain('## AUTO');
-    expect(text).toContain('Phần này hệ thống tự sinh và tự cập nhật');
+    expect(text).toContain('Phần này do khối AUTO tự sinh và tự cập nhật');
+    expect(text).not.toContain('Nhóm tự động: hệ thống');
   });
 
   it('falls back to a generic content line when no fields are provided', () => {
