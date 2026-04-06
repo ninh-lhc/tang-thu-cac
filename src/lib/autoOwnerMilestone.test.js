@@ -72,6 +72,33 @@ describe('autoOwnerMilestone', () => {
     expect(out).toEqual({ ownerName: 'Lạc Nam', chapter: 6, labelId: 'uncertain' });
   });
 
+  it('parses owner hint from free-form line without owner prefix', () => {
+    const out = parseOwnerTimelineHint({
+      dynamicData: {},
+      fieldsTemplate: [],
+      rawText: 'Lạc Nam (37) ?',
+    });
+    expect(out).toEqual({ ownerName: 'Lạc Nam', chapter: 37, labelId: 'uncertain' });
+  });
+
+  it('parses owner hint from any label after colon via fallback', () => {
+    const out = parseOwnerTimelineHint({
+      dynamicData: {},
+      fieldsTemplate: [],
+      rawText: '- Biệt danh / tên khác: Lạc Nam (37) ?',
+    });
+    expect(out).toEqual({ ownerName: 'Lạc Nam', chapter: 37, labelId: 'uncertain' });
+  });
+
+  it('parses owner hint when line contains wiki-link marker symbol', () => {
+    const out = parseOwnerTimelineHint({
+      dynamicData: {},
+      fieldsTemplate: [],
+      rawText: '∞ Lạc Nam (37) ?',
+    });
+    expect(out).toEqual({ ownerName: 'Lạc Nam', chapter: 37, labelId: 'uncertain' });
+  });
+
   it('does not mutate manual milestone when adding auto-owner milestone', () => {
     const novel = {
       data: {

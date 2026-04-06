@@ -51,7 +51,11 @@ function parseOwnerValue(raw) {
   if (!text) return null;
   const m = text.match(OWNER_VALUE_RE);
   if (!m) return null;
-  const ownerName = String(m[1] || '').trim().replace(/^\[\[|\]\]$/g, '').trim();
+  const ownerName = String(m[1] || '')
+    .trim()
+    .replace(/^\[\[|\]\]$/g, '')
+    .replace(/^[^\p{L}\p{N}\[]+/u, '')
+    .trim();
   if (!ownerName) return null;
   const chapter = parseInt(m[2], 10);
   if (!Number.isFinite(chapter) || chapter < 0) return null;
@@ -76,6 +80,27 @@ function parseOwnerValueWithReason(raw) {
   const suffix = text.slice(chapterMatch.index + chapterMatch[0].length);
   if (!OWNER_ALLOWED_SUFFIX_RE.test(suffix)) return { hint: null, reason: 'invalid_label_token' };
   return { hint: null, reason: 'invalid_format' };
+}
+
+function buildOwnerFallbackCandidatesFromLine(rawLine) {
+  const line = String(rawLine || '').trim();
+  if (!line) return [];
+  const candidates = [];
+  const pushUnique = (value) => {
+    const next = String(value || '').trim();
+    if (!next) return;
+    if (!candidates.includes(next)) candidates.push(next);
+  };
+
+  const withoutBullet = line.replace(/^\s*[-*+]\s*(?:\[[ xX]\]\s*)?/, '').trim();
+  pushUnique(withoutBullet);
+  const colonIdx = withoutBullet.indexOf(':');
+  if (colonIdx >= 0) {
+    pushUnique(withoutBullet.slice(colonIdx + 1));
+    return candidates;
+  }
+  pushUnique(line);
+  return candidates;
 }
 
 export function parseOwnerTimelineHint({ dynamicData, fieldsTemplate, rawText }) {
@@ -119,6 +144,14 @@ export function parseOwnerTimelineHintDetailed({ dynamicData, fieldsTemplate, ra
     const parsed = parseOwnerValueWithReason(value);
     if (parsed.hint) return { hint: parsed.hint, reason: null, source: 'line' };
     return { hint: null, reason: parsed.reason || 'invalid_owner_format', source: 'line' };
+  }
+  for (const line of lines) {
+    const candidates = buildOwnerFallbackCandidatesFromLine(line);
+    for (const candidate of candidates) {
+      if (candidate.includes(':')) continue;
+      const parsed = parseOwnerValueWithReason(candidate);
+      if (parsed.hint) return { hint: parsed.hint, reason: null, source: 'line-fallback' };
+    }
   }
   if (sawOwnerField || sawOwnerLine) return { hint: null, reason: 'invalid_owner_format', source: sawOwnerField ? 'field' : 'line' };
   return { hint: null, reason: 'no_owner_hint', source: null };

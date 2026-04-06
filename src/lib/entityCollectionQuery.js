@@ -4,6 +4,25 @@
 
 import { getEntityFieldValue, safeString } from './entityFieldValue.js';
 
+function normalizeAscii(value) {
+  return safeString(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function isListCardEntity(entity) {
+  return normalizeAscii(entity?.name).startsWith('danh sach');
+}
+
+function comparePinnedListThenNameAsc(a, b) {
+  const aPinned = isListCardEntity(a);
+  const bPinned = isListCardEntity(b);
+  if (aPinned !== bPinned) return aPinned ? -1 : 1;
+  return safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
+}
+
 export function buildEntitySearchIndexMap(collectionEntitiesRaw) {
   const map = new Map();
   collectionEntitiesRaw.forEach((e) => {
@@ -34,6 +53,7 @@ export function applyEntityCollectionFilters(listIn, opts) {
     entitySearchIndexById,
     entitySortMode,
   } = opts;
+  void entitySortMode;
   let list = [...listIn];
   if (entityFilterField !== 'none' && entityFilterValue.trim()) {
     const q = entityFilterValue.toLowerCase();
@@ -48,9 +68,6 @@ export function applyEntityCollectionFilters(listIn, opts) {
       return haystack.includes(q);
     });
   }
-  if (entitySortMode === 'name_asc') list.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
-  else if (entitySortMode === 'milestones') {
-    list.sort((a, b) => (b.milestones?.length || 0) - (a.milestones?.length || 0));
-  } else if (entitySortMode === 'newest') list.reverse();
+  list.sort(comparePinnedListThenNameAsc);
   return list;
 }

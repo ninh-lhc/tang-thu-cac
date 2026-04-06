@@ -1,4 +1,4 @@
-# Quy Chuan Auto Sync & Ghi Chep Chi Tiet
+# Quy chuẩn Auto Sync & Ghi chép chi tiết
 
 Tai lieu nay la "ban quy tac van hanh" cho luong:
 

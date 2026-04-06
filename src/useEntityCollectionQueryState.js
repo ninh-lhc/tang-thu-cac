@@ -14,7 +14,7 @@ export function useEntityCollectionQueryState({
   const [entitySearch, setEntitySearch] = useState('');
   const [entityFilterField, setEntityFilterField] = useState('none');
   const [entityFilterValue, setEntityFilterValue] = useState('');
-  const [entitySortMode, setEntitySortMode] = useState('newest');
+  const [entitySortMode, setEntitySortMode] = useState('name_asc');
   const [entityGroupBy, setEntityGroupBy] = useState('none');
   const [showEntityAdvanced, setShowEntityAdvanced] = useState(false);
   const [entityPage, setEntityPage] = useState(1);
@@ -110,14 +110,14 @@ export function useEntityCollectionQueryState({
       setEntityFilterField('none');
       setEntityFilterValue('');
       setEntityGroupBy('none');
-      setEntitySortMode('newest');
+      setEntitySortMode('name_asc');
       setShowEntityAdvanced(false);
       return;
     }
     setEntityFilterField(pref.filterField || 'none');
     setEntityFilterValue(pref.filterValue || '');
     setEntityGroupBy(pref.groupBy || 'none');
-    setEntitySortMode(pref.sortMode || 'newest');
+    setEntitySortMode(pref.sortMode || 'name_asc');
     setShowEntityAdvanced(!!pref.showAdvanced);
   }, [entityUiPrefsByTab, entityUiPrefsKey]);
   useEffect(() => {

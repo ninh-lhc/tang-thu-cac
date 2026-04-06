@@ -121,7 +121,7 @@ export function useAppNovelSelectionAndHydration({
           if (!data.tabsConfig) data.tabsConfig = structuredClone(globalTabsConfig);
           const autoSyncResult = !data.__partialData
             ? syncFullNovelAutoBlocks(data)
-            : { changed: false, forceWarning: '' };
+            : { changed: syncAllCollectionListCards(data), forceWarning: '' };
           const autoBlocksResynced = autoSyncResult.changed;
           const migrated = migrateTabsFieldTemplates(data);
           setActiveNovelData(migrated);

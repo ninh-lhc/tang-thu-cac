@@ -17,6 +17,14 @@ const e2 = {
   dynamicData: { f_realm: 'Trúc Cơ' },
   milestones: [{ chapter: 1 }],
 };
+const listCard = {
+  id: 'ls',
+  name: 'Danh sách',
+  title: '',
+  info: '',
+  dynamicData: {},
+  milestones: [],
+};
 
 describe('entityCollectionQuery', () => {
   it('filter + search together: field filter narrows then search matches name', () => {
@@ -41,5 +49,17 @@ describe('entityCollectionQuery', () => {
       entitySortMode: 'name_asc',
     });
     expect(out.map((x) => x.id)).toEqual(['b']);
+  });
+
+  it('always pins list card first then sorts others by A-Z', () => {
+    const index = buildEntitySearchIndexMap([e2, e1, listCard]);
+    const out = applyEntityCollectionFilters([e2, e1, listCard], {
+      entityFilterField: 'none',
+      entityFilterValue: '',
+      entitySearchQuery: '',
+      entitySearchIndexById: index,
+      entitySortMode: 'milestones',
+    });
+    expect(out.map((x) => x.id)).toEqual(['ls', 'a', 'b']);
   });
 });

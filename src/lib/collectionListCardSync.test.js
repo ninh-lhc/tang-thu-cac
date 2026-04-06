@@ -5,6 +5,17 @@ function buildNovel() {
   return {
     tabsConfig: [
       {
+        id: 'nhan-vat',
+        label: 'Nhan vat',
+        subTabs: [
+          {
+            id: 'nhan-vat-chinh',
+            label: 'Nhan Vat Chinh',
+            viewType: 'collection-track',
+          },
+        ],
+      },
+      {
         id: 'he-thong',
         label: 'He thong',
         subTabs: [
@@ -17,6 +28,20 @@ function buildNovel() {
       },
     ],
     data: {
+      'nhan-vat': {
+        'nhan-vat-chinh': {
+          overview: '',
+          entities: [
+            {
+              id: 'char-1',
+              name: 'Lạc Nam',
+              info: '',
+              dynamicData: {},
+              milestones: [],
+            },
+          ],
+        },
+      },
       'he-thong': {
         'goi-qua': {
           overview: '',
@@ -32,7 +57,7 @@ function buildNovel() {
               id: 'gift-1',
               name: 'Le Bao Tan Thu',
               info: '',
-              dynamicData: { f_cap: 'Huyen cap' },
+              dynamicData: { f_cap: 'Huyen cap', f_chu: 'Lac Nam (37) ?' },
               milestones: [],
             },
             {
@@ -62,6 +87,7 @@ describe('collectionListCardSync', () => {
     expect(String(listCard.info || '')).toContain('# Danh mục thẻ (AUTO)');
     expect(String(listCard.info || '')).toContain('- Tổng số thẻ: 2');
     expect(String(listCard.info || '')).toContain('[[Le Bao Tan Thu]]');
+    expect(String(listCard.info || '')).toContain('[[Le Bao Tan Thu]] - Lạc Nam');
     expect(String(listCard.info || '')).toContain('[[Ruong Dai Le]]');
     expect(String(listCard.info || '')).toContain('## Dia cap (1)');
     expect(String(listCard.info || '')).toContain('## Huyen cap (1)');
@@ -82,5 +108,17 @@ describe('collectionListCardSync', () => {
     expect(String(listCard.info || '')).not.toContain('[[Le Bao Tan Thu]]');
     expect(String(listCard.info || '')).toContain('## Chưa phân loại (0)');
     expect(String(listCard.info || '')).toContain('Chưa có thẻ nào trong tab này.');
+  });
+
+  it('reads owner from detail note text when owner field is empty', () => {
+    const novel = buildNovel();
+    const gift = novel.data['he-thong']['goi-qua'].entities.find((entity) => entity.id === 'gift-2');
+    gift.dynamicData = { f_cap: 'Dia cap' };
+    gift.info = 'Ghi chú...\nLạc Nam (88) ?';
+
+    syncAllCollectionListCards(novel);
+    const listCard = novel.data['he-thong']['goi-qua'].entities[0];
+
+    expect(String(listCard.info || '')).toContain('[[Ruong Dai Le]] - Lạc Nam');
   });
 });

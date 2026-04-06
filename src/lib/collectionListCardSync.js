@@ -5,6 +5,8 @@
  */
 
 import { normalizeAsciiText, parseRankNumber } from './statusHierarchyParser.js';
+import { parseOwnerTimelineHint } from './autoOwnerMilestone.js';
+import { findEquivalentEntityByName } from './entityNameIdentity.js';
 
 const AUTO_LIST_START = '<!-- AUTO_COLLECTION_LIST:START -->';
 const AUTO_LIST_END = '<!-- AUTO_COLLECTION_LIST:END -->';
@@ -76,6 +78,40 @@ function pickFirstFilled(entity, fieldIds) {
     if (value) return value;
   }
   return '';
+}
+
+function extractOwnerName(rawValue) {
+  const raw = safeString(rawValue).trim();
+  if (!raw) return '';
+  const noWiki = raw.replace(/^\[\[|\]\]$/g, '').trim();
+  const chapterIdx = noWiki.search(/\(\d{1,6}\)/);
+  const base = chapterIdx > 0 ? noWiki.slice(0, chapterIdx).trim() : noWiki;
+  return base.replace(/^[^\p{L}\p{N}\[]+/u, '').trim();
+}
+
+function resolveOwnerLabel(entity, ownerLookupEntities = []) {
+  const raw = pickFirstFilled(entity, [
+    'f_chu',
+    'f_owner',
+    'f_nguoi_so_huu',
+    'f_nguoi_su_dung',
+    'f_nguoi_tu_luyen',
+    'f_truyen_nhan',
+    'f_khe_chu',
+  ]);
+  const ownerFromFields = extractOwnerName(raw);
+  let ownerName = ownerFromFields;
+  if (!ownerName) {
+    const parsed = parseOwnerTimelineHint({
+      dynamicData: entity?.dynamicData || {},
+      fieldsTemplate: [],
+      rawText: safeString(entity?.info || entity?.rawText),
+    });
+    ownerName = safeString(parsed?.ownerName).trim();
+  }
+  if (!ownerName) return '';
+  const matched = findEquivalentEntityByName(ownerLookupEntities, ownerName);
+  return safeString(matched?.entity?.name).trim() || ownerName;
 }
 
 function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentLabel = '' } = {}) {
@@ -167,7 +203,7 @@ function computeGroupOrder(kind, label) {
   return 5_000;
 }
 
-function buildAutoLines(records, strategy) {
+function buildAutoLines(records, strategy, ownerLookupEntities = []) {
   const items = Array.isArray(records) ? records : [];
   const lines = [AUTO_LIST_TITLE, '', `- T\u1ed5ng s\u1ed1 th\u1ebb: ${items.length}`, ''];
 
@@ -200,21 +236,23 @@ function buildAutoLines(records, strategy) {
       .forEach((entity) => {
         const name = safeString(entity?.name).trim();
         if (!name) return;
-        lines.push(`- [[${name}]]`);
+        const owner = resolveOwnerLabel(entity, ownerLookupEntities);
+        const ownerSuffix = owner ? ` - ${owner}` : '';
+        lines.push(`- [[${name}]]${ownerSuffix}`);
       });
   });
 
   return lines;
 }
 
-function syncListCardsInTab(tabData, context) {
+function syncListCardsInTab(tabData, context, ownerLookupEntities) {
   const entities = Array.isArray(tabData?.entities) ? tabData.entities : [];
   const listCards = entities.filter(isListCardEntity);
   if (listCards.length === 0) return false;
 
   const normalEntities = entities.filter((entity) => !isListCardEntity(entity));
   const strategy = detectGroupingStrategy(context);
-  const blockText = buildAutoLines(normalEntities, strategy).join('\n');
+  const blockText = buildAutoLines(normalEntities, strategy, ownerLookupEntities).join('\n');
   let changed = false;
 
   listCards.forEach((listCard) => {
@@ -236,18 +274,30 @@ function syncListCardsInTab(tabData, context) {
 export function syncAllCollectionListCards(nov) {
   if (!nov?.data || !Array.isArray(nov?.tabsConfig)) return false;
   let changed = false;
+  const ownerLookupEntities = [];
+  for (const lonData of Object.values(nov.data || {})) {
+    if (!lonData || typeof lonData !== 'object') continue;
+    for (const tabData of Object.values(lonData)) {
+      const entities = Array.isArray(tabData?.entities) ? tabData.entities : [];
+      ownerLookupEntities.push(...entities);
+    }
+  }
 
   (nov.tabsConfig || []).forEach((lon) => {
     (lon?.subTabs || []).forEach((nho) => {
       if (!isCollectionTab(nho)) return;
       const tabData = nov?.data?.[lon.id]?.[nho.id];
       if (!tabData || typeof tabData !== 'object' || !Array.isArray(tabData.entities)) return;
-      changed = syncListCardsInTab(tabData, {
-        lonId: lon.id,
-        nhoId: nho.id,
-        tabLabel: nho.label || '',
-        parentLabel: lon.label || '',
-      }) || changed;
+      changed = syncListCardsInTab(
+        tabData,
+        {
+          lonId: lon.id,
+          nhoId: nho.id,
+          tabLabel: nho.label || '',
+          parentLabel: lon.label || '',
+        },
+        ownerLookupEntities
+      ) || changed;
     });
   });
 

@@ -242,9 +242,7 @@ export function AppCollectionSection({
                 className={`${toolbarInputBase} bg-slate-900 border border-slate-800 px-3 outline-none focus:border-amber-600/50 text-slate-300 cursor-pointer flex-shrink-0`}
                 aria-label="Sắp xếp danh sách thẻ"
               >
-                <option value="newest">Mới nhất</option>
                 <option value="name_asc">Tên (A-Z)</option>
-                <option value="milestones">Nhiều sự kiện</option>
               </select>
               <button
                 type="button"
