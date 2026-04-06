@@ -8,14 +8,14 @@ import {
 } from './theLucBanDoSync.js';
 
 describe('theLucBanDoSync', () => {
-  it('sorts force rows by type > rank > name > path', () => {
+  it('sorts force rows by type > name > rank > path', () => {
     const rows = buildForceRowsForLocation([
       { name: 'B', meta: { orgType: 'Gia Tộc', rankText: 'Bát cấp', rankNum: 8, tailPath: 'A' } },
       { name: 'A', meta: { orgType: 'Gia Tộc', rankText: 'Bát cấp', rankNum: 8, tailPath: 'B' } },
       { name: 'C', meta: { orgType: 'Tông Môn', rankText: 'Tam cấp', rankNum: 3, tailPath: 'A' } },
       { name: 'D', meta: { orgType: 'Gia Tộc', rankText: 'Cửu cấp', rankNum: 9, tailPath: 'A' } },
     ]);
-    expect(rows.map((x) => x.name)).toEqual(['D', 'A', 'B', 'C']);
+    expect(rows.map((x) => x.name)).toEqual(['A', 'B', 'D', 'C']);
   });
 
   it('keeps hyphenated location token as one map entity', () => {
@@ -86,7 +86,7 @@ describe('theLucBanDoSync', () => {
       .split(/\r?\n/)
       .find((line) => line.startsWith('- [['));
     expect(bulletLine).toBeTruthy();
-    expect(bulletLine).toContain('[[ZZZ]]');
+    expect(bulletLine).toContain('[[AAA]]');
   });
 
   it('syncs force info and map location entities', () => {

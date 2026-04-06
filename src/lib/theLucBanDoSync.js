@@ -459,11 +459,11 @@ export function buildForceRowsForLocation(forceEntities) {
       const bg = classifyOrgType(b.meta.orgType);
       const t = FORCE_TYPE_GROUP_ORDER.indexOf(ag) - FORCE_TYPE_GROUP_ORDER.indexOf(bg);
       if (t !== 0) return t;
+      const n = normalizeAscii(a.name).localeCompare(normalizeAscii(b.name));
+      if (n !== 0) return n;
       const ar = Number.isFinite(a.meta.rankNum) ? a.meta.rankNum : -9999;
       const br = Number.isFinite(b.meta.rankNum) ? b.meta.rankNum : -9999;
       if (br !== ar) return br - ar;
-      const n = normalizeAscii(a.name).localeCompare(normalizeAscii(b.name));
-      if (n !== 0) return n;
       return normalizeAscii(a.meta.tailPath).localeCompare(normalizeAscii(b.meta.tailPath));
     });
 }
