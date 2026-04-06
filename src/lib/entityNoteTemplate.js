@@ -69,11 +69,11 @@ export function buildEntityNoteTemplate({
   fieldsTemplate = [],
   dynamicData = {},
 }) {
-  const scopeLabel = [parentLabel, tabLabel].map((part) => safeString(part).trim()).filter(Boolean).join(' › ');
   const fields = Array.isArray(fieldsTemplate) ? fieldsTemplate : [];
   const lines = [];
 
-  lines.push(scopeLabel ? `## Mẫu nhập nhanh — ${scopeLabel}` : '## Mẫu nhập nhanh');
+  lines.push('# Thông tin chi tiết');
+  lines.push('');
   lines.push('> Xoá dòng không có, thêm dòng cần bổ sung.');
   lines.push('');
 
@@ -89,10 +89,11 @@ export function buildEntityNoteTemplate({
   }
 
   lines.push('');
-  lines.push('## Ghi chép chi tiết');
+  lines.push('# Ghi chú');
   lines.push('');
-
-  lines.push('## AUTO');
+  lines.push('[[Lạc Nam]] (37) ?');
+  lines.push('');
+  lines.push('# AUTO');
   lines.push('> Phần này hệ thống tự sinh và tự cập nhật. Bạn chỉ cần nhìn, không cần gõ lại.');
   buildAutoHintLines(tabLabel, parentLabel).forEach((line) => {
     lines.push(line);

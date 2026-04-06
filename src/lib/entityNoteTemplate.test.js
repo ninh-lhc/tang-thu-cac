@@ -18,13 +18,14 @@ describe('entityNoteTemplate', () => {
       },
     });
 
-    expect(text).toContain('## Mẫu nhập nhanh - Tu Luyện › Cảnh Giới Tu Vi');
+    expect(text).toContain('# Thông tin chi tiết');
     expect(text).toContain('- Danh xưng / Tên gọi: Luyện Khí');
     expect(text).toContain('- Cảnh giới / Trạng thái: Đệ Nhất - Linh Cảnh Bát Bộ');
     expect(text).toContain('- Danh hiệu / Phân loại: Tu luyện');
     expect(text).toContain('- Biệt danh / tên khác:');
-    expect(text).toContain('## Ghi chép chi tiết');
-    expect(text).toContain('## AUTO');
+    expect(text).toContain('# Ghi chú');
+    expect(text).toContain('[[Lạc Nam]] (37) ?');
+    expect(text).toContain('# AUTO');
     expect(text).toContain('Phần này do khối AUTO tự sinh và tự cập nhật');
     expect(text).not.toContain('Nhóm tự động: hệ thống');
   });
