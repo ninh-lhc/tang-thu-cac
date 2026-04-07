@@ -284,7 +284,7 @@ function buildAutoLines(records, strategy, ownerLookupEntities = []) {
         const name = safeString(entity?.name).trim();
         if (!name) return;
         const owner = resolveOwnerLabel(entity, ownerLookupEntities);
-        const ownerSuffix = owner ? ` - ${owner}` : '';
+        const ownerSuffix = owner ? ` - [[${owner}]]` : '';
         lines.push(`- [[${name}]]${ownerSuffix}`);
       });
   });
