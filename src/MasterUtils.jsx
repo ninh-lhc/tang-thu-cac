@@ -710,8 +710,8 @@ export const renderMarkdown = (text, dirHandle, entityMap, linkRegex, onNavigate
   const lookup = buildEntityNameLookup(entityMap);
   const lines = text.split('\n');
   return lines.map((line, i) => {
-    if (line.startsWith('# ')) return <h1 key={`h1-${i}`} className="text-3xl font-heading font-bold text-amber-500 mb-4 border-b border-slate-800 pb-2 mt-6">{processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</h1>;
-    if (line.startsWith('## ')) return <h2 key={`h2-${i}`} className="text-2xl font-heading font-bold text-amber-600 mb-3 mt-4">{processInline(line.slice(3), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</h2>;
+    if (line.startsWith('# ')) return <h1 key={`h1-${i}`} className="text-3xl font-heading font-bold text-slate-100 mb-4 border-b border-slate-700 pb-2 mt-6">{processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</h1>;
+    if (line.startsWith('## ')) return <h2 key={`h2-${i}`} className="text-2xl font-heading font-bold text-cyan-200 mb-3 mt-4">{processInline(line.slice(3), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</h2>;
     if (line.startsWith('- ')) return <li key={`li-${i}`} className="ml-6 list-disc mb-2 text-slate-300 font-serif">{processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</li>;
     if (/^\d+\.\s/.test(line)) {
       return (

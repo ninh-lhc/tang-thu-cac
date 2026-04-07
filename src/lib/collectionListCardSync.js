@@ -76,7 +76,7 @@ function findTitleAutoListRange(text) {
           scan = nl2 === -1 ? text.length : nl2 + 1;
           continue;
         }
-        if (trimmed.startsWith('## ') || trimmed.startsWith('- ')) {
+        if (trimmed.startsWith('## ') || trimmed.startsWith('- ') || /^\d+\.\s/.test(trimmed)) {
           scan = nl2 === -1 ? text.length : nl2 + 1;
           continue;
         }
@@ -298,12 +298,12 @@ function buildAutoLines(records, strategy, ownerLookupEntities = []) {
     lines.push('');
     [...entities]
       .sort((a, b) => safeString(a?.name).localeCompare(safeString(b?.name), 'vi'))
-      .forEach((entity) => {
+      .forEach((entity, itemIdx) => {
         const name = safeString(entity?.name).trim();
         if (!name) return;
         const owner = resolveOwnerLabel(entity, ownerLookupEntities);
         const ownerSuffix = owner ? ` - [[${owner}]]` : '';
-        lines.push(`- [[${name}]]${ownerSuffix}`);
+        lines.push(`${itemIdx + 1}. [[${name}]]${ownerSuffix}`);
       });
   });
 

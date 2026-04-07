@@ -86,9 +86,8 @@ describe('collectionListCardSync', () => {
     expect(String(listCard.info || '')).not.toMatch(/<!--\s*AUTO_COLLECTION_LIST/i);
     expect(String(listCard.info || '')).toContain('# Danh mục thẻ (AUTO)');
     expect(String(listCard.info || '')).toContain('- Tổng số thẻ: 2');
-    expect(String(listCard.info || '')).toContain('[[Le Bao Tan Thu]]');
-    expect(String(listCard.info || '')).toContain('[[Le Bao Tan Thu]] - [[Lạc Nam]]');
-    expect(String(listCard.info || '')).toContain('[[Ruong Dai Le]]');
+    expect(String(listCard.info || '')).toContain('1. [[Le Bao Tan Thu]] - [[Lạc Nam]]');
+    expect(String(listCard.info || '')).toContain('1. [[Ruong Dai Le]]');
     expect(String(listCard.info || '')).toContain('## Dia cap (1)');
     expect(String(listCard.info || '')).toContain('## Huyen cap (1)');
   });
@@ -119,7 +118,7 @@ describe('collectionListCardSync', () => {
     syncAllCollectionListCards(novel);
     const listCard = novel.data['he-thong']['goi-qua'].entities[0];
 
-    expect(String(listCard.info || '')).toContain('[[Ruong Dai Le]] - [[Lạc Nam]]');
+    expect(String(listCard.info || '')).toContain('1. [[Ruong Dai Le]] - [[Lạc Nam]]');
   });
 
   it('links owner when owner field uses custom phai-style key', () => {
@@ -130,7 +129,7 @@ describe('collectionListCardSync', () => {
     syncAllCollectionListCards(novel);
     const listCard = novel.data['he-thong']['goi-qua'].entities[0];
 
-    expect(String(listCard.info || '')).toContain('[[Ruong Dai Le]] - [[Lạc Nam]]');
+    expect(String(listCard.info || '')).toContain('1. [[Ruong Dai Le]] - [[Lạc Nam]]');
   });
 
   it('migrates legacy HTML comment wrappers away on sync', () => {
