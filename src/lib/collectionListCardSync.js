@@ -47,6 +47,10 @@ function normalize(value) {
   return normalizeAsciiText(value);
 }
 
+function normalizeGroupKey(label) {
+  return normalize(label).replace(/\s+/g, ' ').trim();
+}
+
 function findLegacyAutoListRange(text) {
   const s = text.indexOf(LEGACY_AUTO_LIST_START);
   const e = text.indexOf(LEGACY_AUTO_LIST_END);
@@ -281,29 +285,33 @@ function buildAutoLines(records, strategy, ownerLookupEntities = []) {
 
   const grouped = new Map();
   items.forEach((entity) => {
-    const groupLabel = safeString(strategy.getGroupLabel(entity)).trim() || 'Ch\u01b0a ph\u00e2n lo\u1ea1i';
-    if (!grouped.has(groupLabel)) grouped.set(groupLabel, []);
-    grouped.get(groupLabel).push(entity);
+    const rawLabel = safeString(strategy.getGroupLabel(entity)).trim();
+    const groupLabel = rawLabel || 'Ch\u01b0a ph\u00e2n lo\u1ea1i';
+    const groupKey = normalizeGroupKey(groupLabel) || 'chua phan loai';
+    if (!grouped.has(groupKey)) grouped.set(groupKey, { label: groupLabel, entities: [] });
+    grouped.get(groupKey).entities.push(entity);
   });
 
-  const groupEntries = Array.from(grouped.entries()).sort((a, b) => {
-    const orderDiff = computeGroupOrder(strategy.kind, a[0]) - computeGroupOrder(strategy.kind, b[0]);
+  const groupEntries = Array.from(grouped.values()).sort((a, b) => {
+    const orderDiff = computeGroupOrder(strategy.kind, a.label) - computeGroupOrder(strategy.kind, b.label);
     if (orderDiff !== 0) return orderDiff;
-    return a[0].localeCompare(b[0], 'vi');
+    return a.label.localeCompare(b.label, 'vi');
   });
 
-  groupEntries.forEach(([groupLabel, entities], index) => {
+  groupEntries.forEach(({ label: groupLabel, entities }, index) => {
     if (index > 0) lines.push('');
     lines.push(`## ${groupLabel} (${entities.length})`);
     lines.push('');
+    let visibleIdx = 0;
     [...entities]
       .sort((a, b) => safeString(a?.name).localeCompare(safeString(b?.name), 'vi'))
-      .forEach((entity, itemIdx) => {
+      .forEach((entity) => {
         const name = safeString(entity?.name).trim();
         if (!name) return;
+        visibleIdx += 1;
         const owner = resolveOwnerLabel(entity, ownerLookupEntities);
         const ownerSuffix = owner ? ` - [[${owner}]]` : '';
-        lines.push(`${itemIdx + 1}. [[${name}]]${ownerSuffix}`);
+        lines.push(`${visibleIdx}. [[${name}]]${ownerSuffix}`);
       });
   });
 

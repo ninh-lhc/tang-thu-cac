@@ -145,4 +145,30 @@ describe('collectionListCardSync', () => {
     expect(String(listCard.info || '')).toContain('# Danh mục thẻ (AUTO)');
     expect(String(listCard.info || '')).toContain('- Tổng số thẻ: 2');
   });
+
+  it('merges equivalent group labels and restarts numbering from 1 per group', () => {
+    const novel = buildNovel();
+    novel.data['he-thong']['goi-qua'].entities.push({
+      id: 'gift-3',
+      name: 'A item',
+      info: '',
+      dynamicData: { f_cap: 'huyen  cap' },
+      milestones: [],
+    });
+    novel.data['he-thong']['goi-qua'].entities.push({
+      id: 'gift-4',
+      name: 'B item',
+      info: '',
+      dynamicData: { f_cap: 'Huyền Cấp' },
+      milestones: [],
+    });
+
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['he-thong']['goi-qua'].entities[0].info || '');
+    const huyenCount = (info.match(/## .*huyen\s+cap.*\(3\)/i) || []).length;
+    expect(huyenCount).toBe(1);
+    expect(info).toContain('1. [[A item]]');
+    expect(info).toContain('2. [[B item]]');
+    expect(info).toContain('3. [[Le Bao Tan Thu]]');
+  });
 });

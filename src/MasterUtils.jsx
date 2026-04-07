@@ -714,10 +714,14 @@ export const renderMarkdown = (text, dirHandle, entityMap, linkRegex, onNavigate
     if (line.startsWith('## ')) return <h2 key={`h2-${i}`} className="text-2xl font-heading font-bold text-cyan-200 mb-3 mt-4">{processInline(line.slice(3), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</h2>;
     if (line.startsWith('- ')) return <li key={`li-${i}`} className="ml-6 list-disc mb-2 text-slate-300 font-serif">{processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</li>;
     if (/^\d+\.\s/.test(line)) {
+      const m = line.match(/^(\d+)\.\s(.*)$/);
+      const orderNo = m?.[1] || '';
+      const body = m?.[2] || line.replace(/^\d+\.\s/, '');
       return (
-        <li key={`oli-${i}`} className="ml-6 list-decimal mb-2 text-slate-300 font-serif">
-          {processInline(line.replace(/^\d+\.\s/, ''), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
-        </li>
+        <p key={`oli-${i}`} className="mb-2 text-slate-300 font-serif leading-relaxed text-lg">
+          <span className="inline-block min-w-7 text-slate-500">{orderNo}.</span>{' '}
+          {processInline(body, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+        </p>
       );
     }
     if (line.startsWith('> ')) {
