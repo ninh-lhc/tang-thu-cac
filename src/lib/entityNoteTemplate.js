@@ -91,7 +91,7 @@ export function buildEntityNoteTemplate({
   lines.push('');
   lines.push('# Ghi chú');
   lines.push('');
-  lines.push('[[Lạc Nam]] (37) ?');
+  lines.push('[[Tên nhân vật]] (37) ?');
   lines.push('');
   lines.push('# AUTO');
   lines.push('> Phần này hệ thống tự sinh và tự cập nhật. Bạn chỉ cần nhìn, không cần gõ lại.');

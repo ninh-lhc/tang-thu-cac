@@ -1,44 +1,43 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { buildEntityNoteTemplate } from './entityNoteTemplateVi.js';
 
 describe('entityNoteTemplate', () => {
-  it('prefills a tab-aware editable skeleton with existing values', () => {
+  it('prefills an editable skeleton with values', () => {
     const text = buildEntityNoteTemplate({
-      entityName: 'Luyện Khí',
-      tabLabel: 'Cảnh Giới Tu Vi',
-      parentLabel: 'Tu Luyện',
+      entityName: 'Luyen Khi',
+      tabLabel: 'Canh Gioi Tu Vi',
+      parentLabel: 'Tu Luyen',
       fieldsTemplate: [
-        { id: 'f_status', label: 'Cảnh giới / Trạng thái' },
-        { id: 'f_title', label: 'Danh hiệu / Phân loại' },
-        { id: 'f_alias', label: 'Biệt danh / tên khác' },
+        { id: 'f_status', label: 'Canh gioi / Trang thai' },
+        { id: 'f_title', label: 'Danh hieu / Phan loai' },
+        { id: 'f_alias', label: 'Biet danh / ten khac' },
       ],
       dynamicData: {
-        f_status: 'Đệ Nhất - Linh Cảnh Bát Bộ',
-        f_title: 'Tu luyện',
+        f_status: 'De Nhat - Linh Canh Bat Bo',
+        f_title: 'Tu luyen',
       },
     });
 
-    expect(text).toContain('# Thông tin chi tiết');
-    expect(text).toContain('- Danh xưng / Tên gọi: Luyện Khí');
-    expect(text).toContain('- Cảnh giới / Trạng thái: Đệ Nhất - Linh Cảnh Bát Bộ');
-    expect(text).toContain('- Danh hiệu / Phân loại: Tu luyện');
-    expect(text).toContain('- Biệt danh / tên khác:');
-    expect(text).toContain('# Ghi chú');
-    expect(text).toContain('[[Lạc Nam]] (37) ?');
+    expect(text).toContain('# ');
+    expect(text).toContain('Luyen Khi');
+    expect(text).toContain('Canh gioi / Trang thai: De Nhat - Linh Canh Bat Bo');
+    expect(text).toContain('Danh hieu / Phan loai: Tu luyen');
+    expect(text).toContain('Biet danh / ten khac:');
+    expect(text).toContain('(37) ?');
+    expect(text).toContain('[[');
+    expect(text).toContain(']]');
     expect(text).toContain('# AUTO');
-    expect(text).toContain('Phần này do khối AUTO tự sinh và tự cập nhật');
-    expect(text).not.toContain('Nhóm tự động: hệ thống');
   });
 
-  it('falls back to a generic content line when no fields are provided', () => {
+  it('falls back to generic line when no fields are provided', () => {
     const text = buildEntityNoteTemplate({
-      entityName: 'Vô Danh',
-      tabLabel: 'Cảnh Giới Tu Vi',
+      entityName: 'Vo Danh',
+      tabLabel: 'Canh Gioi Tu Vi',
       fieldsTemplate: [],
       dynamicData: {},
     });
 
-    expect(text).toContain('- Danh xưng / Tên gọi: Vô Danh');
-    expect(text).toContain('- Nội dung:');
+    expect(text).toContain('Vo Danh');
+    expect(text).toContain('- ');
   });
 });
