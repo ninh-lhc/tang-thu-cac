@@ -42,4 +42,34 @@ describe('computeRelatedEntities', () => {
     expect(rel.length).toBe(1);
     expect(rel[0].entity.id).toBe('npc');
   });
+
+  it('prefers selectedEntity.info wiki over stale rawText wiki', () => {
+    const selectedEntity = {
+      id: 'hero',
+      name: 'Hero',
+      dynamicData: {},
+      info: 'Không còn liên kết',
+      rawText: '[[Npc A]]',
+      milestones: [],
+    };
+    const npcA = { id: 'npc-a', name: 'Npc A', dynamicData: {}, info: '', rawText: '', milestones: [] };
+    const activeNovelData = {
+      data: {
+        lon1: { sub1: { entities: [selectedEntity, npcA] } },
+      },
+    };
+    const activeTabs = [{ id: 'lon1', subTabs: [{ id: 'sub1', label: 'S', fieldsTemplate: [] }] }];
+    const entityMap = [
+      { name: 'Hero', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'hero' } },
+      { name: 'Npc A', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'npc-a' } },
+    ];
+    const rel = computeRelatedEntities({
+      activeNovelData,
+      selectedEntity,
+      activeTabs,
+      entityMap,
+      wikiExactMatchOnly: true,
+    });
+    expect(rel.find((x) => x.entity.id === 'npc-a')).toBeUndefined();
+  });
 });

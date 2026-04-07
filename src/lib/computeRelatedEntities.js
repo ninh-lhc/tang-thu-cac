@@ -188,7 +188,9 @@ export function computeRelatedEntities({
     }
   };
 
-  absorbWikiText(selectedEntity.rawText, 'Bản thảo · ');
+  // Ưu tiên ghi chú hiện tại (info). rawText cũ có thể bị stale sau các luồng chỉnh form.
+  const selectedWikiSource = safeString(selectedEntity.info || selectedEntity.rawText);
+  absorbWikiText(selectedWikiSource, 'Bản thảo · ');
   (selectedEntity.milestones || []).forEach((ms) => {
     absorbWikiText(ms.event, `Mốc ch.${safeString(ms.chapter)} · `);
   });
