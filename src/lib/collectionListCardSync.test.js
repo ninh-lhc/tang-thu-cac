@@ -122,6 +122,17 @@ describe('collectionListCardSync', () => {
     expect(String(listCard.info || '')).toContain('[[Ruong Dai Le]] - [[Lạc Nam]]');
   });
 
+  it('links owner when owner field uses custom phai-style key', () => {
+    const novel = buildNovel();
+    const gift = novel.data['he-thong']['goi-qua'].entities.find((entity) => entity.id === 'gift-2');
+    gift.dynamicData = { f_cap: 'Dia cap', f_mon_phai: 'Lac Nam' };
+
+    syncAllCollectionListCards(novel);
+    const listCard = novel.data['he-thong']['goi-qua'].entities[0];
+
+    expect(String(listCard.info || '')).toContain('[[Ruong Dai Le]] - [[Lạc Nam]]');
+  });
+
   it('migrates legacy HTML comment wrappers away on sync', () => {
     const novel = buildNovel();
     const listCard = novel.data['he-thong']['goi-qua'].entities[0];

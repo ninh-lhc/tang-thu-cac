@@ -137,15 +137,33 @@ function extractOwnerName(rawValue) {
 }
 
 function resolveOwnerLabel(entity, ownerLookupEntities = []) {
-  const raw = pickFirstFilled(entity, [
+  const rawDirect = pickFirstFilled(entity, [
     'f_chu',
     'f_owner',
+    'f_phai',
+    'f_mon_phai',
+    'f_tong_phai',
+    'f_tong_mon',
+    'f_to_chuc',
+    'f_the_luc',
+    'f_phe',
     'f_nguoi_so_huu',
     'f_nguoi_su_dung',
     'f_nguoi_tu_luyen',
     'f_truyen_nhan',
     'f_khe_chu',
   ]);
+  let raw = rawDirect;
+  if (!safeString(raw).trim()) {
+    const dyn = entity?.dynamicData && typeof entity.dynamicData === 'object' ? entity.dynamicData : {};
+    for (const [key, value] of Object.entries(dyn)) {
+      if (!safeString(value).trim()) continue;
+      if (/(chu|owner|so_huu|phai|to_chuc|the_luc|phe)/i.test(safeString(key))) {
+        raw = value;
+        break;
+      }
+    }
+  }
   const ownerFromFields = extractOwnerName(raw);
   let ownerName = ownerFromFields;
   if (!ownerName) {
