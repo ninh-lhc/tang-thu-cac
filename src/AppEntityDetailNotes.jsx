@@ -176,7 +176,23 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
                 showToast('Không có chỗ mới cần bọc link (hoặc đã có [[...]]).');
               }
             } catch (e) {
-              showToast(mapGeminiErrorToUserMessage(e), 'error');
+              const msg = mapGeminiErrorToUserMessage(e);
+              const rateLimited = /429|503|rate_limit|qua tai api/i.test(String(e?.message || ''));
+              if (rateLimited) {
+                const localNext = autoWrapWikiLinksByEntityMap(text, entityMap);
+                if (localNext !== text) {
+                  recordAndSetDraft(localNext);
+                  if (isSplitPreview) {
+                    setLivePreviewText(localNext);
+                    setDebouncedMarkdownPreview(localNext);
+                  }
+                  showToast('AI đang quá tải (429/503) — đã tự bọc link theo danh sách thẻ có sẵn.', 'warning');
+                } else {
+                  showToast(msg, 'error');
+                }
+              } else {
+                showToast(msg, 'error');
+              }
             }
             setIsExtractingAI(false);
           }}

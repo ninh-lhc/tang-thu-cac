@@ -59,6 +59,15 @@ const normalizeKeys = (keysInput) =>
 
 const geminiResponseCache = new Map();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const parseRetryAfterMs = (res) => {
+  const raw = res?.headers?.get?.('retry-after');
+  if (!raw) return 0;
+  const sec = Number(raw);
+  if (Number.isFinite(sec) && sec > 0) return Math.min(sec * 1000, 10000);
+  const ts = Date.parse(raw);
+  if (!Number.isNaN(ts)) return Math.max(0, Math.min(ts - Date.now(), 10000));
+  return 0;
+};
 
 async function readGeminiErrorDetail(res) {
   let detail = `HTTP ${res.status}`;
@@ -95,7 +104,9 @@ export const callGeminiAPIText = async (payload, keysInput, options = {}) => {
     return cached.text;
   }
 
-  const maxAttempts = Math.max(3, keys.length);
+  // Retry nhiều vòng qua toàn bộ key để chịu lỗi nghẽn tạm thời (429/503) tốt hơn.
+  const maxRounds = 3;
+  const maxAttempts = Math.max(6, keys.length * maxRounds);
   let lastError = null;
   for (let i = 0; i < maxAttempts; i++) {
     const key = keys[i % keys.length];
@@ -115,8 +126,14 @@ export const callGeminiAPIText = async (payload, keysInput, options = {}) => {
       }
       if (res.status === 429 || res.status === 503) {
         lastError = new Error(`rate_limit:${res.status}`);
-        if (i % keys.length < keys.length - 1) continue;
-        if (i < maxAttempts - 1) await sleep(Math.min(1000 * (Math.floor(i / keys.length) + 1), 4000));
+        const atRoundEnd = i % keys.length === keys.length - 1;
+        if (!atRoundEnd) continue;
+        if (i < maxAttempts - 1) {
+          const retryAfterMs = parseRetryAfterMs(res);
+          const roundNo = Math.floor(i / keys.length);
+          const backoffMs = Math.min(1200 * (roundNo + 1), 6000);
+          await sleep(Math.max(retryAfterMs, backoffMs));
+        }
         continue;
       }
       if (!res.ok) {
