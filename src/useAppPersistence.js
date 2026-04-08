@@ -40,6 +40,32 @@ function novelStorageBackupKey(id) {
   return `${NOVEL_STORAGE_PREFIX}${id}_backup`;
 }
 
+/** Gợi ý ngắn cho toast khi ghi đĩa / JSON thất bại (File System Access API). */
+function describeNovelSyncFailure(err) {
+  if (!err) return '';
+  const name = err.name || '';
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    return ' Trình duyệt từ chối ghi — kết nối lại thư mục truyện hoặc kiểm tra quyền thư mục.';
+  }
+  if (name === 'QuotaExceededError') {
+    return ' Hết dung lượng — giải phóng ổ đĩa hoặc chọn thư mục khác.';
+  }
+  if (name === 'InvalidStateError') {
+    return ' Thư mục không còn hợp lệ — chọn lại thư mục gốc trong Thư viện.';
+  }
+  if (name === 'NotFoundError') {
+    return ' Không tìm thấy file/thư mục — kiểm tra ổ/USB còn gắn.';
+  }
+  if (name === 'InvalidModificationError') {
+    return ' File đang bị khóa hoặc không thể thay thế — đóng chương trình đang mở file .json / tạm tắt đồng bộ mây (OneDrive) cho thư mục truyện.';
+  }
+  const msg = String(err.message || err)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160);
+  return msg ? ` ${msg}` : '';
+}
+
 function persistIndexShadow(payload) {
   try {
     localStorage.setItem('tangthu_index_shadow', JSON.stringify(payload));
@@ -194,8 +220,20 @@ export function useAppPersistence({
           console.warn('[TTC] syncNovel: không đọc được dữ liệu đĩa khi kiểm tra memory rỗng:', e);
         }
       }
-      const manifest = buildDiskManifest(novelToWrite);
-      const jsonStr = JSON.stringify(manifest, null, 2);
+      let jsonStr;
+      try {
+        const manifest = buildDiskManifest(novelToWrite);
+        jsonStr = JSON.stringify(manifest, null, 2);
+      } catch (e) {
+        console.error('[TTC] syncNovel: không tạo được manifest JSON', e);
+        setTimeout(() => {
+          showToast(
+            `Lỗi chuẩn bị lưu truyện ${novelData.title || novelData.id || ''}.${describeNovelSyncFailure(e)}`,
+            'error'
+          );
+        }, 0);
+        return;
+      }
       const mainFile = `${folderName}.json`;
       const tmpFile = `${folderName}.json.tmp`;
       const writeNovelBackup = async (novelDir) => {
@@ -248,13 +286,18 @@ export function useAppPersistence({
       try {
         await tryAtomic();
         bumpNovelStatsAfterWrite(novelToWrite);
-      } catch {
+      } catch (e1) {
+        console.warn('[TTC] syncNovel tryAtomic failed:', e1);
         try {
           await tryDirect();
           bumpNovelStatsAfterWrite(novelToWrite);
-        } catch {
+        } catch (e2) {
+          console.error('[TTC] syncNovel tryDirect failed:', e2);
           setTimeout(() => {
-            showToast(`Lỗi đồng bộ truyện ${novelData.title}!`, 'error');
+            showToast(
+              `Lỗi đồng bộ truyện ${novelData.title || novelData.id || ''}!${describeNovelSyncFailure(e2)}`,
+              'error'
+            );
           }, 0);
         }
       }
