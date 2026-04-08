@@ -157,14 +157,19 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             try {
               const res = await suggestWikiLinkSpotsWithAI(text, geminiApiKeys, aiMode);
               const spots = Array.isArray(res?.linkSpots) ? res.linkSpots : [];
-              const next = applyWikiLinkSpots(text, spots);
+              const aiNext = applyWikiLinkSpots(text, spots);
+              const next = aiNext !== text ? aiNext : autoWrapWikiLinksByEntityMap(text, entityMap);
               if (next !== text) {
                 recordAndSetDraft(next);
                 if (isSplitPreview) {
                   setLivePreviewText(next);
                   setDebouncedMarkdownPreview(next);
                 }
-                showToast('Đã thêm [[liên kết]] — giữ nguyên chữ và định dạng bạn nhập.');
+                if (aiNext !== text) {
+                  showToast('Đã thêm [[liên kết]] bằng AI — giữ nguyên chữ và định dạng bạn nhập.');
+                } else {
+                  showToast('AI chưa định vị được spot rõ ràng — đã tự bọc link theo danh sách thẻ có sẵn.');
+                }
               } else if (spots.length > 0) {
                 showToast('AI gợi ý link nhưng không khớp văn bản — thử lại hoặc chỉnh ngắn đoạn.', 'warning');
               } else {

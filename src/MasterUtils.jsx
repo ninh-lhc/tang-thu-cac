@@ -70,6 +70,18 @@ async function readGeminiErrorDetail(res) {
   return detail;
 }
 
+function extractGeminiTextResponse(data) {
+  const candidate = data?.candidates?.[0];
+  const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+  const text = parts
+    .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+    .join('')
+    .trim();
+  const blockReason = data?.promptFeedback?.blockReason || '';
+  const finishReason = candidate?.finishReason || '';
+  return { text, blockReason, finishReason };
+}
+
 // Gọi Gemini và trả về text thô (không parse JSON)
 // options.timeoutMs: timeout tùy chọn (mặc định AI_REQUEST_TIMEOUT_MS)
 export const callGeminiAPIText = async (payload, keysInput, options = {}) => {
@@ -112,7 +124,14 @@ export const callGeminiAPIText = async (payload, keysInput, options = {}) => {
         throw new Error(detail);
       }
       const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+      const { text, blockReason, finishReason } = extractGeminiTextResponse(data);
+      if (!text) {
+        if (blockReason) throw new Error(`Gemini bị chặn nội dung (${blockReason}).`);
+        if (finishReason && finishReason !== 'STOP') {
+          throw new Error(`Gemini kết thúc bất thường (${finishReason}).`);
+        }
+        throw new Error('Gemini không trả nội dung hợp lệ. Thử lại với đoạn ngắn hơn.');
+      }
       geminiResponseCache.set(cacheKey, { text, ts: Date.now() });
       return text;
     } catch (e) {
@@ -229,7 +248,7 @@ QUY TẮC BẮT BUỘC (vi phạm là sai):
       responseSchema: WIKI_LINK_SPOTS_SCHEMA,
     },
   };
-  return callGeminiAPI(payload, keysInput);
+  return callGeminiAPI(payload, keysInput, { timeoutMs: 45000 });
 };
 
 export const extractEntityAttributesWithAI = async (text, currentFieldsTemplate, key) => {
