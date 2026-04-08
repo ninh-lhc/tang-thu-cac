@@ -43,6 +43,10 @@ function novelStorageBackupKey(id) {
 /** Gợi ý ngắn cho toast khi ghi đĩa / JSON thất bại (File System Access API). */
 function describeNovelSyncFailure(err) {
   if (!err) return '';
+  const msgLower = String(err.message || '').toLowerCase();
+  if (msgLower.includes('modifications are not allowed') || msgLower.includes('createwritable')) {
+    return ' Thiếu quyền ghi (File System Access) — bấm kết nối lại thư mục trong Thư viện và chọn **Cho phép chỉnh sửa**; hoặc thử ngay sau khi nhấp (đừng để tab nền quá lâu).';
+  }
   const name = err.name || '';
   if (name === 'NotAllowedError' || name === 'SecurityError') {
     return ' Trình duyệt từ chối ghi — kết nối lại thư mục truyện hoặc kiểm tra quyền thư mục.';
@@ -64,6 +68,28 @@ function describeNovelSyncFailure(err) {
     .trim()
     .slice(0, 160);
   return msg ? ` ${msg}` : '';
+}
+
+/**
+ * Handle thư mục khôi phục từ IndexedDB thường queryPermission = "prompt" — createWritable() sẽ lỗi
+ * cho đến khi requestPermission({ mode: 'readwrite' }) được gọi (ưu tiên trong cùng cử chỉ user).
+ */
+async function ensureDirectoryWritePermission(dirHandle) {
+  if (!dirHandle || dirHandle === 'LOCAL_STORAGE') return { ok: true };
+  if (typeof dirHandle.queryPermission !== 'function' || typeof dirHandle.requestPermission !== 'function') {
+    return { ok: true };
+  }
+  try {
+    let status = await dirHandle.queryPermission({ mode: 'readwrite' });
+    if (status === 'denied') return { ok: false, status: 'denied' };
+    if (status === 'prompt') {
+      status = await dirHandle.requestPermission({ mode: 'readwrite' });
+    }
+    if (status !== 'granted') return { ok: false, status: status || 'not_granted' };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, status: 'error', error: e };
+  }
 }
 
 function persistIndexShadow(payload) {
@@ -107,6 +133,17 @@ export function useAppPersistence({
             showToast('CẢNH BÁO: Bộ nhớ đệm đã đầy!', 'warning');
           }, 500);
         }
+        persistIndexShadow(payload);
+        return;
+      }
+      const indexPerm = await ensureDirectoryWritePermission(dir);
+      if (!indexPerm.ok) {
+        setTimeout(() => {
+          showToast(
+            'Không ghi được danh mục (index): thiếu quyền ghi thư mục — kết nối lại **Lưu Trữ** và chọn cho phép chỉnh sửa.',
+            'warning'
+          );
+        }, 0);
         persistIndexShadow(payload);
         return;
       }
@@ -172,6 +209,19 @@ export function useAppPersistence({
         }
         return;
       }
+
+      const perm = await ensureDirectoryWritePermission(rootDir);
+      if (!perm.ok) {
+        console.warn('[TTC] syncNovel: chưa có quyền readwrite trên thư mục gốc', perm);
+        setTimeout(() => {
+          showToast(
+            `Không ghi được «${novelData.title || novelData.id || ''}»: cần quyền chỉnh sửa thư mục. Mở Thư viện → **Lưu Trữ / Kết nối thư mục** và chấp nhận quyền ghi, rồi xóa hoặc lưu lại.`,
+            'warning'
+          );
+        }, 0);
+        return;
+      }
+
       const folderName = novelData.folderName || novelData.title.replace(/[\\/:*?"<>|]/g, '').trim() || novelData.id;
       let novelToWrite = novelData;
       // Đang giữ data partial (lazy-shard): BẮT BUỘC merge từ đĩa trước khi ghi — nếu không writeShardTree sẽ xóa mọi shard không nằm trong memory.
