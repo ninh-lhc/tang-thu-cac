@@ -182,6 +182,7 @@ export function AppCollectionSection({
     return () => {
       cancelAnimationFrame(raf1);
       if (raf2) cancelAnimationFrame(raf2);
+      setIsCollectionSwitching(false);
     };
   }, [collectionSubTab, activeTabLon, activeTabNho, activeTabCon, currentTabConfig?.viewType]);
 
@@ -216,7 +217,7 @@ export function AppCollectionSection({
             </h2>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-shrink-0 flex-wrap justify-end">
+          <div className="relative z-40 flex items-center gap-2.5 flex-shrink-0 flex-wrap justify-end">
             {!activeTabNho && currentTabConfig?.subTabs?.length > 0 ? null : currentTabConfig?.viewType === 'collection-track' ? (<>
               <button
                 type="button"

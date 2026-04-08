@@ -99,16 +99,16 @@ export const AppCollectionListContent = memo(function AppCollectionListContent({
   const pagination =
     totalPages <= 1 ? null : (
       <div className="flex items-center justify-center gap-2 mt-6 pt-4 border-t border-slate-800">
-        <button onClick={() => setEntityPage((p) => Math.max(1, p - 1))} disabled={entityPage === 1} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors">← Trước</button>
+        <button type="button" onClick={() => setEntityPage((p) => Math.max(1, p - 1))} disabled={entityPage === 1} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors">← Trước</button>
         <div className="flex gap-1">
           {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
             const p = totalPages <= 7 ? i + 1 : entityPage <= 4 ? i + 1 : entityPage >= totalPages - 3 ? totalPages - 6 + i : entityPage - 3 + i;
             return (
-              <button key={p} onClick={() => setEntityPage(p)} className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${p === entityPage ? 'bg-amber-700 text-white' : 'bg-slate-900 border border-slate-800 text-slate-500 hover:text-slate-200'}`}>{p}</button>
+              <button type="button" key={p} onClick={() => setEntityPage(p)} className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${p === entityPage ? 'bg-amber-700 text-white' : 'bg-slate-900 border border-slate-800 text-slate-500 hover:text-slate-200'}`}>{p}</button>
             );
           })}
         </div>
-        <button onClick={() => setEntityPage((p) => Math.min(totalPages, p + 1))} disabled={entityPage === totalPages} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors">Sau →</button>
+        <button type="button" onClick={() => setEntityPage((p) => Math.min(totalPages, p + 1))} disabled={entityPage === totalPages} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors">Sau →</button>
         <span className="text-xs text-slate-600 font-serif ml-2">{entitiesList.length} thực thể</span>
       </div>
     );

@@ -478,6 +478,10 @@ export default function App() {
     () => entitiesList.slice((entityPage - 1) * ENTITY_PAGE_SIZE, entityPage * ENTITY_PAGE_SIZE),
     [entitiesList, entityPage, ENTITY_PAGE_SIZE]
   );
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(entitiesList.length / ENTITY_PAGE_SIZE));
+    setEntityPage((p) => (p > maxPage ? maxPage : p));
+  }, [entitiesList.length, ENTITY_PAGE_SIZE, setEntityPage]);
   const groupedEntitiesList = useMemo(() => {
     if (entityGroupBy === 'none') return [];
     const groups = {};

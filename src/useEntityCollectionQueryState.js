@@ -1,9 +1,22 @@
 // Quản lý state + prefs cho truy vấn collection entity (search/filter/sort/group).
 // Tách từ App.jsx để giảm churn render toàn cục.
+// Lưu prefs: đọc trong useLayoutEffect khi đổi tab — tránh race với effect ghi (state filter stale ghi đè localStorage).
 /* eslint-disable react-hooks/set-state-in-effect -- đây là hook stateful điều phối UI; setState trong effect là chủ ý */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { safeString } from './MasterUtils.jsx';
+
+const ENTITY_UI_PREFS_LS_KEY = 'tangthu_entity_ui_prefs_by_tab';
+
+function readEntityUiPrefsMap() {
+  try {
+    const raw = localStorage.getItem(ENTITY_UI_PREFS_LS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 export function useEntityCollectionQueryState({
   activeNovelId,
@@ -19,15 +32,6 @@ export function useEntityCollectionQueryState({
   const [showEntityAdvanced, setShowEntityAdvanced] = useState(false);
   const [entityPage, setEntityPage] = useState(1);
   const [groupVisibleCount, setGroupVisibleCount] = useState({});
-  const [entityUiPrefsByTab, setEntityUiPrefsByTab] = useState(() => {
-    try {
-      const raw = localStorage.getItem('tangthu_entity_ui_prefs_by_tab');
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch {
-      return {};
-    }
-  });
 
   const entityUiPrefsKey = useMemo(() => {
     if (!activeNovelId || !activeTabLon) return '';
@@ -103,9 +107,10 @@ export function useEntityCollectionQueryState({
     setGroupVisibleCount({});
   }, [entitySearch, entityFilterField, entityFilterValue, entitySortMode, entityGroupBy, activeTabLon, activeTabNho]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!entityUiPrefsKey) return;
-    const pref = entityUiPrefsByTab[entityUiPrefsKey];
+    const all = readEntityUiPrefsMap();
+    const pref = all[entityUiPrefsKey];
     if (!pref) {
       setEntityFilterField('none');
       setEntityFilterValue('');
@@ -115,31 +120,31 @@ export function useEntityCollectionQueryState({
       return;
     }
     setEntityFilterField(pref.filterField || 'none');
-    setEntityFilterValue(pref.filterValue || '');
+    setEntityFilterValue(safeString(pref.filterValue || ''));
     setEntityGroupBy(pref.groupBy || 'none');
     setEntitySortMode(pref.sortMode || 'name_asc');
     setShowEntityAdvanced(!!pref.showAdvanced);
-  }, [entityUiPrefsByTab, entityUiPrefsKey]);
+  }, [entityUiPrefsKey]);
+
   useEffect(() => {
     if (!entityUiPrefsKey) return;
-    setEntityUiPrefsByTab((prev) => ({
-      ...prev,
-      [entityUiPrefsKey]: {
-        filterField: entityFilterField,
-        filterValue: entityFilterValue,
-        groupBy: entityGroupBy,
-        sortMode: entitySortMode,
-        showAdvanced: showEntityAdvanced,
-      },
-    }));
-  }, [entityUiPrefsKey, entityFilterField, entityFilterValue, entityGroupBy, entitySortMode, showEntityAdvanced]);
-  useEffect(() => {
     try {
-      localStorage.setItem('tangthu_entity_ui_prefs_by_tab', JSON.stringify(entityUiPrefsByTab || {}));
+      const prev = readEntityUiPrefsMap();
+      const next = {
+        ...prev,
+        [entityUiPrefsKey]: {
+          filterField: entityFilterField,
+          filterValue: entityFilterValue,
+          groupBy: entityGroupBy,
+          sortMode: entitySortMode,
+          showAdvanced: showEntityAdvanced,
+        },
+      };
+      localStorage.setItem(ENTITY_UI_PREFS_LS_KEY, JSON.stringify(next));
     } catch {
       void 0;
     }
-  }, [entityUiPrefsByTab]);
+  }, [entityUiPrefsKey, entityFilterField, entityFilterValue, entityGroupBy, entitySortMode, showEntityAdvanced]);
 
   return {
     entitySearch, setEntitySearch,
