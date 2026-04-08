@@ -72,4 +72,67 @@ describe('computeRelatedEntities', () => {
     });
     expect(rel.find((x) => x.entity.id === 'npc-a')).toBeUndefined();
   });
+
+  it('drops relations after in-place entity removal (no stale WeakMap index)', () => {
+    const selectedEntity = { id: 'hero', name: 'Tiểu Minh', dynamicData: {}, rawText: '', milestones: [] };
+    const other = { id: 'npc', name: 'Lão Vương', dynamicData: { f_note: 'Gặp Tiểu Minh ở phố' }, rawText: '', milestones: [] };
+    const activeNovelData = {
+      data: {
+        lon1: {
+          sub1: { entities: [selectedEntity, other] },
+        },
+      },
+    };
+    const activeTabs = [
+      { id: 'lon1', label: 'L', subTabs: [{ id: 'sub1', label: 'S', fieldsTemplate: [{ id: 'f_note', label: 'Ghi chú' }] }] },
+    ];
+    const entityMap = [
+      { name: 'Tiểu Minh', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'hero' } },
+      { name: 'Lão Vương', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'npc' } },
+    ];
+    const args = {
+      activeNovelData,
+      selectedEntity,
+      activeTabs,
+      entityMap,
+      wikiExactMatchOnly: true,
+    };
+    expect(computeRelatedEntities(args).length).toBe(1);
+    activeNovelData.data.lon1.sub1.entities = [selectedEntity];
+    expect(computeRelatedEntities(args)).toEqual([]);
+  });
+
+  it('ignores entities under data keys for removed subtabs', () => {
+    const selectedEntity = { id: 'hero', name: 'Tiểu Minh', dynamicData: {}, rawText: '', milestones: [] };
+    const ghost = {
+      id: 'ghost',
+      name: 'Ma',
+      dynamicData: { f_note: 'Tiểu Minh' },
+      rawText: '',
+      milestones: [],
+    };
+    const activeNovelData = {
+      data: {
+        lon1: {
+          sub1: { entities: [selectedEntity] },
+          removed_sub: { entities: [ghost] },
+        },
+      },
+    };
+    const activeTabs = [
+      { id: 'lon1', label: 'L', subTabs: [{ id: 'sub1', label: 'S', fieldsTemplate: [{ id: 'f_note', label: 'Ghi chú' }] }] },
+    ];
+    const entityMap = [
+      { name: 'Tiểu Minh', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'hero' } },
+      { name: 'Ma', dest: { lonId: 'lon1', nhoId: 'removed_sub', entityId: 'ghost' } },
+    ];
+    const rel = computeRelatedEntities({
+      activeNovelData,
+      selectedEntity,
+      activeTabs,
+      entityMap,
+      wikiExactMatchOnly: true,
+    });
+    expect(rel).toEqual([]);
+  });
 });

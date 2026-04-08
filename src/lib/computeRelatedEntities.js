@@ -13,8 +13,6 @@ function safeString(val) {
   return String(val);
 }
 
-const novelIndexCache = new WeakMap();
-
 function buildTabMetadataMap(activeTabs) {
   const out = new Map();
   for (const tL of activeTabs || []) {
@@ -37,8 +35,10 @@ function buildNovelSearchIndex(activeNovelData, tabMetaMap) {
   const novelData = activeNovelData?.data || {};
   for (const [lonId, lonData] of Object.entries(novelData)) {
     const bySub = tabMetaMap.get(lonId);
+    if (!bySub) continue;
     for (const [nhoId, nhoData] of Object.entries(lonData || {})) {
-      const tabMeta = bySub?.get(nhoId);
+      if (!bySub.has(nhoId)) continue;
+      const tabMeta = bySub.get(nhoId);
       const tabLabel = tabMeta?.label || lonId;
       const entities = Array.isArray(nhoData?.entities) ? nhoData.entities : [];
       for (const ent of entities) {
@@ -71,17 +71,12 @@ function buildNovelSearchIndex(activeNovelData, tabMetaMap) {
   return { records, byEntityId };
 }
 
-function getCachedNovelIndex(activeNovelData, activeTabs) {
+/** Luôn build lại index — không cache theo reference novel vì state hay mutate tại chỗ (xóa thẻ/tab). */
+function buildFreshNovelIndex(activeNovelData, activeTabs) {
   if (!activeNovelData) return { records: [], byEntityId: new Map(), tabMetaMap: new Map() };
-  const cached = novelIndexCache.get(activeNovelData);
-  if (cached && cached.activeTabsRef === activeTabs) {
-    return cached;
-  }
   const tabMetaMap = buildTabMetadataMap(activeTabs);
   const novelIndex = buildNovelSearchIndex(activeNovelData, tabMetaMap);
-  const next = { ...novelIndex, tabMetaMap, activeTabsRef: activeTabs };
-  novelIndexCache.set(activeNovelData, next);
-  return next;
+  return { ...novelIndex, tabMetaMap };
 }
 
 /**
@@ -101,7 +96,7 @@ export function computeRelatedEntities({
   maxResults = 300,
 }) {
   if (!activeNovelData || !selectedEntity || !entityMap?.length) return [];
-  const novelIndex = getCachedNovelIndex(activeNovelData, activeTabs);
+  const novelIndex = buildFreshNovelIndex(activeNovelData, activeTabs);
 
   const relMap = new Map();
   const addRel = (entity, lonId, nhoId, tabLabel, ctx) => {
