@@ -45,7 +45,7 @@ function describeNovelSyncFailure(err) {
   if (!err) return '';
   const msgLower = String(err.message || '').toLowerCase();
   if (msgLower.includes('modifications are not allowed') || msgLower.includes('createwritable')) {
-    return ' Thiếu quyền ghi (File System Access) — bấm kết nối lại thư mục trong Thư viện và chọn **Cho phép chỉnh sửa**; hoặc thử ngay sau khi nhấp (đừng để tab nền quá lâu).';
+    return ' Thường do thiếu quyền ghi hoặc nhiều lần lưu cùng lúc (khóa file). Đợi vài giây rồi thử lại; hoặc kết nối lại thư mục (Cho phép chỉnh sửa); tắt đồng bộ mây (OneDrive) đối với thư mục truyện nếu vẫn lỗi.';
   }
   const name = err.name || '';
   if (name === 'NotAllowedError' || name === 'SecurityError') {
@@ -111,6 +111,8 @@ export function useAppPersistence({
   const persistIndexStatsTimerRef = useRef(null);
   const syncNovelRef = useRef(null);
   const recoveredNovelToastIdsRef = useRef(new Set());
+  /** Tránh nhiều lần ghi truyện ra đĩa song song (xóa liên tiếp → lỗi khóa file / createWritable). */
+  const novelDiskWriteChainRef = useRef(Promise.resolve());
 
   useEffect(
     () => () => {
@@ -194,7 +196,7 @@ export function useAppPersistence({
   );
 
   const syncNovel = useCallback(
-    async (novelData, rootDir) => {
+    (novelData, rootDir) => {
       if (!rootDir || rootDir === 'LOCAL_STORAGE') {
         const writeRes = writeLocalJsonWithBackup(
           novelStorageKey(novelData.id),
@@ -207,9 +209,10 @@ export function useAppPersistence({
             showToast('CẢNH BÁO: Tràn bộ nhớ! Hãy dùng Thư Mục Máy Tính!', 'warning');
           }, 500);
         }
-        return;
+        return Promise.resolve();
       }
 
+      const runFolderSync = async () => {
       const perm = await ensureDirectoryWritePermission(rootDir);
       if (!perm.ok) {
         console.warn('[TTC] syncNovel: chưa có quyền readwrite trên thư mục gốc', perm);
@@ -351,6 +354,12 @@ export function useAppPersistence({
           }, 0);
         }
       }
+      };
+
+      novelDiskWriteChainRef.current = novelDiskWriteChainRef.current
+        .catch(() => {})
+        .then(() => runFolderSync());
+      return novelDiskWriteChainRef.current;
     },
     [bumpNovelStatsAfterWrite, showToast]
   );
