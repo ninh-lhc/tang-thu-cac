@@ -26,17 +26,25 @@ const ATTRIBUTE_GROUP_ORDER = [
   'duong',
 ];
 
-const TIER_GROUP_ORDER = [
-  'than',
-  'thien',
-  'dia',
-  'huyen',
-  'linh',
-  'hoang',
-  'vu',
-  'truc',
-  'pham',
+// Trật tự cấp cho cụm tab Công Pháp / Vũ Kỹ / Pháp Bảo.
+// Có thể mở rộng thêm token mới ở cuối mảng khi truyện có hệ cấp mới.
+const TIER_LEVEL_ORDER = [
+  'hoang cap',
+  'huyen cap',
+  'dia cap',
+  'thien cap',
+  'linh cap',
+  'chan cap',
+  'cuc cap',
+  'at cap',
+  'ngoc cap',
+  'vuong cap',
+  'ton cap',
+  'de cap',
+  'cam ky',
 ];
+
+const TIER_SUB_ORDER = ['ha pham', 'trung pham', 'thuong pham', 'cuc pham'];
 
 function safeString(value) {
   if (value == null || value === 'null' || value === 'undefined') return '';
@@ -262,10 +270,13 @@ function computeGroupOrder(kind, label) {
   }
 
   if (kind === 'tier') {
-    const tierIdx = TIER_GROUP_ORDER.findIndex((token) => normalized.includes(token));
-    if (tierIdx >= 0) return tierIdx;
+    const levelIdx = TIER_LEVEL_ORDER.findIndex((token) => normalized.includes(token));
+    if (levelIdx >= 0) {
+      const subIdx = TIER_SUB_ORDER.findIndex((token) => normalized.includes(token));
+      return levelIdx * 100 + (subIdx >= 0 ? subIdx : 50);
+    }
     const parsed = parseRankNumber(label);
-    if (Number.isFinite(parsed)) return 100 + parsed;
+    if (Number.isFinite(parsed)) return 8_000 + parsed;
     return 9_000;
   }
 

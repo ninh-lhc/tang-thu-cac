@@ -171,4 +171,30 @@ describe('collectionListCardSync', () => {
     expect(info).toContain('2. [[B item]]');
     expect(info).toContain('3. [[Le Bao Tan Thu]]');
   });
+
+  it('orders tier groups by configured cap and pham hierarchy', () => {
+    const novel = buildNovel();
+    const entities = novel.data['he-thong']['goi-qua'].entities;
+    entities.push(
+      { id: 'x1', name: 'A', info: '', dynamicData: { f_cap: 'Linh Cấp Thượng phẩm' }, milestones: [] },
+      { id: 'x2', name: 'B', info: '', dynamicData: { f_cap: 'Địa Cấp Trung phẩm' }, milestones: [] },
+      { id: 'x3', name: 'C', info: '', dynamicData: { f_cap: 'Địa Cấp Hạ phẩm' }, milestones: [] },
+      { id: 'x4', name: 'D', info: '', dynamicData: { f_cap: 'Hoàng Cấp Cực phẩm' }, milestones: [] },
+      { id: 'x5', name: 'E', info: '', dynamicData: { f_cap: 'Đế Cấp Hạ phẩm' }, milestones: [] }
+    );
+
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['he-thong']['goi-qua'].entities[0].info || '');
+    const h = info.indexOf('## Hoàng Cấp Cực phẩm (1)');
+    const dHa = info.indexOf('## Địa Cấp Hạ phẩm (1)');
+    const dTr = info.indexOf('## Địa Cấp Trung phẩm (1)');
+    const lThuong = info.indexOf('## Linh Cấp Thượng phẩm (1)');
+    const deHa = info.indexOf('## Đế Cấp Hạ phẩm (1)');
+
+    expect(h).toBeGreaterThan(-1);
+    expect(dHa).toBeGreaterThan(h);
+    expect(dTr).toBeGreaterThan(dHa);
+    expect(lThuong).toBeGreaterThan(dTr);
+    expect(deHa).toBeGreaterThan(lThuong);
+  });
 });
