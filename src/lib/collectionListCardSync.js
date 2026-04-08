@@ -26,8 +26,6 @@ const ATTRIBUTE_GROUP_ORDER = [
   'duong',
 ];
 
-// Trật tự cấp cho cụm tab Công Pháp / Vũ Kỹ / Pháp Bảo.
-// Có thể mở rộng thêm token mới ở cuối mảng khi truyện có hệ cấp mới.
 const TIER_LEVEL_ORDER = [
   'hoang cap',
   'huyen cap',
@@ -45,6 +43,15 @@ const TIER_LEVEL_ORDER = [
 ];
 
 const TIER_SUB_ORDER = ['ha pham', 'trung pham', 'thuong pham', 'cuc pham'];
+
+function computeTierOrder(label) {
+  const normalized = normalize(label);
+  if (!normalized) return null;
+  const levelIdx = TIER_LEVEL_ORDER.findIndex((token) => normalized.includes(token));
+  if (levelIdx < 0) return null;
+  const subIdx = TIER_SUB_ORDER.findIndex((token) => normalized.includes(token));
+  return levelIdx * 100 + (subIdx >= 0 ? subIdx : 50);
+}
 
 function safeString(value) {
   if (value == null || value === 'null' || value === 'undefined') return '';
@@ -264,17 +271,15 @@ function computeGroupOrder(kind, label) {
   const normalized = normalize(label);
   if (!normalized) return 10_000;
 
+  const anyTierOrder = computeTierOrder(label);
+  if (anyTierOrder != null) return anyTierOrder;
+
   if (kind === 'attribute') {
     const idx = ATTRIBUTE_GROUP_ORDER.findIndex((token) => normalized.includes(token));
     return idx >= 0 ? idx : 9_000;
   }
 
   if (kind === 'tier') {
-    const levelIdx = TIER_LEVEL_ORDER.findIndex((token) => normalized.includes(token));
-    if (levelIdx >= 0) {
-      const subIdx = TIER_SUB_ORDER.findIndex((token) => normalized.includes(token));
-      return levelIdx * 100 + (subIdx >= 0 ? subIdx : 50);
-    }
     const parsed = parseRankNumber(label);
     if (Number.isFinite(parsed)) return 8_000 + parsed;
     return 9_000;
