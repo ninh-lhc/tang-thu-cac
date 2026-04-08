@@ -1490,19 +1490,71 @@ export default function App() {
 
   const handleDeleteTab = (path) => {
     const current = structuredClone(getTabsToUpdate());
+    const pruneNovelDataBucket = (nov) => {
+      if (!nov?.data || typeof nov.data !== 'object') return;
+      if (path.length === 1) {
+        const lonId = path[0];
+        if (Object.prototype.hasOwnProperty.call(nov.data, lonId)) delete nov.data[lonId];
+        return;
+      }
+      if (path.length === 2) {
+        const [lonDim, nhoDim] = path;
+        const bucket = nov.data[lonDim];
+        if (bucket && typeof bucket === 'object' && Object.prototype.hasOwnProperty.call(bucket, nhoDim)) {
+          delete bucket[nhoDim];
+        }
+        if (bucket && typeof bucket === 'object' && Object.keys(bucket).length === 0) {
+          delete nov.data[lonDim];
+        }
+        return;
+      }
+      if (path.length === 3) {
+        const [lonDim, nhoDim, conDim] = path;
+        const nhoNode = nov.data?.[lonDim]?.[nhoDim];
+        if (nhoNode && typeof nhoNode === 'object' && Object.prototype.hasOwnProperty.call(nhoNode, conDim)) {
+          delete nhoNode[conDim];
+        }
+      }
+    };
+
     if (path.length === 1) {
-      setTabsConfig(current.filter(t => t.id !== path[0]));
+      const nextTabs = current.filter((t) => t.id !== path[0]);
+      if (activeNovelData) {
+        updateActiveNovelData((nov) => {
+          nov.tabsConfig = nextTabs;
+          pruneNovelDataBucket(nov);
+        });
+      } else {
+        setGlobalTabsConfig(nextTabs);
+        syncIndex(novelsMetadata, nextTabs, dirHandle);
+      }
     } else if (path.length === 2) {
-      const lon = current.find(t => t.id === path[0]);
-      if (lon) lon.subTabs = (lon.subTabs || []).filter(s => s.id !== path[1]);
-      setTabsConfig(current);
+      const lon = current.find((t) => t.id === path[0]);
+      if (lon) lon.subTabs = (lon.subTabs || []).filter((s) => s.id !== path[1]);
+      if (activeNovelData) {
+        updateActiveNovelData((nov) => {
+          nov.tabsConfig = current;
+          pruneNovelDataBucket(nov);
+        });
+      } else {
+        setGlobalTabsConfig(current);
+        syncIndex(novelsMetadata, current, dirHandle);
+      }
     } else if (path.length === 3) {
-      const lon = current.find(t => t.id === path[0]);
-      const nho = lon?.subTabs?.find(s => s.id === path[1]);
-      if (nho) nho.tabCon = (nho.tabCon || []).filter(c => c.id !== path[2]);
-      setTabsConfig(current);
+      const lon = current.find((t) => t.id === path[0]);
+      const nho = lon?.subTabs?.find((s) => s.id === path[1]);
+      if (nho) nho.tabCon = (nho.tabCon || []).filter((c) => c.id !== path[2]);
+      if (activeNovelData) {
+        updateActiveNovelData((nov) => {
+          nov.tabsConfig = current;
+          pruneNovelDataBucket(nov);
+        });
+      } else {
+        setGlobalTabsConfig(current);
+        syncIndex(novelsMetadata, current, dirHandle);
+      }
     }
-    setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+    setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
   };
 
   const handleSaveEditLabel = (path, label) => {

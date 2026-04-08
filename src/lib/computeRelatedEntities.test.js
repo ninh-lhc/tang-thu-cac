@@ -135,4 +135,70 @@ describe('computeRelatedEntities', () => {
     });
     expect(rel).toEqual([]);
   });
+
+  it('drops wiki targets not present in activeNovelData (stale entityMap)', () => {
+    const selectedEntity = {
+      id: 'hero',
+      name: 'Hero',
+      dynamicData: {},
+      info: '[[Gone Card]]',
+      rawText: '',
+      milestones: [],
+    };
+    const activeNovelData = {
+      data: {
+        lon1: { sub1: { entities: [selectedEntity] } },
+      },
+    };
+    const activeTabs = [{ id: 'lon1', subTabs: [{ id: 'sub1', label: 'S', fieldsTemplate: [] }] }];
+    const entityMap = [
+      { name: 'Hero', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'hero' } },
+      { name: 'Gone Card', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'deleted-id' } },
+    ];
+    const rel = computeRelatedEntities({
+      activeNovelData,
+      selectedEntity,
+      activeTabs,
+      entityMap,
+      wikiExactMatchOnly: true,
+    });
+    expect(rel.length).toBe(0);
+  });
+
+  it('does not fuzzy-match wiki label to a different surviving card', () => {
+    const selectedEntity = {
+      id: 'a',
+      name: 'Skill A',
+      dynamicData: {},
+      info: '[[Long Huyết Kim Cương Quyết]]',
+      rawText: '',
+      milestones: [],
+    };
+    const other = {
+      id: 'b',
+      name: 'Long Huyết',
+      dynamicData: {},
+      info: '',
+      rawText: '',
+      milestones: [],
+    };
+    const activeNovelData = {
+      data: {
+        lon1: { sub1: { entities: [selectedEntity, other] } },
+      },
+    };
+    const activeTabs = [{ id: 'lon1', subTabs: [{ id: 'sub1', label: 'S', fieldsTemplate: [] }] }];
+    const entityMap = [
+      { name: 'Skill A', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'a' } },
+      { name: 'Long Huyết', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'b' } },
+    ];
+    const rel = computeRelatedEntities({
+      activeNovelData,
+      selectedEntity,
+      activeTabs,
+      entityMap,
+      wikiExactMatchOnly: false,
+    });
+    expect(rel.find((x) => x.entity.id === 'b')).toBeUndefined();
+  });
 });

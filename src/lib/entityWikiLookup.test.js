@@ -114,4 +114,25 @@ describe('entityWikiLookup', () => {
     expect(resolvedTier?.dest?.entityId).toBe('realm-luyen-hu');
     expect(resolvedMid?.dest?.entityId).toBe('realm-luyen-hu');
   });
+
+  it('drops orphan data buckets not present in tabsConfig (no ghost wiki names)', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'he-thong-tu-luyen',
+          label: 'He thong',
+          subTabs: [{ id: 'system-sub', label: 'System', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'he-thong-tu-luyen': {
+          'system-sub': { entities: [{ id: 'keep', name: 'Luyen Khi' }] },
+          'tab-da-xoa': { entities: [{ id: 'ghost', name: 'Ma Anh Bo Phap' }] },
+        },
+      },
+    };
+    const entityMap = buildEntityLinkMap(novel);
+    expect(entityMap.some((x) => x.dest?.entityId === 'ghost')).toBe(false);
+    expect(entityMap.some((x) => x.dest?.entityId === 'keep')).toBe(true);
+  });
 });

@@ -5,6 +5,7 @@
  */
 import { normalizeAsciiText, parseStatusHierarchy, splitStatusHierarchyTokens } from './statusHierarchyParser.js';
 import { buildSyntheticWikiNames } from './entityWikiDisambiguation.js';
+import { buildConfiguredSubTabIdsByLon, isConfiguredNovelDataPath } from './novelTabDataPaths.js';
 
 const NAME_SPLIT_RE = /[,/|()]/;
 const REALM_TIER_SUFFIXES = [
@@ -87,6 +88,7 @@ function buildRealmTierAliasNames(baseName) {
 export function buildEntityLinkMap(activeNovelData) {
   if (!activeNovelData) return [];
   const map = [];
+  const configuredPaths = buildConfiguredSubTabIdsByLon(activeNovelData.tabsConfig);
 
   const addNames = (nameStr, sharedMeta) => {
     splitNames(nameStr).forEach((cleanName) => {
@@ -96,6 +98,7 @@ export function buildEntityLinkMap(activeNovelData) {
 
   Object.keys(activeNovelData.data || {}).forEach((lonId) => {
     Object.keys(activeNovelData.data[lonId] || {}).forEach((nhoId) => {
+      if (!isConfiguredNovelDataPath(configuredPaths, lonId, nhoId)) return;
       const tabData = activeNovelData.data[lonId][nhoId];
       if (!tabData?.entities) return;
       tabData.entities.forEach((ent) => {
