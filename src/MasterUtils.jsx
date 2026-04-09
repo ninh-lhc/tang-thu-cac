@@ -55,9 +55,17 @@ export const mapGeminiErrorToUserMessage = (err) => {
 };
 
 const normalizeKeys = (keysInput) =>
-  (Array.isArray(keysInput) ? keysInput : [keysInput]).map(k => (k || '').trim()).filter(Boolean);
+  Array.from(
+    new Set(
+      (Array.isArray(keysInput) ? keysInput : [keysInput]).map(k => (k || '').trim()).filter(Boolean)
+    )
+  );
 
 const geminiResponseCache = new Map();
+const geminiKeyCooldownUntil = new Map();
+const GEMINI_KEY_RATE_LIMIT_COOLDOWN_MS = 30 * 1000;
+const GEMINI_KEY_QUOTA_COOLDOWN_MS = 10 * 60 * 1000;
+let geminiKeyCursor = 0;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const parseRetryAfterMs = (res) => {
   const raw = res?.headers?.get?.('retry-after');
@@ -77,6 +85,42 @@ async function readGeminiErrorDetail(res) {
     if (g) detail = String(g).slice(0, 220);
   } catch { void 0; }
   return detail;
+}
+
+function isGeminiQuotaLikeDetail(detail) {
+  return /RESOURCE_EXHAUSTED|quota|exceeded/i.test(String(detail || ''));
+}
+
+function isGeminiRateLimitLikeDetail(detail) {
+  return /rate.?limit|too many requests|unavailable|overloaded|429|503/i.test(String(detail || ''));
+}
+
+function rememberGeminiKeyCooldown(key, ms) {
+  if (!key || !Number.isFinite(ms) || ms <= 0) return;
+  const prev = geminiKeyCooldownUntil.get(key) || 0;
+  geminiKeyCooldownUntil.set(key, Math.max(prev, Date.now() + ms));
+}
+
+function clearGeminiKeyCooldown(key) {
+  if (!key) return;
+  geminiKeyCooldownUntil.delete(key);
+}
+
+function getGeminiKeyAttemptOrder(keys) {
+  if (keys.length <= 1) return [...keys];
+  const start = geminiKeyCursor % keys.length;
+  geminiKeyCursor = (geminiKeyCursor + 1) % keys.length;
+  const rotated = keys.map((_, idx) => keys[(start + idx) % keys.length]);
+  const now = Date.now();
+  const ready = [];
+  const cooling = [];
+  rotated.forEach((key) => {
+    const cooldownUntil = geminiKeyCooldownUntil.get(key) || 0;
+    if (cooldownUntil <= now) ready.push(key);
+    else cooling.push({ key, cooldownUntil });
+  });
+  cooling.sort((a, b) => a.cooldownUntil - b.cooldownUntil);
+  return [...ready, ...cooling.map((item) => item.key)];
 }
 
 function extractGeminiTextResponse(data) {
@@ -105,11 +149,19 @@ export const callGeminiAPIText = async (payload, keysInput, options = {}) => {
   }
 
   // Retry nhiều vòng qua toàn bộ key để chịu lỗi nghẽn tạm thời (429/503) tốt hơn.
-  const maxRounds = 3;
-  const maxAttempts = Math.max(6, keys.length * maxRounds);
+  const maxRounds = Math.min(5, Math.max(3, keys.length));
   let lastError = null;
-  for (let i = 0; i < maxAttempts; i++) {
-    const key = keys[i % keys.length];
+  for (let round = 0; round < maxRounds; round++) {
+    const orderedKeys = getGeminiKeyAttemptOrder(keys);
+    let attemptedThisRound = 0;
+    let earliestCooldownMs = Number.POSITIVE_INFINITY;
+    for (const key of orderedKeys) {
+      const remainingCooldownMs = (geminiKeyCooldownUntil.get(key) || 0) - Date.now();
+      if (remainingCooldownMs > 0) {
+        earliestCooldownMs = Math.min(earliestCooldownMs, remainingCooldownMs);
+        continue;
+      }
+      attemptedThisRound += 1;
     try {
       const ac = new AbortController();
       const timeoutId = setTimeout(() => ac.abort(), timeoutMs);
@@ -125,19 +177,25 @@ export const callGeminiAPIText = async (payload, keysInput, options = {}) => {
         clearTimeout(timeoutId);
       }
       if (res.status === 429 || res.status === 503) {
+        const retryAfterMs = parseRetryAfterMs(res);
+        const cooldownMs = Math.max(
+          retryAfterMs,
+          res.status === 429 ? GEMINI_KEY_RATE_LIMIT_COOLDOWN_MS : Math.min(GEMINI_KEY_RATE_LIMIT_COOLDOWN_MS, 10000)
+        );
+        rememberGeminiKeyCooldown(key, cooldownMs);
+        earliestCooldownMs = Math.min(earliestCooldownMs, cooldownMs);
         lastError = new Error(`rate_limit:${res.status}`);
-        const atRoundEnd = i % keys.length === keys.length - 1;
-        if (!atRoundEnd) continue;
-        if (i < maxAttempts - 1) {
-          const retryAfterMs = parseRetryAfterMs(res);
-          const roundNo = Math.floor(i / keys.length);
-          const backoffMs = Math.min(1200 * (roundNo + 1), 6000);
-          await sleep(Math.max(retryAfterMs, backoffMs));
-        }
         continue;
       }
       if (!res.ok) {
         const detail = await readGeminiErrorDetail(res);
+        if (isGeminiQuotaLikeDetail(detail)) {
+          rememberGeminiKeyCooldown(key, GEMINI_KEY_QUOTA_COOLDOWN_MS);
+          earliestCooldownMs = Math.min(earliestCooldownMs, GEMINI_KEY_QUOTA_COOLDOWN_MS);
+        } else if (isGeminiRateLimitLikeDetail(detail)) {
+          rememberGeminiKeyCooldown(key, GEMINI_KEY_RATE_LIMIT_COOLDOWN_MS);
+          earliestCooldownMs = Math.min(earliestCooldownMs, GEMINI_KEY_RATE_LIMIT_COOLDOWN_MS);
+        }
         throw new Error(detail);
       }
       const data = await res.json();
@@ -149,6 +207,7 @@ export const callGeminiAPIText = async (payload, keysInput, options = {}) => {
         }
         throw new Error('Gemini không trả nội dung hợp lệ. Thử lại với đoạn ngắn hơn.');
       }
+      clearGeminiKeyCooldown(key);
       geminiResponseCache.set(cacheKey, { text, ts: Date.now() });
       return text;
     } catch (e) {
@@ -156,9 +215,42 @@ export const callGeminiAPIText = async (payload, keysInput, options = {}) => {
         lastError = new Error(`timeout:${timeoutMs}`);
       } else {
         lastError = e;
+        if (isGeminiQuotaLikeDetail(e?.message)) {
+          rememberGeminiKeyCooldown(key, GEMINI_KEY_QUOTA_COOLDOWN_MS);
+          earliestCooldownMs = Math.min(earliestCooldownMs, GEMINI_KEY_QUOTA_COOLDOWN_MS);
+        } else if (isGeminiRateLimitLikeDetail(e?.message)) {
+          rememberGeminiKeyCooldown(key, GEMINI_KEY_RATE_LIMIT_COOLDOWN_MS);
+          earliestCooldownMs = Math.min(earliestCooldownMs, GEMINI_KEY_RATE_LIMIT_COOLDOWN_MS);
+        }
       }
-      if (i >= maxAttempts - 1) break;
-      if (!lastError.message?.startsWith('rate_limit')) await sleep(Math.min(500 * (i + 1), 1500));
+      if (
+        !lastError?.message?.startsWith('rate_limit') &&
+        !lastError?.message?.startsWith('timeout:')
+      ) {
+        await sleep(Math.min(250 * (round + 1), 750));
+      }
+    }
+    }
+    if (round >= maxRounds - 1) break;
+
+    if (attemptedThisRound === 0) {
+      lastError = lastError || new Error('rate_limit:cooldown');
+    }
+
+    const shouldWait =
+      attemptedThisRound === 0 ||
+      lastError?.message?.startsWith('rate_limit:') ||
+      lastError?.message?.startsWith('timeout:');
+
+    if (!shouldWait) continue;
+
+    const baseBackoffMs = Math.min(700 * (round + 1), 1800);
+    const cooldownWaitMs = Number.isFinite(earliestCooldownMs)
+      ? Math.min(Math.max(earliestCooldownMs, 0), 2500)
+      : 0;
+    const waitMs = Math.max(baseBackoffMs, cooldownWaitMs);
+    if (waitMs > 0) {
+      await sleep(waitMs);
     }
   }
   throw lastError || new Error('Tất cả API Key đều thất bại');

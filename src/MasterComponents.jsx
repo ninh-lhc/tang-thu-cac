@@ -1472,9 +1472,12 @@ export const ModalSettings = ({
                {keys.length > 1 && (
                  <p className="mt-2 text-[11px] text-indigo-400/70 font-serif italic">
                    ✦ Có {keys.length} key — tự động xoay vòng khi gặp giới hạn tốc độ.
-                 </p>
-               )}
-             </div>
+                  </p>
+                )}
+                <p className="mt-2 text-[11px] text-slate-500 font-serif italic">
+                  Nut "Thu" chi xac nhan key con dung luc nay; khi dung that van co the gap 429/503 neu quota hoac dich vu dang qua tai.
+                </p>
+              </div>
 
              <div>
                <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-widest">Chế độ AI</label>
