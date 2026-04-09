@@ -1,6 +1,5 @@
 /** Giống MasterUtils.safeString — tách ra để module này không import React. */
 import { buildEntityNameLookup, resolveEntityLookup } from './entityWikiLookup.js';
-import { buildConfiguredSubTabIdsByLon, isConfiguredNovelDataPath } from './novelTabDataPaths.js';
 
 function safeString(val) {
   if (val == null || val === 'null' || val === 'undefined') return '';
@@ -34,13 +33,11 @@ function buildNovelSearchIndex(activeNovelData, tabMetaMap) {
   const records = [];
   const byEntityId = new Map();
   const novelData = activeNovelData?.data || {};
-  const configuredPaths = buildConfiguredSubTabIdsByLon(activeNovelData?.tabsConfig);
   for (const [lonId, lonData] of Object.entries(novelData)) {
     const bySub = tabMetaMap.get(lonId);
     if (!bySub) continue;
     for (const [nhoId, nhoData] of Object.entries(lonData || {})) {
       if (!bySub.has(nhoId)) continue;
-      if (!isConfiguredNovelDataPath(configuredPaths, lonId, nhoId)) continue;
       const tabMeta = bySub.get(nhoId);
       const tabLabel = tabMeta?.label || lonId;
       const entities = Array.isArray(nhoData?.entities) ? nhoData.entities : [];
@@ -87,13 +84,13 @@ function buildFreshNovelIndex(activeNovelData, activeTabs) {
  * Thuần hàm — dễ test, không phụ thuộc React.
  *
  * Ai gọi: App.jsx (effect mạng lưới nhân quả). Test: computeRelatedEntities.test.js
- * Tham số wikiExactMatchOnly (nếu caller truyền) được bỏ qua: [[...]] luôn resolve chặt, không substring.
  */
 export function computeRelatedEntities({
   activeNovelData,
   selectedEntity,
   activeTabs,
   entityMap,
+  wikiExactMatchOnly,
   scopeLonId,
   scopeNhoId,
   maxResults = 300,
@@ -104,7 +101,6 @@ export function computeRelatedEntities({
   const relMap = new Map();
   const addRel = (entity, lonId, nhoId, tabLabel, ctx) => {
     if (!entity || entity.id === selectedEntity.id) return;
-    if (!novelIndex.byEntityId.has(entity.id)) return;
     const k = `${lonId}|${nhoId}|${entity.id}`;
     if (!relMap.has(k)) relMap.set(k, { entity, lonId, nhoId, tabLabel, parts: new Set([ctx]) });
     else relMap.get(k).parts.add(ctx);
@@ -160,7 +156,13 @@ export function computeRelatedEntities({
     if (!label) return null;
     const resolved = resolveEntityLookup(wikiLookup, label, { selfEntityId: selectedEntity.id });
     if (resolved) return { dest: resolved.dest, matched: resolved.name };
-    // Không dùng substring trên entityMap: dễ khớp nhầm thẻ còn sống khi thẻ đích đã xóa (tên gần giống).
+    if (wikiExactMatchOnly) return null;
+    const low = label.toLowerCase();
+    for (const item of entityMap) {
+      const en = safeString(item?.name).toLowerCase();
+      if (en.length < 2) continue;
+      if (low.includes(en) || en.includes(low)) return { dest: item.dest, matched: item.name };
+    }
     return null;
   };
 
