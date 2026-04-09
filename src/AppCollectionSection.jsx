@@ -127,7 +127,48 @@ export function AppCollectionSection({
 }) {
   void AdvancedFieldSelect;
   void recentlyMergedFields;
-  const [entitySearchDraft, setEntitySearchDraft] = React.useState(entitySearch || '');
+  /** Uncontrolled + ref: tránh React ghi đè DOM khi gõ Telex/IME (controlled value + sync làm vỡ dấu). */
+  const collectionSearchInputRef = React.useRef(null);
+  const searchDebounceTimerRef = React.useRef(0);
+  const collectionSearchScopeKey = React.useMemo(
+    () => `${activeNovelData?.id ?? ''}::${activeTabLon ?? ''}::${activeTabNho ?? 'default'}`,
+    [activeNovelData?.id, activeTabLon, activeTabNho]
+  );
+
+  React.useEffect(() => {
+    const el = collectionSearchInputRef.current;
+    if (!el) return;
+    const next = safeString(entitySearch);
+    if (next === '') {
+      el.value = '';
+      return;
+    }
+    if (typeof document !== 'undefined' && document.activeElement === el) return;
+    if (el.value !== next) el.value = next;
+  }, [entitySearch]);
+
+  const scheduleEntitySearchDebounce = React.useCallback(() => {
+    window.clearTimeout(searchDebounceTimerRef.current);
+    searchDebounceTimerRef.current = window.setTimeout(() => {
+      const el = collectionSearchInputRef.current;
+      if (!el) return;
+      setEntitySearch(safeString(el.value));
+    }, 220);
+  }, [setEntitySearch]);
+
+  const handleCollectionSearchBlur = React.useCallback(() => {
+    window.clearTimeout(searchDebounceTimerRef.current);
+    const el = collectionSearchInputRef.current;
+    if (el) setEntitySearch(safeString(el.value));
+  }, [setEntitySearch]);
+
+  React.useEffect(
+    () => () => {
+      window.clearTimeout(searchDebounceTimerRef.current);
+    },
+    []
+  );
+
   const [entityFilterValueDraft, setEntityFilterValueDraft] = React.useState(entityFilterValue || '');
   const [isCollectionSwitching, setIsCollectionSwitching] = React.useState(false);
   const currentTabEntities = React.useMemo(() => {
@@ -162,12 +203,7 @@ export function AppCollectionSection({
       }),
     [handlePickLocalImage, standardImageFileStemParts]
   );
-  React.useEffect(() => { setEntitySearchDraft(entitySearch || ''); }, [entitySearch]);
   React.useEffect(() => { setEntityFilterValueDraft(entityFilterValue || ''); }, [entityFilterValue]);
-  React.useEffect(() => {
-    const t = setTimeout(() => setEntitySearch(entitySearchDraft), 220);
-    return () => clearTimeout(t);
-  }, [entitySearchDraft, setEntitySearch]);
   React.useEffect(() => {
     const t = setTimeout(() => setEntityFilterValue(entityFilterValueDraft), 260);
     return () => clearTimeout(t);
@@ -228,12 +264,20 @@ export function AppCollectionSection({
               </button>
               <div className="relative flex-shrink-0">
                 <input
-                  type="search"
+                  key={collectionSearchScopeKey}
+                  ref={collectionSearchInputRef}
+                  type="text"
+                  inputMode="search"
+                  autoComplete="off"
+                  spellCheck={false}
+                  enterKeyHint="search"
+                  defaultValue={safeString(entitySearch)}
                   placeholder="Tìm kiếm nhanh..."
-                  value={entitySearchDraft}
-                  onChange={(e) => setEntitySearchDraft(e.target.value)}
+                  onChange={scheduleEntitySearchDebounce}
+                  onBlur={handleCollectionSearchBlur}
                   className={`${toolbarInputBase} bg-slate-900 border border-slate-800 pl-10 pr-4 outline-none focus:border-amber-600/50 w-48`}
                   aria-label="Tìm kiếm nhanh trong danh sách thẻ"
+                  role="searchbox"
                 />
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
               </div>
