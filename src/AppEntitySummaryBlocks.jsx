@@ -2,6 +2,7 @@ import React, { memo, useMemo, useState, useDeferredValue } from 'react';
 import { Network, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { FALLBACK_IMG } from './MasterEngines.js';
 import { AsyncLocalImage, safeString } from './MasterUtils.jsx';
+import { normalizeSearchText } from './lib/normalizeSearchText.js';
 import {
   filterRelatedEntities,
   sortRelatedEntitiesForDisplay,
@@ -11,13 +12,6 @@ import {
 
 /** Số thẻ tối đa mỗi trang trong một nhóm (nhãn tab) — giới hạn DOM / ảnh. */
 const NETWORK_GROUP_PAGE_SIZE = 10;
-
-function normalizeSearch(s) {
-  return safeString(s)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-}
 
 const NETWORK_TAB_COLOR_STYLES = [
   {
@@ -106,10 +100,10 @@ function getNetworkTabStyles(tabLabel) {
 
 function renderHighlightedText(raw, query) {
   const text = safeString(raw);
-  const q = normalizeSearch(query).trim();
+  const q = normalizeSearchText(query);
   if (!q) return text;
 
-  const tNorm = normalizeSearch(text);
+  const tNorm = normalizeSearchText(text);
   const isMatch = tNorm.includes(q);
   if (!isMatch) return text;
 
@@ -222,7 +216,7 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
               className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950/80 border border-slate-700/80 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50"
               aria-label="Lọc mạng lưới nhân quả"
             />
-            {normalizeSearch(networkSearch).trim() && (
+            {normalizeSearchText(networkSearch) && (
               <div className="mt-1 text-[10px] text-slate-500">
                 Khớp theo: tên · nhãn tab · ngữ cảnh
               </div>

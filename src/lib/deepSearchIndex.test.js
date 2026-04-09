@@ -30,6 +30,37 @@ describe('deepSearch index cache', () => {
     expect(res[0].entityId).toBe('e1');
   });
 
+  it('matches Vietnamese d/đ and accents in direct and indexed search', () => {
+    const novel = {
+      id: 'n-vn',
+      title: 'T2',
+      data: {
+        lon1: {
+          nho1: {
+            entities: [
+              {
+                id: 'e-vn',
+                name: 'Dao Tu',
+                info: '\u0110\u1EC7 t\u1EED canh gi\u1EEF \u0110an \u0110i\u1EC1n',
+                dynamicData: {},
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const directResults = [];
+    searchNovelData(novel, 'de tu', directResults);
+
+    const indexedResults = [];
+    searchNovelIndex(buildNovelSearchIndex(novel), 'de tu', indexedResults);
+
+    expect(directResults.map((item) => item.entityId)).toEqual(['e-vn']);
+    expect(indexedResults.map((item) => item.entityId)).toEqual(['e-vn']);
+  });
+
   it('keeps direct search and indexed search in sync for the same novel data', () => {
     const novel = {
       id: 'n-sync',

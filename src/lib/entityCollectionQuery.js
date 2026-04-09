@@ -3,13 +3,10 @@
 // Lưu ý: Dùng trong useMemo; không chứa React.
 
 import { getEntityFieldValue, safeString } from './entityFieldValue.js';
+import { normalizeSearchText } from './normalizeSearchText.js';
 
 function normalizeAscii(value) {
-  return safeString(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
+  return normalizeSearchText(value);
 }
 
 function isListCardEntity(entity) {
@@ -31,7 +28,7 @@ export function buildEntitySearchIndexMap(collectionEntitiesRaw) {
       : '';
     map.set(
       e.id,
-      `${safeString(e.name)} ${safeString(e.title)} ${safeString(e.info)} ${dynamicPart}`.toLowerCase()
+      normalizeSearchText(`${safeString(e.name)} ${safeString(e.title)} ${safeString(e.info)} ${dynamicPart}`)
     );
   });
   return map;
@@ -56,13 +53,13 @@ export function applyEntityCollectionFilters(listIn, opts) {
   void entitySortMode;
   let list = [...listIn];
   if (entityFilterField !== 'none' && entityFilterValue.trim()) {
-    const q = entityFilterValue.toLowerCase();
+    const q = normalizeSearchText(entityFilterValue);
     list = list.filter((e) =>
-      getEntityFieldValue(e, entityFilterField).toLowerCase().includes(q)
+      normalizeSearchText(getEntityFieldValue(e, entityFilterField)).includes(q)
     );
   }
   if (entitySearchQuery.trim()) {
-    const q = entitySearchQuery.toLowerCase();
+    const q = normalizeSearchText(entitySearchQuery);
     list = list.filter((e) => {
       const haystack = entitySearchIndexById.get(e.id) || '';
       return haystack.includes(q);

@@ -34,6 +34,9 @@ export function useAppPhimTatToanCuc({
 }) {
   useEffect(() => {
     const onKey = (e) => {
+      const isImeComposing = e.isComposing || e.key === 'Process' || e.keyCode === 229;
+      if (isImeComposing) return;
+
       const primaryMod = e.ctrlKey || e.metaKey;
       if (primaryMod && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();

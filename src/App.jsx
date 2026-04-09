@@ -60,6 +60,7 @@ import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
 import { buildTabGroups } from './lib/appTabGroups.js';
 import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
+import { resolveEntityPageForSelection } from './lib/entitySelectionPage.js';
 import { syncAllCollectionListCards } from './lib/collectionListCardSync.js';
 import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
 import { useAppPersistence } from './useAppPersistence.js';
@@ -482,6 +483,20 @@ export default function App() {
     const maxPage = Math.max(1, Math.ceil(entitiesList.length / ENTITY_PAGE_SIZE));
     setEntityPage((p) => (p > maxPage ? maxPage : p));
   }, [entitiesList.length, ENTITY_PAGE_SIZE, setEntityPage]);
+  useEffect(() => {
+    if (entityGroupBy !== 'none') return;
+    if (currentTabConfig?.viewType !== 'collection-track') return;
+    const targetPage = resolveEntityPageForSelection(entitiesList, selectedEntityId, ENTITY_PAGE_SIZE);
+    if (!targetPage) return;
+    setEntityPage((currentPage) => (currentPage === targetPage ? currentPage : targetPage));
+  }, [
+    currentTabConfig,
+    entitiesList,
+    entityGroupBy,
+    selectedEntityId,
+    ENTITY_PAGE_SIZE,
+    setEntityPage,
+  ]);
   const groupedEntitiesList = useMemo(() => {
     if (entityGroupBy === 'none') return [];
     const groups = {};

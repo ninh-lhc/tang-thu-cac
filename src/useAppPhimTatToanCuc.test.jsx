@@ -15,14 +15,19 @@ function HookHarness(props) {
 }
 
 function pressKey(key, opts = {}) {
-  window.dispatchEvent(
-    new KeyboardEvent('keydown', {
-      key,
-      bubbles: true,
-      cancelable: true,
-      ...opts,
-    })
-  );
+  const event = new KeyboardEvent('keydown', {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...opts,
+  });
+  if (opts.isComposing) {
+    Object.defineProperty(event, 'isComposing', {
+      configurable: true,
+      value: true,
+    });
+  }
+  window.dispatchEvent(event);
 }
 
 function createProps(overrides = {}) {
@@ -161,5 +166,18 @@ describe('useAppPhimTatToanCuc', () => {
 
     vi.runOnlyPendingTimers();
     expect(focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores global shortcuts while IME composition is active', () => {
+    const props = createProps();
+    render(<HookHarness {...props} />);
+
+    pressKey('/', { isComposing: true });
+    pressKey('Escape', { isComposing: true });
+    pressKey('k', { ctrlKey: true, isComposing: true });
+
+    expect(props.setMenu1Visible).not.toHaveBeenCalled();
+    expect(props.setIsCommandPaletteOpen).not.toHaveBeenCalled();
+    expect(props.setLightboxSrc).not.toHaveBeenCalled();
   });
 });

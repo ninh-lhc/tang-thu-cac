@@ -22,6 +22,14 @@ describe('relatedEntitiesNetwork', () => {
     expect(r[0].entity.id).toBe('b');
   });
 
+  it('matches Vietnamese accents and d/đ in tab labels and context', () => {
+    const byTab = filterRelatedEntities(sample, { tabKey: 'all', searchQuery: 'dia danh' });
+    const byContext = filterRelatedEntities(sample, { tabKey: 'all', searchQuery: 'dac biet' });
+
+    expect(byTab.map((item) => item.entity.id)).toEqual(['b']);
+    expect(byContext.map((item) => item.entity.id)).toEqual(['c']);
+  });
+
   it('sortRelatedEntitiesForDisplay sorts by tab then name', () => {
     const shuffled = [sample[2], sample[0], sample[1]];
     const s = sortRelatedEntitiesForDisplay(shuffled);

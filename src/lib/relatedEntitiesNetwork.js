@@ -3,6 +3,8 @@
  * Ai gọi: AppEntitySummaryBlocks. Test: relatedEntitiesNetwork.test.js
  */
 
+import { normalizeSearchText } from './normalizeSearchText.js';
+
 function safeString(val) {
   if (val == null || val === 'null' || val === 'undefined') return '';
   if (typeof val === 'object') {
@@ -15,13 +17,6 @@ function safeString(val) {
   return String(val);
 }
 
-function normalizeSearch(s) {
-  return safeString(s)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-}
-
 /**
  * @param {Array<{ tabLabel?: string, entity?: { name?: string }, context?: string }>} items
  * @param {{ tabKey: string, searchQuery: string }} opts tabKey 'all' hoặc đúng nhãn tab (so khớp safeString)
@@ -31,10 +26,10 @@ export function filterRelatedEntities(items, { tabKey, searchQuery }) {
   if (tabKey && tabKey !== 'all') {
     out = out.filter((rel) => safeString(rel.tabLabel) === tabKey);
   }
-  const q = normalizeSearch(searchQuery).trim();
+  const q = normalizeSearchText(searchQuery);
   if (!q) return out;
   return out.filter((rel) => {
-    const hay = normalizeSearch(
+    const hay = normalizeSearchText(
       [safeString(rel.entity?.name), safeString(rel.tabLabel), safeString(rel.context)].join(' ')
     );
     return hay.includes(q);

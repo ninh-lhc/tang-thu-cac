@@ -3,19 +3,23 @@
  * Gom chuẩn hóa query và metadata hit vào một chỗ để giảm lệch behavior.
  * Giữ file này thuần để test nhanh và tái sử dụng ở nhiều luồng.
  */
+import { normalizeSearchText } from './lib/normalizeSearchText.js';
+
 function normalizeSearchQuery(query) {
-  return String(query || '')
-    .trim()
-    .toLowerCase();
+  return normalizeSearchText(query);
+}
+
+function includesNormalized(text, normalizedQuery) {
+  return normalizeSearchText(text).includes(normalizedQuery);
 }
 
 function appendMetadataHits(novelsMetadata, q, res) {
   (novelsMetadata || []).forEach((novel) => {
     if (
-      novel.title?.toLowerCase().includes(q) ||
-      novel.author?.toLowerCase().includes(q) ||
-      novel.review?.toLowerCase().includes(q) ||
-      novel.tags?.some((tag) => tag.toLowerCase().includes(q))
+      includesNormalized(novel.title, q) ||
+      includesNormalized(novel.author, q) ||
+      includesNormalized(novel.review, q) ||
+      novel.tags?.some((tag) => includesNormalized(tag, q))
     ) {
       res.push({
         novelId: novel.id,
@@ -35,7 +39,7 @@ export function searchNovelData(novel, q, res) {
     if (typeof lonData !== 'object' || !lonData) return;
     Object.keys(lonData).forEach((nhoId) => {
       const nhoData = lonData[nhoId];
-      if (typeof nhoData === 'string' && nhoData.toLowerCase().includes(normalizedQuery)) {
+      if (typeof nhoData === 'string' && includesNormalized(nhoData, normalizedQuery)) {
         res.push({
           novelId: novel.id,
           tabLonId: lonId,
@@ -45,7 +49,7 @@ export function searchNovelData(novel, q, res) {
           snippet: nhoData,
         });
       } else if (nhoData && typeof nhoData === 'object') {
-        if (nhoData.overview?.toLowerCase().includes(normalizedQuery))
+        if (includesNormalized(nhoData.overview, normalizedQuery))
           res.push({
             novelId: novel.id,
             tabLonId: lonId,
@@ -57,11 +61,11 @@ export function searchNovelData(novel, q, res) {
         if (Array.isArray(nhoData.entities)) {
           nhoData.entities.forEach((ent) => {
             const hit =
-              ent.name?.toLowerCase().includes(normalizedQuery) ||
-              ent.info?.toLowerCase().includes(normalizedQuery) ||
+              includesNormalized(ent.name, normalizedQuery) ||
+              includesNormalized(ent.info, normalizedQuery) ||
               (ent.dynamicData &&
                 Object.values(ent.dynamicData).some(
-                  (v) => typeof v === 'string' && v.toLowerCase().includes(normalizedQuery)
+                  (v) => typeof v === 'string' && includesNormalized(v, normalizedQuery)
                 ));
             if (hit)
               res.push({
@@ -74,7 +78,7 @@ export function searchNovelData(novel, q, res) {
                 snippet: ent.info || ent.name,
               });
             ent.milestones?.forEach((ms) => {
-              if (ms.event?.toLowerCase().includes(normalizedQuery))
+              if (includesNormalized(ms.event, normalizedQuery))
                 res.push({
                   novelId: novel.id,
                   tabLonId: lonId,
@@ -92,7 +96,7 @@ export function searchNovelData(novel, q, res) {
             key !== 'overview' &&
             key !== 'entities' &&
             typeof nhoData[key] === 'string' &&
-            nhoData[key].toLowerCase().includes(normalizedQuery)
+            includesNormalized(nhoData[key], normalizedQuery)
           )
             res.push({
               novelId: novel.id,
@@ -120,7 +124,7 @@ export function buildNovelSearchIndex(novel) {
       const nhoData = lonData[nhoId];
       if (typeof nhoData === 'string') {
         rows.push({
-          haystack: nhoData.toLowerCase(),
+          haystack: normalizeSearchText(nhoData),
           result: {
             novelId: novel.id,
             tabLonId: lonId,
@@ -135,7 +139,7 @@ export function buildNovelSearchIndex(novel) {
       if (!nhoData || typeof nhoData !== 'object') return;
       if (typeof nhoData.overview === 'string') {
         rows.push({
-          haystack: nhoData.overview.toLowerCase(),
+          haystack: normalizeSearchText(nhoData.overview),
           result: {
             novelId: novel.id,
             tabLonId: lonId,
@@ -154,7 +158,7 @@ export function buildNovelSearchIndex(novel) {
             if (typeof v === 'string') chunks.push(v);
           });
         }
-        const entityText = chunks.filter((x) => typeof x === 'string').join('\n').toLowerCase();
+        const entityText = normalizeSearchText(chunks.filter((x) => typeof x === 'string').join('\n'));
         rows.push({
           haystack: entityText,
           result: {
@@ -170,7 +174,7 @@ export function buildNovelSearchIndex(novel) {
         (ent.milestones || []).forEach((ms) => {
           if (typeof ms?.event !== 'string') return;
           rows.push({
-            haystack: ms.event.toLowerCase(),
+            haystack: normalizeSearchText(ms.event),
             result: {
               novelId: novel.id,
               tabLonId: lonId,
@@ -187,7 +191,7 @@ export function buildNovelSearchIndex(novel) {
         const v = nhoData[key];
         if (key === 'overview' || key === 'entities' || typeof v !== 'string') return;
         rows.push({
-          haystack: v.toLowerCase(),
+          haystack: normalizeSearchText(v),
           result: {
             novelId: novel.id,
             tabLonId: lonId,

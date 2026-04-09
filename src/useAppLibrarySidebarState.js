@@ -6,7 +6,8 @@
 // ==========================================
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { safeString } from './MasterUtils.jsx';
+import { buildLibrarySearchIndex, filterNovelsForLibrary } from './lib/filterNovelsForLibrary.js';
+import { normalizeSearchText } from './lib/normalizeSearchText.js';
 
 const SIDEBAR_ITEM_HEIGHT = 78;
 const SIDEBAR_OVERSCAN = 8;
@@ -57,12 +58,13 @@ export function useAppLibrarySidebarState({ novelsMetadata }) {
 
   const rememberSearchQuery = useCallback((queryValue) => {
     const query = String(queryValue || '').trim();
-    if (query.length < 2) return;
+    const normalizedQuery = normalizeSearchText(query);
+    if (normalizedQuery.length < 2) return;
     try {
       const raw = localStorage.getItem('tangthu_lib_search_hist');
       let arr = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(arr)) arr = [];
-      arr = [query, ...arr.filter((item) => safeString(item).toLowerCase() !== query.toLowerCase())]
+      arr = [query, ...arr.filter((item) => normalizeSearchText(item) !== normalizedQuery)]
         .slice(0, 12);
       localStorage.setItem('tangthu_lib_search_hist', JSON.stringify(arr));
       setSearchHistory(arr);
@@ -76,49 +78,19 @@ export function useAppLibrarySidebarState({ novelsMetadata }) {
     rememberSearchQuery(nextQuery);
   }, [rememberSearchQuery]);
 
-  const librarySearchIndex = useMemo(
+  const librarySearchIndex = useMemo(() => buildLibrarySearchIndex(novelsMetadata), [novelsMetadata]);
+
+  const filteredNovelsList = useMemo(
     () =>
-      (novelsMetadata || []).map((novel) => {
-        let genres = [];
-        if (Array.isArray(novel.genres)) genres = novel.genres;
-        else if (typeof novel.genres === 'string') genres = [novel.genres];
-        else if (novel.genre) genres = [novel.genre];
-
-        const titleText = safeString(novel.title).toLowerCase();
-        const authorText = safeString(novel.author).toLowerCase();
-        const tagText = (novel.tags || []).map((tag) => safeString(tag)).join(' ').toLowerCase();
-
-        return {
-          id: novel.id,
-          text: `${titleText} ${authorText} ${tagText}`,
-          titleText,
-          authorText,
-          tagText,
-          genres,
-        };
-      }),
-    [novelsMetadata]
+      filterNovelsForLibrary(
+        novelsMetadata,
+        deferredLibrarySearch,
+        selectedGenres,
+        searchField,
+        librarySearchIndex
+      ),
+    [deferredLibrarySearch, librarySearchIndex, novelsMetadata, searchField, selectedGenres]
   );
-
-  const filteredNovelsList = useMemo(() => {
-    const q = safeString(deferredLibrarySearch).toLowerCase().trim();
-    const byId = new Map((novelsMetadata || []).map((novel) => [novel.id, novel]));
-    return librarySearchIndex
-      .filter((row) => {
-        let matchSearch = true;
-        if (q) {
-          if (searchField === 'title') matchSearch = row.titleText.includes(q);
-          else if (searchField === 'author') matchSearch = row.authorText.includes(q);
-          else if (searchField === 'tag') matchSearch = row.tagText.includes(q);
-          else matchSearch = row.text.includes(q);
-        }
-        const matchGenre =
-          selectedGenres.length === 0 || selectedGenres.some((genre) => row.genres.includes(genre));
-        return matchSearch && matchGenre;
-      })
-      .map((row) => byId.get(row.id))
-      .filter(Boolean);
-  }, [deferredLibrarySearch, librarySearchIndex, novelsMetadata, searchField, selectedGenres]);
 
   const totalSidebarItems = filteredNovelsList.length;
   const sidebarStartIndex = useMemo(

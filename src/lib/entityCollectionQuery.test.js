@@ -51,6 +51,28 @@ describe('entityCollectionQuery', () => {
     expect(out.map((x) => x.id)).toEqual(['b']);
   });
 
+  it('matches Vietnamese accents and d/đ in filter and search query', () => {
+    const e3 = {
+      id: 'c',
+      name: '\u0110ao Tu',
+      title: '',
+      info: '\u0110\u1EC7 t\u1EED canh gi\u1EEF',
+      dynamicData: { f_realm: '\u0110an \u0110i\u1EC1n' },
+      milestones: [],
+    };
+    const index = buildEntitySearchIndexMap([e1, e2, e3]);
+
+    const filtered = applyEntityCollectionFilters([e1, e2, e3], {
+      entityFilterField: 'f_realm',
+      entityFilterValue: 'dan dien',
+      entitySearchQuery: 'de tu',
+      entitySearchIndexById: index,
+      entitySortMode: 'name_asc',
+    });
+
+    expect(filtered.map((x) => x.id)).toEqual(['c']);
+  });
+
   it('always pins list card first then sorts others by A-Z', () => {
     const index = buildEntitySearchIndexMap([e2, e1, listCard]);
     const out = applyEntityCollectionFilters([e2, e1, listCard], {
