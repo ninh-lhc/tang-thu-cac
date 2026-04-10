@@ -2,13 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { buildWikiLinkMatcher, splitTextByWikiMatcher } from './wikiLinkMatcher.js';
 
 describe('wikiLinkMatcher', () => {
-  it('builds matcher and dedupes names case-insensitively', () => {
+  it('dedupes exact duplicate surfaces but keeps distinct case variants', () => {
     const matcher = buildWikiLinkMatcher([
+      { name: 'Tiểu Minh' },
       { name: 'Tiểu Minh' },
       { name: 'tiểu minh' },
       { name: 'Lão Vương' },
     ]);
-    expect(matcher?.buckets?.get('t')?.length).toBe(1);
+    expect(matcher?.buckets?.get('t')?.length).toBe(2);
     expect(matcher?.buckets?.get('l')?.length).toBe(1);
   });
 
@@ -44,6 +45,22 @@ describe('wikiLinkMatcher', () => {
       { text: '), ', isMatch: false },
       { text: 'Linh', isMatch: true },
       { text: '!', isMatch: false },
+    ]);
+  });
+
+  it('does not match a lowercase phrase when the entity surface is title-cased', () => {
+    const matcher = buildWikiLinkMatcher([{ name: 'Độ Kiếp' }]);
+    expect(splitTextByWikiMatcher('hắn đang độ kiếp', matcher)).toEqual([
+      { text: 'hắn đang độ kiếp', isMatch: false },
+    ]);
+  });
+
+  it('still matches the title-cased surface for title-cased entities', () => {
+    const matcher = buildWikiLinkMatcher([{ name: 'Độ Kiếp' }]);
+    expect(splitTextByWikiMatcher('Chạm tới Độ Kiếp rồi', matcher)).toEqual([
+      { text: 'Chạm tới ', isMatch: false },
+      { text: 'Độ Kiếp', isMatch: true },
+      { text: ' rồi', isMatch: false },
     ]);
   });
 });

@@ -3,6 +3,7 @@
  * Ho tro nhieu entity cung ten, sau do chon ung vien tot nhat theo boi canh entity dang mo.
  */
 import { buildEntityCanonicalFingerprint, buildEntityNameFingerprint } from './entityNameIdentity.js';
+import { compareWikiNameSurfacePriority, matchesWikiNameSurface } from './wikiNameSurface.js';
 
 const createLookupBucket = () => new Map();
 
@@ -117,20 +118,43 @@ function pickLookupCandidate(candidates, sourceMeta) {
   return best;
 }
 
+function filterLookupCandidatesBySurface(candidates, rawName) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  if (list.length === 0) return list;
+
+  const raw = String(rawName || '').trim();
+  if (!raw) return list;
+
+  const exactSurface = list.filter((candidate) => String(candidate?.name || '').trim() === raw);
+  if (exactSurface.length > 0) return exactSurface;
+
+  const compatible = list.filter((candidate) => {
+    const candidateName = String(candidate?.name || '').trim();
+    if (!candidateName) return false;
+    if (candidateName.toLowerCase() !== raw.toLowerCase()) return true;
+    return matchesWikiNameSurface(candidateName, raw);
+  });
+  if (compatible.length <= 1) return compatible;
+  return compatible.sort((a, b) => compareWikiNameSurfacePriority(a?.name, b?.name));
+}
+
 export function resolveEntityLookup(lookup, rawName, { selfEntityId = null } = {}) {
   if (!lookup || !rawName) return null;
   const sourceMeta = selfEntityId ? lookup.byEntityId?.get(selfEntityId) || null : null;
   const lower = String(rawName).trim().toLowerCase();
 
-  const exact = pickLookupCandidate(lookup.exact?.get(lower), sourceMeta);
+  const exact = pickLookupCandidate(filterLookupCandidatesBySurface(lookup.exact?.get(lower), rawName), sourceMeta);
   if (exact) return exact;
 
   const fp = buildEntityNameFingerprint(rawName);
   if (!fp) return null;
-  const byFp = pickLookupCandidate(lookup.byFingerprint?.get(fp), sourceMeta);
+  const byFp = pickLookupCandidate(filterLookupCandidatesBySurface(lookup.byFingerprint?.get(fp), rawName), sourceMeta);
   if (byFp) return byFp;
 
   const canonicalFp = buildEntityCanonicalFingerprint(rawName);
   if (!canonicalFp) return null;
-  return pickLookupCandidate(lookup.byCanonicalFingerprint?.get(canonicalFp), sourceMeta);
+  return pickLookupCandidate(
+    filterLookupCandidatesBySurface(lookup.byCanonicalFingerprint?.get(canonicalFp), rawName),
+    sourceMeta
+  );
 }

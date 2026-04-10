@@ -3,10 +3,13 @@
  * Dùng để chặn tạo trùng thẻ và chuyển biến thể tên vào alias.
  */
 
+import { matchesWikiNameWordStartSurface } from './wikiNameSurface.js';
+
 function normalizePlain(value) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u0111\u0110]/g, 'd')
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -87,11 +90,20 @@ function pickBetterReason(currentReason, nextReason) {
   return nextScore > currentScore ? nextReason : currentReason;
 }
 
+function isSurfaceCompatibleSamePhrase(entityName, candidateName) {
+  const entityPlain = normalizePlain(entityName);
+  const candidatePlain = normalizePlain(candidateName);
+  if (!entityPlain || !candidatePlain) return false;
+  if (entityPlain !== candidatePlain) return true;
+  return matchesWikiNameWordStartSurface(entityName, candidateName);
+}
+
 export function findEquivalentEntitiesByName(entities, candidateName, options = {}) {
   const candidateRaw = String(candidateName || '').trim();
   if (!candidateRaw) return [];
   const allowExactNameMatch = options.allowExactNameMatch !== false;
   const candidateLower = candidateRaw.toLowerCase();
+  const candidatePlain = normalizePlain(candidateRaw);
   const candidateFp = buildEntityNameFingerprint(candidateRaw);
   const candidateCanonicalFp = buildEntityCanonicalFingerprint(candidateRaw);
   if (!candidateFp) return [];
@@ -104,25 +116,37 @@ export function findEquivalentEntitiesByName(entities, candidateName, options = 
     let bestReason = null;
     const baseLower = baseName.toLowerCase();
     if (baseLower === candidateLower) {
-      if (allowExactNameMatch) bestReason = pickBetterReason(bestReason, 'exact');
+      if (allowExactNameMatch && isSurfaceCompatibleSamePhrase(baseName, candidateRaw)) {
+        bestReason = pickBetterReason(bestReason, 'exact');
+      }
     } else if (buildEntityNameFingerprint(baseName) === candidateFp) {
-      bestReason = pickBetterReason(bestReason, 'fingerprint');
+      if (normalizePlain(baseName) !== candidatePlain || isSurfaceCompatibleSamePhrase(baseName, candidateRaw)) {
+        bestReason = pickBetterReason(bestReason, 'fingerprint');
+      }
     } else if (candidateCanonicalFp && buildEntityCanonicalFingerprint(baseName) === candidateCanonicalFp) {
-      bestReason = pickBetterReason(bestReason, 'canonical_fingerprint');
+      if (normalizePlain(baseName) !== candidatePlain || isSurfaceCompatibleSamePhrase(baseName, candidateRaw)) {
+        bestReason = pickBetterReason(bestReason, 'canonical_fingerprint');
+      }
     }
     const aliases = splitAliasValues(ent?.dynamicData?.f_alias);
     for (const alias of aliases) {
       const aliasLower = alias.toLowerCase();
       if (aliasLower === candidateLower) {
-        if (allowExactNameMatch) bestReason = pickBetterReason(bestReason, 'alias');
+        if (allowExactNameMatch && isSurfaceCompatibleSamePhrase(alias, candidateRaw)) {
+          bestReason = pickBetterReason(bestReason, 'alias');
+        }
         continue;
       }
       if (buildEntityNameFingerprint(alias) === candidateFp) {
-        bestReason = pickBetterReason(bestReason, 'alias_fingerprint');
+        if (normalizePlain(alias) !== candidatePlain || isSurfaceCompatibleSamePhrase(alias, candidateRaw)) {
+          bestReason = pickBetterReason(bestReason, 'alias_fingerprint');
+        }
         continue;
       }
       if (candidateCanonicalFp && buildEntityCanonicalFingerprint(alias) === candidateCanonicalFp) {
-        bestReason = pickBetterReason(bestReason, 'alias_canonical_fingerprint');
+        if (normalizePlain(alias) !== candidatePlain || isSurfaceCompatibleSamePhrase(alias, candidateRaw)) {
+          bestReason = pickBetterReason(bestReason, 'alias_canonical_fingerprint');
+        }
       }
     }
     if (!bestReason) continue;

@@ -4,6 +4,8 @@
  * - Ưu tiên tên dài hơn trước để giảm đè lấp
  */
 
+import { compareWikiNameSurfacePriority, matchesWikiNameSurface } from './wikiNameSurface.js';
+
 const WORD_CHAR_RE = /[\p{L}\p{N}_]/u;
 
 function isWordChar(ch) {
@@ -46,12 +48,12 @@ function normalizeNames(entityMap) {
   for (const item of entityMap || []) {
     const n = String(item?.name || '').trim();
     if (!n || n.length < 2) continue;
-    const k = n.toLowerCase();
+    const k = n;
     if (seen.has(k)) continue;
     seen.add(k);
     out.push(n);
   }
-  return out.sort((a, b) => b.length - a.length);
+  return out.sort(compareWikiNameSurfacePriority);
 }
 
 export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap) {
@@ -77,6 +79,7 @@ export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap) {
       if (!sourceLower.startsWith(c.lower, i)) continue;
       const end = i + c.raw.length;
       if (!isBoundary(text, i, end)) continue;
+      if (!matchesWikiNameSurface(c.raw, text.slice(i, end))) continue;
       picked = { start: i, end };
       break;
     }

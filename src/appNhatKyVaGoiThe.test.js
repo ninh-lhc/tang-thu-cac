@@ -27,6 +27,30 @@ describe('appNhatKyVaGoiThe', () => {
     expect(r[0].score).toBe(100);
   });
 
+  it('findEntitiesByHintInNovel keeps title-cased entities separate from lowercase phrases', () => {
+    const novelData = {
+      tabsConfig: [
+        {
+          id: 'tu-luyen',
+          subTabs: [{ id: 'sub1', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'tu-luyen': {
+          sub1: {
+            entities: [
+              { id: 'realm', name: 'Độ Kiếp' },
+              { id: 'process', name: 'độ kiếp' },
+            ],
+          },
+        },
+      },
+    };
+
+    expect(findEntitiesByHintInNovel(novelData, 'độ kiếp').map((x) => x.ent.id)).toEqual(['process']);
+    expect(findEntitiesByHintInNovel(novelData, 'Độ Kiếp').map((x) => x.ent.id)).toEqual(['realm']);
+  });
+
   it('mutateNovelJournalSelections applies new_entity', () => {
     const nov = {
       tabsConfig: [

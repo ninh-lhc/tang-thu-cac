@@ -43,5 +43,17 @@ describe('autoWrapWikiLinksByEntityMap', () => {
     expect(once).toBe('[[Linh Giới Châu]] gặp [[Linh Tu]]');
     expect(twice).toBe(once);
   });
+
+  it('does not wrap a lowercase common phrase into a title-cased entity', () => {
+    const text = 'Hắn sắp độ kiếp thêm một lần nữa.';
+    const map = [{ name: 'Độ Kiếp' }];
+    expect(autoWrapWikiLinksByEntityMap(text, map)).toBe(text);
+  });
+
+  it('still wraps when the source text preserves the title-cased entity surface', () => {
+    const text = 'Hắn đã bước vào Độ Kiếp.';
+    const map = [{ name: 'Độ Kiếp' }];
+    expect(autoWrapWikiLinksByEntityMap(text, map)).toBe('Hắn đã bước vào [[Độ Kiếp]].');
+  });
 });
 

@@ -23,6 +23,18 @@ describe('entityNameIdentity', () => {
     expect(hit).toBeNull();
   });
 
+  it('does not merge a lowercase common phrase into a title-cased entity', () => {
+    const entities = [{ id: 'e1', name: 'Độ Kiếp', dynamicData: {} }];
+    const hit = findEquivalentEntityByName(entities, 'độ kiếp');
+    expect(hit).toBeNull();
+  });
+
+  it('still matches accentless title-cased variants of the same entity', () => {
+    const entities = [{ id: 'e1', name: 'Độ Kiếp', dynamicData: {} }];
+    const hit = findEquivalentEntityByName(entities, 'Do Kiep');
+    expect(hit?.entity?.id).toBe('e1');
+  });
+
   it('canonical fingerprint drops tier words only', () => {
     const a = buildEntityCanonicalFingerprint('Vũ Kỹ Huyền Cấp Trung Phẩm');
     const b = buildEntityCanonicalFingerprint('Huyền Cấp Vũ Kỹ');

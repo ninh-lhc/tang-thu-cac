@@ -3,6 +3,8 @@
  * Tránh tạo regex alternation khổng lồ khi số lượng thực thể tăng cao.
  */
 
+import { compareWikiNameSurfacePriority, matchesWikiNameSurface } from './wikiNameSurface.js';
+
 const normalizeName = (value) => String(value || '').trim().toLowerCase();
 const WORD_CHAR_RE = /[\p{L}\p{N}_]/u;
 
@@ -24,19 +26,20 @@ export const buildWikiLinkMatcher = (entityMap) => {
   const buckets = new Map();
 
   for (const item of entityMap) {
-    const normalized = normalizeName(item?.name);
-    if (!normalized || seen.has(normalized)) continue;
-    seen.add(normalized);
+    const raw = String(item?.name || '').trim();
+    const normalized = normalizeName(raw);
+    if (!normalized || seen.has(raw)) continue;
+    seen.add(raw);
     const firstChar = normalized[0];
     const bucket = buckets.get(firstChar) || [];
-    bucket.push(normalized);
+    bucket.push({ raw, lower: normalized });
     buckets.set(firstChar, bucket);
   }
 
   if (buckets.size === 0) return null;
 
   for (const [, names] of buckets) {
-    names.sort((a, b) => b.length - a.length);
+    names.sort((a, b) => compareWikiNameSurfacePriority(a.raw, b.raw));
   }
 
   return { buckets };
@@ -56,7 +59,12 @@ export const splitTextByWikiMatcher = (text, matcher) => {
     let matchedName = null;
     if (bucket) {
       for (const candidate of bucket) {
-        if (sourceLower.startsWith(candidate, i) && isBoundary(text, i, i + candidate.length)) {
+        const end = i + candidate.raw.length;
+        if (
+          sourceLower.startsWith(candidate.lower, i) &&
+          isBoundary(text, i, end) &&
+          matchesWikiNameSurface(candidate.raw, text.slice(i, end))
+        ) {
           matchedName = candidate;
           break;
         }
@@ -71,8 +79,8 @@ export const splitTextByWikiMatcher = (text, matcher) => {
     if (i > cursor) {
       parts.push({ text: text.slice(cursor, i), isMatch: false });
     }
-    parts.push({ text: text.slice(i, i + matchedName.length), isMatch: true });
-    i += matchedName.length;
+    parts.push({ text: text.slice(i, i + matchedName.raw.length), isMatch: true });
+    i += matchedName.raw.length;
     cursor = i;
   }
 

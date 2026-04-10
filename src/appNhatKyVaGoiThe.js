@@ -9,12 +9,32 @@
 import { generateId, safeString } from './MasterUtils.jsx';
 import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
 import { lockFieldsTemplateIfFirstEntity, resolveFieldsTemplate } from './MasterEngines.js';
-import { buildEntityNameFingerprint, findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
+import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
+import { containsWikiNameWordStartSurface } from './lib/wikiNameSurface.js';
+
+function scoreEntityHintReason(reason) {
+  switch (reason) {
+    case 'exact':
+      return 100;
+    case 'alias':
+      return 95;
+    case 'fingerprint':
+      return 90;
+    case 'alias_fingerprint':
+      return 85;
+    case 'canonical_fingerprint':
+      return 80;
+    case 'alias_canonical_fingerprint':
+      return 75;
+    default:
+      return 0;
+  }
+}
 
 /** Tìm thẻ trong toàn bộ novel (dùng khi áp nhật ký batch). */
 export function findEntitiesByHintInNovel(novelData, hint) {
-  const h = safeString(hint).toLowerCase().trim();
-  const hFingerprint = buildEntityNameFingerprint(hint);
+  const hintRaw = safeString(hint).trim();
+  const h = hintRaw.toLowerCase();
   if (!h || !novelData?.tabsConfig) return [];
   const scored = [];
   (novelData.tabsConfig || []).forEach((lon) => {
@@ -23,23 +43,26 @@ export function findEntitiesByHintInNovel(novelData, hint) {
       if (sub.viewType !== 'collection-track') return;
       const ents = novelData.data?.[lon.id]?.[sub.id]?.entities || [];
       ents.forEach((ent) => {
-        const n = safeString(ent.name).toLowerCase();
-        if (!n) return;
+        const name = safeString(ent.name).trim();
+        if (!name) return;
         const aliases = safeString(ent.dynamicData?.f_alias)
           .split(/[,/|()]/)
-          .map((x) => x.trim().toLowerCase())
+          .map((x) => x.trim())
           .filter(Boolean);
+        const strongMatch = findEquivalentEntityByName([ent], hintRaw);
         let score = 0;
-        if (n === h) score = 100;
-        else if (aliases.includes(h)) score = 95;
-        else if (hFingerprint && buildEntityNameFingerprint(ent.name) === hFingerprint) score = 90;
-        else if (hFingerprint && aliases.some((a) => buildEntityNameFingerprint(a) === hFingerprint)) score = 85;
-        else if (n.includes(h) || h.includes(n)) score = 60;
-        else if (aliases.some((a) => a.includes(h) || h.includes(a))) score = 55;
-        else {
-          const ws = h.split(/\s+/).filter((w) => w.length > 1);
-          if (ws.some((w) => n.includes(w) || aliases.some((a) => a.includes(w)))) score = 30;
-        }
+        if (strongMatch?.entity) score = scoreEntityHintReason(strongMatch.reason);
+        else if (
+          containsWikiNameWordStartSurface(name, hintRaw) ||
+          containsWikiNameWordStartSurface(hintRaw, name)
+        ) score = 60;
+        else if (
+          aliases.some(
+            (alias) =>
+              containsWikiNameWordStartSurface(alias, hintRaw) ||
+              containsWikiNameWordStartSurface(hintRaw, alias)
+          )
+        ) score = 55;
         if (score) scored.push({ score, lonId: lon.id, nhoId: sub.id, ent });
       });
     });

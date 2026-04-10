@@ -1,5 +1,6 @@
 /** Giống MasterUtils.safeString — tách ra để module này không import React. */
 import { buildEntityNameLookup, resolveEntityLookup } from './entityWikiLookup.js';
+import { containsWikiNameWordStartSurface } from './wikiNameSurface.js';
 
 function safeString(val) {
   if (val == null || val === 'null' || val === 'undefined') return '';
@@ -48,7 +49,6 @@ function buildNovelSearchIndex(activeNovelData, tabMetaMap) {
             dynamicStrings.push({
               fieldId,
               text: fieldVal,
-              lower: fieldVal.toLowerCase(),
             });
           }
         }
@@ -61,7 +61,6 @@ function buildNovelSearchIndex(activeNovelData, tabMetaMap) {
           tabLabel,
           dynamicStrings,
           info: infoString,
-          infoLower: infoString.toLowerCase(),
         };
         records.push(rec);
         if (ent?.id) byEntityId.set(ent.id, rec);
@@ -111,7 +110,7 @@ export function computeRelatedEntities({
     if (!str) return;
     str.split(/[,/|()]/).forEach((n) => {
       const clean = n.trim();
-      if (clean.length >= 2) namesToMatch.add(clean.toLowerCase());
+      if (clean.length >= 2) namesToMatch.add(clean);
     });
   };
   extractNames(selectedEntity.name);
@@ -126,9 +125,9 @@ export function computeRelatedEntities({
       let mentioned = false;
       let contextInfo = '';
       for (const f of rec.dynamicStrings) {
-        if (!f?.lower) continue;
+        if (!f?.text) continue;
         for (const name of namesToMatch) {
-          if (f.lower.includes(name)) {
+          if (containsWikiNameWordStartSurface(f.text, name)) {
             const fieldLabel = novelIndex.tabMetaMap.get(rec.lonId)?.get(rec.nhoId)?.fields?.get(f.fieldId);
             contextInfo = fieldLabel || 'Thuộc tính';
             mentioned = true;
@@ -137,9 +136,9 @@ export function computeRelatedEntities({
         }
         if (mentioned) break;
       }
-      if (!mentioned && rec.infoLower) {
+      if (!mentioned && rec.info) {
         for (const name of namesToMatch) {
-          if (rec.infoLower.includes(name)) {
+          if (containsWikiNameWordStartSurface(rec.info, name)) {
             contextInfo = 'Trong ghi chép';
             mentioned = true;
             break;
@@ -157,11 +156,12 @@ export function computeRelatedEntities({
     const resolved = resolveEntityLookup(wikiLookup, label, { selfEntityId: selectedEntity.id });
     if (resolved) return { dest: resolved.dest, matched: resolved.name };
     if (wikiExactMatchOnly) return null;
-    const low = label.toLowerCase();
     for (const item of entityMap) {
-      const en = safeString(item?.name).toLowerCase();
+      const en = safeString(item?.name).trim();
       if (en.length < 2) continue;
-      if (low.includes(en) || en.includes(low)) return { dest: item.dest, matched: item.name };
+      if (containsWikiNameWordStartSurface(label, en) || containsWikiNameWordStartSurface(en, label)) {
+        return { dest: item.dest, matched: item.name };
+      }
     }
     return null;
   };

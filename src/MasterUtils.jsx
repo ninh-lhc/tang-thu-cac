@@ -187,7 +187,7 @@ export const analyzeTextWithAI = async (text, fieldsTemplate, key, mode = 'stand
   if (!isQuick) {
     properties.processedText = {
       type: "STRING",
-      description: "Giữ nguyên ý nghĩa văn bản gốc, nhưng TỰ ĐỘNG BỌC TẤT CẢ các danh từ riêng vào [[...]] để tạo Link."
+      description: "Giữ nguyên ý nghĩa văn bản gốc, nhưng TỰ ĐỘNG BỌC TẤT CẢ các danh từ riêng vào [[...]] để tạo Link; giữ đúng hoa/thường của tên riêng, không suy diễn từ cụm chữ thường sang tên riêng viết hoa."
     };
   }
   const fields = isQuick ? fieldsTemplate.slice(0, 8) : fieldsTemplate;
@@ -199,7 +199,7 @@ export const analyzeTextWithAI = async (text, fieldsTemplate, key, mode = 'stand
       parts: [{
         text: isQuick
           ? "Trích xuất nhanh thông tin cốt lõi, ưu tiên chính xác tên và các trường quan trọng. Trả về JSON ngắn gọn."
-          : "Trích xuất thông tin chính xác. Trả về JSON. Đặc biệt chú trọng việc tạo Link [[...]] trong processedText."
+          : "Trích xuất thông tin chính xác. Trả về JSON. Đặc biệt chú trọng việc tạo Link [[...]] trong processedText, và phải giữ phân biệt hoa/thường của tên riêng."
       }]
     },
     generationConfig: { responseMimeType: "application/json", responseSchema: { type: "OBJECT", properties } }
@@ -256,7 +256,8 @@ QUY TẮC BẮT BUỘC (vi phạm là sai):
 2) Mỗi phần before, target, after phải là SAO CHÉP NGUYÊN VĂN từ đúng văn bản người dùng (kể cả xuống dòng, dấu câu, khoảng trắng, markdown # * \` nếu có).
 3) target là cụm ngắn cần liên kết (tên riêng, địa danh, công pháp…). Không bọc cả câu dài; không bọc phần đã nằm trong [[...]].
 4) before + target + after phải xuất hiện ĐÚNG MỘT LẦN liên tiếp trong văn bản (chuỗi con khớp tuyệt đối). Chọn before/after đủ dài để vị trí không nhầm (thường 15–60 ký tự mỗi phía nếu có).
-5) Nếu không chắc vị trí hoặc không có tên mới cần link, trả linkSpots rỗng [].`,
+5) Nếu không chắc vị trí hoặc không có tên mới cần link, trả linkSpots rỗng [].
+6) Với cụm có thể vừa là danh từ thường vừa là tên riêng, chỉ bọc link khi target giữ đúng kiểu viết hoa của tên riêng trong chính văn bản; không suy diễn từ dạng thường như "độ kiếp" sang tên riêng viết hoa như "Độ Kiếp".`,
         },
       ],
     },

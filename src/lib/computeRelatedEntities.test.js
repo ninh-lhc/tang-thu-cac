@@ -135,4 +135,71 @@ describe('computeRelatedEntities', () => {
     });
     expect(rel).toEqual([]);
   });
+
+  it('does not treat lowercase common-phrase mentions as a title-cased related entity mention', () => {
+    const selectedEntity = { id: 'realm', name: 'Độ Kiếp', dynamicData: {}, rawText: '', milestones: [] };
+    const other = {
+      id: 'npc',
+      name: 'Lão Vương',
+      dynamicData: { f_note: 'Hắn đang độ kiếp nên không thể xuất quan.' },
+      rawText: '',
+      milestones: [],
+    };
+    const activeNovelData = {
+      data: {
+        lon1: {
+          sub1: { entities: [selectedEntity, other] },
+        },
+      },
+    };
+    const activeTabs = [
+      { id: 'lon1', label: 'L', subTabs: [{ id: 'sub1', label: 'S', fieldsTemplate: [{ id: 'f_note', label: 'Ghi chú' }] }] },
+    ];
+    const entityMap = [
+      { name: 'Độ Kiếp', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'realm' } },
+      { name: 'Lão Vương', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'npc' } },
+    ];
+
+    const rel = computeRelatedEntities({
+      activeNovelData,
+      selectedEntity,
+      activeTabs,
+      entityMap,
+      wikiExactMatchOnly: false,
+    });
+
+    expect(rel).toEqual([]);
+  });
+
+  it('does not fuzzy-resolve lowercase wiki labels to title-cased entities', () => {
+    const selectedEntity = {
+      id: 'hero',
+      name: 'Hero',
+      dynamicData: {},
+      info: '[[độ kiếp]]',
+      rawText: '',
+      milestones: [],
+    };
+    const realm = { id: 'realm', name: 'Độ Kiếp', dynamicData: {}, info: '', rawText: '', milestones: [] };
+    const activeNovelData = {
+      data: {
+        lon1: { sub1: { entities: [selectedEntity, realm] } },
+      },
+    };
+    const activeTabs = [{ id: 'lon1', subTabs: [{ id: 'sub1', label: 'S', fieldsTemplate: [] }] }];
+    const entityMap = [
+      { name: 'Hero', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'hero' } },
+      { name: 'Độ Kiếp', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'realm' } },
+    ];
+
+    const rel = computeRelatedEntities({
+      activeNovelData,
+      selectedEntity,
+      activeTabs,
+      entityMap,
+      wikiExactMatchOnly: false,
+    });
+
+    expect(rel).toEqual([]);
+  });
 });
