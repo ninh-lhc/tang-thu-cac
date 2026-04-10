@@ -61,49 +61,63 @@ export function useAppTocRail({
     });
   }, []);
 
-  const handleSelectTabLon = useCallback((tabId) => {
-    if (activeTabLon !== tabId) {
-      if (isEditingMode || isEntityEditing) {
-        setConfirmDialog({
-          isOpen: true,
-          title: 'Chua Luu Thay Doi',
-          message:
-            'Ban co thay doi chua duoc luu. Roi di se mat noi dung dang soan. Tiep tuc?',
-          onConfirm: () => {
-            setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-            setIsEditingMode(false);
-            setIsEntityEditing(false);
-            setActiveTabLon(tabId);
-            setActiveTabNho(null);
-            setActiveTabCon(null);
-            setSelectedEntityId(null);
-            setEntitySearch('');
-            setMenu2Expanded(true);
-          },
-        });
-        return;
-      }
-      setActiveTabLon(tabId);
-      setActiveTabNho(null);
-      setActiveTabCon(null);
-      setSelectedEntityId(null);
-      setIsEditingMode(false);
-      setIsEntityEditing(false);
-      setEntitySearch('');
-    }
-    setMenu2Expanded(true);
+  const resetTabSelection = useCallback((tabId, { expandMenu = false } = {}) => {
+    setActiveTabLon(tabId);
+    setActiveTabNho(null);
+    setActiveTabCon(null);
+    setSelectedEntityId(null);
+    setCollectionSubTab('list');
+    setIsEditingMode(false);
+    setIsEntityEditing(false);
+    setEntitySearch('');
+    if (expandMenu) setMenu2Expanded(true);
   }, [
-    activeTabLon,
-    isEditingMode,
-    isEntityEditing,
-    setConfirmDialog,
-    setIsEditingMode,
-    setIsEntityEditing,
     setActiveTabLon,
     setActiveTabNho,
     setActiveTabCon,
     setSelectedEntityId,
+    setCollectionSubTab,
+    setIsEditingMode,
+    setIsEntityEditing,
     setEntitySearch,
+  ]);
+
+  const handleSelectTabLon = useCallback((tabId) => {
+    const isSwitchingTab = activeTabLon !== tabId;
+    const shouldResetCurrentTab =
+      !isSwitchingTab &&
+      (activeTabNho !== null ||
+        activeTabCon !== null ||
+        selectedEntityId !== null ||
+        collectionSubTab !== 'list');
+
+    if (!isSwitchingTab && !shouldResetCurrentTab) return;
+
+    if (isEditingMode || isEntityEditing) {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Chua Luu Thay Doi',
+        message:
+          'Ban co thay doi chua duoc luu. Roi di se mat noi dung dang soan. Tiep tuc?',
+        onConfirm: () => {
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          resetTabSelection(tabId, { expandMenu: isSwitchingTab });
+        },
+      });
+      return;
+    }
+
+    resetTabSelection(tabId, { expandMenu: isSwitchingTab });
+  }, [
+    activeTabLon,
+    activeTabNho,
+    activeTabCon,
+    selectedEntityId,
+    collectionSubTab,
+    isEditingMode,
+    isEntityEditing,
+    setConfirmDialog,
+    resetTabSelection,
   ]);
 
   const handleSelectTabNho = useCallback((lonId, nhoId) => {
