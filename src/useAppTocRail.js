@@ -61,8 +61,36 @@ export function useAppTocRail({
     });
   }, []);
 
+  const applyParentTabSelection = useCallback((tabId) => {
+    setActiveTabLon(tabId);
+    setActiveTabNho(null);
+    setActiveTabCon(null);
+    setSelectedEntityId(null);
+    setCollectionSubTab('list');
+    setIsEditingMode(false);
+    setIsEntityEditing(false);
+    setEntitySearch('');
+  }, [
+    setActiveTabLon,
+    setActiveTabNho,
+    setActiveTabCon,
+    setSelectedEntityId,
+    setCollectionSubTab,
+    setIsEditingMode,
+    setIsEntityEditing,
+    setEntitySearch,
+  ]);
+
   const handleSelectTabLon = useCallback((tabId) => {
-    if (activeTabLon !== tabId) {
+    const shouldResetToParent =
+      activeTabLon !== tabId ||
+      !!activeTabNho ||
+      !!activeTabCon ||
+      !!selectedEntityId ||
+      collectionSubTab !== 'list';
+
+    if (shouldResetToParent) {
+      const shouldExpandMenu = activeTabLon !== tabId;
       if (isEditingMode || isEntityEditing) {
         setConfirmDialog({
           isOpen: true,
@@ -71,39 +99,27 @@ export function useAppTocRail({
             'Ban co thay doi chua duoc luu. Roi di se mat noi dung dang soan. Tiep tuc?',
           onConfirm: () => {
             setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-            setIsEditingMode(false);
-            setIsEntityEditing(false);
-            setActiveTabLon(tabId);
-            setActiveTabNho(null);
-            setActiveTabCon(null);
-            setSelectedEntityId(null);
-            setEntitySearch('');
-            setMenu2Expanded(true);
+            applyParentTabSelection(tabId);
+            if (shouldExpandMenu) setMenu2Expanded(true);
           },
         });
         return;
       }
-      setActiveTabLon(tabId);
-      setActiveTabNho(null);
-      setActiveTabCon(null);
-      setSelectedEntityId(null);
-      setIsEditingMode(false);
-      setIsEntityEditing(false);
-      setEntitySearch('');
+      applyParentTabSelection(tabId);
+      if (shouldExpandMenu) setMenu2Expanded(true);
+      return;
     }
     setMenu2Expanded(true);
   }, [
     activeTabLon,
+    activeTabNho,
+    activeTabCon,
+    selectedEntityId,
+    collectionSubTab,
     isEditingMode,
     isEntityEditing,
     setConfirmDialog,
-    setIsEditingMode,
-    setIsEntityEditing,
-    setActiveTabLon,
-    setActiveTabNho,
-    setActiveTabCon,
-    setSelectedEntityId,
-    setEntitySearch,
+    applyParentTabSelection,
   ]);
 
   const handleSelectTabNho = useCallback((lonId, nhoId) => {

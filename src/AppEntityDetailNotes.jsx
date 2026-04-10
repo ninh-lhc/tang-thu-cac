@@ -4,7 +4,7 @@ import { MarkdownToolbar } from './MasterComponents.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import { safeString, mapGeminiErrorToUserMessage, truncateForAI, suggestWikiLinkSpotsWithAI } from './MasterUtils.jsx';
 import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
-import { autoWrapWikiLinksByEntityMap } from './lib/autoWrapWikiLinks.js';
+import { autoWrapWikiLinksByEntityMap, autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
 import {
   getEntityNotesFontStack,
   getEntityNotesPrefs,
@@ -145,12 +145,35 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         <button
           disabled={isExtractingAI}
           onClick={async () => {
+            const currentText = notesEdit.text;
+            if (!currentText.trim()) return;
+            const applyDraftAndPreviewEarly = (next) => {
+              recordAndSetDraft(next);
+              if (isSplitPreview) {
+                setLivePreviewText(next);
+                setDebouncedMarkdownPreview(next);
+              }
+            };
+            const localWrapEarly = autoWrapWikiLinksByEntityMapWithCount(currentText, entityMap);
+            if (localWrapEarly.count > 0 && localWrapEarly.text !== currentText) {
+              applyDraftAndPreviewEarly(localWrapEarly.text);
+              showToast(`Da tu boc ${localWrapEarly.count} [[lien ket]] theo the co san. Bam lai AI neu muon goi y them cho kho.`);
+              return;
+            }
             if (geminiApiKeys.length === 0) {
               showToast('Vui lòng thiết lập API Key để dùng AI.');
               return;
             }
             const text = notesEdit.text;
             if (!text.trim()) return;
+            const applyDraftAndPreview = (next) => {
+              recordAndSetDraft(next);
+              if (isSplitPreview) {
+                setLivePreviewText(next);
+                setDebouncedMarkdownPreview(next);
+              }
+            };
+            const localWrap = autoWrapWikiLinksByEntityMapWithCount(text, entityMap);
             const { wasTruncated } = truncateForAI(text);
             if (wasTruncated) showToast('Đoạn quá dài — chỉ gửi ~12.000 ký tự đầu cho AI.', 'warning');
             setIsExtractingAI(true);
@@ -158,13 +181,9 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               const res = await suggestWikiLinkSpotsWithAI(text, geminiApiKeys, aiMode);
               const spots = Array.isArray(res?.linkSpots) ? res.linkSpots : [];
               const aiNext = applyWikiLinkSpots(text, spots);
-              const next = aiNext !== text ? aiNext : autoWrapWikiLinksByEntityMap(text, entityMap);
-              if (next !== text) {
-                recordAndSetDraft(next);
-                if (isSplitPreview) {
-                  setLivePreviewText(next);
-                  setDebouncedMarkdownPreview(next);
-                }
+               const next = aiNext !== text ? aiNext : localWrap.text;
+               if (next !== text) {
+                 applyDraftAndPreview(next);
                 if (aiNext !== text) {
                   showToast('Đã thêm [[liên kết]] bằng AI — giữ nguyên chữ và định dạng bạn nhập.');
                 } else {
@@ -179,16 +198,11 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               const msg = mapGeminiErrorToUserMessage(e);
               const rateLimited = /429|503|rate_limit|qua tai api/i.test(String(e?.message || ''));
               if (rateLimited) {
-                const localNext = autoWrapWikiLinksByEntityMap(text, entityMap);
-                if (localNext !== text) {
-                  recordAndSetDraft(localNext);
-                  if (isSplitPreview) {
-                    setLivePreviewText(localNext);
-                    setDebouncedMarkdownPreview(localNext);
-                  }
+                if (localWrap.text !== text) {
+                  applyDraftAndPreview(localWrap.text);
                   showToast('AI đang quá tải (429/503) — đã tự bọc link theo danh sách thẻ có sẵn.', 'warning');
                 } else {
-                  showToast(msg, 'error');
+                  showToast(msg, 'warning');
                 }
               } else {
                 showToast(msg, 'error');

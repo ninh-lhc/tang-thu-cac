@@ -45,7 +45,7 @@ export const truncateForAI = (raw, max = AI_MAX_INPUT_CHARS) => {
 
 export const mapGeminiErrorToUserMessage = (err) => {
   const m = safeString(err?.message);
-  if (m.startsWith('rate_limit:')) return 'Quá tải API (429/503). Thử lại sau hoặc thêm API Key trong Cài đặt.';
+  if (m.startsWith('rate_limit:')) return 'AI dang qua tai (429/503). Day la loi quota/dich vu, khong phai do doan van qua dai. Thu lai sau hoac them API Key trong Cai dat.';
   if (m.startsWith('timeout:')) return 'AI phản hồi quá chậm. Vui lòng thử lại sau.';
   if (/API key not valid|API_KEY_INVALID|invalid api key/i.test(m)) return 'API Key không hợp lệ. Kiểm tra lại trong Cài đặt.';
   if (/quota|RESOURCE_EXHAUSTED|exceeded/i.test(m)) return 'Hết quota / giới hạn key. Thử key khác hoặc đợi reset.';

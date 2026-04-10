@@ -69,4 +69,12 @@ describe('callGeminiAPIText', () => {
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=key-2',
     ]);
   });
+
+  it('clarifies that rate limits are not caused by paragraph length', async () => {
+    const { mapGeminiErrorToUserMessage } = await import('./MasterUtils.jsx');
+
+    expect(mapGeminiErrorToUserMessage(new Error('rate_limit:429'))).toContain(
+      'khong phai do doan van qua dai'
+    );
+  });
 });
