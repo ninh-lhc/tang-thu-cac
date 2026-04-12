@@ -61,7 +61,7 @@ export function useAppTocRail({
     });
   }, []);
 
-  const applyParentTabSelection = useCallback((tabId) => {
+  const resetTabSelection = useCallback((tabId, { expandMenu = false } = {}) => {
     setActiveTabLon(tabId);
     setActiveTabNho(null);
     setActiveTabCon(null);
@@ -70,6 +70,7 @@ export function useAppTocRail({
     setIsEditingMode(false);
     setIsEntityEditing(false);
     setEntitySearch('');
+    if (expandMenu) setMenu2Expanded(true);
   }, [
     setActiveTabLon,
     setActiveTabNho,
@@ -82,34 +83,31 @@ export function useAppTocRail({
   ]);
 
   const handleSelectTabLon = useCallback((tabId) => {
-    const shouldResetToParent =
-      activeTabLon !== tabId ||
-      !!activeTabNho ||
-      !!activeTabCon ||
-      !!selectedEntityId ||
-      collectionSubTab !== 'list';
+    const isSwitchingTab = activeTabLon !== tabId;
+    const shouldResetCurrentTab =
+      !isSwitchingTab &&
+      (activeTabNho !== null ||
+        activeTabCon !== null ||
+        selectedEntityId !== null ||
+        collectionSubTab !== 'list');
 
-    if (shouldResetToParent) {
-      const shouldExpandMenu = activeTabLon !== tabId;
-      if (isEditingMode || isEntityEditing) {
-        setConfirmDialog({
-          isOpen: true,
-          title: 'Chua Luu Thay Doi',
-          message:
-            'Ban co thay doi chua duoc luu. Roi di se mat noi dung dang soan. Tiep tuc?',
-          onConfirm: () => {
-            setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-            applyParentTabSelection(tabId);
-            if (shouldExpandMenu) setMenu2Expanded(true);
-          },
-        });
-        return;
-      }
-      applyParentTabSelection(tabId);
-      if (shouldExpandMenu) setMenu2Expanded(true);
+    if (!isSwitchingTab && !shouldResetCurrentTab) return;
+
+    if (isEditingMode || isEntityEditing) {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Chua Luu Thay Doi',
+        message:
+          'Ban co thay doi chua duoc luu. Roi di se mat noi dung dang soan. Tiep tuc?',
+        onConfirm: () => {
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          resetTabSelection(tabId, { expandMenu: isSwitchingTab });
+        },
+      });
       return;
     }
-    setMenu2Expanded(true);
+
+    resetTabSelection(tabId, { expandMenu: isSwitchingTab });
   }, [
     activeTabLon,
     activeTabNho,
@@ -119,7 +117,7 @@ export function useAppTocRail({
     isEditingMode,
     isEntityEditing,
     setConfirmDialog,
-    applyParentTabSelection,
+    resetTabSelection,
   ]);
 
   const handleSelectTabNho = useCallback((lonId, nhoId) => {

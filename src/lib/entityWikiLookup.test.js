@@ -144,6 +144,23 @@ describe('entityWikiLookup', () => {
     expect(resolveEntityLookup(lookup, 'He thong')).toBeNull();
   });
 
+  it('does not resolve a lowercase wiki label to a title-cased entity name', () => {
+    const lookup = buildEntityNameLookup([{ name: 'Do Kiep', dest: { entityId: 'realm-do-kiep' } }]);
+
+    expect(resolveEntityLookup(lookup, 'do kiep')).toBe(null);
+    expect(resolveEntityLookup(lookup, 'Do Kiep')?.dest?.entityId).toBe('realm-do-kiep');
+  });
+
+  it('prefers the stricter case-matching candidate when names differ only by casing', () => {
+    const lookup = buildEntityNameLookup([
+      { name: 'do kiep', dest: { entityId: 'process-do-kiep' } },
+      { name: 'Do Kiep', dest: { entityId: 'realm-do-kiep' } },
+    ]);
+
+    expect(resolveEntityLookup(lookup, 'do kiep')?.dest?.entityId).toBe('process-do-kiep');
+    expect(resolveEntityLookup(lookup, 'Do Kiep')?.dest?.entityId).toBe('realm-do-kiep');
+  });
+
   it('drops orphan data buckets not present in tabsConfig (no ghost wiki names)', () => {
     const novel = {
       tabsConfig: [

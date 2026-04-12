@@ -1,6 +1,6 @@
 /** Giống MasterUtils.safeString — tách ra để module này không import React. */
 import { buildEntityNameLookup, resolveEntityLookup } from './entityWikiLookup.js';
-import { buildConfiguredSubTabIdsByLon, isConfiguredNovelDataPath } from './novelTabDataPaths.js';
+import { containsWikiNameWordStartSurface } from './wikiNameSurface.js';
 
 function safeString(val) {
   if (val == null || val === 'null' || val === 'undefined') return '';
@@ -34,13 +34,11 @@ function buildNovelSearchIndex(activeNovelData, tabMetaMap) {
   const records = [];
   const byEntityId = new Map();
   const novelData = activeNovelData?.data || {};
-  const configuredPaths = buildConfiguredSubTabIdsByLon(activeNovelData?.tabsConfig);
   for (const [lonId, lonData] of Object.entries(novelData)) {
     const bySub = tabMetaMap.get(lonId);
     if (!bySub) continue;
     for (const [nhoId, nhoData] of Object.entries(lonData || {})) {
       if (!bySub.has(nhoId)) continue;
-      if (!isConfiguredNovelDataPath(configuredPaths, lonId, nhoId)) continue;
       const tabMeta = bySub.get(nhoId);
       const tabLabel = tabMeta?.label || lonId;
       const entities = Array.isArray(nhoData?.entities) ? nhoData.entities : [];
@@ -51,7 +49,6 @@ function buildNovelSearchIndex(activeNovelData, tabMetaMap) {
             dynamicStrings.push({
               fieldId,
               text: fieldVal,
-              lower: fieldVal.toLowerCase(),
             });
           }
         }
@@ -64,7 +61,6 @@ function buildNovelSearchIndex(activeNovelData, tabMetaMap) {
           tabLabel,
           dynamicStrings,
           info: infoString,
-          infoLower: infoString.toLowerCase(),
         };
         records.push(rec);
         if (ent?.id) byEntityId.set(ent.id, rec);
@@ -87,13 +83,13 @@ function buildFreshNovelIndex(activeNovelData, activeTabs) {
  * Thuần hàm — dễ test, không phụ thuộc React.
  *
  * Ai gọi: App.jsx (effect mạng lưới nhân quả). Test: computeRelatedEntities.test.js
- * Tham số wikiExactMatchOnly (nếu caller truyền) được bỏ qua: [[...]] luôn resolve chặt, không substring.
  */
 export function computeRelatedEntities({
   activeNovelData,
   selectedEntity,
   activeTabs,
   entityMap,
+  wikiExactMatchOnly,
   scopeLonId,
   scopeNhoId,
   maxResults = 300,
@@ -104,7 +100,6 @@ export function computeRelatedEntities({
   const relMap = new Map();
   const addRel = (entity, lonId, nhoId, tabLabel, ctx) => {
     if (!entity || entity.id === selectedEntity.id) return;
-    if (!novelIndex.byEntityId.has(entity.id)) return;
     const k = `${lonId}|${nhoId}|${entity.id}`;
     if (!relMap.has(k)) relMap.set(k, { entity, lonId, nhoId, tabLabel, parts: new Set([ctx]) });
     else relMap.get(k).parts.add(ctx);
@@ -115,7 +110,7 @@ export function computeRelatedEntities({
     if (!str) return;
     str.split(/[,/|()]/).forEach((n) => {
       const clean = n.trim();
-      if (clean.length >= 2) namesToMatch.add(clean.toLowerCase());
+      if (clean.length >= 2) namesToMatch.add(clean);
     });
   };
   extractNames(selectedEntity.name);
@@ -130,9 +125,9 @@ export function computeRelatedEntities({
       let mentioned = false;
       let contextInfo = '';
       for (const f of rec.dynamicStrings) {
-        if (!f?.lower) continue;
+        if (!f?.text) continue;
         for (const name of namesToMatch) {
-          if (f.lower.includes(name)) {
+          if (containsWikiNameWordStartSurface(f.text, name)) {
             const fieldLabel = novelIndex.tabMetaMap.get(rec.lonId)?.get(rec.nhoId)?.fields?.get(f.fieldId);
             contextInfo = fieldLabel || 'Thuộc tính';
             mentioned = true;
@@ -141,9 +136,9 @@ export function computeRelatedEntities({
         }
         if (mentioned) break;
       }
-      if (!mentioned && rec.infoLower) {
+      if (!mentioned && rec.info) {
         for (const name of namesToMatch) {
-          if (rec.infoLower.includes(name)) {
+          if (containsWikiNameWordStartSurface(rec.info, name)) {
             contextInfo = 'Trong ghi chép';
             mentioned = true;
             break;
@@ -160,7 +155,14 @@ export function computeRelatedEntities({
     if (!label) return null;
     const resolved = resolveEntityLookup(wikiLookup, label, { selfEntityId: selectedEntity.id });
     if (resolved) return { dest: resolved.dest, matched: resolved.name };
-    // Không dùng substring trên entityMap: dễ khớp nhầm thẻ còn sống khi thẻ đích đã xóa (tên gần giống).
+    if (wikiExactMatchOnly) return null;
+    for (const item of entityMap) {
+      const en = safeString(item?.name).trim();
+      if (en.length < 2) continue;
+      if (containsWikiNameWordStartSurface(label, en) || containsWikiNameWordStartSurface(en, label)) {
+        return { dest: item.dest, matched: item.name };
+      }
+    }
     return null;
   };
 

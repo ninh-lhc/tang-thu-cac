@@ -136,62 +136,30 @@ describe('computeRelatedEntities', () => {
     expect(rel).toEqual([]);
   });
 
-  it('drops wiki targets not present in activeNovelData (stale entityMap)', () => {
-    const selectedEntity = {
-      id: 'hero',
-      name: 'Hero',
-      dynamicData: {},
-      info: '[[Gone Card]]',
-      rawText: '',
-      milestones: [],
-    };
-    const activeNovelData = {
-      data: {
-        lon1: { sub1: { entities: [selectedEntity] } },
-      },
-    };
-    const activeTabs = [{ id: 'lon1', subTabs: [{ id: 'sub1', label: 'S', fieldsTemplate: [] }] }];
-    const entityMap = [
-      { name: 'Hero', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'hero' } },
-      { name: 'Gone Card', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'deleted-id' } },
-    ];
-    const rel = computeRelatedEntities({
-      activeNovelData,
-      selectedEntity,
-      activeTabs,
-      entityMap,
-      wikiExactMatchOnly: true,
-    });
-    expect(rel.length).toBe(0);
-  });
-
-  it('does not fuzzy-match wiki label to a different surviving card', () => {
-    const selectedEntity = {
-      id: 'a',
-      name: 'Skill A',
-      dynamicData: {},
-      info: '[[Long Huyết Kim Cương Quyết]]',
-      rawText: '',
-      milestones: [],
-    };
+  it('does not treat lowercase common-phrase mentions as a title-cased related entity mention', () => {
+    const selectedEntity = { id: 'realm', name: 'Độ Kiếp', dynamicData: {}, rawText: '', milestones: [] };
     const other = {
-      id: 'b',
-      name: 'Long Huyết',
-      dynamicData: {},
-      info: '',
+      id: 'npc',
+      name: 'Lão Vương',
+      dynamicData: { f_note: 'Hắn đang độ kiếp nên không thể xuất quan.' },
       rawText: '',
       milestones: [],
     };
     const activeNovelData = {
       data: {
-        lon1: { sub1: { entities: [selectedEntity, other] } },
+        lon1: {
+          sub1: { entities: [selectedEntity, other] },
+        },
       },
     };
-    const activeTabs = [{ id: 'lon1', subTabs: [{ id: 'sub1', label: 'S', fieldsTemplate: [] }] }];
-    const entityMap = [
-      { name: 'Skill A', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'a' } },
-      { name: 'Long Huyết', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'b' } },
+    const activeTabs = [
+      { id: 'lon1', label: 'L', subTabs: [{ id: 'sub1', label: 'S', fieldsTemplate: [{ id: 'f_note', label: 'Ghi chú' }] }] },
     ];
+    const entityMap = [
+      { name: 'Độ Kiếp', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'realm' } },
+      { name: 'Lão Vương', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'npc' } },
+    ];
+
     const rel = computeRelatedEntities({
       activeNovelData,
       selectedEntity,
@@ -199,6 +167,39 @@ describe('computeRelatedEntities', () => {
       entityMap,
       wikiExactMatchOnly: false,
     });
-    expect(rel.find((x) => x.entity.id === 'b')).toBeUndefined();
+
+    expect(rel).toEqual([]);
+  });
+
+  it('does not fuzzy-resolve lowercase wiki labels to title-cased entities', () => {
+    const selectedEntity = {
+      id: 'hero',
+      name: 'Hero',
+      dynamicData: {},
+      info: '[[độ kiếp]]',
+      rawText: '',
+      milestones: [],
+    };
+    const realm = { id: 'realm', name: 'Độ Kiếp', dynamicData: {}, info: '', rawText: '', milestones: [] };
+    const activeNovelData = {
+      data: {
+        lon1: { sub1: { entities: [selectedEntity, realm] } },
+      },
+    };
+    const activeTabs = [{ id: 'lon1', subTabs: [{ id: 'sub1', label: 'S', fieldsTemplate: [] }] }];
+    const entityMap = [
+      { name: 'Hero', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'hero' } },
+      { name: 'Độ Kiếp', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'realm' } },
+    ];
+
+    const rel = computeRelatedEntities({
+      activeNovelData,
+      selectedEntity,
+      activeTabs,
+      entityMap,
+      wikiExactMatchOnly: false,
+    });
+
+    expect(rel).toEqual([]);
   });
 });

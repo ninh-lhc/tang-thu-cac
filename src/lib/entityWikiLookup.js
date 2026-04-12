@@ -1,8 +1,10 @@
 /**
- * Lookup cho wiki-link noi bo.
- * Ho tro nhieu entity cung ten, sau do chon ung vien tot nhat theo boi canh entity dang mo.
+ * Lookup for internal wiki links.
+ * Supports duplicate entity names, then chooses the best candidate by current entity context.
+ * Preserves case-sensitive name intent for generic words versus proper nouns.
  */
 import { buildEntityCanonicalFingerprint, buildEntityNameFingerprint } from './entityNameIdentity.js';
+import { compareWikiNameSurfacePriority, matchesWikiNameSurface } from './wikiNameSurface.js';
 
 const createLookupBucket = () => new Map();
 
@@ -147,14 +149,34 @@ function computeCasePatternDistance(rawName, candidateName) {
   return distance;
 }
 
+function filterLookupCandidatesBySurface(candidates, rawName) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  if (list.length === 0) return list;
+
+  const raw = String(rawName || '').trim();
+  if (!raw) return list;
+
+  const exactSurface = list.filter((candidate) => String(candidate?.name || '').trim() === raw);
+  if (exactSurface.length > 0) return exactSurface;
+
+  const compatible = list.filter((candidate) => {
+    const candidateName = String(candidate?.name || '').trim();
+    if (!candidateName) return false;
+    if (candidateName.toLowerCase() !== raw.toLowerCase()) return true;
+    return matchesWikiNameSurface(candidateName, raw);
+  });
+  if (compatible.length <= 1) return compatible;
+  return compatible.sort((a, b) => compareWikiNameSurfacePriority(a?.name, b?.name));
+}
+
 function pickCaseAwareLowerCandidate(lookup, rawName, sourceMeta) {
   const raw = String(rawName || '').trim();
   if (!raw) return null;
   const lower = raw.toLowerCase();
-  const candidates = lookup.exact?.get(lower) || [];
+  const candidates = filterLookupCandidatesBySurface(lookup.exact?.get(lower), raw);
   if (candidates.length === 0) return null;
 
-  const exactCaseCandidates = lookup.exactCase?.get(raw) || [];
+  const exactCaseCandidates = filterLookupCandidatesBySurface(lookup.exactCase?.get(raw), raw);
   if (exactCaseCandidates.length > 0) {
     return pickLookupCandidate(exactCaseCandidates, sourceMeta);
   }
@@ -184,17 +206,23 @@ export function resolveEntityLookup(lookup, rawName, { selfEntityId = null } = {
   if (!lookup || !rawName) return null;
   const sourceMeta = selfEntityId ? lookup.byEntityId?.get(selfEntityId) || null : null;
   const raw = String(rawName).trim();
+  if (!raw) return null;
+
   const exact = pickCaseAwareLowerCandidate(lookup, raw, sourceMeta);
   if (exact) return exact;
+
   const lower = raw.toLowerCase();
   if ((lookup.exactNameVariantsByLower?.get(lower)?.size || 0) > 0) return null;
 
-  const fp = buildEntityNameFingerprint(rawName);
+  const fp = buildEntityNameFingerprint(raw);
   if (!fp) return null;
-  const byFp = pickLookupCandidate(lookup.byFingerprint?.get(fp), sourceMeta);
+  const byFp = pickLookupCandidate(filterLookupCandidatesBySurface(lookup.byFingerprint?.get(fp), raw), sourceMeta);
   if (byFp) return byFp;
 
-  const canonicalFp = buildEntityCanonicalFingerprint(rawName);
+  const canonicalFp = buildEntityCanonicalFingerprint(raw);
   if (!canonicalFp) return null;
-  return pickLookupCandidate(lookup.byCanonicalFingerprint?.get(canonicalFp), sourceMeta);
+  return pickLookupCandidate(
+    filterLookupCandidatesBySurface(lookup.byCanonicalFingerprint?.get(canonicalFp), raw),
+    sourceMeta
+  );
 }
