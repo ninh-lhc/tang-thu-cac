@@ -25,10 +25,12 @@ function mergeLookupContextKeys(target, incoming) {
 
 export function buildEntityNameLookup(entityMap) {
   const lookup = {
+    exactCase: createLookupBucket(),
     exact: createLookupBucket(),
     byFingerprint: createLookupBucket(),
     byCanonicalFingerprint: createLookupBucket(),
     byEntityId: new Map(),
+    exactNameVariantsByLower: new Map(),
     totalItems: 0,
     __isEntityLookup: true,
   };
@@ -47,7 +49,11 @@ export function buildEntityNameLookup(entityMap) {
       contextKeys: Array.isArray(entry.contextKeys) ? entry.contextKeys : [],
     };
 
+    pushLookupCandidate(lookup.exactCase, name, candidate);
     pushLookupCandidate(lookup.exact, lower, candidate);
+    const exactNameVariants = lookup.exactNameVariantsByLower.get(lower) || new Set();
+    exactNameVariants.add(name);
+    lookup.exactNameVariantsByLower.set(lower, exactNameVariants);
 
     const fp = buildEntityNameFingerprint(name);
     if (fp) pushLookupCandidate(lookup.byFingerprint, fp, candidate);
@@ -117,13 +123,71 @@ function pickLookupCandidate(candidates, sourceMeta) {
   return best;
 }
 
+function getWordTokens(text) {
+  return String(text || '').match(/[\p{L}\p{N}_]+/gu) || [];
+}
+
+function isUpperLetter(ch) {
+  if (!ch) return false;
+  return ch.toLocaleUpperCase('vi-VN') === ch && ch.toLocaleLowerCase('vi-VN') !== ch;
+}
+
+function computeCasePatternDistance(rawName, candidateName) {
+  const rawTokens = getWordTokens(rawName);
+  const candidateTokens = getWordTokens(candidateName);
+  const maxLength = Math.max(rawTokens.length, candidateTokens.length);
+  if (maxLength === 0) return Number.POSITIVE_INFINITY;
+  let distance = 0;
+  for (let index = 0; index < maxLength; index += 1) {
+    const rawUpper = isUpperLetter(rawTokens[index]?.[0] || '');
+    const candidateUpper = isUpperLetter(candidateTokens[index]?.[0] || '');
+    if (rawUpper === candidateUpper) continue;
+    distance += index === 0 ? 0.25 : 1;
+  }
+  return distance;
+}
+
+function pickCaseAwareLowerCandidate(lookup, rawName, sourceMeta) {
+  const raw = String(rawName || '').trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  const candidates = lookup.exact?.get(lower) || [];
+  if (candidates.length === 0) return null;
+
+  const exactCaseCandidates = lookup.exactCase?.get(raw) || [];
+  if (exactCaseCandidates.length > 0) {
+    return pickLookupCandidate(exactCaseCandidates, sourceMeta);
+  }
+
+  const variantNames = Array.from(lookup.exactNameVariantsByLower?.get(lower) || []);
+  if (variantNames.length === 0) {
+    return pickLookupCandidate(candidates, sourceMeta);
+  }
+
+  const rankedVariants = variantNames
+    .map((name) => ({ name, distance: computeCasePatternDistance(raw, name) }))
+    .sort((a, b) => a.distance - b.distance || a.name.localeCompare(b.name, 'vi'));
+
+  const best = rankedVariants[0];
+  const next = rankedVariants[1];
+  if (!best) return null;
+  if (best.distance > 0.25) return null;
+  if (next && next.distance === best.distance) return null;
+
+  return pickLookupCandidate(
+    candidates.filter((candidate) => String(candidate?.name || '').trim() === best.name),
+    sourceMeta
+  );
+}
+
 export function resolveEntityLookup(lookup, rawName, { selfEntityId = null } = {}) {
   if (!lookup || !rawName) return null;
   const sourceMeta = selfEntityId ? lookup.byEntityId?.get(selfEntityId) || null : null;
-  const lower = String(rawName).trim().toLowerCase();
-
-  const exact = pickLookupCandidate(lookup.exact?.get(lower), sourceMeta);
+  const raw = String(rawName).trim();
+  const exact = pickCaseAwareLowerCandidate(lookup, raw, sourceMeta);
   if (exact) return exact;
+  const lower = raw.toLowerCase();
+  if ((lookup.exactNameVariantsByLower?.get(lower)?.size || 0) > 0) return null;
 
   const fp = buildEntityNameFingerprint(rawName);
   if (!fp) return null;

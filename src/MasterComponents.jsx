@@ -23,6 +23,9 @@ import {
 import {
   generateId, safeString, getTerms, AsyncLocalImage,
   handleToolbarClick,
+  handleToolbarSmartWrap,
+  handleToolbarInsertText,
+  handleToolbarApplyColor,
   handleToolbarToggleLinePrefix,
   applyWikiLinkWrap,
   applyWikiLinkUnwrap,
@@ -51,8 +54,76 @@ import {
   setEntityNotesPrefs,
   subscribeEntityNotesPrefs,
 } from './lib/entityNotesPrefs.js';
+import {
+  ENTITY_NOTES_CALLOUT_BUTTONS,
+  ENTITY_NOTES_COLOR_PRESETS,
+  ENTITY_NOTES_LABEL_VALUE_PRESETS,
+  ENTITY_NOTES_SEMANTIC_TEMPLATES,
+  buildEntityNotesCalloutBlock,
+} from './lib/entityNotesSemantics.js';
 
 const preventToolbarFocusSteal = (e) => e.preventDefault();
+
+const ENTITY_NOTES_LABELS = {
+  h3Title: 'Ti\u1ec3u m\u1ee5c / nh\u1ea5n nh\u1ecbp H3',
+  dividerTitle: 'D\u1ea5u ph\u00e2n c\u00e1ch',
+  templateRow: 'M\u1eabu nhanh',
+  templateButton: 'Khung ph\u00e2n t\u00edch',
+  templateTitle: 'Ch\u00e8n khung ghi ch\u00fa ph\u00e2n t\u00edch d\u1ecdc cho n\u1ed9i dung d\u00e0i',
+  bigSectionButton: 'M\u1ee5c l\u1edbn',
+  bigSectionTitle: 'Ch\u00e8n m\u1ed9t m\u1ee5c l\u1edbn \u0111\u00e1nh s\u1ed1 ki\u1ec3u ph\u00e2n t\u00edch',
+  subSectionButton: 'Ti\u1ec3u m\u1ee5c',
+  subSectionTitle: 'Ch\u00e8n ti\u1ec3u m\u1ee5c chuy\u1ec3n nh\u1ecbp',
+  summaryButton: 'T\u1ed5ng k\u1ebft',
+  summaryTitle: 'Ch\u00e8n d\u00f2ng t\u1ed5ng k\u1ebft / l\u01b0u \u00fd',
+  colorRow: 'M\u00e0u ch\u1eef',
+  colorButton: 'T\u00f4 m\u00e0u',
+  colorTitle: 'T\u00f4 m\u00e0u cho \u0111o\u1ea1n \u0111ang ch\u1ecdn',
+  colorPickerTitle: 'Ch\u1ecdn m\u00e0u ch\u1eef theo \u00fd th\u00edch',
+  boldPairTitle: 'B\u1ecdc \u0111\u1eadm th\u00f4ng minh b\u1eb1ng c\u1eb7p ****',
+  semanticRow: 'Khung ng\u1eef ngh\u0129a',
+  labelValueRow: 'Nhãn nhanh',
+  presetColorRow: 'Màu preset',
+  calloutRow: 'Callout',
+};
+
+const ENTITY_NOTES_TOOL_GROUPS = [
+  { id: 'compose', label: 'Soạn', icon: Type },
+  { id: 'templates', label: 'Mẫu', icon: Sparkles },
+  { id: 'semantics', label: 'Ngữ nghĩa', icon: Layers },
+  { id: 'colors', label: 'Màu', icon: SlidersHorizontal },
+  { id: 'callouts', label: 'Callout', icon: ScrollText },
+];
+
+const DEFAULT_ENTITY_NOTES_COLOR = '#c084fc';
+const ENTITY_NOTES_COLOR_PLACEHOLDER = '\u0111o\u1ea1n c\u1ea7n t\u00f4 m\u00e0u';
+
+const stripBracketedSubject = (rawSubject) =>
+  safeString(rawSubject).trim().replace(/^\[\[/, '').replace(/\]\]$/, '');
+
+const buildEntityNotesAnalysisTemplate = (subject) => {
+  const safeSubject = stripBracketedSubject(subject) || '\u0111\u1ed1i t\u01b0\u1ee3ng';
+  return [
+    `D\u01b0\u1edbi \u0111\u00e2y l\u00e0 chi ti\u1ebft tr\u00edch xu\u1ea5t v\u1ec1 [[${safeSubject}]]:`,
+    '',
+    `**1. Kh\u00e1i qu\u00e1t v\u00e0 \u0111\u1ecbnh v\u1ecb**`,
+    '',
+    `- **\u0110\u1ecbnh ngh\u0129a / ph\u1ea1m vi:** `,
+    `- **V\u1ecb tr\u00ed trong b\u1ed1i c\u1ea3nh l\u1edbn:** `,
+    '',
+    `**2. C\u1ea5u tr\u00fac v\u00e0 ph\u00e2n t\u1ea7ng**`,
+    '',
+    `- **C\u00e1c t\u1ea7ng / nh\u00e1nh ch\u00ednh:** `,
+    `- **\u0110i\u1ec3m kh\u00e1c bi\u1ec7t then ch\u1ed1t:** `,
+    '',
+    `**3. T\u00e1c \u0111\u1ed9ng v\u00e0 li\u00ean h\u1ec7**`,
+    '',
+    `- **\u1ea2nh h\u01b0\u1edfng n\u1ed5i b\u1eadt:** `,
+    `- **Li\u00ean h\u1ec7 \u0111\u00e1ng ch\u00fa \u00fd:** `,
+    '',
+    `> T\u1ed5ng k\u1ebft ng\u1eafn: `,
+  ].join('\n');
+};
 
 export const MarkdownToolbar = ({
   editorId,
@@ -68,14 +139,283 @@ export const MarkdownToolbar = ({
   notesFontSizePx,
   onNotesFontKey,
   onNotesFontSizePx,
+  entityNotesSubject = '',
+  entityNotesToolbarState = {},
+  entityNotesTemplateProfile = null,
+  notesAutoCleanOnSave = true,
+  onNotesAutoCleanOnSave,
+  onAiFormatStructure,
 }) => {
   const sync = onEditorContentChange;
   const tb = (before, after) => () => handleToolbarClick(before, after, editorId, sync);
+  const smartWrap = (marker) => () => handleToolbarSmartWrap(marker, editorId, sync);
   const linePref = (p) => () => handleToolbarToggleLinePrefix(editorId, p, sync);
+  const [customTextColor, setCustomTextColor] = useState(DEFAULT_ENTITY_NOTES_COLOR);
+  const [entityNotesPanel, setEntityNotesPanel] = useState('compose');
+  const applyColor = () => handleToolbarApplyColor(customTextColor, editorId, sync, ENTITY_NOTES_COLOR_PLACEHOLDER);
+  const insertEntityNotesTemplate = () => {
+    const textarea = document.getElementById(editorId);
+    const selectedText =
+      textarea && textarea.selectionStart !== textarea.selectionEnd
+        ? textarea.value.substring(textarea.selectionStart, textarea.selectionEnd)
+        : '';
+    const templateText = buildEntityNotesAnalysisTemplate(selectedText || entityNotesSubject);
+    handleToolbarInsertText(templateText, editorId, sync);
+  };
+  const insertSemanticTemplate = (templateText) => () =>
+    handleToolbarInsertText(`${templateText}\n\n`, editorId, sync);
+  const insertLabelValue = (lineText) => () =>
+    handleToolbarInsertText(lineText, editorId, sync);
+  const applyPresetColor = (colorValue) => () => {
+    setCustomTextColor(colorValue);
+    handleToolbarApplyColor(colorValue, editorId, sync, ENTITY_NOTES_COLOR_PLACEHOLDER);
+  };
+  const insertCalloutBlock = (role, title) => () =>
+    handleToolbarInsertText(`${buildEntityNotesCalloutBlock(role, title, [''])}\n\n`, editorId, sync);
+  const baseIconButtonClass =
+    'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-slate-400 transition-colors hover:bg-slate-800 hover:text-amber-400';
+  const neutralChipClass =
+    'inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-slate-200 transition-colors hover:border-slate-500';
+  const getActiveIconButtonClass = (active = false, accent = 'amber') => {
+    if (!active) return baseIconButtonClass;
+    const accentMap = {
+      amber: 'border border-amber-700/50 bg-amber-950/30 text-amber-200',
+      violet: 'border border-violet-700/50 bg-violet-950/30 text-violet-200',
+      cyan: 'border border-cyan-700/50 bg-cyan-950/30 text-cyan-200',
+      emerald: 'border border-emerald-700/50 bg-emerald-950/30 text-emerald-200',
+    };
+    return `${baseIconButtonClass} ${accentMap[accent] || accentMap.amber}`;
+  };
+  const getChipClass = (active = false, accent = 'violet') => {
+    if (!active) return neutralChipClass;
+    const accentMap = {
+      violet: 'border-violet-700/50 bg-violet-950/35 text-violet-100',
+      cyan: 'border-cyan-700/50 bg-cyan-950/35 text-cyan-100',
+      amber: 'border-amber-700/50 bg-amber-950/30 text-amber-100',
+      emerald: 'border-emerald-700/50 bg-emerald-950/30 text-emerald-100',
+    };
+    return `inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${accentMap[accent] || accentMap.violet}`;
+  };
+  const renderEntityNotesPanelContent = () => {
+    if (entityNotesPanel === 'compose') {
+      return (
+        <>
+          {onNotesFontKey && onNotesFontSizePx != null && (
+            <>
+              <label className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-[11px] text-slate-300">
+                <span className="font-bold uppercase tracking-wider text-slate-500">Font</span>
+                <select
+                  value={notesFontKey}
+                  onChange={(e) => onNotesFontKey(e.target.value)}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="max-w-[190px] bg-transparent text-slate-100 outline-none"
+                  style={{ fontFamily: ENTITY_NOTES_FONT_OPTIONS.find((o) => o.id === notesFontKey)?.stack }}
+                >
+                  {ENTITY_NOTES_FONT_OPTIONS.map((o) => (
+                    <option key={o.id} value={o.id} style={{ fontFamily: o.stack }}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-[11px] text-slate-300">
+                <span className="font-bold uppercase tracking-wider text-slate-500">Cỡ</span>
+                <select
+                  value={String(notesFontSizePx)}
+                  onChange={(e) => onNotesFontSizePx(Number(e.target.value))}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="w-14 bg-transparent text-center font-mono text-slate-100 outline-none"
+                >
+                  {ENTITY_NOTES_FONT_SIZE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
+          <button
+            type="button"
+            onMouseDown={preventToolbarFocusSteal}
+            onClick={insertEntityNotesTemplate}
+            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-violet-800/50 bg-violet-950/35 px-3 py-1.5 text-[11px] font-semibold text-violet-200 transition-colors hover:border-violet-600/60 hover:bg-violet-900/35"
+            title={ENTITY_NOTES_LABELS.templateTitle}
+          >
+            <Sparkles size={13} />
+            {ENTITY_NOTES_LABELS.templateButton}
+          </button>
+          {onNotesAutoCleanOnSave && (
+            <button
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={() => onNotesAutoCleanOnSave(!notesAutoCleanOnSave)}
+              className={getChipClass(Boolean(notesAutoCleanOnSave), 'emerald')}
+              title="Bật để tự chuẩn hoá ghi chú trước khi lưu"
+            >
+              {notesAutoCleanOnSave ? 'Tự sạch khi lưu' : 'Lưu nguyên văn'}
+            </button>
+          )}
+          {onAiFormatStructure && (
+            <button
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={onAiFormatStructure}
+              className={getChipClass(false, 'amber')}
+              title="AI chỉ dàn lại bố cục: tiêu đề, mục, bullet, callout"
+            >
+              <Sparkles size={13} />
+              AI dàn khung
+            </button>
+          )}
+        </>
+      );
+    }
+    if (entityNotesPanel === 'templates') {
+      return (
+        <>
+          <button
+            type="button"
+            onMouseDown={preventToolbarFocusSteal}
+            onClick={tb('**1. ', '**\n\n')}
+            className={neutralChipClass}
+            title={ENTITY_NOTES_LABELS.bigSectionTitle}
+          >
+            {ENTITY_NOTES_LABELS.bigSectionButton}
+          </button>
+          <button
+            type="button"
+            onMouseDown={preventToolbarFocusSteal}
+            onClick={tb('### ', '\n\n')}
+            className={neutralChipClass}
+            title={ENTITY_NOTES_LABELS.subSectionTitle}
+          >
+            {ENTITY_NOTES_LABELS.subSectionButton}
+          </button>
+          <button
+            type="button"
+            onMouseDown={preventToolbarFocusSteal}
+            onClick={tb('> T\u1ed5ng k\u1ebft: ', '')}
+            className={neutralChipClass}
+            title={ENTITY_NOTES_LABELS.summaryTitle}
+          >
+            {ENTITY_NOTES_LABELS.summaryButton}
+          </button>
+          <div className="mx-1 h-6 w-px shrink-0 bg-slate-800" />
+          {ENTITY_NOTES_LABEL_VALUE_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={insertLabelValue(preset.text)}
+              className={neutralChipClass}
+              title={`Chèn nhanh ${preset.label}`}
+            >
+              {preset.label}
+            </button>
+          ))}
+          {entityNotesTemplateProfile?.templates?.length > 0 && (
+            <>
+              <div className="mx-1 h-6 w-px shrink-0 bg-slate-800" />
+              <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                {entityNotesTemplateProfile.label}
+              </span>
+              {entityNotesTemplateProfile.templates.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onMouseDown={preventToolbarFocusSteal}
+                  onClick={insertSemanticTemplate(preset.text)}
+                  className={getChipClass(false, 'violet')}
+                  title={preset.title}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </>
+          )}
+        </>
+      );
+    }
+    if (entityNotesPanel === 'semantics') {
+      return ENTITY_NOTES_SEMANTIC_TEMPLATES.map((preset) => (
+        <button
+          key={preset.id}
+          type="button"
+          onMouseDown={preventToolbarFocusSteal}
+          onClick={insertSemanticTemplate(preset.text)}
+          className={neutralChipClass}
+          title={preset.title}
+        >
+          {preset.label}
+        </button>
+      ));
+    }
+    if (entityNotesPanel === 'colors') {
+      return (
+        <>
+          <button
+            type="button"
+            onMouseDown={preventToolbarFocusSteal}
+            onClick={applyColor}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+              entityNotesToolbarState.color
+                ? 'border-cyan-700/50 bg-cyan-950/35 text-cyan-100'
+                : 'border-slate-700 bg-slate-900 text-slate-200 hover:border-cyan-600/60 hover:text-cyan-200'
+            }`}
+            title={ENTITY_NOTES_LABELS.colorTitle}
+          >
+            <span className="text-sm font-black leading-none" style={{ color: customTextColor }}>A</span>
+            {ENTITY_NOTES_LABELS.colorButton}
+          </button>
+          <label
+            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-[11px] text-slate-300"
+            title={ENTITY_NOTES_LABELS.colorPickerTitle}
+          >
+            <input
+              type="color"
+              value={customTextColor}
+              onChange={(e) => setCustomTextColor(e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0"
+            />
+            <span className="font-mono uppercase tracking-wide text-slate-100">{customTextColor}</span>
+          </label>
+          <div className="mx-1 h-6 w-px shrink-0 bg-slate-800" />
+          {ENTITY_NOTES_COLOR_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={applyPresetColor(preset.color)}
+              className={neutralChipClass}
+              title={`Tô màu preset: ${preset.label}`}
+            >
+              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.color }} />
+              {preset.label}
+            </button>
+          ))}
+        </>
+      );
+    }
+    return ENTITY_NOTES_CALLOUT_BUTTONS.map((preset) => (
+      <button
+        key={preset.id}
+        type="button"
+        onMouseDown={preventToolbarFocusSteal}
+        onClick={insertCalloutBlock(preset.role, preset.title)}
+        className={neutralChipClass}
+        title={`Chèn block ${preset.label}`}
+      >
+        {preset.label}
+      </button>
+    ));
+  };
 
   return (
-    <div className="flex flex-col gap-2 mb-4 pb-4 border-b border-slate-800">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="mb-4 flex flex-col gap-3 border-b border-slate-800 pb-4">
+      <div className="overflow-x-auto custom-scrollbar">
+        <div className="flex min-w-max items-center gap-2 pr-1">
         {variant === 'entityNotes' && onUndo && onRedo && (
           <>
             <button
@@ -83,7 +423,7 @@ export const MarkdownToolbar = ({
               onMouseDown={preventToolbarFocusSteal}
               onClick={onUndo}
               disabled={undoDisabled}
-              className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-35 disabled:pointer-events-none"
+              className={`${baseIconButtonClass} disabled:pointer-events-none disabled:opacity-35`}
               title="Hoàn tác (Ctrl+Z)"
             >
               <Undo2 size={16} />
@@ -93,7 +433,7 @@ export const MarkdownToolbar = ({
               onMouseDown={preventToolbarFocusSteal}
               onClick={onRedo}
               disabled={redoDisabled}
-              className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-35 disabled:pointer-events-none"
+              className={`${baseIconButtonClass} disabled:pointer-events-none disabled:opacity-35`}
               title="Làm lại (Ctrl+Y hoặc Ctrl+Shift+Z)"
             >
               <Redo2 size={16} />
@@ -105,16 +445,27 @@ export const MarkdownToolbar = ({
           type="button"
           onMouseDown={preventToolbarFocusSteal}
           onClick={tb('**', '**')}
-          className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.bold))}
           title="In đậm"
         >
           <Bold size={16} />
         </button>
+        {variant === 'entityNotes' && (
+          <button
+            type="button"
+            onMouseDown={preventToolbarFocusSteal}
+            onClick={smartWrap('**')}
+            className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.bold), 'violet')}
+            title={ENTITY_NOTES_LABELS.boldPairTitle}
+          >
+            <span className="font-mono text-[11px] font-bold">**</span>
+          </button>
+        )}
         <button
           type="button"
           onMouseDown={preventToolbarFocusSteal}
           onClick={tb('*', '*')}
-          className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.italic))}
           title="In nghiêng"
         >
           <Italic size={16} />
@@ -125,7 +476,7 @@ export const MarkdownToolbar = ({
               type="button"
               onMouseDown={preventToolbarFocusSteal}
               onClick={tb('<u>', '</u>')}
-              className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+              className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.underline))}
               title="Gạch chân (HTML, xem Preview)"
             >
               <Underline size={16} />
@@ -134,8 +485,8 @@ export const MarkdownToolbar = ({
               type="button"
               onMouseDown={preventToolbarFocusSteal}
               onClick={tb('~~', '~~')}
-              className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
-              title="Gạch ngang"
+              className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.strikethrough))}
+              title="Gạch ngang (~~...~~)"
             >
               <Strikethrough size={16} />
             </button>
@@ -143,7 +494,7 @@ export const MarkdownToolbar = ({
               type="button"
               onMouseDown={preventToolbarFocusSteal}
               onClick={tb('`', '`')}
-              className="p-2 text-slate-400 hover:text-emerald-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+              className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.code), 'emerald')}
               title="Mã inline"
             >
               <span className="font-mono text-sm font-bold">{'`'}</span>
@@ -152,7 +503,7 @@ export const MarkdownToolbar = ({
               type="button"
               onMouseDown={preventToolbarFocusSteal}
               onClick={tb('==', '==')}
-              className="p-2 text-slate-400 hover:text-amber-300 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+              className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.highlight))}
               title="Tô nền (highlight)"
             >
               <Highlighter size={16} />
@@ -165,7 +516,11 @@ export const MarkdownToolbar = ({
           type="button"
           onMouseDown={preventToolbarFocusSteal}
           onClick={tb('[[', ']]')}
-          className="p-2 text-indigo-500 hover:text-indigo-300 bg-indigo-950/50 rounded-lg hover:bg-indigo-900 transition-colors border border-indigo-900/50 shadow-inner"
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border shadow-inner transition-colors ${
+            entityNotesToolbarState.wikiLink
+              ? 'border-indigo-500/60 bg-indigo-900/60 text-indigo-100'
+              : 'border-indigo-900/50 bg-indigo-950/50 text-indigo-500 hover:bg-indigo-900 hover:text-indigo-300'
+          }`}
           title="Wiki Link: bôi đen chữ để bọc [[...]], hoặc chèn [[]] tại con trỏ"
         >
           <Link2 size={16} />
@@ -174,7 +529,7 @@ export const MarkdownToolbar = ({
           type="button"
           onMouseDown={preventToolbarFocusSteal}
           onClick={() => handleToolbarClick('__WIKI_UNWRAP__', '', editorId, sync)}
-          className="p-2 text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 rounded-lg hover:bg-cyan-900/40 transition-colors border border-cyan-900/50 shadow-inner"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-900/50 bg-cyan-950/40 text-cyan-400 shadow-inner transition-colors hover:bg-cyan-900/40 hover:text-cyan-300"
           title="Gỡ Wiki Link: chọn [[...]] hoặc đặt con trỏ trong link để bỏ"
         >
           <X size={16} />
@@ -185,7 +540,7 @@ export const MarkdownToolbar = ({
           type="button"
           onMouseDown={preventToolbarFocusSteal}
           onClick={tb('# ', '')}
-          className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.heading1), 'violet')}
           title="Tiêu đề 1"
         >
           <Heading1 size={16} />
@@ -194,17 +549,28 @@ export const MarkdownToolbar = ({
           type="button"
           onMouseDown={preventToolbarFocusSteal}
           onClick={tb('## ', '')}
-          className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.heading2), 'violet')}
           title="Tiêu đề 2"
         >
           <Heading2 size={16} />
         </button>
+        {variant === 'entityNotes' && (
+          <button
+            type="button"
+            onMouseDown={preventToolbarFocusSteal}
+            onClick={tb('### ', '\n\n')}
+            className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.heading3), 'violet')}
+            title={ENTITY_NOTES_LABELS.h3Title}
+          >
+            <span className="text-[10px] font-black tracking-wide">H3</span>
+          </button>
+        )}
         <div className="w-px h-6 bg-slate-800 mx-1" />
         <button
           type="button"
           onMouseDown={preventToolbarFocusSteal}
           onClick={tb('- ', '')}
-          className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.bullet), 'cyan')}
           title="Gạch đầu dòng"
         >
           <ListIcon size={16} />
@@ -215,7 +581,7 @@ export const MarkdownToolbar = ({
               type="button"
               onMouseDown={preventToolbarFocusSteal}
               onClick={linePref('1. ')}
-              className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+              className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.ordered), 'cyan')}
               title="Danh sách đánh số (1. )"
             >
               <ListOrdered size={16} />
@@ -224,10 +590,19 @@ export const MarkdownToolbar = ({
               type="button"
               onMouseDown={preventToolbarFocusSteal}
               onClick={linePref('> ')}
-              className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+              className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.quote), 'cyan')}
               title="Trích dẫn (> )"
             >
               <Quote size={16} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={tb('\n---\n\n', '')}
+              className={getActiveIconButtonClass(Boolean(entityNotesToolbarState.divider), 'violet')}
+              title={ENTITY_NOTES_LABELS.dividerTitle}
+            >
+              <span className="font-mono text-xs font-bold">---</span>
             </button>
           </>
         )}
@@ -236,7 +611,7 @@ export const MarkdownToolbar = ({
           type="button"
           onMouseDown={preventToolbarFocusSteal}
           onClick={() => onInsertImage(editorId)}
-          className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          className={baseIconButtonClass}
           title="Chèn Ảnh (URL)"
         >
           <ImageIcon size={16} />
@@ -246,47 +621,46 @@ export const MarkdownToolbar = ({
             type="button"
             onMouseDown={preventToolbarFocusSteal}
             onClick={() => onPickLocalImage(null, editorId)}
-            className="p-2 text-slate-400 hover:text-amber-400 bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+            className={baseIconButtonClass}
             title="Chọn Ảnh Từ Máy tính"
           >
             <FolderOpen size={16} />
           </button>
         )}
+        </div>
       </div>
-      {variant === 'entityNotes' && onNotesFontKey && onNotesFontSizePx != null && (
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-          <span className="font-bold uppercase tracking-wider mr-1">Khung soạn</span>
-          <label className="flex items-center gap-1.5">
-            <span className="text-slate-600">Font</span>
-            <select
-              value={notesFontKey}
-              onChange={(e) => onNotesFontKey(e.target.value)}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-300 max-w-[200px]"
-              style={{ fontFamily: ENTITY_NOTES_FONT_OPTIONS.find((o) => o.id === notesFontKey)?.stack }}
-            >
-              {ENTITY_NOTES_FONT_OPTIONS.map((o) => (
-                <option key={o.id} value={o.id} style={{ fontFamily: o.stack }}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-1.5">
-            <span className="text-slate-600">Cỡ</span>
-            <select
-              value={String(notesFontSizePx)}
-              onChange={(e) => onNotesFontSizePx(Number(e.target.value))}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-300 w-[4.5rem] text-center font-mono"
-            >
-              {ENTITY_NOTES_FONT_SIZE_OPTIONS.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </label>
+      {variant === 'entityNotes' && (
+        <div className="rounded-2xl border border-slate-800/80 bg-slate-950/35 px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            {ENTITY_NOTES_TOOL_GROUPS.map((group) => {
+              const GroupIcon = group.icon;
+              const isActive = entityNotesPanel === group.id;
+              return (
+                <button
+                  key={group.id}
+                  type="button"
+                  onMouseDown={preventToolbarFocusSteal}
+                  onClick={() => setEntityNotesPanel(group.id)}
+                  className={`inline-flex h-10 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                    isActive
+                      ? 'border-violet-700/50 bg-violet-950/40 text-violet-100'
+                      : 'border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+                  }`}
+                  title={`Mở nhóm ${group.label.toLowerCase()}`}
+                >
+                  <GroupIcon size={13} />
+                  {group.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-2 rounded-2xl border border-slate-800 bg-slate-950/55 px-3 py-2">
+            <div className="overflow-x-auto custom-scrollbar">
+              <div className="flex min-w-max items-center gap-2 pr-1">
+                {renderEntityNotesPanelContent()}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -121,6 +121,7 @@ export function useAppShellState() {
   const [editingEntityData, setEditingEntityData] = useState(null);
   const [isMilestoneModalOpen, setIsMilestoneModalOpen] = useState(false);
   const [isAutoSyncGuideOpen, setIsAutoSyncGuideOpen] = useState(false);
+  const [isEntityNotesGuideOpen, setIsEntityNotesGuideOpen] = useState(false);
   const [quickCreateData, setQuickCreateData] = useState(null);
 
   const [confirmDialog, setConfirmDialog] = useState({
@@ -463,6 +464,8 @@ export function useAppShellState() {
     setIsMilestoneModalOpen,
     isAutoSyncGuideOpen,
     setIsAutoSyncGuideOpen,
+    isEntityNotesGuideOpen,
+    setIsEntityNotesGuideOpen,
     quickCreateData,
     setQuickCreateData,
     confirmDialog,

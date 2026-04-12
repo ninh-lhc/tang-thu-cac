@@ -43,5 +43,19 @@ describe('autoWrapWikiLinksByEntityMap', () => {
     expect(once).toBe('[[Linh Giới Châu]] gặp [[Linh Tu]]');
     expect(twice).toBe(once);
   });
+  it('does not auto-wrap a lowercase generic mention into a title-case proper noun card', () => {
+    const text = 'he thong nay chi la mo ta chung.';
+    const map = [{ name: 'He Thong', dest: { entityId: 'ba-chu-he-thong' } }];
+    expect(autoWrapWikiLinksByEntityMap(text, map)).toBe(text);
+  });
+
+  it('still auto-wraps the generic system mention when a matching generic card exists', () => {
+    const text = 'He thong nay chia thanh nhieu nhanh.';
+    const map = [
+      { name: 'He Thong', dest: { entityId: 'ba-chu-he-thong' } },
+      { name: 'he thong', dest: { entityId: 'he-thong-khai-niem' } },
+    ];
+    expect(autoWrapWikiLinksByEntityMap(text, map)).toBe('[[He thong]] nay chia thanh nhieu nhanh.');
+  });
 });
 

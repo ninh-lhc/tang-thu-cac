@@ -721,8 +721,16 @@ export const processPlainTextWithLinks = (text, lookup, linkRegex, onNavigate, s
     });
 };
 
+const INLINE_COLOR_RE = /^\[color=(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)\]([\s\S]*?)\[\/color\]$/;
 const INLINE_MARK_SPLIT =
-  /(\*\*[\s\S]*?\*\*|`[^`\n]+`|~~[\s\S]*?~~|==[\s\S]*?==|<u>[\s\S]*?<\/u>|\*[^*\n]+?\*|!\[.*?\]\(.*?\)|\[\[.*?\]\])/g;
+  /(\[color=(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]+)\][\s\S]*?\[\/color\]|\*\*[\s\S]*?\*\*|`[^`\n]+`|~~[\s\S]*?~~|==[\s\S]*?==|<u>[\s\S]*?<\/u>|\*[^*\n]+?\*|!\[.*?\]\(.*?\)|\[\[.*?\]\])/g;
+
+const sanitizeInlineColor = (rawColor) => {
+  const value = safeString(rawColor).trim();
+  if (/^#[0-9a-fA-F]{3,8}$/.test(value)) return value;
+  if (/^[a-zA-Z]+$/.test(value)) return value;
+  return null;
+};
 
 export const processInline = (text, dirHandle, entityLookup, linkRegex, onNavigate, selfEntityId = null) => {
   if (!text) return null;
@@ -783,6 +791,15 @@ export const processInline = (text, dirHandle, entityLookup, linkRegex, onNaviga
           >
             <Plus size={12} />
             {innerText}
+          </span>
+        );
+      }
+      const colorMatch = part.match(INLINE_COLOR_RE);
+      if (colorMatch) {
+        const colorValue = sanitizeInlineColor(colorMatch[1]) || '#c084fc';
+        return (
+          <span key={i} style={{ color: colorValue }}>
+            {processInline(colorMatch[2], dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
           </span>
         );
       }
@@ -883,6 +900,238 @@ export const getIconComponent = (iconName) => {
 
 const WIKI_WRAP_MAX_PREFIX = 56;
 
+const resolveSmartWrapTarget = (text, selStart, selEnd, marker) => {
+  if (selStart < selEnd) {
+    const inner = text.slice(selStart, selEnd);
+    const newText = text.slice(0, selStart) + marker + inner + marker + text.slice(selEnd);
+    return { newText, selStart: selStart + marker.length, selEnd: selStart + marker.length + inner.length };
+  }
+
+  const pos = selStart;
+  const lineStart = text.lastIndexOf('\n', Math.max(0, pos - 1)) + 1;
+  let l = lineStart;
+  let r = pos;
+  while (r > l && /\s/.test(text[r - 1])) r--;
+  while (l < r && /\s/.test(text[l])) l++;
+  if (r <= l) {
+    const newText = text.slice(0, pos) + marker + marker + text.slice(pos);
+    const caret = pos + marker.length;
+    return { newText, selStart: caret, selEnd: caret };
+  }
+  let wrapL = l;
+  let wrapR = r;
+  if (r - l > WIKI_WRAP_MAX_PREFIX) {
+    let l2 = r;
+    while (l2 > lineStart && !/\s/.test(text[l2 - 1])) l2--;
+    while (l2 < r && /\s/.test(text[l2])) l2++;
+    if (l2 < r) {
+      wrapL = l2;
+      wrapR = r;
+    }
+  }
+  const inner = text.slice(wrapL, wrapR);
+  const newText = text.slice(0, wrapL) + marker + inner + marker + text.slice(wrapR);
+  const caret = wrapL + marker.length + inner.length + marker.length;
+  return { newText, selStart: caret, selEnd: caret };
+};
+
+const resolveNextOrderedPrefix = (text, lineStart) => {
+  const beforeText = text.slice(0, lineStart);
+  const normalizedBefore = beforeText.endsWith('\n') ? beforeText.slice(0, -1) : beforeText;
+  if (!normalizedBefore) return '1. ';
+  const prevLineStart = normalizedBefore.lastIndexOf('\n') + 1;
+  const prevLine = normalizedBefore.slice(prevLineStart);
+  const match = prevLine.trimStart().match(/^(\d+)\.\s+/);
+  if (!match) return '1. ';
+  return `${Number(match[1]) + 1}. `;
+};
+
+const ENTITY_NOTES_BULLET_LINE_RE = /^(\s*)([-*]\s)(.*)$/;
+const ENTITY_NOTES_ORDERED_LINE_RE = /^(\s*)(\d+\.\s)(.*)$/;
+const ENTITY_NOTES_QUOTE_LINE_RE = /^(\s*)(>\s)(.*)$/;
+const ENTITY_NOTES_LIST_LINE_RE = /^(\s*)([-*]|\d+\.)\s+(.*)$/;
+
+const getLineSliceBounds = (text, pos) => {
+  const lineStart = text.lastIndexOf('\n', Math.max(0, pos - 1)) + 1;
+  const lineEndIdx = text.indexOf('\n', pos);
+  const lineEnd = lineEndIdx === -1 ? text.length : lineEndIdx;
+  return {
+    lineStart,
+    lineEnd,
+    line: text.slice(lineStart, lineEnd),
+  };
+};
+
+const hasWrappedSelection = (text, selStart, selEnd, leftMarker, rightMarker = leftMarker) => {
+  const left = safeString(leftMarker);
+  const right = safeString(rightMarker);
+  if (!left || !right) return false;
+  const picked = text.slice(selStart, selEnd);
+  if (picked.startsWith(left) && picked.endsWith(right) && picked.length >= left.length + right.length) return true;
+  return (
+    text.slice(Math.max(0, selStart - left.length), selStart) === left &&
+    text.slice(selEnd, selEnd + right.length) === right
+  );
+};
+
+const hasCaretInsideWrappedRegion = (text, caretPos, leftMarker, rightMarker = leftMarker) => {
+  const { lineStart, lineEnd } = getLineSliceBounds(text, caretPos);
+  const lineText = text.slice(lineStart, lineEnd);
+  const localPos = caretPos - lineStart;
+  const openIdx = lineText.lastIndexOf(leftMarker, localPos);
+  if (openIdx === -1) return false;
+  const closeIdx = lineText.indexOf(rightMarker, openIdx + leftMarker.length);
+  if (closeIdx === -1) return false;
+  return openIdx + leftMarker.length <= localPos && closeIdx >= localPos;
+};
+
+const hasUnclosedRegionAroundSelection = (text, selStart, selEnd, openMarker, closeMarker) => {
+  const before = text.slice(0, selStart);
+  const lastOpen = before.lastIndexOf(openMarker);
+  if (lastOpen === -1) return false;
+  const lastClose = before.lastIndexOf(closeMarker);
+  if (lastClose > lastOpen) return false;
+  const nextClose = text.indexOf(closeMarker, selEnd);
+  return nextClose !== -1;
+};
+
+export const getEntityNotesToolbarState = (text, selStart = 0, selEnd = selStart) => {
+  const source = safeString(text);
+  const start = Math.max(0, Math.min(Number(selStart) || 0, source.length));
+  const end = Math.max(start, Math.min(Number(selEnd) || start, source.length));
+  const { line } = getLineSliceBounds(source, start);
+  const selected = start < end;
+  const orderedMatch = line.match(/^(\s*)(\d+)\.\s+/);
+
+  const hasInlineMarker = (leftMarker, rightMarker = leftMarker) =>
+    selected
+      ? hasWrappedSelection(source, start, end, leftMarker, rightMarker)
+      : hasCaretInsideWrappedRegion(source, start, leftMarker, rightMarker);
+
+  return {
+    bold: hasInlineMarker('**'),
+    italic: hasInlineMarker('*'),
+    underline: hasInlineMarker('<u>', '</u>'),
+    strikethrough: hasInlineMarker('~~'),
+    code: hasInlineMarker('`'),
+    highlight: hasInlineMarker('=='),
+    wikiLink: selected
+      ? hasWrappedSelection(source, start, end, '[[', ']]')
+      : hasUnclosedRegionAroundSelection(source, start, end, '[[', ']]'),
+    color: hasUnclosedRegionAroundSelection(source, start, end, '[color=', '[/color]'),
+    heading1: line.trimStart().startsWith('# '),
+    heading2: line.trimStart().startsWith('## '),
+    heading3: line.trimStart().startsWith('### '),
+    bullet: /^(\s*)[-*]\s+/.test(line),
+    ordered: Boolean(orderedMatch),
+    orderedNext: orderedMatch?.[2] ?? null,
+    quote: /^(\s*)>\s+/.test(line),
+    divider: /^(?:-{3,}|\*{3,}|_{3,})$/.test(line.trim()),
+  };
+};
+
+const resolveEntityNotesPrefixMatch = (line) =>
+  line.match(ENTITY_NOTES_ORDERED_LINE_RE) ||
+  line.match(ENTITY_NOTES_BULLET_LINE_RE) ||
+  line.match(ENTITY_NOTES_QUOTE_LINE_RE);
+
+export const resolveEntityNotesLineBreak = (text, selStart, selEnd) => {
+  if (selStart !== selEnd) return null;
+  const { lineStart, lineEnd, line } = getLineSliceBounds(text, selStart);
+  const match = resolveEntityNotesPrefixMatch(line);
+  if (!match) return null;
+
+  const indent = match[1] || '';
+  const prefix = match[2] || '';
+  const body = match[3] || '';
+  const prefixEnd = lineStart + indent.length + prefix.length;
+
+  if (selStart < prefixEnd) return null;
+
+  if (!body.trim()) {
+    const newText = text.slice(0, lineStart) + indent + text.slice(lineEnd);
+    const caret = lineStart + indent.length;
+    return { newText, selStart: caret, selEnd: caret };
+  }
+
+  const nextPrefix = ENTITY_NOTES_ORDERED_LINE_RE.test(line)
+    ? `${indent}${Number(prefix.trim().replace(/\.$/, '')) + 1}. `
+    : `${indent}${prefix}`;
+  const newText = text.slice(0, selStart) + '\n' + nextPrefix + text.slice(selStart);
+  const caret = selStart + 1 + nextPrefix.length;
+  return { newText, selStart: caret, selEnd: caret };
+};
+
+export const resolveEntityNotesBackspace = (text, selStart, selEnd) => {
+  if (selStart !== selEnd) return null;
+  const { lineStart, lineEnd, line } = getLineSliceBounds(text, selStart);
+  const match = resolveEntityNotesPrefixMatch(line);
+  if (!match) return null;
+
+  const indent = match[1] || '';
+  const prefix = match[2] || '';
+  const body = match[3] || '';
+  const prefixEnd = lineStart + indent.length + prefix.length;
+
+  if (body.trim() || selStart < prefixEnd || selStart > lineEnd) return null;
+
+  const newText = text.slice(0, lineStart) + indent + text.slice(lineEnd);
+  const caret = lineStart + indent.length;
+  return { newText, selStart: caret, selEnd: caret };
+};
+
+export const resolveEntityNotesTabIndent = (text, selStart, selEnd, { outdent = false } = {}) => {
+  const source = safeString(text);
+  const segmentStart = source.lastIndexOf('\n', Math.max(0, selStart - 1)) + 1;
+  let normalizedEnd = selEnd;
+  if (normalizedEnd > segmentStart && source[normalizedEnd - 1] === '\n') {
+    normalizedEnd -= 1;
+  }
+  const segmentEndLineBreak = source.indexOf('\n', Math.max(segmentStart, normalizedEnd));
+  const segmentEnd = segmentEndLineBreak === -1 ? source.length : segmentEndLineBreak;
+  const segment = source.slice(segmentStart, segmentEnd);
+  const lines = segment.split('\n');
+  const lineMeta = [];
+  let rebuilt = [];
+  let cursor = segmentStart;
+  let changed = false;
+
+  for (const line of lines) {
+    const match = line.match(ENTITY_NOTES_LIST_LINE_RE);
+    let nextLine = line;
+    if (match) {
+      const currentIndent = match[1].length;
+      const trimmedBody = line.slice(currentIndent);
+      const nextIndent = outdent ? Math.max(0, currentIndent - 2) : currentIndent + 2;
+      nextLine = `${' '.repeat(nextIndent)}${trimmedBody}`;
+      if (nextLine !== line) changed = true;
+    }
+    lineMeta.push({
+      start: cursor,
+      delta: nextLine.length - line.length,
+    });
+    rebuilt.push(nextLine);
+    cursor += line.length + 1;
+  }
+
+  if (!changed) return null;
+
+  const deltaBeforePos = (pos) =>
+    lineMeta.reduce((sum, line) => (line.start <= pos ? sum + line.delta : sum), 0);
+
+  const newText = source.slice(0, segmentStart) + rebuilt.join('\n') + source.slice(segmentEnd);
+  if (selStart === selEnd) {
+    const caret = Math.max(segmentStart, selStart + deltaBeforePos(selStart));
+    return { newText, selStart: caret, selEnd: caret };
+  }
+
+  return {
+    newText,
+    selStart: Math.max(segmentStart, selStart + deltaBeforePos(selStart)),
+    selEnd: Math.max(segmentStart, selEnd + deltaBeforePos(selEnd)),
+  };
+};
+
 /** Bọc wiki [[...]]: có bôi đen → bọc vùng chọn; không bôi đen → bọc đoạn đã gõ trên dòng (trước con trỏ). */
 export const applyWikiLinkWrap = (text, selStart, selEnd) => {
   if (selStart < selEnd) {
@@ -980,6 +1229,80 @@ export const handleToolbarClick = (before, after = '', editorId, onAfterApply) =
   apply(newValue, start + before.length, end + before.length);
 };
 
+export const handleToolbarSmartWrap = (marker, editorId, onAfterApply) => {
+  const textarea = document.getElementById(editorId);
+  if (!textarea) return;
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const text = textarea.value;
+  const normalizedMarker = safeString(marker);
+  if (!normalizedMarker) return;
+  const { newText, selStart, selEnd } = resolveSmartWrapTarget(text, start, end, normalizedMarker);
+  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+  if (nativeSetter) {
+    nativeSetter.call(textarea, newText);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  } else {
+    textarea.value = newText;
+  }
+  textarea.focus();
+  textarea.setSelectionRange(selStart, selEnd);
+  onAfterApply?.(textarea.value);
+};
+
+export const handleToolbarInsertText = (insertedText, editorId, onAfterApply, caretOffset = null) => {
+  const textarea = document.getElementById(editorId);
+  if (!textarea) return;
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const text = textarea.value;
+  const safeInsertedText = safeString(insertedText);
+  const newValue = text.substring(0, start) + safeInsertedText + text.substring(end);
+  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+  if (nativeSetter) {
+    nativeSetter.call(textarea, newValue);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  } else {
+    textarea.value = newValue;
+  }
+  const nextPos = start + (Number.isFinite(caretOffset) ? caretOffset : safeInsertedText.length);
+  textarea.focus();
+  textarea.setSelectionRange(nextPos, nextPos);
+  onAfterApply?.(textarea.value);
+};
+
+export const handleToolbarApplyColor = (
+  colorValue,
+  editorId,
+  onAfterApply,
+  fallbackText = '\u0111o\u1ea1n c\u1ea7n t\u00f4 m\u00e0u'
+) => {
+  const textarea = document.getElementById(editorId);
+  if (!textarea) return;
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const text = textarea.value;
+  const normalizedColor = sanitizeInlineColor(colorValue) || '#c084fc';
+  const picked = text.substring(start, end);
+  const pickedMatch = picked.match(INLINE_COLOR_RE);
+  const innerText = pickedMatch ? pickedMatch[2] : (picked || fallbackText);
+  const before = `[color=${normalizedColor}]`;
+  const after = '[/color]';
+  const newValue = text.substring(0, start) + before + innerText + after + text.substring(end);
+  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+  if (nativeSetter) {
+    nativeSetter.call(textarea, newValue);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  } else {
+    textarea.value = newValue;
+  }
+  const selStart = start + before.length;
+  const selEnd = selStart + innerText.length;
+  textarea.focus();
+  textarea.setSelectionRange(selStart, selEnd);
+  onAfterApply?.(textarea.value);
+};
+
 /** Bật/tắt tiền tố đầu dòng (trích dẫn `> `, danh sách số `1. `). */
 export const handleToolbarToggleLinePrefix = (editorId, prefix, onAfterApply) => {
   const textarea = document.getElementById(editorId);
@@ -993,7 +1316,7 @@ export const handleToolbarToggleLinePrefix = (editorId, prefix, onAfterApply) =>
   let newLine;
   if (prefix === '1. ') {
     if (/^\d+\.\s/.test(line)) newLine = line.replace(/^\d+\.\s/, '');
-    else newLine = prefix + line;
+    else newLine = resolveNextOrderedPrefix(text, lineStart) + line;
   } else if (line.startsWith(prefix)) {
     newLine = line.slice(prefix.length);
   } else {

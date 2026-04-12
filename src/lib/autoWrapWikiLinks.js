@@ -3,6 +3,7 @@
  * - Chỉ bọc phần chưa có [[...]]
  * - Ưu tiên tên dài hơn trước để giảm đè lấp
  */
+import { buildEntityNameLookup, resolveEntityLookup } from './entityWikiLookup.js';
 
 const WORD_CHAR_RE = /[\p{L}\p{N}_]/u;
 
@@ -58,6 +59,7 @@ export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap) {
   if (typeof text !== 'string' || !text) return { text: String(text || ''), count: 0 };
   const names = normalizeNames(entityMap);
   if (names.length === 0) return { text, count: 0 };
+  const lookup = buildEntityNameLookup(entityMap);
 
   const protectedRanges = collectProtectedRanges(text);
   const sourceLower = text.toLowerCase();
@@ -77,6 +79,7 @@ export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap) {
       if (!sourceLower.startsWith(c.lower, i)) continue;
       const end = i + c.raw.length;
       if (!isBoundary(text, i, end)) continue;
+      if (!resolveEntityLookup(lookup, text.slice(i, end))) continue;
       picked = { start: i, end };
       break;
     }

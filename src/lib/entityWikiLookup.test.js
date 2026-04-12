@@ -115,6 +115,35 @@ describe('entityWikiLookup', () => {
     expect(resolvedMid?.dest?.entityId).toBe('realm-luyen-hu');
   });
 
+  it('keeps case-sensitive wiki concepts separate when the text casing changes meaning', () => {
+    const lookup = buildEntityNameLookup([
+      {
+        name: 'He Thong',
+        dest: { entityId: 'ba-chu-he-thong' },
+      },
+      {
+        name: 'he thong',
+        dest: { entityId: 'he-thong-khai-niem' },
+      },
+    ]);
+
+    expect(resolveEntityLookup(lookup, 'He Thong')?.dest?.entityId).toBe('ba-chu-he-thong');
+    expect(resolveEntityLookup(lookup, 'he thong')?.dest?.entityId).toBe('he-thong-khai-niem');
+    expect(resolveEntityLookup(lookup, 'He thong')?.dest?.entityId).toBe('he-thong-khai-niem');
+  });
+
+  it('does not fall back to a title-case proper noun when lowercase text is only a generic mention', () => {
+    const lookup = buildEntityNameLookup([
+      {
+        name: 'He Thong',
+        dest: { entityId: 'ba-chu-he-thong' },
+      },
+    ]);
+
+    expect(resolveEntityLookup(lookup, 'he thong')).toBeNull();
+    expect(resolveEntityLookup(lookup, 'He thong')).toBeNull();
+  });
+
   it('drops orphan data buckets not present in tabsConfig (no ghost wiki names)', () => {
     const novel = {
       tabsConfig: [

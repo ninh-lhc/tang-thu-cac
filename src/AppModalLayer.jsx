@@ -23,6 +23,7 @@ const AppModalQuanLyTab = lazy(() => import('./AppModalQuanLyTab.jsx').then((m) 
 const AppModalLenhNhanh = lazy(() => import('./AppModalLenhNhanh.jsx').then((m) => ({ default: m.AppModalLenhNhanh })));
 const AppModalGoiYNoiTraCuu = lazy(() => import('./AppModalGoiYNoiTraCuu.jsx').then((m) => ({ default: m.AppModalGoiYNoiTraCuu })));
 const AppModalAutoSyncGuide = lazy(() => import('./AppModalAutoSyncGuideVi.jsx').then((m) => ({ default: m.AppModalAutoSyncGuide })));
+const AppModalEntityNotesGuide = lazy(() => import('./AppModalEntityNotesGuideVi.jsx').then((m) => ({ default: m.AppModalEntityNotesGuide })));
 
 export function AppModalLayer({
   isEntityModalOpen,
@@ -41,6 +42,8 @@ export function AppModalLayer({
   setIsMilestoneModalOpen,
   isAutoSyncGuideOpen,
   setIsAutoSyncGuideOpen,
+  isEntityNotesGuideOpen,
+  setIsEntityNotesGuideOpen,
   handleSaveMilestone,
   editingMilestoneData,
   activeNovelData,
@@ -200,6 +203,10 @@ export function AppModalLayer({
       <AppModalAutoSyncGuide
         isOpen={isAutoSyncGuideOpen}
         onClose={() => setIsAutoSyncGuideOpen?.(false)}
+      />
+      <AppModalEntityNotesGuide
+        isOpen={isEntityNotesGuideOpen}
+        onClose={() => setIsEntityNotesGuideOpen?.(false)}
       />
       {isCommandPaletteOpen && (
         <AppModalLenhNhanh

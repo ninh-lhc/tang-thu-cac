@@ -58,6 +58,7 @@ import { computeRelatedEntities } from './lib/computeRelatedEntities.js';
 import { findEntitiesByHintInNovel } from './appNhatKyVaGoiThe.js';
 import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
 import { buildTabGroups } from './lib/appTabGroups.js';
+import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
 import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
 import { resolveEntityPageForSelection } from './lib/entitySelectionPage.js';
@@ -174,6 +175,8 @@ export default function App() {
     setIsMilestoneModalOpen,
     isAutoSyncGuideOpen,
     setIsAutoSyncGuideOpen,
+    isEntityNotesGuideOpen,
+    setIsEntityNotesGuideOpen,
     quickCreateData,
     setQuickCreateData,
     confirmDialog,
@@ -1403,6 +1406,10 @@ export default function App() {
     setIsAutoSyncGuideOpen(true);
   }, [setIsAutoSyncGuideOpen]);
 
+  const openEntityNotesGuide = useCallback(() => {
+    setIsEntityNotesGuideOpen(true);
+  }, [setIsEntityNotesGuideOpen]);
+
   // Migration: gộp fieldsTemplate — thêm trường mới, giữ nhãn tùy chỉnh của người dùng
   const { handleSelectNovel } = useAppNovelSelectionAndHydration({
     dirHandle,
@@ -1669,7 +1676,7 @@ export default function App() {
 
   const memoizedEntityInfo = useMemo(() => {
       if (!selectedEntity || collectionSubTab !== 'detail' || isEntityEditing) return null;
-      return <div className="font-serif prose prose-invert max-w-none animate-fade-in min-h-[200px]">{renderMarkdown(safeString(selectedEntity.info), currentContextDirHandle, entityMap, globalLinkRegex, (dest) => { if(navFnRef.current) navFnRef.current(dest); }, selectedEntity?.id)}</div>;
+      return <div className="font-serif max-w-none animate-fade-in min-h-[200px]">{renderEntityNotesMarkdown(safeString(selectedEntity.info), currentContextDirHandle, entityMap, globalLinkRegex, (dest) => { if(navFnRef.current) navFnRef.current(dest); }, selectedEntity?.id)}</div>;
   }, [selectedEntity, collectionSubTab, isEntityEditing, currentContextDirHandle, entityMap, globalLinkRegex]);
 
   const memoizedStandardData = useMemo(() => {
@@ -1755,6 +1762,7 @@ export default function App() {
     getTerms,
     handleOpenCreateEntity,
     onOpenAutoSyncGuide: openAutoSyncGuide,
+    onOpenEntityNotesGuide: openEntityNotesGuide,
     collectionSubTab,
     setCollectionSubTab,
     entitiesList,
@@ -1861,6 +1869,8 @@ export default function App() {
     setIsMilestoneModalOpen,
     isAutoSyncGuideOpen,
     setIsAutoSyncGuideOpen,
+    isEntityNotesGuideOpen,
+    setIsEntityNotesGuideOpen,
     handleSaveMilestone,
     editingMilestoneData,
     activeNovelData,

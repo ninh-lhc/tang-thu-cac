@@ -5,6 +5,7 @@
 
 const FONT_KEY = 'tangthu_entity_notes_font_v1';
 const SIZE_KEY = 'tangthu_entity_notes_size_px_v1';
+const AUTO_CLEAN_ON_SAVE_KEY = 'tangthu_entity_notes_auto_clean_on_save_v1';
 
 export const ENTITY_NOTES_FONT_OPTIONS = [
   { id: 'times', label: 'Times New Roman', stack: '"Times New Roman", Times, ui-serif, serif' },
@@ -28,7 +29,7 @@ export function clampEntityNotesSizePx(n) {
 let listeners = new Set();
 
 /** Mặc định cố định — dùng khi đọc localStorage lỗi; cùng reference khi không đổi prefs. */
-const DEFAULT_PREFS = Object.freeze({ fontKey: DEFAULT_FONT, sizePx: DEFAULT_SIZE });
+const DEFAULT_PREFS = Object.freeze({ fontKey: DEFAULT_FONT, sizePx: DEFAULT_SIZE, autoCleanOnSave: true });
 
 let cachedPrefs = DEFAULT_PREFS;
 
@@ -36,7 +37,9 @@ function readPrefsFromStorage() {
   let fontKey = localStorage.getItem(FONT_KEY);
   if (!validFontIds.has(fontKey)) fontKey = DEFAULT_FONT;
   const sizePx = clampEntityNotesSizePx(parseInt(localStorage.getItem(SIZE_KEY), 10));
-  return { fontKey, sizePx };
+  const rawAutoClean = localStorage.getItem(AUTO_CLEAN_ON_SAVE_KEY);
+  const autoCleanOnSave = rawAutoClean == null ? true : rawAutoClean !== '0';
+  return { fontKey, sizePx, autoCleanOnSave };
 }
 
 /**
@@ -50,7 +53,11 @@ export function getEntityNotesPrefs() {
   } catch {
     return DEFAULT_PREFS;
   }
-  if (cachedPrefs.fontKey === next.fontKey && cachedPrefs.sizePx === next.sizePx) {
+  if (
+    cachedPrefs.fontKey === next.fontKey &&
+    cachedPrefs.sizePx === next.sizePx &&
+    cachedPrefs.autoCleanOnSave === next.autoCleanOnSave
+  ) {
     return cachedPrefs;
   }
   cachedPrefs = Object.freeze(next);
@@ -64,6 +71,9 @@ export function setEntityNotesPrefs(partial) {
     }
     if (partial.sizePx != null) {
       localStorage.setItem(SIZE_KEY, String(clampEntityNotesSizePx(partial.sizePx)));
+    }
+    if (partial.autoCleanOnSave != null) {
+      localStorage.setItem(AUTO_CLEAN_ON_SAVE_KEY, partial.autoCleanOnSave ? '1' : '0');
     }
   } catch {
     /* bỏ qua — vẫn báo subscriber để UI đồng bộ cache */
