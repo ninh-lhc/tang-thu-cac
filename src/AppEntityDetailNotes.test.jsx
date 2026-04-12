@@ -191,25 +191,27 @@ describe('AppEntityDetailNotes', () => {
 
     expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith('## Muc lon\n\n1. Y dau bo sung them');
     expect(props.showToast).toHaveBeenCalledTimes(1);
-    expect(String(props.showToast.mock.calls[0][0])).toContain('lưu');
+    expect(String(props.showToast.mock.calls[0][0]).toLowerCase()).toContain('lưu');
   });
 
-  it('propagates manual single-word formatting to matching words before saving', () => {
+  it('propagates manual phrase formatting to matching phrases before saving', () => {
     const props = createProps({
       selectedEntity: {
         id: 'entity-1',
         name: 'Linh Gioi Chau',
-        info: '**Linh** tro lai. Linh gap Linh.',
+        info: '## 2. Ban chat suc manh (**Ton Luc**)\n\nTon Luc nam o Ton Luc.',
       },
     });
     render(<AppEntityDetailNotes {...props} />);
 
     fireEvent.click(document.getElementById('save-entity-btn'));
 
-    expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith('**Linh** tro lai. **Linh** gap **Linh**.');
+    expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+      '## 2. Ban chat suc manh (**Ton Luc**)\n\n**Ton Luc** nam o **Ton Luc**.'
+    );
     expect(props.showToast).toHaveBeenCalledTimes(1);
     expect(String(props.showToast.mock.calls[0][0])).toContain('2');
-    expect(String(props.showToast.mock.calls[0][0])).toContain('lưu');
+    expect(String(props.showToast.mock.calls[0][0]).toLowerCase()).toContain('trùng');
   });
 
   it('lets diagnostics jump from preview toc back to the editor line', () => {

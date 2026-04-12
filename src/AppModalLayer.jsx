@@ -137,6 +137,8 @@ export function AppModalLayer({
   handleDeleteTab,
   handleAddTabNho,
   handleAddTabCon,
+  handleSetTabAutoSyncRole,
+  handleSetTabAutoSyncFieldMap,
 }) {
   return (
     <Suspense fallback={null}>
@@ -147,6 +149,7 @@ export function AppModalLayer({
         onSave={handleSaveEntity}
         initialData={editingEntityData}
         tabConfig={currentTabConfig}
+        activeNovelData={activeNovelData}
         onUpdateTemplate={handleUpdateTabTemplate}
         handleAvatarDrop={handleAvatarDrop}
         handlePickLocalImage={handlePickLocalImage}
@@ -323,6 +326,8 @@ export function AppModalLayer({
           handleDeleteTab={handleDeleteTab}
           handleAddTabNho={handleAddTabNho}
           handleAddTabCon={handleAddTabCon}
+          handleSetTabAutoSyncRole={handleSetTabAutoSyncRole}
+          handleSetTabAutoSyncFieldMap={handleSetTabAutoSyncFieldMap}
           setConfirmDialog={setConfirmDialog}
         />
       )}

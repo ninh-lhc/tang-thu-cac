@@ -6,6 +6,8 @@ import {
   parseStatusHierarchy,
   splitStatusHierarchyTokens,
 } from './statusHierarchyParser.js';
+import { getEntityAutoFieldValue } from './tabAutoSyncFieldMap.js';
+import { hasAutoSyncFeature, isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
 
 const AUTO_REL_TITLE = '## Quan h\u1ec7 b\u1ea3n \u0111\u1ed3 - th\u1ebf l\u1ef1c (t\u1ef1 \u0111\u1ed9ng)';
 const AUTO_REL_END = '> (Kh\u1ed1i t\u1ef1 \u0111\u1ed9ng, kh\u00f4ng c\u1ea7n s\u1eeda tay)';
@@ -59,7 +61,20 @@ export function parseRelationHierarchyFromStatus(statusLine) {
   return parseStatusHierarchy(statusLine);
 }
 
-export function isAutoRelationScopeLonId(lonId, parentLabel = '') {
+function buildRelationFieldContext({ lonId = '', nhoId = '', nhoConfig = null, parentLabel = '' } = {}) {
+  return {
+    activeTabLon: lonId,
+    activeTabNho: nhoId,
+    currentTabConfig: nhoConfig,
+    parentLabel,
+  };
+}
+
+export function isAutoRelationScopeLonId(lonId, parentLabel = '', currentTabConfig = null, activeTabNho = '') {
+  if (isAutoSyncExplicitlyOff(currentTabConfig)) return false;
+  if (hasAutoSyncFeature({ activeTabLon: lonId, activeTabNho, currentTabConfig, parentLabel }, 'relation')) {
+    return true;
+  }
   const id = normalizeAsciiText(lonId);
   if (id === 'the-luc' || id === 'ban-do') return true;
   const parent = normalizeAsciiText(parentLabel);
@@ -524,10 +539,27 @@ function findEntityGlobalByName(novelData, name) {
 export function applyAutoRelationNotesForEntity(novelData, options) {
   const sourceEntity = options?.sourceEntity || null;
   const sourceLonId = options?.sourceLonId || '';
+  const sourceNhoId = options?.sourceNhoId || '';
+  const sourceNhoConfig = options?.sourceNhoConfig || null;
   const sourceParentLabel = options?.sourceParentLabel || '';
-  const statusLine = String(options?.statusLine || '').trim();
   if (!sourceEntity) return { applied: false, touchedTargets: 0 };
-  if (!isAutoRelationScopeLonId(sourceLonId, sourceParentLabel)) return { applied: false, touchedTargets: 0 };
+  const statusLine =
+    String(options?.statusLine || '').trim() ||
+    getEntityAutoFieldValue(
+      sourceEntity,
+      buildRelationFieldContext({
+        lonId: sourceLonId,
+        nhoId: sourceNhoId,
+        nhoConfig: sourceNhoConfig,
+        parentLabel: sourceParentLabel,
+      }),
+      'status',
+      { fallbackToStatus: true }
+    ) ||
+    String(sourceEntity?.dynamicData?.f_status || sourceEntity?.status || '').trim();
+  if (!isAutoRelationScopeLonId(sourceLonId, sourceParentLabel, sourceNhoConfig, sourceNhoId)) {
+    return { applied: false, touchedTargets: 0 };
+  }
 
   const parsed = parseRelationHierarchyFromStatus(statusLine);
   if (!parsed) return { applied: false, touchedTargets: 0 };
@@ -555,6 +587,12 @@ export function syncAllAutoRelationNotesForNovel(novelData) {
 
   const tabsConfig = Array.isArray(novelData?.tabsConfig) ? novelData.tabsConfig : [];
   const parentLabelByLonId = new Map(tabsConfig.map((tab) => [tab.id, tab.label || '']));
+  const subTabConfigByPath = new Map();
+  tabsConfig.forEach((lon) => {
+    (lon?.subTabs || []).forEach((nho) => {
+      subTabConfigByPath.set(`${lon.id}::${nho.id}`, nho);
+    });
+  });
   const sources = [];
   let changed = false;
 
@@ -562,6 +600,7 @@ export function syncAllAutoRelationNotesForNovel(novelData) {
     if (!lonData || typeof lonData !== 'object') continue;
     const parentLabel = parentLabelByLonId.get(lonId) || '';
     for (const [nhoId, nhoData] of Object.entries(lonData)) {
+      const nhoConfig = subTabConfigByPath.get(`${lonId}::${nhoId}`) || null;
       const entities = Array.isArray(nhoData?.entities) ? nhoData.entities : [];
       entities.forEach((entity) => {
         const before = String(entity?.info || '');
@@ -570,14 +609,27 @@ export function syncAllAutoRelationNotesForNovel(novelData) {
           entity.info = after;
           changed = true;
         }
-        const statusLine = String(entity?.dynamicData?.f_status || entity?.status || '').trim();
+        const statusLine =
+          getEntityAutoFieldValue(
+            entity,
+            buildRelationFieldContext({
+              lonId,
+              nhoId,
+              nhoConfig,
+              parentLabel,
+            }),
+            'status',
+            { fallbackToStatus: true }
+          ) ||
+          String(entity?.dynamicData?.f_status || entity?.status || '').trim();
         if (!statusLine) return;
-        if (!isAutoRelationScopeLonId(lonId, parentLabel)) return;
+        if (!isAutoRelationScopeLonId(lonId, parentLabel, nhoConfig, nhoId)) return;
         if (!parseRelationHierarchyFromStatus(statusLine)) return;
         sources.push({
           sourceEntity: entity,
           sourceLonId: lonId,
           sourceNhoId: nhoId,
+          sourceNhoConfig: nhoConfig,
           sourceParentLabel: parentLabel,
           statusLine,
         });

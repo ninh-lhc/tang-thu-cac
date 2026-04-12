@@ -233,4 +233,69 @@ describe('collectionListCardSync', () => {
     expect(thien).toBeGreaterThan(dia);
     expect(linh).toBeGreaterThan(thien);
   });
+
+  it('groups force list cards by leaf location and sorts advanced ranks before names', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'the-luc',
+          label: 'Thế lực',
+          subTabs: [{ id: 'tong-mon', label: 'Tông môn', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'the-luc': {
+          'tong-mon': {
+            overview: '',
+            entities: [
+              { id: 'list-1', name: 'Danh sach tong mon', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'f-1',
+                name: 'A Lang Điện',
+                info: '',
+                dynamicData: {
+                  f_status: 'Địa Tôn cấp thế lực',
+                  f_dia_ban: 'Tiên giới - Trung Tiên giới - Hoang Thú giới',
+                },
+                milestones: [],
+              },
+              {
+                id: 'f-2',
+                name: 'Z Bách Cung',
+                info: '',
+                dynamicData: {
+                  f_status: 'Thiên Tôn cấp thế lực',
+                  f_dia_ban: 'Tiên giới - Trung Tiên giới - Hoang Thú giới',
+                },
+                milestones: [],
+              },
+              {
+                id: 'f-3',
+                name: 'Thanh Vân Các',
+                info: '',
+                dynamicData: {
+                  f_status: 'Thiên Vương cấp thế lực',
+                  f_dia_ban: 'Tiên giới - Trung Tiên giới - Dạ Lang Tiên Tinh',
+                },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['the-luc']['tong-mon'].entities[0].info || '');
+    const idxHoangThu = info.indexOf('## Hoang Thú giới (2)');
+    const idxDaLang = info.indexOf('## Dạ Lang Tiên Tinh (1)');
+    const idxThienTon = info.indexOf('1. [[Z Bách Cung]] - Thiên Tôn cấp thế lực');
+    const idxDiaTon = info.indexOf('2. [[A Lang Điện]] - Địa Tôn cấp thế lực');
+
+    expect(idxHoangThu).toBeGreaterThan(-1);
+    expect(idxDaLang).toBeGreaterThan(-1);
+    expect(idxThienTon).toBeGreaterThan(idxHoangThu);
+    expect(idxDiaTon).toBeGreaterThan(idxThienTon);
+    expect(info).toContain('1. [[Thanh Vân Các]] - Thiên Vương cấp thế lực');
+  });
 });

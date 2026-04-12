@@ -79,6 +79,92 @@ describe('renderEntityNotesMarkdown', () => {
     expect(deleted?.textContent).toContain('Noi dung bi gach');
   });
 
+  it('renders bold markup with neutral emphasis so it does not mimic wiki-link accent colors', () => {
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(
+          'Noi dung co **Ton Luc** duoc nhan manh.',
+          null,
+          [],
+          null,
+          vi.fn(),
+        )}
+      </div>
+    );
+
+    const strong = container.querySelector('strong');
+    expect(strong).not.toBeNull();
+    expect(strong?.className).toContain('text-slate-50');
+    expect(strong?.className).not.toContain('text-amber-400');
+  });
+
+  it('renders a wiki link nested inside bold without leaking [[ ]] or partial inner matches', () => {
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(
+          '- **[[Dai Ton Dan]]** giup [[Dai Ton]] dot pha.',
+          null,
+          [
+            { id: 'pill', name: 'Dai Ton Dan' },
+            { id: 'realm', name: 'Dai Ton' },
+          ],
+          null,
+          vi.fn(),
+        )}
+      </div>
+    );
+
+    expect(container.textContent).not.toContain('[[');
+    expect(container.textContent).toContain('Dai Ton Dan');
+    expect(container.textContent).toContain('Dai Ton');
+    expect(container.querySelectorAll('.cursor-pointer').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps an unresolved manual wiki link nested inside bold as one quick-create chip', () => {
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(
+          '**[[Pha Ton Dan]]**',
+          null,
+          [{ id: 'realm', name: 'Ton Dan' }],
+          null,
+          vi.fn(),
+        )}
+      </div>
+    );
+
+    expect(container.textContent).not.toContain('[[');
+    expect(container.textContent).toContain('Pha Ton Dan');
+    expect(container.querySelector('.border-dashed')).not.toBeNull();
+  });
+
+  it('renders lead labels in bullet items differently from normal bold emphasis', () => {
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(
+          '- **Su dung bi phap quan the:** **Ton Luc** co the duoc dung.',
+          null,
+          [],
+          null,
+          vi.fn(),
+        )}
+      </div>
+    );
+
+    const leadLabel = container.querySelector('[data-entity-lead-label="true"]');
+    const strong = container.querySelector('strong');
+    const leadRule = container.querySelector('[data-entity-lead-label-rule="true"]');
+
+    expect(leadLabel).not.toBeNull();
+    expect(leadLabel?.textContent).toContain('Su dung bi phap quan the:');
+    expect(leadLabel?.className).toContain('uppercase');
+    expect(leadLabel?.className).not.toContain('bg-slate-800/65');
+    expect(leadRule).not.toBeNull();
+    expect(strong).not.toBeNull();
+    expect(strong?.textContent).toContain('Ton Luc');
+    expect(strong?.className).toContain('font-black');
+  });
+
   it('builds TOC metadata and renders semantic callouts', () => {
     const model = buildEntityNotesPreviewModel(
       [

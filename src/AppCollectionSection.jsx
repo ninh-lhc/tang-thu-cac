@@ -25,6 +25,19 @@ import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import { MarkdownToolbar } from './MasterComponents.jsx';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
+import { isForceCollectionScope } from './lib/theLucBanDoSync.js';
+import { splitStatusHierarchyTokens } from './lib/statusHierarchyParser.js';
+
+function getLeafHierarchyLabel(value) {
+  const raw = safeString(value)
+    .replace(/[>→»|]+/g, ' - ')
+    .replace(/[,\n;]+/g, ' - ')
+    .trim();
+  if (!raw) return '';
+  const tokens = splitStatusHierarchyTokens(raw);
+  if (tokens.length === 0) return raw;
+  return safeString(tokens[tokens.length - 1]).trim();
+}
 
 export function AppCollectionSection({
   // nav state
@@ -442,13 +455,25 @@ export function AppCollectionSection({
             {collectionSubTab === 'detail' && selectedEntity && (() => {
               const tabTerms = getTerms(activeTabLon);
               const isMapDetail = isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig });
+              const isForceDetail = isForceCollectionScope({
+                activeTabLon,
+                activeTabNho,
+                currentTabConfig,
+                parentLabel: currentTabConfig?._parentLabel || '',
+              });
               const mapParentLine = safeString(selectedEntity.dynamicData?.f_vi_tri).trim();
+              const forceLocationLine = getLeafHierarchyLabel(
+                safeString(selectedEntity.dynamicData?.f_dia_ban || selectedEntity.dynamicData?.f_vi_tri)
+              );
+              const forceTypeLine = safeString(currentTabConfig?.label || '').trim();
               const statusLine =
                 safeString(selectedEntity.status).trim() ||
                 safeString(selectedEntity.dynamicData?.f_status).trim();
               const profileSubtitle = isMapDetail
                 ? [...new Set([mapParentLine, statusLine].filter(Boolean))].join(' · ')
-                : statusLine;
+                : isForceDetail
+                  ? [...new Set([forceTypeLine, statusLine, forceLocationLine].filter(Boolean))].join(' Â· ')
+                  : statusLine;
               return (
               <div
                 className="flex flex-col w-full animate-fade-in pb-10"

@@ -6,6 +6,14 @@
 import { buildPreferredWikiName } from './entityWikiDisambiguation.js';
 import { findEquivalentEntityByName } from './entityNameIdentity.js';
 import { normalizeAsciiText, parseRankNumber as parseStatusRankNumber, splitStatusHierarchyTokens } from './statusHierarchyParser.js';
+import { getEntityAutoFieldValue } from './tabAutoSyncFieldMap.js';
+import {
+  AUTO_SYNC_ROLE_CULTIVATION_REALM,
+  AUTO_SYNC_ROLE_CULTIVATION_SYSTEM,
+  getEffectiveAutoSyncRole,
+  hasAutoSyncFeature,
+  isAutoSyncExplicitlyOff,
+} from './tabAutoSyncRole.js';
 
 const REALM_AUTO_TITLE = '## Hệ Thống Tu Luyện Liên Quan (AUTO)';
 const SYSTEM_AUTO_TITLE = '## Cảnh Giới Tu Vi Liên Quan (AUTO)';
@@ -22,6 +30,15 @@ function escapeRegExp(text) {
 
 function normalizeKey(value) {
   return normalizeAsciiText(String(value || '').replace(/\[\[|\]\]/g, '').trim());
+}
+
+function buildCultivationFieldContext(path = {}) {
+  return {
+    activeTabLon: path.lonId || '',
+    activeTabNho: path.nhoId || '',
+    currentTabConfig: path.currentTabConfig || null,
+    parentLabel: path.parentLabel || '',
+  };
 }
 
 function isSystemTabConfig(tabConfig) {
@@ -67,11 +84,17 @@ function findCultivationTabPaths(novelData) {
   for (const lon of tabsConfig) {
     for (const nho of lon?.subTabs || []) {
       if (nho?.viewType !== 'collection-track') continue;
-      if (!systemPath && isSystemTabConfig(nho)) {
-        systemPath = { lonId: lon.id, nhoId: nho.id };
+      const role = getEffectiveAutoSyncRole({
+        activeTabLon: lon?.id || '',
+        activeTabNho: nho?.id || '',
+        currentTabConfig: nho,
+        parentLabel: lon?.label || '',
+      });
+      if (!systemPath && role === AUTO_SYNC_ROLE_CULTIVATION_SYSTEM) {
+        systemPath = { lonId: lon.id, nhoId: nho.id, currentTabConfig: nho, parentLabel: lon?.label || '' };
       }
-      if (!realmPath && isRealmTabConfig(nho)) {
-        realmPath = { lonId: lon.id, nhoId: nho.id };
+      if (!realmPath && role === AUTO_SYNC_ROLE_CULTIVATION_REALM) {
+        realmPath = { lonId: lon.id, nhoId: nho.id, currentTabConfig: nho, parentLabel: lon?.label || '' };
       }
       if (systemPath && realmPath) return { systemPath, realmPath };
     }
@@ -85,8 +108,29 @@ function getCollectionEntities(novelData, lonId, nhoId) {
   return Array.isArray(tabData?.entities) ? tabData.entities : [];
 }
 
-function getStatusLine(entity) {
-  return safeString(entity?.dynamicData?.f_status || entity?.status).trim();
+function getStatusLine(entity, path = null) {
+  const ctx = buildCultivationFieldContext(path || {});
+  return (
+    getEntityAutoFieldValue(entity, ctx, 'status', { fallbackToStatus: true }) ||
+    safeString(entity?.dynamicData?.f_status || entity?.status).trim()
+  );
+}
+
+function buildEntitiesWithAutoAlias(entities, path = null) {
+  const ctx = buildCultivationFieldContext(path || {});
+  return (Array.isArray(entities) ? entities : []).map((entity) => {
+    const aliasText =
+      getEntityAutoFieldValue(entity, ctx, 'alias') ||
+      safeString(entity?.dynamicData?.f_alias);
+    if (!aliasText) return entity;
+    return {
+      ...entity,
+      dynamicData: {
+        ...(entity?.dynamicData && typeof entity.dynamicData === 'object' ? entity.dynamicData : {}),
+        f_alias: aliasText,
+      },
+    };
+  });
 }
 
 function isLikelyRankText(text) {
@@ -127,16 +171,17 @@ function scoreMatchReason(reason) {
   }
 }
 
-function resolveRealmToSystemMatch(realmEntity, systemEntities) {
-  const statusLine = getStatusLine(realmEntity);
+function resolveRealmToSystemMatch(realmEntity, systemEntities, systemPath = null, realmPath = null) {
+  const statusLine = getStatusLine(realmEntity, realmPath);
   if (!statusLine) return null;
 
   const tokens = splitStatusHierarchyTokens(statusLine);
   if (tokens.length === 0) return null;
 
+  const systemEntitiesWithAlias = buildEntitiesWithAutoAlias(systemEntities, systemPath);
   const candidates = [];
   tokens.forEach((token, index) => {
-    const matched = findEquivalentEntityByName(systemEntities, token);
+    const matched = findEquivalentEntityByName(systemEntitiesWithAlias, token);
     if (!matched?.entity) return;
     candidates.push({
       token: String(token || '').trim(),
@@ -239,6 +284,10 @@ export function isCultivationRelationScope({
   activeTabNho = '',
   currentTabConfig = null,
 } = {}) {
+  if (isAutoSyncExplicitlyOff(currentTabConfig)) return false;
+  if (hasAutoSyncFeature({ activeTabLon, activeTabNho, currentTabConfig }, 'cultivation')) {
+    return true;
+  }
   void activeTabLon;
   const nhoKey = normalizeKey(activeTabNho || currentTabConfig?.id || '');
   const labelKey = normalizeKey(currentTabConfig?.label || '');
@@ -272,7 +321,7 @@ export function syncAllCultivationRelationBlocks(novelData) {
 
   const realmRecordsBySystemId = new Map();
   realmEntities.forEach((realmEntity) => {
-    const match = resolveRealmToSystemMatch(realmEntity, systemEntities);
+    const match = resolveRealmToSystemMatch(realmEntity, systemEntities, systemPath, realmPath);
     if (!match?.systemEntity) return;
     const rankScore = rankScoreFromText(match.rankToken);
     const baseInfo = String(realmEntity.info || '');

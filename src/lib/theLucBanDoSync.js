@@ -14,6 +14,8 @@ import {
 } from './statusHierarchyParser.js';
 import { buildPreferredWikiName } from './entityWikiDisambiguation.js';
 import { isMapCollectionScope } from './mapHierarchySync.js';
+import { getEntityAutoFieldValue, setEntityAutoFieldValue } from './tabAutoSyncFieldMap.js';
+import { hasAutoSyncFeature, isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
 
 const AUTO_FORCE_BLOCK_START = '<!-- AUTO_THE_LUC_META:START -->';
 const AUTO_FORCE_BLOCK_END = '<!-- AUTO_THE_LUC_META:END -->';
@@ -31,6 +33,15 @@ function normalizeAscii(v) {
   return normalizeAsciiText(v);
 }
 
+function buildAutoFieldContext(context = {}) {
+  return {
+    activeTabLon: context.sourceLonId || '',
+    activeTabNho: context.sourceNhoId || '',
+    currentTabConfig: context.sourceNhoConfig || null,
+    parentLabel: context.sourceParentLabel || '',
+  };
+}
+
 function isForceParentKey(value) {
   const key = normalizeAscii(value).replace(/-/g, ' ');
   return key === 'the luc' || key.includes('the luc');
@@ -42,12 +53,12 @@ export function isForceCollectionScope({
   currentTabConfig = null,
   parentLabel = '',
 } = {}) {
+  if (isAutoSyncExplicitlyOff(currentTabConfig)) return false;
+  if (hasAutoSyncFeature({ activeTabLon, activeTabNho, currentTabConfig, parentLabel }, 'force')) {
+    return true;
+  }
   if (currentTabConfig?.viewType && currentTabConfig.viewType !== 'collection-track') return false;
-  const candidates = [
-    parentLabel,
-    currentTabConfig?._parentLabel,
-    activeTabLon,
-  ];
+  const candidates = [parentLabel, currentTabConfig?._parentLabel, activeTabLon];
   if (!currentTabConfig?.viewType) candidates.push(activeTabNho);
   return candidates.some((value) => isForceParentKey(value));
 }
@@ -127,9 +138,10 @@ function classifyOrgType(rawType) {
   return 'Thế Lực Khác';
 }
 
-function inferOrgTypeFromContext({ dynamicData, sourceNhoId = '', sourceNhoLabel = '' } = {}) {
+function inferOrgTypeFromContext({ dynamicData, sourceNhoId = '', sourceNhoLabel = '', typeFieldValue = '' } = {}) {
   const dyn = dynamicData && typeof dynamicData === 'object' ? dynamicData : {};
   const candidates = [
+    typeFieldValue,
     dyn.f_loai_to_chuc,
     dyn.f_loai,
     dyn.f_to_chuc,
@@ -174,22 +186,30 @@ function parseForceStatus(statusText, { fallbackOrgType = '' } = {}) {
 
 function parseForceMetaFromEntity(entity, context = {}) {
   const dyn = entity?.dynamicData && typeof entity.dynamicData === 'object' ? entity.dynamicData : {};
+  const autoCtx = buildAutoFieldContext(context);
   const fallbackOrgType = inferOrgTypeFromContext({
     dynamicData: dyn,
     sourceNhoId: context.sourceNhoId,
     sourceNhoLabel: context.sourceNhoLabel,
+    typeFieldValue: getEntityAutoFieldValue(entity, autoCtx, 'type'),
   });
 
-  const statusLine = safeString(dyn.f_status || entity?.status).trim();
+  const statusLine =
+    getEntityAutoFieldValue(entity, autoCtx, 'status', { fallbackToStatus: true }) ||
+    safeString(dyn.f_status || entity?.status).trim();
   const statusMeta = parseForceStatus(statusLine, { fallbackOrgType });
   if (statusMeta) return statusMeta;
 
-  const rankFromStatus = safeString(dyn.f_status).trim();
+  const rankFromStatus =
+    getEntityAutoFieldValue(entity, autoCtx, 'status') ||
+    safeString(dyn.f_status).trim();
   const rankFromCap = safeString(dyn.f_cap).trim();
   const rankText = isLikelyRankText(rankFromStatus)
     ? rankFromStatus
     : (isLikelyRankText(rankFromCap) ? rankFromCap : '');
-  const locationText = safeString(dyn.f_dia_ban || dyn.f_vi_tri).trim();
+  const locationText =
+    getEntityAutoFieldValue(entity, autoCtx, 'location') ||
+    safeString(dyn.f_dia_ban || dyn.f_vi_tri).trim();
   const locations = splitLocationTokens(locationText);
   if (!rankText || locations.length === 0) return null;
   return buildForceMeta(fallbackOrgType, rankText, locations);
@@ -318,6 +338,8 @@ function findMapTabPaths(nov) {
           nhoId: nho.id,
           lonLabel: safeString(lon.label || lon.id),
           nhoLabel: safeString(nho.label || nho.id),
+          currentTabConfig: nho,
+          parentLabel: safeString(lon.label || ''),
         });
       }
     }
@@ -345,6 +367,8 @@ function findForceTabPaths(nov, { sourceLonId = '' } = {}) {
         nhoId: nho.id,
         lonLabel: safeString(lon.label || lon.id),
         nhoLabel: safeString(nho.label || nho.id),
+        currentTabConfig: nho,
+        parentLabel: safeString(lon.label || ''),
       });
     }
   }
@@ -363,7 +387,7 @@ function ensureCollectionTabData(nov, lonId, nhoId) {
   return nov.data[lonId][nhoId];
 }
 
-function ensureMapEntityByName(tabData, name) {
+function ensureMapEntityByName(tabData, name, mapContext = {}) {
   const key = normalizeAscii(name);
   let ent = (tabData.entities || []).find((e) => normalizeAscii(e.name) === key);
   let created = false;
@@ -379,6 +403,8 @@ function ensureMapEntityByName(tabData, name) {
       milestones: [],
       images: [],
     };
+    const detected = detectLocationLevelName(name);
+    setEntityAutoFieldValue(ent, mapContext, 'title', detected.label);
     tabData.entities.push(ent);
     created = true;
   }
@@ -459,11 +485,12 @@ export function buildForceRowsForLocation(forceEntities) {
       const bg = classifyOrgType(b.meta.orgType);
       const t = FORCE_TYPE_GROUP_ORDER.indexOf(ag) - FORCE_TYPE_GROUP_ORDER.indexOf(bg);
       if (t !== 0) return t;
-      const n = normalizeAscii(a.name).localeCompare(normalizeAscii(b.name));
-      if (n !== 0) return n;
       const ar = Number.isFinite(a.meta.rankNum) ? a.meta.rankNum : -9999;
       const br = Number.isFinite(b.meta.rankNum) ? b.meta.rankNum : -9999;
-      if (br !== ar) return br - ar;
+      if (Number.isFinite(ar) && Number.isFinite(br) && ar !== br) return ar - br;
+      if (Number.isFinite(ar) !== Number.isFinite(br)) return Number.isFinite(ar) ? -1 : 1;
+      const n = normalizeAscii(a.name).localeCompare(normalizeAscii(b.name));
+      if (n !== 0) return n;
       return normalizeAscii(a.meta.tailPath).localeCompare(normalizeAscii(b.meta.tailPath));
     });
 }
@@ -491,8 +518,11 @@ export function syncTheLucMapAutoBlocksDetailed(nov, { sourceLonId, sourceNhoId,
   if (!source) return { changed: false, warnings: [], applied: false, reason: 'source_not_found' };
 
   const meta = parseForceMetaFromEntity(source, {
+    sourceLonId,
     sourceNhoId,
+    sourceNhoConfig: sourceNhoCfg,
     sourceNhoLabel: safeString(sourceNhoCfg?.label || sourceNhoId),
+    sourceParentLabel: safeString(sourceLonCfg?.label || ''),
   });
   if (!meta) return { changed: false, warnings: [], applied: false, reason: 'invalid_force_meta' };
 
@@ -551,8 +581,11 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
       }
 
       const meta = parseForceMetaFromEntity(entity, {
+        sourceLonId: path.lonId,
         sourceNhoId: path.nhoId,
+        sourceNhoConfig: path.currentTabConfig || null,
         sourceNhoLabel: safeString(path.nhoLabel || path.nhoId),
+        sourceParentLabel: safeString(path.parentLabel || ''),
       });
       if (!meta) return;
 
@@ -639,7 +672,12 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
         continue;
       }
 
-      const ensured = ensureMapEntityByName(preferredTarget.mapPath.tabData, item.name);
+      const ensured = ensureMapEntityByName(preferredTarget.mapPath.tabData, item.name, {
+        activeTabLon: preferredTarget.mapPath.lonId,
+        activeTabNho: preferredTarget.mapPath.nhoId,
+        currentTabConfig: preferredTarget.mapPath.currentTabConfig || null,
+        parentLabel: preferredTarget.mapPath.parentLabel || '',
+      });
       if (ensured.created) changed = true;
       targetEntities = [{ path: preferredTarget.mapPath, entity: ensured.entity }];
       mapEntityTargetsByName.set(locationKey, targetEntities);

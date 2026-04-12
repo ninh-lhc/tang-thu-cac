@@ -8,6 +8,7 @@
 
 import { cleanupAutoRelationLegacyInfoForNovel } from './lib/autoRelationDetailNote.js';
 import { syncAllCollectionListCards } from './lib/collectionListCardSync.js';
+import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 
 export const INDEX_DATA_VERSION = 1;
 export const NOVEL_DATA_VERSION = 1;
@@ -160,7 +161,8 @@ export function migrateIndex(raw) {
   d.metadata = Array.isArray(d.metadata)
     ? d.metadata.map(sanitizeMetadataItem).filter(Boolean)
     : [];
-  d.config = Array.isArray(d.config) ? d.config : [];
+  const hydratedConfig = hydrateTabsAutoSyncConfigs(Array.isArray(d.config) ? d.config : []);
+  d.config = hydratedConfig.tabsConfig;
   d.novelStats = isObj(d.novelStats) ? d.novelStats : {};
   d.dataVersion = INDEX_DATA_VERSION;
 
@@ -240,7 +242,10 @@ export function migrateNovel(raw) {
   nov.readingAnchorChapter = Number(nov.readingAnchorChapter) || 0;
   nov.review = nov.review ?? '';
   nov.ratingOpinion = nov.ratingOpinion ?? '';
-  nov.tabsConfig = Array.isArray(nov.tabsConfig) ? nov.tabsConfig.map(sanitizeTabConfig).filter(Boolean) : [];
+  const hydratedTabs = hydrateTabsAutoSyncConfigs(
+    Array.isArray(nov.tabsConfig) ? nov.tabsConfig.map(sanitizeTabConfig).filter(Boolean) : []
+  );
+  nov.tabsConfig = hydratedTabs.tabsConfig;
   nov.data = isObj(nov.data) ? nov.data : {};
   nov.chapterCrossRefs = Array.isArray(nov.chapterCrossRefs) ? nov.chapterCrossRefs : [];
   nov.readingJournal = Array.isArray(nov.readingJournal) ? nov.readingJournal : [];

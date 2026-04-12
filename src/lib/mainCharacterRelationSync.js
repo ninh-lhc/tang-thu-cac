@@ -5,6 +5,14 @@
  */
 import { buildPreferredWikiName } from './entityWikiDisambiguation.js';
 import { normalizeAsciiText } from './statusHierarchyParser.js';
+import { getEntityAutoFieldValue } from './tabAutoSyncFieldMap.js';
+import {
+  AUTO_SYNC_ROLE_CHARACTER_RELATED,
+  AUTO_SYNC_ROLE_MAIN_CHARACTER,
+  getEffectiveAutoSyncRole,
+  hasAutoSyncFeature,
+  isAutoSyncExplicitlyOff,
+} from './tabAutoSyncRole.js';
 
 const MAIN_RELATED_TITLE = '## Nhân Vật Liên Quan (AUTO)';
 const RELATED_MAIN_TITLE = '## Nhân Vật Chính Liên Kết (AUTO)';
@@ -23,20 +31,13 @@ function normalizeKey(value) {
   return normalizeAsciiText(String(value || '').replace(/\[\[|\]\]/g, '').trim());
 }
 
-function isCharacterParentConfig(tabConfig) {
-  const key = normalizeKey(tabConfig?.id || tabConfig?.label || '');
-  return key === 'nhan-vat' || key.includes('nhan vat');
-}
-
-function isMainCharacterTabConfig(tabConfig) {
-  const key = normalizeKey(tabConfig?.id || tabConfig?.label || '');
-  return (
-    key === 'nhan-vat-chinh' ||
-    key.includes('nhan vat chinh') ||
-    key.includes('chu nhan') ||
-    key.includes('main char') ||
-    key.includes('protagonist')
-  );
+function buildCharacterFieldContext(path = {}) {
+  return {
+    activeTabLon: path.lonId || '',
+    activeTabNho: path.nhoId || '',
+    currentTabConfig: path.currentTabConfig || null,
+    parentLabel: path.parentLabel || '',
+  };
 }
 
 function buildAutoBlockRegex(title) {
@@ -65,25 +66,35 @@ function findCharacterTabPaths(novelData) {
   let mainPath = null;
 
   tabsConfig.forEach((lon, lonIndex) => {
-    if (!isCharacterParentConfig(lon)) return;
     (lon?.subTabs || []).forEach((nho, nhoIndex) => {
       if (nho?.viewType !== 'collection-track') return;
-      if (isMainCharacterTabConfig(nho)) {
+      const role = getEffectiveAutoSyncRole({
+        activeTabLon: lon?.id || '',
+        activeTabNho: nho?.id || '',
+        currentTabConfig: nho,
+        parentLabel: lon?.label || '',
+      });
+      if (role === AUTO_SYNC_ROLE_MAIN_CHARACTER) {
         if (!mainPath) {
           mainPath = {
             lonId: lon.id,
             nhoId: nho.id,
             label: safeString(nho.label || nho.id),
             order: lonIndex * 1000 + nhoIndex,
+            currentTabConfig: nho,
+            parentLabel: safeString(lon.label || ''),
           };
         }
         return;
       }
+      if (role !== AUTO_SYNC_ROLE_CHARACTER_RELATED) return;
       relatedPaths.push({
         lonId: lon.id,
         nhoId: nho.id,
         label: safeString(nho.label || nho.id),
         order: lonIndex * 1000 + nhoIndex,
+        currentTabConfig: nho,
+        parentLabel: safeString(lon.label || ''),
       });
     });
   });
@@ -109,7 +120,9 @@ function inferRelationLabelFromTab(tabLabel = '', tabId = '') {
 }
 
 function resolveRelationLabel(entity, path) {
-  const explicit = safeString(entity?.dynamicData?.f_quan_he).trim();
+  const explicit =
+    getEntityAutoFieldValue(entity, buildCharacterFieldContext(path), 'relation') ||
+    safeString(entity?.dynamicData?.f_quan_he).trim();
   if (explicit) return explicit;
   return inferRelationLabelFromTab(path?.label || '', path?.nhoId || '');
 }
@@ -140,9 +153,12 @@ function buildMainRelatedAutoLines(records) {
   const lines = [];
   const sorted = [...(records || [])].sort(compareRelatedRecords);
   sorted.forEach((record) => {
+    const recordCtx = buildCharacterFieldContext(record?.path || {});
     const displayName = buildPreferredWikiName({
       name: record?.entity?.name,
-      statusLine: safeString(record?.entity?.dynamicData?.f_status || record?.entity?.status || ''),
+      statusLine:
+        getEntityAutoFieldValue(record?.entity, recordCtx, 'status', { fallbackToStatus: true }) ||
+        safeString(record?.entity?.dynamicData?.f_status || record?.entity?.status || ''),
     });
     if (!displayName) return;
     const metaParts = [];
@@ -162,6 +178,10 @@ export function isMainCharacterRelationScope({
   currentTabConfig = null,
   parentLabel = '',
 } = {}) {
+  if (isAutoSyncExplicitlyOff(currentTabConfig)) return false;
+  if (hasAutoSyncFeature({ activeTabLon, activeTabNho, currentTabConfig, parentLabel }, 'main_character')) {
+    return true;
+  }
   const lonKey = normalizeKey(activeTabLon || '');
   const parentKey = normalizeKey(parentLabel || currentTabConfig?._parentLabel || '');
   if (lonKey === 'nhan-vat' || parentKey.includes('nhan vat')) return true;
@@ -223,6 +243,7 @@ export function syncAllMainCharacterRelationBlocks(novelData) {
       relationLabel,
       tabLabel: safeString(path?.label || ''),
       tabOrder: path?.order,
+      path,
     });
   });
 
@@ -238,4 +259,3 @@ export function syncAllMainCharacterRelationBlocks(novelData) {
 
   return changed;
 }
-

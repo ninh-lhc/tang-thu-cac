@@ -17,6 +17,7 @@ const ORDERED_RE = /^(\s*)(\d+)\.\s+(.*)$/;
 const IMAGE_LINE_RE = /^!\[(.*?)\]\((.*?)\)$/;
 const QUOTE_LINE_RE = /^\s*>\s?(.*)$/;
 const CALLOUT_MARKER_RE = /^\[!([A-Z_-]+)\](?:\s+(.*))?$/i;
+const LEAD_BOLD_LABEL_RE = /^\*\*((?:(?!\*\*).)+?[:：])\*\*(?:\s+|$)([\s\S]*)$/u;
 
 const CALLOUT_STYLES = {
   violet: {
@@ -93,6 +94,40 @@ const isBlockBoundary = (line) => {
     BULLET_RE.test(normalized) ||
     ORDERED_RE.test(normalized) ||
     IMAGE_LINE_RE.test(trimmed)
+  );
+};
+
+const renderInlineBodyWithLeadLabel = (body, context) => {
+  const normalized = safeString(body);
+  const match = normalized.match(LEAD_BOLD_LABEL_RE);
+  const { dirHandle, lookup, linkRegex, onNavigate, selfEntityId } = context;
+
+  if (!match) {
+    return processInline(normalized, dirHandle, lookup, linkRegex, onNavigate, selfEntityId);
+  }
+
+  const labelText = safeString(match[1]).trim();
+  const restText = safeString(match[2]).trimStart();
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div
+        data-entity-lead-label="true"
+        className="flex w-fit max-w-full items-center gap-3 text-[0.8rem] font-bold uppercase tracking-[0.22em] text-slate-400/90"
+      >
+        <span>{processInline(labelText, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</span>
+        <span
+          aria-hidden="true"
+          data-entity-lead-label-rule="true"
+          className="h-px w-14 bg-slate-700/80"
+        />
+      </div>
+      {restText ? (
+        <div className="pl-0.5">
+          {processInline(restText, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+        </div>
+      ) : null}
+    </div>
   );
 };
 
@@ -349,7 +384,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
               >
                 <span className="mt-[0.45rem] text-sm font-bold text-violet-300">{marker}</span>
                 <div className="flex-1 pl-0.5">
-                  {processInline(item.body, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+                  {renderInlineBodyWithLeadLabel(item.body, context)}
                 </div>
               </li>
             );
@@ -394,7 +429,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
                   {item.orderNo}.
                 </span>
                 <div className="flex-1 pl-0.5">
-                  {processInline(item.body, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+                  {renderInlineBodyWithLeadLabel(item.body, context)}
                 </div>
               </li>
             );

@@ -7,6 +7,13 @@ import React from 'react';
 import { Network, Plus, X, Save, Edit2, Trash2, LayoutGrid, AlignLeft } from 'lucide-react';
 import { safeString, getIconComponent } from './MasterUtils.jsx';
 import { useFocusTrap } from './lib/useFocusTrap.js';
+import {
+  AUTO_SYNC_ROLE_OPTIONS,
+  getAutoSyncRoleLabel,
+  getEffectiveAutoSyncRole,
+  readExplicitAutoSyncRole,
+} from './lib/tabAutoSyncRole.js';
+import { getAutoSyncFieldDefs, getEffectiveAutoSyncFieldMap } from './lib/tabAutoSyncFieldMap.js';
 
 export function AppModalQuanLyTab({
   activeNovelData,
@@ -20,6 +27,8 @@ export function AppModalQuanLyTab({
   handleDeleteTab,
   handleAddTabNho,
   handleAddTabCon,
+  handleSetTabAutoSyncRole,
+  handleSetTabAutoSyncFieldMap,
   setConfirmDialog,
 }) {
   const trapRef = useFocusTrap(true);
@@ -133,7 +142,26 @@ export function AppModalQuanLyTab({
 
               {!tabLon.isFixed && tabLon.subTabs?.length > 0 && (
                 <div className="mt-4 pl-8 space-y-3 border-l-2 border-slate-800/80">
-                  {tabLon.subTabs.map((tabNho) => (
+                  {tabLon.subTabs.map((tabNho) => {
+                    const explicitRole = readExplicitAutoSyncRole(tabNho);
+                    const effectiveRole = getEffectiveAutoSyncRole({
+                      activeTabLon: tabLon.id,
+                      activeTabNho: tabNho.id,
+                      currentTabConfig: tabNho,
+                      parentLabel: tabLon.label || '',
+                    });
+                    const autoFieldDefs = getAutoSyncFieldDefs(effectiveRole);
+                    const autoFieldMap = getEffectiveAutoSyncFieldMap({
+                      activeTabLon: tabLon.id,
+                      activeTabNho: tabNho.id,
+                      currentTabConfig: tabNho,
+                      parentLabel: tabLon.label || '',
+                    });
+                    const templateFields = Array.isArray(tabNho.fieldsTemplate)
+                      ? tabNho.fieldsTemplate.filter((field) => field && safeString(field.id).trim())
+                      : [];
+
+                    return (
                     <div key={tabNho.id} className="relative">
                       <div className="absolute -left-8 top-4 w-6 h-0.5 bg-slate-800/80"></div>
                       <div className="bg-slate-900/80 border border-slate-700/50 p-3 rounded-xl flex flex-col gap-3">
@@ -164,7 +192,14 @@ export function AppModalQuanLyTab({
                                 ) : (
                                   <AlignLeft size={14} className="text-slate-600" />
                                 )}
-                                <span className="font-serif text-sm text-slate-200 font-medium">{safeString(tabNho.label)}</span>
+                                <div className="min-w-0">
+                                  <span className="font-serif text-sm text-slate-200 font-medium block">{safeString(tabNho.label)}</span>
+                                  {tabNho.viewType === 'collection-track' && (
+                                    <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                                      Vai trò auto: {getAutoSyncRoleLabel(explicitRole)}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               <div className="flex items-center gap-1 opacity-20 group-hover:opacity-100 transition-opacity">
                                 <button
@@ -207,6 +242,72 @@ export function AppModalQuanLyTab({
                             </div>
                           )}
                         </div>
+
+                        {tabNho.viewType === 'collection-track' && (
+                          <div className="border-t border-slate-800/80 pt-3 space-y-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">
+                                Vai trò tự động
+                              </span>
+                              <select
+                                value={explicitRole}
+                                onChange={(e) => handleSetTabAutoSyncRole(tabLon.id, tabNho.id, e.target.value)}
+                                className="min-w-[220px] bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-serif outline-none focus:border-amber-600/50"
+                              >
+                                {AUTO_SYNC_ROLE_OPTIONS.map((opt) => (
+                                  <option key={opt.value || '__auto__'} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className="text-[11px] text-slate-500 font-serif">
+                                {(AUTO_SYNC_ROLE_OPTIONS.find((opt) => opt.value === explicitRole) || AUTO_SYNC_ROLE_OPTIONS[0]).hint}
+                              </span>
+                            </div>
+
+                            {autoFieldDefs.length > 0 && (
+                              <div className="grid gap-2 md:grid-cols-2">
+                                {autoFieldDefs.map((def) => {
+                                  const selectedFieldId = safeString(autoFieldMap[def.key]).trim();
+                                  const selectedMissing =
+                                    selectedFieldId && !templateFields.some((field) => safeString(field.id).trim() === selectedFieldId);
+                                  return (
+                                    <label
+                                      key={def.key}
+                                      className="flex flex-col gap-1 rounded-xl border border-slate-800 bg-slate-950/70 p-2.5"
+                                    >
+                                      <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                                        {def.label}
+                                      </span>
+                                      <select
+                                        value={selectedFieldId}
+                                        onChange={(e) =>
+                                          handleSetTabAutoSyncFieldMap(tabLon.id, tabNho.id, def.key, e.target.value)
+                                        }
+                                        className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-serif outline-none focus:border-amber-600/50"
+                                      >
+                                        <option value="">Tự đoán theo nhãn</option>
+                                        {templateFields.map((field) => (
+                                          <option key={field.id} value={field.id}>
+                                            {safeString(field.label || field.id)}
+                                          </option>
+                                        ))}
+                                        {selectedMissing && (
+                                          <option value={selectedFieldId}>
+                                            {selectedFieldId} (không còn trong mẫu)
+                                          </option>
+                                        )}
+                                      </select>
+                                      <span className="text-[11px] text-slate-500 font-serif">
+                                        {def.hint}
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         {tabNho.viewType !== 'collection-track' && tabNho.tabCon && tabNho.tabCon.length > 0 && (
                           <div className="pl-6 space-y-2 border-l border-dashed border-slate-700/50 relative mt-2">
@@ -271,7 +372,7 @@ export function AppModalQuanLyTab({
                         )}
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               )}
             </div>

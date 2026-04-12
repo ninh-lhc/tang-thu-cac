@@ -580,9 +580,9 @@ Yêu cầu trả về:
             if (preparedText !== notesEdit.text) {
               syncDraftAndPreview(preparedText);
               if (cleanedText !== notesEdit.text && formatSync.propagatedCount > 0) {
-                showToast('Đã tự chuẩn hoá ghi chú và đồng bộ định dạng từ trùng trước khi lưu.');
+                showToast('Đã tự chuẩn hoá ghi chú và đồng bộ định dạng cho các từ/cụm trùng trước khi lưu.');
               } else if (formatSync.propagatedCount > 0) {
-                showToast(`Đã đồng bộ định dạng cho ${formatSync.propagatedCount} từ trùng trước khi lưu.`);
+                showToast(`Đã đồng bộ định dạng cho ${formatSync.propagatedCount} từ/cụm trùng trước khi lưu.`);
               } else {
                 showToast('Đã tự chuẩn hoá ghi chú trước khi lưu.');
               }

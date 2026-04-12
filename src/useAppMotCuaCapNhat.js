@@ -24,6 +24,7 @@ import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from
 import { buildHubExtendedCatalogLines } from './lib/hubBangDanhMucCacMucNhatKy.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
+import { getEntityAutoFieldValue, setEntityAutoFieldValue } from './lib/tabAutoSyncFieldMap.js';
 import {
   isForceCollectionScope,
   summarizeTheLucMapSyncWarnings,
@@ -152,6 +153,12 @@ export function useAppMotCuaCapNhat({
     const [lonId, nhoId] = hubCreatePath.split('|');
     const lon = activeTabs.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    const autoCtx = {
+      activeTabLon: lonId,
+      activeTabNho: nhoId,
+      currentTabConfig: nho || null,
+      parentLabel: lon?.label || '',
+    };
     const name = safeString(hubCreatePreview.name).trim();
     if (!name || name === 'Chưa đặt tên') {
       showToast('Điền tên thẻ trước khi lưu.', 'warning');
@@ -167,11 +174,16 @@ export function useAppMotCuaCapNhat({
         const list = tab?.entities || [];
         const target = list.find((e) => e.id === matched.entity.id);
         if (!target) return;
-        const prevAlias = safeString(target.dynamicData?.f_alias);
+        const prevAlias =
+          getEntityAutoFieldValue(target, autoCtx, 'alias') ||
+          safeString(target.dynamicData?.f_alias);
         const mergedAlias = mergeAliasText(prevAlias, name);
         if (mergedAlias !== prevAlias) {
-          if (!target.dynamicData) target.dynamicData = {};
-          target.dynamicData.f_alias = mergedAlias;
+          const updated = setEntityAutoFieldValue(target, autoCtx, 'alias', mergedAlias);
+          if (!updated) {
+            if (!target.dynamicData) target.dynamicData = {};
+            target.dynamicData.f_alias = mergedAlias;
+          }
         }
       });
       showToast('Tên vừa nhập trùng thẻ có sẵn — đã nối vào bí danh, chuyển sang tab Cập nhật.', 'warning');
@@ -188,7 +200,10 @@ export function useAppMotCuaCapNhat({
       if (!td || typeof td === 'string') td = { overview: typeof td === 'string' ? td : '', entities: [] };
       if (!td.entities) td.entities = [];
       const dyn = { ...hubCreatePreview.dynamicData };
-      const statusLine = safeString(dyn.f_status).trim();
+      const statusLine =
+        getEntityAutoFieldValue({ dynamicData: dyn, status: '' }, autoCtx, 'status', {
+          fallbackToStatus: true,
+        }) || safeString(dyn.f_status).trim();
       td.entities.push({
         id: generateId('ent'),
         name,
@@ -214,7 +229,7 @@ export function useAppMotCuaCapNhat({
         forceMapWarning =
           summarizeTheLucMapSyncWarnings(forceSyncResult.warnings) || forceMapWarning;
       }
-      if (isAutoRelationScopeLonId(lonId, lon?.label || '')) {
+      if (isAutoRelationScopeLonId(lonId, lon?.label || '', nho, nhoId)) {
         syncAllAutoRelationNotesForNovel(nov);
       }
       if (isCultivationRelationScope({ activeTabLon: lonId, activeTabNho: nhoId, currentTabConfig: nho })) {

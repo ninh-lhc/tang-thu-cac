@@ -89,6 +89,50 @@ describe('theLucBanDoSync', () => {
     expect(bulletLine).toContain('[[AAA]]');
   });
 
+  it('orders advanced Vuong Ton De force ranks by strength inside map auto blocks', () => {
+    const nov = {
+      tabsConfig: [
+        { id: 'the-luc', label: 'The Luc', subTabs: [{ id: 'tong-mon', label: 'Tong Mon', viewType: 'collection-track' }] },
+        { id: 'tai-nguyen', label: 'Tai Nguyen', subTabs: [{ id: 'dia-danh', label: 'Ban do', viewType: 'collection-track' }] },
+      ],
+      data: {
+        'the-luc': {
+          'tong-mon': {
+            overview: '',
+            entities: [
+              {
+                id: 'f-1',
+                name: 'A Lang Dien',
+                dynamicData: { f_status: 'Địa Tôn cấp thế lực', f_dia_ban: 'Hoang Thu gioi' },
+                info: '',
+              },
+              {
+                id: 'f-2',
+                name: 'Z Bach Cung',
+                dynamicData: { f_status: 'Thiên Tôn cấp thế lực', f_dia_ban: 'Hoang Thu gioi' },
+                info: '',
+              },
+            ],
+          },
+        },
+        'tai-nguyen': {
+          'dia-danh': {
+            overview: '',
+            entities: [{ id: 'm1', name: 'Hoang Thu gioi', info: '' }],
+          },
+        },
+      },
+    };
+
+    const ok = syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' });
+    expect(ok).toBe(true);
+    const mapInfo = String(nov.data['tai-nguyen']['dia-danh'].entities[0].info || '');
+    const idxThienTon = mapInfo.indexOf('[[Z Bach Cung]] - Thiên Tôn cấp thế lực');
+    const idxDiaTon = mapInfo.indexOf('[[A Lang Dien]] - Địa Tôn cấp thế lực');
+    expect(idxThienTon).toBeGreaterThan(-1);
+    expect(idxDiaTon).toBeGreaterThan(idxThienTon);
+  });
+
   it('syncs force info and map location entities', () => {
     const nov = {
       tabsConfig: [

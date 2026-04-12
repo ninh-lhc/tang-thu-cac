@@ -72,6 +72,23 @@ export function isBeyondRankLabel(rankText) {
 export function parseRankNumber(rankText) {
   const raw = String(rankText || '').toLowerCase();
   const normalized = normalizeAsciiText(rankText);
+  const advancedForceRanks = [
+    { pattern: /\bthien\s*de\b/, value: 1 },
+    { pattern: /\bdia\s*de\b/, value: 2 },
+    { pattern: /\bdai\s*de\b/, value: 3 },
+    { pattern: /\bde\s*gia\b/, value: 4 },
+    { pattern: /\bthien\s*ton\b/, value: 11 },
+    { pattern: /\bdia\s*ton\b/, value: 12 },
+    { pattern: /\bdai\s*ton\b/, value: 13 },
+    { pattern: /\bton\s*gia\b/, value: 14 },
+    { pattern: /\bthien\s*vuong\b/, value: 21 },
+    { pattern: /\bdia\s*vuong\b/, value: 22 },
+    { pattern: /\bdai\s*vuong\b/, value: 23 },
+    { pattern: /\bvuong\s*gia\b/, value: 24 },
+  ];
+  const advancedMatch = advancedForceRanks.find((item) => item.pattern.test(normalized));
+  if (advancedMatch) return advancedMatch.value;
+
   const mNum = normalized.match(/(\d{1,3})/);
   if (mNum) return parseInt(mNum[1], 10);
 

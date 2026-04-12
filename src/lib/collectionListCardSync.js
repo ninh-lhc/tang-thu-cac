@@ -6,7 +6,12 @@
  * Dữ liệu cũ có <!-- AUTO_COLLECTION_LIST:... --> vẫn được đọc và xóa khi đồng bộ lại.
  */
 
-import { normalizeAsciiText, parseRankNumber } from './statusHierarchyParser.js';
+import {
+  normalizeAsciiText,
+  parseRankNumber,
+  parseStatusHierarchy,
+  splitStatusHierarchyTokens,
+} from './statusHierarchyParser.js';
 import { parseOwnerTimelineHint } from './autoOwnerMilestone.js';
 import { findEquivalentEntityByName } from './entityNameIdentity.js';
 
@@ -146,6 +151,50 @@ function pickFirstFilled(entity, fieldIds) {
   return '';
 }
 
+function splitHierarchyLikeTokens(value) {
+  const raw = safeString(value)
+    .replace(/[>→»|]+/g, ' - ')
+    .replace(/[,\n;]+/g, ' - ')
+    .trim();
+  if (!raw) return [];
+  return splitStatusHierarchyTokens(raw);
+}
+
+function getForceRankLabel(entity) {
+  const rawStatus = pickFirstFilled(entity, ['f_status']);
+  const parsedStatus = parseStatusHierarchy(rawStatus);
+  if (parsedStatus?.rankLabel) return safeString(parsedStatus.rankLabel).trim();
+  const rawRank = pickFirstFilled(entity, ['f_status', 'f_cap']);
+  return safeString(rawRank).trim();
+}
+
+function getForceLeafLocation(entity) {
+  const explicitLocations = splitHierarchyLikeTokens(pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri']));
+  if (explicitLocations.length > 0) return safeString(explicitLocations[explicitLocations.length - 1]).trim();
+
+  const parsedStatus = parseStatusHierarchy(pickFirstFilled(entity, ['f_status']));
+  const statusChain = Array.isArray(parsedStatus?.chain) ? parsedStatus.chain : [];
+  if (statusChain.length > 0) return safeString(statusChain[statusChain.length - 1]).trim();
+  return '';
+}
+
+function compareForceEntries(a, b) {
+  const ar = parseRankNumber(getForceRankLabel(a));
+  const br = parseRankNumber(getForceRankLabel(b));
+  const aHasRank = Number.isFinite(ar);
+  const bHasRank = Number.isFinite(br);
+  if (aHasRank && bHasRank && ar !== br) return ar - br;
+  if (aHasRank !== bHasRank) return aHasRank ? -1 : 1;
+  return safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
+}
+
+function renderForceEntry(entity) {
+  const name = safeString(entity?.name).trim();
+  if (!name) return '';
+  const rank = getForceRankLabel(entity);
+  return rank ? `[[${name}]] - ${rank}` : `[[${name}]]`;
+}
+
 function extractOwnerName(rawValue) {
   const raw = safeString(rawValue).trim();
   if (!raw) return '';
@@ -249,8 +298,13 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
 
   if (scope.includes('the luc')) {
     return {
-      kind: 'text',
-      getGroupLabel: (entity) => pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']),
+      kind: 'force-location',
+      getGroupLabel: (entity) =>
+        getForceLeafLocation(entity) ||
+        getForceRankLabel(entity) ||
+        pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']),
+      compareEntries: compareForceEntries,
+      renderEntry: renderForceEntry,
     };
   }
 
@@ -285,12 +339,29 @@ function computeGroupOrder(kind, label) {
     return 9_000;
   }
 
+  if (kind === 'force-location') {
+    const parsed = parseRankNumber(label);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
   return 5_000;
 }
 
 function buildAutoLines(records, strategy, ownerLookupEntities = []) {
   const items = Array.isArray(records) ? records : [];
   const lines = [AUTO_LIST_TITLE, '', `- T\u1ed5ng s\u1ed1 th\u1ebb: ${items.length}`, ''];
+  const compareEntries = typeof strategy?.compareEntries === 'function'
+    ? strategy.compareEntries
+    : (a, b) => safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
+  const renderEntry = typeof strategy?.renderEntry === 'function'
+    ? strategy.renderEntry
+    : (entity) => {
+        const name = safeString(entity?.name).trim();
+        if (!name) return '';
+        const owner = resolveOwnerLabel(entity, ownerLookupEntities);
+        const ownerSuffix = owner ? ` - [[${owner}]]` : '';
+        return `[[${name}]]${ownerSuffix}`;
+      };
 
   if (items.length === 0) {
     lines.push('## Ch\u01b0a ph\u00e2n lo\u1ea1i (0)');
@@ -320,14 +391,12 @@ function buildAutoLines(records, strategy, ownerLookupEntities = []) {
     lines.push('');
     let visibleIdx = 0;
     [...entities]
-      .sort((a, b) => safeString(a?.name).localeCompare(safeString(b?.name), 'vi'))
+      .sort(compareEntries)
       .forEach((entity) => {
-        const name = safeString(entity?.name).trim();
-        if (!name) return;
+        const lineContent = renderEntry(entity, ownerLookupEntities);
+        if (!lineContent) return;
         visibleIdx += 1;
-        const owner = resolveOwnerLabel(entity, ownerLookupEntities);
-        const ownerSuffix = owner ? ` - [[${owner}]]` : '';
-        lines.push(`${visibleIdx}. [[${name}]]${ownerSuffix}`);
+        lines.push(`${visibleIdx}. ${lineContent}`);
       });
   });
 

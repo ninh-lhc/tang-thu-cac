@@ -19,6 +19,7 @@ import {
   summarizeTheLucMapSyncWarnings,
   syncAllTheLucMapAutoBlocksDetailed,
 } from './lib/theLucBanDoSync.js';
+import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 
 function syncFullNovelAutoBlocks(novelData) {
   let changed = false;
@@ -89,7 +90,8 @@ export function useAppNovelSelectionAndHydration({
         }
       });
     });
-    return changed ? { ...novelData, tabsConfig: tabs } : novelData;
+    const hydratedTabs = hydrateTabsAutoSyncConfigs(tabs);
+    return changed || hydratedTabs.changed ? { ...novelData, tabsConfig: hydratedTabs.tabsConfig } : novelData;
   }, []);
 
   const handleSelectNovel = useCallback(

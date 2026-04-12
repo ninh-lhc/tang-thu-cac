@@ -6,6 +6,7 @@
 // ==========================================
 
 import { useCallback, useState } from 'react';
+import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 
 const DEFAULT_THEME = 'theme-tien-hiep';
 const DEFAULT_STATUS = 'Dang doc';
@@ -106,9 +107,11 @@ export function useAppNovelCrud({
       };
 
       const tabsToUse =
-        Array.isArray(novelForm.tabsConfig) && novelForm.tabsConfig.length > 0
-          ? structuredClone(novelForm.tabsConfig)
-          : structuredClone(initialTabsConfig);
+        hydrateTabsAutoSyncConfigs(
+          Array.isArray(novelForm.tabsConfig) && novelForm.tabsConfig.length > 0
+            ? structuredClone(novelForm.tabsConfig)
+            : structuredClone(initialTabsConfig)
+        ).tabsConfig;
       const newFullData = {
         ...newMeta,
         data: {},

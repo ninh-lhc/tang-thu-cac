@@ -4,6 +4,8 @@
  * Ghi block AUTO vào chính map đó + block AUTO danh sách map trực thuộc ở các map lớn hơn.
  */
 import { normalizeAsciiText, splitStatusHierarchyTokens } from './statusHierarchyParser.js';
+import { getEntityAutoFieldValue, setEntityAutoFieldValue } from './tabAutoSyncFieldMap.js';
+import { hasAutoSyncFeature, isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
 
 const AUTO_MAP_META_START = '<!-- AUTO_MAP_HIERARCHY_META:START -->';
 const AUTO_MAP_META_END = '<!-- AUTO_MAP_HIERARCHY_META:END -->';
@@ -21,6 +23,15 @@ function safeString(v) {
 
 function normalizeAscii(v) {
   return normalizeAsciiText(v);
+}
+
+function buildMapFieldContext(mapPath = {}) {
+  return {
+    activeTabLon: mapPath.lonId || '',
+    activeTabNho: mapPath.nhoId || '',
+    currentTabConfig: mapPath.currentTabConfig || null,
+    parentLabel: mapPath.parentLabel || '',
+  };
 }
 
 function mergeAutoBlock(baseText, start, end, blockBody) {
@@ -96,15 +107,22 @@ function replaceMapPathNames(pathText, oldName, newName) {
   };
 }
 
-function extractMapParentPath(entity) {
-  const explicit = safeString(entity?.dynamicData?.f_vi_tri).trim();
+function extractMapParentPath(entity, mapContext = {}) {
+  const explicit =
+    getEntityAutoFieldValue(entity, mapContext, 'parent_path') ||
+    safeString(entity?.dynamicData?.f_vi_tri).trim();
   if (explicit) return { raw: explicit, fromStatusFallback: false };
 
-  const statusText = safeString(entity?.dynamicData?.f_status || entity?.status).trim();
+  const statusText =
+    getEntityAutoFieldValue(entity, mapContext, 'status', { fallbackToStatus: true }) ||
+    safeString(entity?.dynamicData?.f_status || entity?.status).trim();
   if (!statusText) return { raw: '', fromStatusFallback: false };
 
   const statusLevel = detectMapLevelInfo(statusText);
-  const ownLevel = detectMapLevelInfo(entity?.dynamicData?.f_title, entity?.name);
+  const ownLevel = detectMapLevelInfo(
+    getEntityAutoFieldValue(entity, mapContext, 'title') || entity?.dynamicData?.f_title,
+    entity?.name
+  );
   const looksLikeHierarchy = splitMapParentTokens(statusText).length > 1;
   const looksLikeOtherMap =
     statusLevel.label !== DEFAULT_LEVEL.label &&
@@ -118,6 +136,10 @@ function extractMapParentPath(entity) {
 }
 
 export function isMapCollectionScope({ activeTabLon = '', activeTabNho = '', currentTabConfig = null, parentLabel = '' } = {}) {
+  if (isAutoSyncExplicitlyOff(currentTabConfig)) return false;
+  if (hasAutoSyncFeature({ activeTabLon, activeTabNho, currentTabConfig, parentLabel }, 'map')) {
+    return true;
+  }
   const lon = normalizeAscii(activeTabLon);
   const nho = normalizeAscii(activeTabNho || currentTabConfig?.id || '');
   const label = normalizeAscii(currentTabConfig?.label || '');
@@ -133,7 +155,12 @@ function findMapTabPaths(nov) {
     for (const nho of lon?.subTabs || []) {
       if (nho?.viewType !== 'collection-track') continue;
       if (isMapCollectionScope({ activeTabLon: lon.id, activeTabNho: nho.id, currentTabConfig: nho, parentLabel: lon.label })) {
-        out.push({ lonId: lon.id, nhoId: nho.id, parentLabel: lon.label || '' });
+        out.push({
+          lonId: lon.id,
+          nhoId: nho.id,
+          parentLabel: lon.label || '',
+          currentTabConfig: nho,
+        });
       }
     }
   }
@@ -152,7 +179,7 @@ function ensureCollectionTabData(nov, lonId, nhoId) {
   return nov.data[lonId][nhoId];
 }
 
-function ensureMapEntityByName(tabData, name) {
+function ensureMapEntityByName(tabData, name, mapContext = {}) {
   const cleanName = safeString(name).trim();
   const key = normalizeAscii(cleanName);
   let ent = (tabData.entities || []).find((item) => normalizeAscii(item?.name) === key);
@@ -171,28 +198,40 @@ function ensureMapEntityByName(tabData, name) {
       milestones: [],
       images: [],
     };
+    setEntityAutoFieldValue(ent, mapContext, 'title', detected.label);
     tabData.entities.push(ent);
     return ent;
   }
-  if (!safeString(ent.dynamicData?.f_title).trim()) {
+  const currentTitle =
+    getEntityAutoFieldValue(ent, mapContext, 'title') ||
+    safeString(ent.dynamicData?.f_title).trim();
+  if (!currentTitle) {
     const detected = detectMapLevelInfo(cleanName);
     if (detected.label !== DEFAULT_LEVEL.label) {
-      if (!ent.dynamicData || typeof ent.dynamicData !== 'object') ent.dynamicData = {};
-      ent.dynamicData.f_title = detected.label;
+      const updated = setEntityAutoFieldValue(ent, mapContext, 'title', detected.label);
+      if (!updated) {
+        if (!ent.dynamicData || typeof ent.dynamicData !== 'object') ent.dynamicData = {};
+        ent.dynamicData.f_title = detected.label;
+      }
     }
   }
   return ent;
 }
 
-function buildMapRecords(entities) {
+function buildMapRecords(entities, mapContext = {}) {
   return (entities || [])
     .map((entity) => {
       const name = safeString(entity?.name).trim();
       const nameKey = normalizeAscii(name);
       if (!nameKey) return null;
-      const parentSource = extractMapParentPath(entity);
-      const levelInfo = detectMapLevelInfo(entity?.dynamicData?.f_title, name, entity?.dynamicData?.f_status);
-      const rawStatus = safeString(entity?.dynamicData?.f_status || entity?.status).trim();
+      const parentSource = extractMapParentPath(entity, mapContext);
+      const titleValue =
+        getEntityAutoFieldValue(entity, mapContext, 'title') ||
+        safeString(entity?.dynamicData?.f_title).trim();
+      const rawStatus =
+        getEntityAutoFieldValue(entity, mapContext, 'status', { fallbackToStatus: true }) ||
+        safeString(entity?.dynamicData?.f_status || entity?.status).trim();
+      const levelInfo = detectMapLevelInfo(titleValue, name, rawStatus);
       const scaleLabel = parentSource.fromStatusFallback ? '' : rawStatus;
       return {
         entity,
@@ -319,23 +358,27 @@ function buildMapChildrenBlock(targetRecord, allRecords, byName) {
   return lines.join('\n');
 }
 
-function syncMapHierarchyInTab(mapTab) {
+function syncMapHierarchyInTab(mapTab, mapPath = {}) {
   if (!Array.isArray(mapTab?.entities) || mapTab.entities.length === 0) return false;
   let changed = false;
+  const mapContext = buildMapFieldContext(mapPath);
   const referencedParents = new Set();
   (mapTab.entities || []).forEach((ent) => {
-    splitMapParentTokens(ent?.dynamicData?.f_vi_tri).forEach((name) => {
+    const parentPath =
+      getEntityAutoFieldValue(ent, mapContext, 'parent_path') ||
+      ent?.dynamicData?.f_vi_tri;
+    splitMapParentTokens(parentPath).forEach((name) => {
       const key = normalizeAscii(name);
       if (key) referencedParents.add(name);
     });
   });
   referencedParents.forEach((name) => {
     const beforeCount = mapTab.entities.length;
-    ensureMapEntityByName(mapTab, name);
+    ensureMapEntityByName(mapTab, name, mapContext);
     if (mapTab.entities.length !== beforeCount) changed = true;
   });
 
-  const records = buildMapRecords(mapTab.entities);
+  const records = buildMapRecords(mapTab.entities, mapContext);
   const byName = new Map(records.map((record) => [record.nameKey, record]));
   records.forEach((record) => {
     record.fullChain = resolveFullChain(record, byName);
@@ -376,7 +419,7 @@ export function syncAllMapHierarchyAutoBlocks(nov) {
   let changed = false;
   mapPaths.forEach((mapPath) => {
     const mapTab = ensureCollectionTabData(nov, mapPath.lonId, mapPath.nhoId);
-    changed = syncMapHierarchyInTab(mapTab) || changed;
+    changed = syncMapHierarchyInTab(mapTab, mapPath) || changed;
   });
   return changed;
 }
@@ -392,26 +435,33 @@ export function syncMapHierarchyNameReferences(nov, { entityId = '', oldName = '
   let touched = 0;
   mapPaths.forEach((mapPath) => {
     const mapTab = ensureCollectionTabData(nov, mapPath.lonId, mapPath.nhoId);
+    const mapContext = buildMapFieldContext(mapPath);
     (mapTab.entities || []).forEach((entity) => {
       if (!entity || entity.id === entityId) return;
       if (!entity.dynamicData || typeof entity.dynamicData !== 'object') entity.dynamicData = {};
 
-      const explicitPath = safeString(entity.dynamicData.f_vi_tri).trim();
+      const explicitPath =
+        getEntityAutoFieldValue(entity, mapContext, 'parent_path') ||
+        safeString(entity.dynamicData.f_vi_tri).trim();
       if (explicitPath) {
         const replaced = replaceMapPathNames(explicitPath, oldName, nextName);
         if (replaced.changed) {
-          entity.dynamicData.f_vi_tri = replaced.text;
+          const updated = setEntityAutoFieldValue(entity, mapContext, 'parent_path', replaced.text);
+          if (!updated) entity.dynamicData.f_vi_tri = replaced.text;
           touched += 1;
         }
         return;
       }
 
-      const fallback = extractMapParentPath(entity);
+      const fallback = extractMapParentPath(entity, mapContext);
       if (!fallback.fromStatusFallback) return;
-      const rawStatus = safeString(entity.dynamicData.f_status || entity.status).trim();
+      const rawStatus =
+        getEntityAutoFieldValue(entity, mapContext, 'status', { fallbackToStatus: true }) ||
+        safeString(entity.dynamicData.f_status || entity.status).trim();
       const replaced = replaceMapPathNames(rawStatus, oldName, nextName);
       if (!replaced.changed) return;
-      entity.dynamicData.f_status = replaced.text;
+      const updated = setEntityAutoFieldValue(entity, mapContext, 'status', replaced.text);
+      if (!updated) entity.dynamicData.f_status = replaced.text;
       entity.status = replaced.text;
       touched += 1;
     });

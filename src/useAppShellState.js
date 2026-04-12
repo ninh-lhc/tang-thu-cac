@@ -20,6 +20,7 @@ import {
   isPersistedDirectoryHandleUsable,
   loadPersistedDirectoryHandle,
 } from './lib/directoryHandleStore.js';
+import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 import { useToast } from './useToast.js';
 
 function readLocalString(key, fallback = '') {
@@ -64,7 +65,7 @@ export function useAppShellState() {
       : MOCK_METADATA;
   const embeddedPreviewConfig = Array.isArray(embeddedPreviewBootstrap?.config)
     ? embeddedPreviewBootstrap.config
-    : INITIAL_TABS_CONFIG;
+    : hydrateTabsAutoSyncConfigs(INITIAL_TABS_CONFIG).tabsConfig;
   const embeddedPreviewStats =
     embeddedPreviewBootstrap?.novelStats && typeof embeddedPreviewBootstrap.novelStats === 'object'
       ? embeddedPreviewBootstrap.novelStats
@@ -224,7 +225,7 @@ export function useAppShellState() {
         const nextMetadata = Array.isArray(parsed.metadata) ? parsed.metadata : [];
         const nextConfig = Array.isArray(parsed.config) && parsed.config.length > 0
           ? parsed.config
-          : INITIAL_TABS_CONFIG;
+          : hydrateTabsAutoSyncConfigs(INITIAL_TABS_CONFIG).tabsConfig;
         const nextStats =
           parsed.novelStats && typeof parsed.novelStats === 'object' ? parsed.novelStats : {};
         setNovelsMetadata(nextMetadata);

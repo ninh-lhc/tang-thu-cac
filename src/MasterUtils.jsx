@@ -805,29 +805,29 @@ export const processInline = (text, dirHandle, entityLookup, linkRegex, onNaviga
       }
       if (part.startsWith('**') && part.endsWith('**')) {
         return (
-          <strong key={i} className="text-amber-400">
-            {processPlainTextWithLinks(safeString(part.slice(2, -2)), lookup, linkRegex, onNavigate, selfEntityId)}
+          <strong key={i} className="font-black tracking-[0.01em] text-slate-50">
+            {processInline(safeString(part.slice(2, -2)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
           </strong>
         );
       }
       if (part.startsWith('~~') && part.endsWith('~~')) {
         return (
           <del key={i} className="text-slate-400 line-through">
-            {processPlainTextWithLinks(safeString(part.slice(2, -2)), lookup, linkRegex, onNavigate, selfEntityId)}
+            {processInline(safeString(part.slice(2, -2)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
           </del>
         );
       }
       if (part.startsWith('==') && part.endsWith('==')) {
         return (
           <mark key={i} className="bg-amber-500/35 text-amber-100 px-0.5 rounded">
-            {processPlainTextWithLinks(safeString(part.slice(2, -2)), lookup, linkRegex, onNavigate, selfEntityId)}
+            {processInline(safeString(part.slice(2, -2)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
           </mark>
         );
       }
       if (part.startsWith('<u>') && part.endsWith('</u>')) {
         return (
-          <u key={i} className="underline decoration-amber-500/80">
-            {processPlainTextWithLinks(safeString(part.slice(3, -4)), lookup, linkRegex, onNavigate, selfEntityId)}
+          <u key={i} className="underline decoration-slate-300/75 underline-offset-[0.18em]">
+            {processInline(safeString(part.slice(3, -4)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
           </u>
         );
       }
@@ -840,8 +840,8 @@ export const processInline = (text, dirHandle, entityLookup, linkRegex, onNaviga
       }
       if (part.startsWith('*') && part.endsWith('*')) {
         return (
-          <em key={i} className="text-amber-200/70 italic">
-            {processPlainTextWithLinks(safeString(part.slice(1, -1)), lookup, linkRegex, onNavigate, selfEntityId)}
+          <em key={i} className="italic text-slate-200/85">
+            {processInline(safeString(part.slice(1, -1)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
           </em>
         );
       }

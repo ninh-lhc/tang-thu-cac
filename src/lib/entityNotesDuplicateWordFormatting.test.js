@@ -9,6 +9,13 @@ describe('syncEntityNotesDuplicateWordFormatting', () => {
     expect(result.propagatedCount).toBe(2);
   });
 
+  it('propagates a manual multi-word wrapper to matching plain phrases', () => {
+    const result = syncEntityNotesDuplicateWordFormatting('(**Tôn Lực**) va Tôn Lực, Tôn Lực.');
+
+    expect(result.text).toBe('(**Tôn Lực**) va **Tôn Lực**, **Tôn Lực**.');
+    expect(result.propagatedCount).toBe(2);
+  });
+
   it('preserves the matched word casing when reapplying nested wrappers', () => {
     const result = syncEntityNotesDuplicateWordFormatting('[color=#ff0000]**Dao**[/color] va dao.');
 
@@ -29,5 +36,12 @@ describe('syncEntityNotesDuplicateWordFormatting', () => {
 
     expect(result.text).toBe('**Dao** DaoPhong [[Dao]] **Dao**.');
     expect(result.propagatedCount).toBe(1);
+  });
+
+  it('prefers the longer phrase when a shorter formatted word is also present', () => {
+    const result = syncEntityNotesDuplicateWordFormatting('**Lực** va **Tôn Lực**. Tôn Lực canh gioi. Lực don le.');
+
+    expect(result.text).toBe('**Lực** va **Tôn Lực**. **Tôn Lực** canh gioi. **Lực** don le.');
+    expect(result.propagatedCount).toBe(2);
   });
 });

@@ -86,6 +86,24 @@ import { exportEntityProfilePdf } from './entityProfilePrint.js';
 import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
 import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
 import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
+import {
+  AUTO_SYNC_ROLE_CHARACTER_RELATED,
+  AUTO_SYNC_ROLE_CULTIVATION_REALM,
+  AUTO_SYNC_ROLE_CULTIVATION_SYSTEM,
+  AUTO_SYNC_ROLE_FORCE,
+  AUTO_SYNC_ROLE_MAIN_CHARACTER,
+  AUTO_SYNC_ROLE_MAP,
+  AUTO_SYNC_ROLE_OFF,
+  getEffectiveAutoSyncRole,
+  normalizeAutoSyncRole,
+} from './lib/tabAutoSyncRole.js';
+import {
+  getAutoSyncFieldDefs,
+  getEffectiveAutoSyncFieldMap,
+  getEntityAutoFieldValue,
+  normalizeAutoSyncFieldMap,
+  setEntityAutoFieldValue,
+} from './lib/tabAutoSyncFieldMap.js';
 import { AppMainPane } from './AppMainPane.jsx';
 import { AppModalLayer } from './AppModalLayer.jsx';
 
@@ -1132,6 +1150,7 @@ export default function App() {
       const [lonId, nhoId] = path.split('|');
       const lon = activeTabs.find((tab) => tab.id === lonId);
       const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+      const autoCtx = buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '');
       const quickName = safeString(name).trim();
       if (!quickName) return;
       const newEntityId = generateId('ent');
@@ -1146,12 +1165,7 @@ export default function App() {
           });
           if (matched?.entity) {
             targetExistingId = matched.entity.id;
-            const prevAlias = safeString(matched.entity.dynamicData?.f_alias);
-            const mergedAlias = mergeAliasText(prevAlias, quickName);
-            if (mergedAlias !== prevAlias) {
-              if (!matched.entity.dynamicData) matched.entity.dynamicData = {};
-              matched.entity.dynamicData.f_alias = mergedAlias;
-            }
+            mergeNameIntoAutoAlias(matched.entity, quickName, autoCtx);
           } else {
             tabData.entities.push({ id: newEntityId, name: quickName, avatar: '', rawText: '', dynamicData: {}, info: '', milestones: [], images: [] });
           }
@@ -1470,6 +1484,43 @@ export default function App() {
       syncIndex(novelsMetadata, newTabs, dirHandle);
     }
   };
+  const buildAutoSyncContext = (lonId, nhoId, nho, parentLabel = '') => ({
+    activeTabLon: lonId,
+    activeTabNho: nhoId,
+    currentTabConfig: nho || null,
+    parentLabel,
+  });
+  const mergeNameIntoAutoAlias = (entity, aliasText, ctx) => {
+    if (!entity || !safeString(aliasText).trim()) return;
+    const prevAlias =
+      getEntityAutoFieldValue(entity, ctx, 'alias') ||
+      safeString(entity.dynamicData?.f_alias);
+    const mergedAlias = mergeAliasText(prevAlias, aliasText);
+    if (mergedAlias === prevAlias) return;
+    const updated = setEntityAutoFieldValue(entity, ctx, 'alias', mergedAlias);
+    if (!updated) {
+      if (!entity.dynamicData || typeof entity.dynamicData !== 'object') entity.dynamicData = {};
+      entity.dynamicData.f_alias = mergedAlias;
+    }
+  };
+  const getSuggestedFieldsForAutoRole = (role) => {
+    switch (normalizeAutoSyncRole(role)) {
+      case AUTO_SYNC_ROLE_FORCE:
+        return DEFAULT_FIELDS_MAP['gia-toc'];
+      case AUTO_SYNC_ROLE_MAP:
+        return DEFAULT_FIELDS_MAP['dia-danh'];
+      case AUTO_SYNC_ROLE_CULTIVATION_SYSTEM:
+        return DEFAULT_FIELDS_MAP['he-thong-tu-luyen'];
+      case AUTO_SYNC_ROLE_CULTIVATION_REALM:
+        return DEFAULT_FIELDS_MAP['canh-gioi'];
+      case AUTO_SYNC_ROLE_MAIN_CHARACTER:
+        return DEFAULT_FIELDS_MAP['nhan-vat-chinh'];
+      case AUTO_SYNC_ROLE_CHARACTER_RELATED:
+        return DEFAULT_FIELDS_MAP['phu'];
+      default:
+        return null;
+    }
+  };
 
   const handleAddTabLon = () => {
     const newTab = {
@@ -1634,6 +1685,62 @@ export default function App() {
         }
       }
     }
+    setTabsConfig(current);
+  };
+
+  const handleSetTabAutoSyncRole = (lonId, nhoId, nextRoleValue) => {
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+
+    const nextRole = normalizeAutoSyncRole(nextRoleValue);
+    if (!nextRole) delete nho.autoSyncRole;
+    else nho.autoSyncRole = nextRole;
+
+    const autoCtx = buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '');
+    const effectiveRole = getEffectiveAutoSyncRole(autoCtx);
+    const suggestedFields =
+      effectiveRole && effectiveRole !== AUTO_SYNC_ROLE_OFF ? getSuggestedFieldsForAutoRole(effectiveRole) : null;
+    if (suggestedFields) {
+      const currentFields = Array.isArray(nho.fieldsTemplate) ? nho.fieldsTemplate : [];
+      nho.fieldsTemplate = mergeFieldsTemplate(currentFields, suggestedFields);
+    }
+    if (effectiveRole && effectiveRole !== AUTO_SYNC_ROLE_OFF) {
+      const seededFieldMap = normalizeAutoSyncFieldMap(getEffectiveAutoSyncFieldMap(autoCtx), effectiveRole);
+      if (Object.keys(seededFieldMap).length > 0) nho.autoSyncFieldMap = seededFieldMap;
+      else delete nho.autoSyncFieldMap;
+    } else if (nextRole === AUTO_SYNC_ROLE_OFF) {
+      delete nho.autoSyncFieldMap;
+    }
+
+    setTabsConfig(current);
+  };
+
+  const handleSetTabAutoSyncFieldMap = (lonId, nhoId, fieldKey, nextFieldIdValue) => {
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+
+    const autoCtx = buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '');
+    const effectiveRole = getEffectiveAutoSyncRole(autoCtx);
+    if (!effectiveRole || effectiveRole === AUTO_SYNC_ROLE_OFF) return;
+
+    const allowedKeys = new Set(getAutoSyncFieldDefs(effectiveRole).map((def) => def.key));
+    if (!allowedKeys.has(fieldKey)) return;
+
+    const nextFieldId = safeString(nextFieldIdValue).trim();
+    const currentMap = {
+      ...normalizeAutoSyncFieldMap(nho.autoSyncFieldMap, effectiveRole),
+    };
+    if (!nextFieldId) delete currentMap[fieldKey];
+    else currentMap[fieldKey] = nextFieldId;
+
+    const normalizedMap = normalizeAutoSyncFieldMap(currentMap, effectiveRole);
+    if (Object.keys(normalizedMap).length > 0) nho.autoSyncFieldMap = normalizedMap;
+    else delete nho.autoSyncFieldMap;
+
     setTabsConfig(current);
   };
 
@@ -1964,6 +2071,8 @@ export default function App() {
     handleDeleteTab,
     handleAddTabNho,
     handleAddTabCon,
+    handleSetTabAutoSyncRole,
+    handleSetTabAutoSyncFieldMap,
   };
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden relative theme-wrapper ${activeThemeClass} ${performanceMode ? 'performance-mode' : ''}`}>

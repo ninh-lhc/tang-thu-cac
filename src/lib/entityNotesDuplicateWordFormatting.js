@@ -1,7 +1,7 @@
-// Sync repeated single-word inline formatting in entity notes.
+// Sync repeated inline formatting in entity notes.
 // We infer wrapper templates from manual inline markup like **word**
-// or [color=...]word[/color], then reapply the same wrapper to plain
-// duplicates while skipping spans that are already formatted or linked.
+// or [color=...]phrase[/color], then reapply the same wrapper to
+// matching plain duplicates while skipping formatted or linked spans.
 
 const safeString = (value) => {
   if (typeof value === 'string') return value;
@@ -9,7 +9,9 @@ const safeString = (value) => {
   return String(value);
 };
 
-const SINGLE_WORD_RE = /^[\p{L}\p{M}\p{N}_]+(?:[-'’][\p{L}\p{M}\p{N}_]+)*$/u;
+const TERM_TOKEN_RE = /[\p{L}\p{M}\p{N}_]+(?:[-'’][\p{L}\p{M}\p{N}_]+)*/u;
+const TERM_RE = new RegExp(`^${TERM_TOKEN_RE.source}(?:[ \\t]+${TERM_TOKEN_RE.source}){0,5}$`, 'u');
+const BOUNDARY_CLASS = "\\p{L}\\p{M}\\p{N}_'’-";
 
 const createProtectedSegmentRegex = () =>
   /(\[color=(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]+)\][\s\S]*?\[\/color\]|\*\*[\s\S]*?\*\*|==[\s\S]*?==|~~[\s\S]*?~~|<u>[\s\S]*?<\/u>|`[^`\n]+`|\*[^*\n]+?\*|!\[.*?\]\(.*?\)|\[[^\]\n]+\]\([^)]+\)|https?:\/\/\S+|\[\[.*?\]\])/gu;
@@ -24,9 +26,16 @@ const INLINE_WRAP_PATTERNS = [
   /^\*([^*\n]+?)\*$/u,
 ];
 
-const normalizeWordKey = (value) => safeString(value).normalize('NFC').toLowerCase();
+const normalizeTermKey = (value) =>
+  safeString(value)
+    .normalize('NFC')
+    .trim()
+    .replace(/[ \t]+/g, ' ')
+    .toLowerCase();
 
-const unwrapInlineWord = (value) => {
+const escapeRegExp = (value) => safeString(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const unwrapInlineTerm = (value) => {
   let current = safeString(value);
   let guard = 0;
 
@@ -47,48 +56,69 @@ const unwrapInlineWord = (value) => {
   return current;
 };
 
-const buildWordFormatRule = (segment) => {
+const buildTermFormatRule = (segment) => {
   const source = safeString(segment);
-  const plainWord = unwrapInlineWord(source);
-  if (!SINGLE_WORD_RE.test(plainWord)) return null;
+  const plainTerm = unwrapInlineTerm(source);
+  if (!plainTerm || plainTerm !== plainTerm.trim()) return null;
+  if (!TERM_RE.test(plainTerm)) return null;
 
-  const wordStart = source.indexOf(plainWord);
-  if (wordStart === -1) return null;
-  if (source.indexOf(plainWord, wordStart + plainWord.length) !== -1) return null;
+  const termStart = source.indexOf(plainTerm);
+  if (termStart === -1) return null;
+  if (source.indexOf(plainTerm, termStart + plainTerm.length) !== -1) return null;
 
-  const before = source.slice(0, wordStart);
-  const after = source.slice(wordStart + plainWord.length);
+  const before = source.slice(0, termStart);
+  const after = source.slice(termStart + plainTerm.length);
   if (!before && !after) return null;
 
   return {
-    key: normalizeWordKey(plainWord),
-    word: plainWord,
+    key: normalizeTermKey(plainTerm),
+    term: plainTerm,
     before,
     after,
+    tokenCount: plainTerm.split(/[ \t]+/).length,
   };
 };
 
-const applyRulesToPlainSegment = (segment, ruleMap) => {
+const buildRuleMatcher = (rules) => {
+  if (!Array.isArray(rules) || rules.length === 0) return null;
+  const alternatives = rules.map((rule) =>
+    rule.term
+      .split(/[ \t]+/)
+      .map((part) => escapeRegExp(part))
+      .join('[ \\t]+')
+  );
+
+  return new RegExp(
+    `(^|[^${BOUNDARY_CLASS}])(${alternatives.join('|')})(?=$|[^${BOUNDARY_CLASS}])`,
+    'giu'
+  );
+};
+
+const applyRulesToPlainSegment = (segment, rules, ruleMap) => {
   const source = safeString(segment);
-  const wordTokenRegex = /[\p{L}\p{M}\p{N}_]+(?:[-'’][\p{L}\p{M}\p{N}_]+)*/gu;
+  const matcher = buildRuleMatcher(rules);
+  if (!matcher) return { text: source, count: 0 };
+
   let rebuilt = '';
   let lastIndex = 0;
   let count = 0;
 
-  for (const match of source.matchAll(wordTokenRegex)) {
-    const word = safeString(match[0]);
-    const start = Number(match.index) || 0;
-    rebuilt += source.slice(lastIndex, start);
+  for (const match of source.matchAll(matcher)) {
+    const prefix = safeString(match[1]);
+    const pickedTerm = safeString(match[2]);
+    const matchStart = (Number(match.index) || 0) + prefix.length;
+    const matchEnd = matchStart + pickedTerm.length;
+    const rule = ruleMap.get(normalizeTermKey(pickedTerm));
 
-    const rule = ruleMap.get(normalizeWordKey(word));
+    rebuilt += source.slice(lastIndex, match.index);
+    rebuilt += prefix;
     if (rule) {
-      rebuilt += `${rule.before}${word}${rule.after}`;
+      rebuilt += `${rule.before}${pickedTerm}${rule.after}`;
       count += 1;
     } else {
-      rebuilt += word;
+      rebuilt += pickedTerm;
     }
-
-    lastIndex = start + word.length;
+    lastIndex = matchEnd;
   }
 
   rebuilt += source.slice(lastIndex);
@@ -103,7 +133,7 @@ export const syncEntityNotesDuplicateWordFormatting = (sourceText) => {
 
   let match;
   while ((match = collectRegex.exec(source)) !== null) {
-    const candidate = buildWordFormatRule(match[0]);
+    const candidate = buildTermFormatRule(match[0]);
     if (!candidate || conflicts.has(candidate.key)) continue;
 
     const previous = ruleMap.get(candidate.key);
@@ -127,6 +157,12 @@ export const syncEntityNotesDuplicateWordFormatting = (sourceText) => {
     };
   }
 
+  const rules = [...ruleMap.values()].sort((left, right) => {
+    if (right.term.length !== left.term.length) return right.term.length - left.term.length;
+    if (right.tokenCount !== left.tokenCount) return right.tokenCount - left.tokenCount;
+    return right.before.length + right.after.length - (left.before.length + left.after.length);
+  });
+
   const applyRegex = createProtectedSegmentRegex();
   let rebuilt = '';
   let lastIndex = 0;
@@ -134,14 +170,14 @@ export const syncEntityNotesDuplicateWordFormatting = (sourceText) => {
 
   while ((match = applyRegex.exec(source)) !== null) {
     const plainSegment = source.slice(lastIndex, match.index);
-    const patchedSegment = applyRulesToPlainSegment(plainSegment, ruleMap);
+    const patchedSegment = applyRulesToPlainSegment(plainSegment, rules, ruleMap);
     rebuilt += patchedSegment.text;
     rebuilt += match[0];
     propagatedCount += patchedSegment.count;
     lastIndex = applyRegex.lastIndex;
   }
 
-  const tailSegment = applyRulesToPlainSegment(source.slice(lastIndex), ruleMap);
+  const tailSegment = applyRulesToPlainSegment(source.slice(lastIndex), rules, ruleMap);
   rebuilt += tailSegment.text;
   propagatedCount += tailSegment.count;
 

@@ -2,6 +2,7 @@
 // CẤU TRÚC MỤC LỤC THEO THỂ LOẠI (từ cau-truc.txt)
 // Dùng khi chọn thể loại + bấm "Tạo cấu trúc theo thể loại"
 // ==========================================
+import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 
 const DEFAULT_FIELDS = [
   { id: 'f_status', label: 'Trạng thái / Cấp' },
@@ -426,6 +427,6 @@ export function mergeTabsByGenres(genres) {
       }
     }
   }
-  const result = [TONG_QUAN, ...Array.from(merged.values())];
+  const result = hydrateTabsAutoSyncConfigs([TONG_QUAN, ...Array.from(merged.values())]).tabsConfig;
   return result.length > 1 ? result : null;
 }

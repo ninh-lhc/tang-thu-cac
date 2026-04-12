@@ -22,6 +22,11 @@ import {
 } from './lib/autoOwnerMilestone.js';
 import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks, syncMapHierarchyNameReferences } from './lib/mapHierarchySync.js';
 import {
+  getEntityAutoFieldValue,
+  hasAnyAutoSyncFieldChanged,
+  setEntityAutoFieldValue,
+} from './lib/tabAutoSyncFieldMap.js';
+import {
   isForceCollectionScope,
   summarizeTheLucMapSyncWarnings,
   syncAllTheLucMapAutoBlocksDetailed,
@@ -85,6 +90,44 @@ export function useAppEntityMilestoneActions({
       }),
     [entityImageName, entityImageScopeLabel, currentTabEntities, selectedEntity?.id]
   );
+  const currentAutoFieldContext = useMemo(
+    () => ({
+      activeTabLon,
+      activeTabNho: activeTabNho || 'default',
+      currentTabConfig: currentTabConfig || null,
+      parentLabel: currentTabConfig?._parentLabel || '',
+    }),
+    [activeTabLon, activeTabNho, currentTabConfig]
+  );
+  const getStatusLineForCurrentTab = useCallback(
+    (entityLike) =>
+      getEntityAutoFieldValue(entityLike, currentAutoFieldContext, 'status', {
+        fallbackToStatus: true,
+      }) || safeString(entityLike?.dynamicData?.f_status || entityLike?.status).trim(),
+    [currentAutoFieldContext]
+  );
+  const mergeAliasForCurrentTab = useCallback(
+    (entity, nextAlias) => {
+      if (!entity || !safeString(nextAlias).trim()) return;
+      const prevAlias =
+        getEntityAutoFieldValue(entity, currentAutoFieldContext, 'alias') ||
+        safeString(entity.dynamicData?.f_alias);
+      const mergedAlias = mergeAliasText(prevAlias, nextAlias);
+      if (mergedAlias === prevAlias) return;
+      const updated = setEntityAutoFieldValue(entity, currentAutoFieldContext, 'alias', mergedAlias);
+      if (!updated) {
+        if (!entity.dynamicData || typeof entity.dynamicData !== 'object') entity.dynamicData = {};
+        entity.dynamicData.f_alias = mergedAlias;
+      }
+    },
+    [currentAutoFieldContext]
+  );
+  const hasCurrentAutoFieldChange = useCallback(
+    (changedFieldIds, fieldKeys, fallbackFieldIds = []) =>
+      hasAnyAutoSyncFieldChanged(currentAutoFieldContext, changedFieldIds, fieldKeys) ||
+      fallbackFieldIds.some((fieldId) => changedFieldIds?.has?.(fieldId)),
+    [currentAutoFieldContext]
+  );
 
   const handleSaveEntity = useCallback(
     (formData, dynamicData, opts = null) => {
@@ -131,7 +174,10 @@ export function useAppEntityMilestoneActions({
               : [];
             const prevDyn = tabData.entities[idx].dynamicData || {};
             const mergedDyn = { ...prevDyn, ...dynamicData };
-            const statusLine = safeString(mergedDyn.f_status).trim();
+            const statusLine = getStatusLineForCurrentTab({
+              ...tabData.entities[idx],
+              dynamicData: mergedDyn,
+            });
             tabData.entities[idx] = {
               ...tabData.entities[idx],
               name: formData.name,
@@ -144,6 +190,8 @@ export function useAppEntityMilestoneActions({
             applyAutoRelationNotesForEntity(nov, {
               sourceEntity: tabData.entities[idx],
               sourceLonId: activeTabLon,
+              sourceNhoId: activeTabNho || 'default',
+              sourceNhoConfig: currentTabConfig,
               sourceParentLabel: currentTabConfig?._parentLabel || '',
               statusLine,
             });
@@ -165,7 +213,10 @@ export function useAppEntityMilestoneActions({
           }
         } else {
           const mergedNew = { ...dynamicData };
-          const statusLine = safeString(mergedNew.f_status).trim();
+          const statusLine = getStatusLineForCurrentTab({
+            dynamicData: mergedNew,
+            status: '',
+          });
           const canonicalName = safeString(formData.name).trim();
           const matched = findEquivalentEntityByName(tabData.entities, canonicalName, {
             allowExactNameMatch: false,
@@ -173,17 +224,14 @@ export function useAppEntityMilestoneActions({
           if (matched?.entity) {
             createTargetEntityId = matched.entity.id;
             createMergedToExisting = true;
-            const prevAlias = safeString(matched.entity.dynamicData?.f_alias);
-            const mergedAlias = mergeAliasText(prevAlias, canonicalName);
-            if (mergedAlias !== prevAlias) {
-              if (!matched.entity.dynamicData) matched.entity.dynamicData = {};
-              matched.entity.dynamicData.f_alias = mergedAlias;
-            }
+            mergeAliasForCurrentTab(matched.entity, canonicalName);
             applyAutoRelationNotesForEntity(nov, {
               sourceEntity: matched.entity,
               sourceLonId: activeTabLon,
+              sourceNhoId: activeTabNho || 'default',
+              sourceNhoConfig: currentTabConfig,
               sourceParentLabel: currentTabConfig?._parentLabel || '',
-              statusLine,
+              statusLine: getStatusLineForCurrentTab(matched.entity),
             });
           } else {
             const createInfoTemplate = buildEntityNoteTemplate({
@@ -209,6 +257,8 @@ export function useAppEntityMilestoneActions({
             applyAutoRelationNotesForEntity(nov, {
               sourceEntity: created,
               sourceLonId: activeTabLon,
+              sourceNhoId: activeTabNho || 'default',
+              sourceNhoConfig: currentTabConfig,
               sourceParentLabel: currentTabConfig?._parentLabel || '',
               statusLine,
             });
@@ -252,7 +302,14 @@ export function useAppEntityMilestoneActions({
           forceMapAutoWarning =
             summarizeTheLucMapSyncWarnings(forceSyncResult.warnings) || forceMapAutoWarning;
         }
-        if (isAutoRelationScopeLonId(activeTabLon, currentTabConfig?._parentLabel || '')) {
+        if (
+          isAutoRelationScopeLonId(
+            activeTabLon,
+            currentTabConfig?._parentLabel || '',
+            currentTabConfig,
+            activeTabNho || 'default'
+          )
+        ) {
           relationAutoResynced = syncAllAutoRelationNotesForNovel(nov) || relationAutoResynced;
         }
         if (isCultivationRelationScope({ activeTabLon, activeTabNho, currentTabConfig })) {
@@ -345,6 +402,8 @@ export function useAppEntityMilestoneActions({
       activeTabLon,
       activeTabNho,
       currentTabConfig,
+      getStatusLineForCurrentTab,
+      mergeAliasForCurrentTab,
       updateActiveNovelData,
       setSelectedEntityId,
       setSelectedMilestoneId,
@@ -676,7 +735,14 @@ export function useAppEntityMilestoneActions({
             forceMapWarning =
               summarizeTheLucMapSyncWarnings(forceSyncResult.warnings) || forceMapWarning;
           }
-          if (isAutoRelationScopeLonId(removedLonId, removedLonConfig?.label || '')) {
+          if (
+            isAutoRelationScopeLonId(
+              removedLonId,
+              removedLonConfig?.label || '',
+              removedNhoConfig,
+              removedNhoId
+            )
+          ) {
             relationAutoResynced = syncAllAutoRelationNotesForNovel(updated) || relationAutoResynced;
           }
           if (
@@ -827,12 +893,17 @@ export function useAppEntityMilestoneActions({
               });
             }
             if (snapshot.avatar) ent.avatar = snapshot.avatar;
-            if (mergedKeys.has('f_status')) {
-              ent.status = safeString(ent.dynamicData.f_status).trim();
+            if (hasCurrentAutoFieldChange(mergedKeys, ['status'], ['f_status'])) {
+              ent.status = getStatusLineForCurrentTab(ent);
             }
             if (
-              isAutoRelationScopeLonId(activeTabLon, currentTabConfig?._parentLabel || '') &&
-              mergedKeys.has('f_status')
+              isAutoRelationScopeLonId(
+                activeTabLon,
+                currentTabConfig?._parentLabel || '',
+                currentTabConfig,
+                activeTabNho || 'default'
+              ) &&
+              hasCurrentAutoFieldChange(mergedKeys, ['status'], ['f_status'])
             ) {
               relationAutoResynced = syncAllAutoRelationNotesForNovel(nov) || relationAutoResynced;
             }
@@ -842,7 +913,7 @@ export function useAppEntityMilestoneActions({
                 activeTabNho,
                 currentTabConfig,
               }) &&
-              (mergedKeys.has('f_status') || mergedKeys.has('f_alias'))
+              hasCurrentAutoFieldChange(mergedKeys, ['status', 'alias'], ['f_status', 'f_alias'])
             ) {
               cultivationRelationAutoResynced =
                 syncAllCultivationRelationBlocks(nov) || cultivationRelationAutoResynced;
@@ -854,7 +925,7 @@ export function useAppEntityMilestoneActions({
                 currentTabConfig,
                 parentLabel: currentTabConfig?._parentLabel || '',
               }) &&
-              (mergedKeys.has('f_status') || mergedKeys.has('f_dia_ban') || mergedKeys.has('f_vi_tri'))
+              hasCurrentAutoFieldChange(mergedKeys, ['status', 'location'], ['f_status', 'f_dia_ban', 'f_vi_tri'])
             ) {
               const forceSyncResult = syncTheLucMapAutoBlocksDetailed(nov, {
                 sourceLonId: activeTabLon,
@@ -872,14 +943,14 @@ export function useAppEntityMilestoneActions({
                 currentTabConfig,
                 parentLabel: currentTabConfig?._parentLabel || '',
               }) &&
-              mergedKeys.has('f_quan_he')
+              hasCurrentAutoFieldChange(mergedKeys, ['relation'], ['f_quan_he'])
             ) {
               mainCharacterRelationResynced =
                 syncAllMainCharacterRelationBlocks(nov) || mainCharacterRelationResynced;
             }
             if (
               isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig }) &&
-              (mergedKeys.has('f_title') || mergedKeys.has('f_status') || mergedKeys.has('f_vi_tri'))
+              hasCurrentAutoFieldChange(mergedKeys, ['title', 'status', 'parent_path'], ['f_title', 'f_status', 'f_vi_tri'])
             ) {
               mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
             }
@@ -922,6 +993,8 @@ export function useAppEntityMilestoneActions({
       activeTabNho,
       currentTabConfig,
       selectedEntityId,
+      getStatusLineForCurrentTab,
+      hasCurrentAutoFieldChange,
       setRecentlyMergedFields,
       setCollectionSubTab,
       setActiveNovelData,
