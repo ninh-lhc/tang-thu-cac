@@ -6,6 +6,7 @@ import {
   syncAllTheLucMapAutoBlocksDetailed,
   syncTheLucMapAutoBlocks,
 } from './theLucBanDoSync.js';
+import { AUTO_SYNC_ROLE_OFF } from './tabAutoSyncRole.js';
 
 describe('theLucBanDoSync', () => {
   it('sorts force rows by type > name > rank > path', () => {
@@ -533,6 +534,44 @@ describe('theLucBanDoSync', () => {
 
     expect(ok).toBe(false);
     expect(after).toBe(before);
+  });
+  it('cleans stale force-map AUTO blocks when both roles are turned off', () => {
+    const nov = {
+      tabsConfig: [
+        {
+          id: 'the-luc',
+          label: 'The Luc',
+          subTabs: [{ id: 'gia-toc', label: 'Gia Toc', viewType: 'collection-track' }],
+        },
+        {
+          id: 'ban-do',
+          label: 'Ban Do',
+          subTabs: [{ id: 'ha-gioi', label: 'Ha Gioi', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'the-luc': {
+          'gia-toc': {
+            overview: '',
+            entities: [{ id: 'tl1', name: 'Huyet Linh Tong', dynamicData: { f_status: 'Tong Mon - Bat Cap the luc - Huyet Gioi' }, info: '' }],
+          },
+        },
+        'ban-do': {
+          'ha-gioi': { overview: '', entities: [{ id: 'm1', name: 'Huyet Gioi', info: 'Mo ta tay dia danh' }] },
+        },
+      },
+    };
+
+    expect(syncAllTheLucMapAutoBlocksDetailed(nov).applied).toBe(true);
+    nov.tabsConfig[0].subTabs[0].autoSyncRole = AUTO_SYNC_ROLE_OFF;
+    nov.tabsConfig[1].subTabs[0].autoSyncRole = AUTO_SYNC_ROLE_OFF;
+
+    const result = syncAllTheLucMapAutoBlocksDetailed(nov);
+    expect(result.changed).toBe(true);
+    expect(result.applied).toBe(false);
+    expect(String(nov.data['the-luc']['gia-toc'].entities[0].info || '')).not.toContain('AUTO_THE_LUC_META');
+    expect(String(nov.data['ban-do']['ha-gioi'].entities[0].info || '')).toContain('Mo ta tay dia danh');
+    expect(String(nov.data['ban-do']['ha-gioi'].entities[0].info || '')).not.toContain('AUTO_MAP_THE_LUC_LIST');
   });
 });
 

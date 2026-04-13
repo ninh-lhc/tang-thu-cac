@@ -6,6 +6,7 @@ import {
   syncMapHierarchyNameReferences,
 } from './mapHierarchySync.js';
 import { normalizeAsciiText } from './statusHierarchyParser.js';
+import { AUTO_SYNC_ROLE_OFF } from './tabAutoSyncRole.js';
 
 function createNovelWithMapEntities(entities) {
   return {
@@ -308,5 +309,28 @@ describe('mapHierarchySync', () => {
     const source = novel.data['tai-nguyen']['dia-danh'].entities.find((ent) => ent.id === 'm-gioi');
     const normalizedInfo = normalizeAsciiText(String(source?.info || ''));
     expect(normalizedInfo).toContain('loai dia danh: gioi');
+  });
+  it('cleans stale map hierarchy AUTO blocks when the tab role is turned off', () => {
+    const novel = createNovelWithMapEntities([
+      {
+        id: 'm1',
+        name: 'Man Hoang Dai Luc',
+        info: '',
+        dynamicData: {
+          f_title: 'Dai Luc',
+          f_vi_tri: 'Viet Long Tinh Cau',
+        },
+      },
+    ]);
+
+    expect(syncAllMapHierarchyAutoBlocks(novel)).toBe(true);
+    novel.tabsConfig[0].subTabs[0].autoSyncRole = AUTO_SYNC_ROLE_OFF;
+
+    const ok = syncAllMapHierarchyAutoBlocks(novel);
+    expect(ok).toBe(true);
+
+    const mapEntities = novel.data['tai-nguyen']['dia-danh'].entities;
+    expect(String(mapEntities.find((ent) => ent.id === 'm1')?.info || '')).not.toContain('AUTO_MAP_HIERARCHY_META');
+    expect(String(mapEntities.find((ent) => ent.name === 'Viet Long Tinh Cau')?.info || '')).not.toContain('AUTO_MAP_CHILDREN_LIST');
   });
 });

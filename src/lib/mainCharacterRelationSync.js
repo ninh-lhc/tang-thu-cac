@@ -60,6 +60,18 @@ function upsertAutoBlock(infoText, title, bodyLines) {
   return cleaned ? `${cleaned}\n\n${block}` : block;
 }
 
+function forEachCollectionEntity(novelData, cb) {
+  const data = novelData?.data;
+  if (!data || typeof data !== 'object') return;
+  Object.values(data).forEach((lonData) => {
+    if (!lonData || typeof lonData !== 'object') return;
+    Object.values(lonData).forEach((nhoData) => {
+      const entities = Array.isArray(nhoData?.entities) ? nhoData.entities : [];
+      entities.forEach((entity) => cb(entity));
+    });
+  });
+}
+
 function findCharacterTabPaths(novelData) {
   const tabsConfig = Array.isArray(novelData?.tabsConfig) ? novelData.tabsConfig : [];
   const relatedPaths = [];
@@ -200,18 +212,8 @@ export function syncAllMainCharacterRelationBlocks(novelData) {
   const data = novelData?.data;
   if (!data || typeof data !== 'object') return false;
 
-  const { mainPath, relatedPaths } = findCharacterTabPaths(novelData);
-  if (!mainPath && relatedPaths.length === 0) return false;
-
-  const mainEntities = mainPath ? getCollectionEntities(novelData, mainPath.lonId, mainPath.nhoId) : [];
-  const relatedEntries = [];
-  relatedPaths.forEach((path) => {
-    const entities = getCollectionEntities(novelData, path.lonId, path.nhoId);
-    entities.forEach((entity) => relatedEntries.push({ entity, path }));
-  });
-
   let changed = false;
-  [...mainEntities, ...relatedEntries.map((item) => item.entity)].forEach((entity) => {
+  forEachCollectionEntity(novelData, (entity) => {
     if (!entity || typeof entity !== 'object') return;
     const before = String(entity.info || '');
     const after = stripMainCharacterRelationAutoBlocks(before);
@@ -219,6 +221,16 @@ export function syncAllMainCharacterRelationBlocks(novelData) {
       entity.info = after;
       changed = true;
     }
+  });
+
+  const { mainPath, relatedPaths } = findCharacterTabPaths(novelData);
+  if (!mainPath && relatedPaths.length === 0) return changed;
+
+  const mainEntities = mainPath ? getCollectionEntities(novelData, mainPath.lonId, mainPath.nhoId) : [];
+  const relatedEntries = [];
+  relatedPaths.forEach((path) => {
+    const entities = getCollectionEntities(novelData, path.lonId, path.nhoId);
+    entities.forEach((entity) => relatedEntries.push({ entity, path }));
   });
 
   const mainEntity = mainEntities[0];

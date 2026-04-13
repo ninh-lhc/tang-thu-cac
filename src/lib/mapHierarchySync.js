@@ -53,6 +53,36 @@ function removeAutoBlock(baseText, start, end) {
   return `${text.slice(0, sIdx)}${text.slice(eIdx + end.length)}`.trim();
 }
 
+function forEachCollectionEntity(nov, cb) {
+  const data = nov?.data;
+  if (!data || typeof data !== 'object') return;
+  Object.values(data).forEach((lonData) => {
+    if (!lonData || typeof lonData !== 'object') return;
+    Object.values(lonData).forEach((nhoData) => {
+      const entities = Array.isArray(nhoData?.entities) ? nhoData.entities : [];
+      entities.forEach((entity) => cb(entity));
+    });
+  });
+}
+
+function stripMapHierarchyAutoBlocksFromNovel(nov) {
+  let changed = false;
+  forEachCollectionEntity(nov, (entity) => {
+    if (!entity || typeof entity !== 'object') return;
+    const original = safeString(entity.info || '');
+    const next = removeAutoBlock(
+      removeAutoBlock(original, AUTO_MAP_META_START, AUTO_MAP_META_END),
+      AUTO_MAP_CHILDREN_START,
+      AUTO_MAP_CHILDREN_END
+    );
+    if (next !== original) {
+      entity.info = next;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 function detectMapLevelInfo(...inputs) {
   for (const raw of inputs) {
     const n = normalizeAscii(raw);
@@ -413,10 +443,10 @@ function syncMapHierarchyInTab(mapTab, mapPath = {}) {
 
 export function syncAllMapHierarchyAutoBlocks(nov) {
   if (!nov) return false;
+  let changed = stripMapHierarchyAutoBlocksFromNovel(nov);
   const mapPaths = findMapTabPaths(nov);
-  if (mapPaths.length === 0) return false;
+  if (mapPaths.length === 0) return changed;
 
-  let changed = false;
   mapPaths.forEach((mapPath) => {
     const mapTab = ensureCollectionTabData(nov, mapPath.lonId, mapPath.nhoId);
     changed = syncMapHierarchyInTab(mapTab, mapPath) || changed;

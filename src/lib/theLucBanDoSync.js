@@ -82,6 +82,36 @@ function removeAutoBlock(baseText, start, end) {
   return `${text.slice(0, sIdx)}${text.slice(eIdx + end.length)}`.trim();
 }
 
+function forEachCollectionEntity(nov, cb) {
+  const data = nov?.data;
+  if (!data || typeof data !== 'object') return;
+  Object.values(data).forEach((lonData) => {
+    if (!lonData || typeof lonData !== 'object') return;
+    Object.values(lonData).forEach((nhoData) => {
+      const entities = Array.isArray(nhoData?.entities) ? nhoData.entities : [];
+      entities.forEach((entity) => cb(entity));
+    });
+  });
+}
+
+function stripTheLucMapAutoBlocksFromNovel(nov) {
+  let changed = false;
+  forEachCollectionEntity(nov, (entity) => {
+    if (!entity || typeof entity !== 'object') return;
+    const original = safeString(entity.info || '');
+    const next = removeAutoBlock(
+      removeAutoBlock(original, AUTO_FORCE_BLOCK_START, AUTO_FORCE_BLOCK_END),
+      AUTO_MAP_BLOCK_START,
+      AUTO_MAP_BLOCK_END
+    );
+    if (next !== original) {
+      entity.info = next;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 function splitStatusParts(statusText) {
   return splitStatusHierarchyTokens(statusText);
 }
@@ -555,20 +585,20 @@ export function syncTheLucMapAutoBlocks(nov, { sourceLonId, sourceNhoId, entityI
 export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
   if (!nov) return { changed: false, warnings: [], applied: false };
 
+  let changed = stripTheLucMapAutoBlocksFromNovel(nov);
   const mapPaths = findMapTabPaths(nov).map((path) => ({
     ...path,
     tabData: ensureCollectionTabData(nov, path.lonId, path.nhoId),
   }));
-  if (mapPaths.length === 0) return { changed: false, warnings: [], applied: false };
+  if (mapPaths.length === 0) return { changed, warnings: [], applied: false };
 
   const sourcePaths = findForceTabPaths(nov, { sourceLonId }).map((path) => ({
     ...path,
     tabData: ensureCollectionTabData(nov, path.lonId, path.nhoId),
   }));
-  if (sourcePaths.length === 0) return { changed: false, warnings: [], applied: false };
+  if (sourcePaths.length === 0) return { changed, warnings: [], applied: false };
 
   const warnings = [];
-  let changed = false;
   const allForceEntities = [];
 
   sourcePaths.forEach((path) => {

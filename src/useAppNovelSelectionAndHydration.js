@@ -10,31 +10,10 @@ import {
   mergeFieldsTemplate,
 } from './MasterEngines.js';
 import { buildNovelSearchIndex, countEntitiesInNovel } from './deepSearchCore.js';
-import { cleanupAutoRelationLegacyInfoForNovel, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
+import { cleanupAutoRelationLegacyInfoForNovel } from './lib/autoRelationDetailNote.js';
 import { syncAllCollectionListCards } from './lib/collectionListCardSync.js';
-import { syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
-import { syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
-import { syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
-import {
-  summarizeTheLucMapSyncWarnings,
-  syncAllTheLucMapAutoBlocksDetailed,
-} from './lib/theLucBanDoSync.js';
+import { syncFullNovelAutoBlocks } from './lib/syncFullNovelAutoBlocks.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
-
-function syncFullNovelAutoBlocks(novelData) {
-  let changed = false;
-  const forceSyncResult = syncAllTheLucMapAutoBlocksDetailed(novelData);
-  changed = forceSyncResult.changed || changed;
-  changed = syncAllAutoRelationNotesForNovel(novelData) || changed;
-  changed = syncAllMainCharacterRelationBlocks(novelData) || changed;
-  changed = syncAllCultivationRelationBlocks(novelData) || changed;
-  changed = syncAllMapHierarchyAutoBlocks(novelData) || changed;
-  changed = syncAllCollectionListCards(novelData) || changed;
-  return {
-    changed,
-    forceWarning: summarizeTheLucMapSyncWarnings(forceSyncResult.warnings),
-  };
-}
 
 export function useAppNovelSelectionAndHydration({
   dirHandle,

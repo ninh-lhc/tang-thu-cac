@@ -76,6 +76,18 @@ function upsertAutoBlock(infoText, title, bodyLines) {
   return cleaned ? `${cleaned}\n\n${block}` : block;
 }
 
+function forEachCollectionEntity(novelData, cb) {
+  const data = novelData?.data;
+  if (!data || typeof data !== 'object') return;
+  Object.values(data).forEach((lonData) => {
+    if (!lonData || typeof lonData !== 'object') return;
+    Object.values(lonData).forEach((nhoData) => {
+      const entities = Array.isArray(nhoData?.entities) ? nhoData.entities : [];
+      entities.forEach((entity) => cb(entity));
+    });
+  });
+}
+
 function findCultivationTabPaths(novelData) {
   const tabsConfig = Array.isArray(novelData?.tabsConfig) ? novelData.tabsConfig : [];
   let systemPath = null;
@@ -298,14 +310,8 @@ export function syncAllCultivationRelationBlocks(novelData) {
   const data = novelData?.data;
   if (!data || typeof data !== 'object') return false;
 
-  const { systemPath, realmPath } = findCultivationTabPaths(novelData);
-  if (!systemPath && !realmPath) return false;
-
-  const systemEntities = systemPath ? getCollectionEntities(novelData, systemPath.lonId, systemPath.nhoId) : [];
-  const realmEntities = realmPath ? getCollectionEntities(novelData, realmPath.lonId, realmPath.nhoId) : [];
-
   let changed = false;
-  [...systemEntities, ...realmEntities].forEach((entity) => {
+  forEachCollectionEntity(novelData, (entity) => {
     if (!entity || typeof entity !== 'object') return;
     const before = String(entity.info || '');
     const after = stripCultivationAutoBlocks(before);
@@ -314,6 +320,12 @@ export function syncAllCultivationRelationBlocks(novelData) {
       changed = true;
     }
   });
+
+  const { systemPath, realmPath } = findCultivationTabPaths(novelData);
+  if (!systemPath && !realmPath) return changed;
+
+  const systemEntities = systemPath ? getCollectionEntities(novelData, systemPath.lonId, systemPath.nhoId) : [];
+  const realmEntities = realmPath ? getCollectionEntities(novelData, realmPath.lonId, realmPath.nhoId) : [];
 
   if (systemEntities.length === 0 || realmEntities.length === 0) {
     return changed;

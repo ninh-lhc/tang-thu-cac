@@ -139,6 +139,7 @@ export function AppModalLayer({
   handleAddTabCon,
   handleSetTabAutoSyncRole,
   handleSetTabAutoSyncFieldMap,
+  handleResyncAutoTabs,
 }) {
   return (
     <Suspense fallback={null}>
@@ -328,6 +329,7 @@ export function AppModalLayer({
           handleAddTabCon={handleAddTabCon}
           handleSetTabAutoSyncRole={handleSetTabAutoSyncRole}
           handleSetTabAutoSyncFieldMap={handleSetTabAutoSyncFieldMap}
+          handleResyncAutoTabs={handleResyncAutoTabs}
           setConfirmDialog={setConfirmDialog}
         />
       )}

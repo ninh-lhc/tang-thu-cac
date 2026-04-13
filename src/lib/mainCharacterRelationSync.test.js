@@ -3,6 +3,7 @@ import {
   isMainCharacterRelationScope,
   syncAllMainCharacterRelationBlocks,
 } from './mainCharacterRelationSync.js';
+import { AUTO_SYNC_ROLE_OFF } from './tabAutoSyncRole.js';
 
 function createNovel() {
   return {
@@ -116,5 +117,23 @@ describe('mainCharacterRelationSync', () => {
         currentTabConfig: { id: 'gia-toc', label: 'Gia Toc', _parentLabel: 'The Luc' },
       })
     ).toBe(false);
+  });
+  it('cleans stale main-character AUTO blocks when the related tabs are turned off', () => {
+    const novel = createNovel();
+    expect(syncAllMainCharacterRelationBlocks(novel)).toBe(true);
+
+    novel.tabsConfig[0].subTabs.forEach((tab) => {
+      tab.autoSyncRole = AUTO_SYNC_ROLE_OFF;
+    });
+
+    const ok = syncAllMainCharacterRelationBlocks(novel);
+    expect(ok).toBe(true);
+
+    const mainInfo = String(novel.data['nhan-vat']['nhan-vat-chinh'].entities[0].info || '');
+    const daoLuInfo = String(novel.data['nhan-vat']['dao-lu'].entities[0].info || '');
+    expect(mainInfo).toContain('Ghi chu tay nvc');
+    expect(mainInfo).not.toContain('(AUTO)');
+    expect(daoLuInfo).toContain('Ghi chu tay dao lu');
+    expect(daoLuInfo).not.toContain('(AUTO)');
   });
 });

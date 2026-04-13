@@ -104,6 +104,7 @@ import {
   normalizeAutoSyncFieldMap,
   setEntityAutoFieldValue,
 } from './lib/tabAutoSyncFieldMap.js';
+import { syncFullNovelAutoBlocks } from './lib/syncFullNovelAutoBlocks.js';
 import { AppMainPane } from './AppMainPane.jsx';
 import { AppModalLayer } from './AppModalLayer.jsx';
 
@@ -1199,12 +1200,25 @@ export default function App() {
   };
 
   const handleUpdateTabTemplate = (newFields) => {
+    let forceWarning = '';
     updateActiveNovelData(nov => {
        if (!nov.tabsConfig) nov.tabsConfig = [];
        const lon = nov.tabsConfig.find(t => t.id === activeTabLon);
        const nho = lon?.subTabs?.find(s => s.id === activeTabNho);
-       if (nho) nho.fieldsTemplate = newFields;
+       if (!nho) return;
+       nho.fieldsTemplate = newFields;
+       if (nho.viewType === 'collection-track') {
+        const autoCtx = buildAutoSyncContext(activeTabLon, activeTabNho, nho, lon?.label || '');
+        const effectiveRole = getEffectiveAutoSyncRole(autoCtx);
+        if (effectiveRole && effectiveRole !== AUTO_SYNC_ROLE_OFF) {
+          const seededFieldMap = normalizeAutoSyncFieldMap(getEffectiveAutoSyncFieldMap(autoCtx), effectiveRole);
+          if (Object.keys(seededFieldMap).length > 0) nho.autoSyncFieldMap = seededFieldMap;
+          else delete nho.autoSyncFieldMap;
+        }
+       }
+       forceWarning = syncFullNovelAutoBlocks(nov).forceWarning || '';
     });
+    if (forceWarning) showToast(forceWarning, 'warning');
   };
 
   const {
@@ -1476,14 +1490,41 @@ export default function App() {
 
   // Tab management helpers
   const getTabsToUpdate = () => activeNovelData ? activeNovelData.tabsConfig : globalTabsConfig;
-  const setTabsConfig = (newTabs) => {
+  const setTabsConfig = (newTabs, { resyncAuto = false, mutateNovelData = null } = {}) => {
+    let forceWarning = '';
     if (activeNovelData) {
-      updateActiveNovelData(nov => { nov.tabsConfig = newTabs; });
-    } else {
-      setGlobalTabsConfig(newTabs);
-      syncIndex(novelsMetadata, newTabs, dirHandle);
+      updateActiveNovelData((nov) => {
+        nov.tabsConfig = newTabs;
+        if (typeof mutateNovelData === 'function') mutateNovelData(nov);
+        if (resyncAuto) {
+          const autoSyncResult = syncFullNovelAutoBlocks(nov);
+          forceWarning = autoSyncResult.forceWarning || '';
+        }
+      });
+      if (forceWarning) showToast(forceWarning, 'warning');
+      return;
     }
+    setGlobalTabsConfig(newTabs);
+    syncIndex(novelsMetadata, newTabs, dirHandle);
   };
+
+  const handleResyncAutoTabs = useCallback(() => {
+    if (!activeNovelData) return;
+    let changed = false;
+    let forceWarning = '';
+    updateActiveNovelData((nov) => {
+      const autoSyncResult = syncFullNovelAutoBlocks(nov);
+      changed = autoSyncResult.changed;
+      forceWarning = autoSyncResult.forceWarning || '';
+    });
+    showToast(
+      changed
+        ? 'Đã quét lại toàn bộ AUTO theo cây thư mục.'
+        : 'AUTO đã khớp sẵn với cây thư mục hiện tại.',
+      'success'
+    );
+    if (forceWarning) showToast(forceWarning, 'warning');
+  }, [activeNovelData, updateActiveNovelData, showToast]);
   const buildAutoSyncContext = (lonId, nhoId, nho, parentLabel = '') => ({
     activeTabLon: lonId,
     activeTabNho: nhoId,
@@ -1597,10 +1638,7 @@ export default function App() {
     if (path.length === 1) {
       const nextTabs = current.filter((t) => t.id !== path[0]);
       if (activeNovelData) {
-        updateActiveNovelData((nov) => {
-          nov.tabsConfig = nextTabs;
-          pruneNovelDataBucket(nov);
-        });
+        setTabsConfig(nextTabs, { resyncAuto: true, mutateNovelData: pruneNovelDataBucket });
       } else {
         setGlobalTabsConfig(nextTabs);
         syncIndex(novelsMetadata, nextTabs, dirHandle);
@@ -1609,10 +1647,7 @@ export default function App() {
       const lon = current.find((t) => t.id === path[0]);
       if (lon) lon.subTabs = (lon.subTabs || []).filter((s) => s.id !== path[1]);
       if (activeNovelData) {
-        updateActiveNovelData((nov) => {
-          nov.tabsConfig = current;
-          pruneNovelDataBucket(nov);
-        });
+        setTabsConfig(current, { resyncAuto: true, mutateNovelData: pruneNovelDataBucket });
       } else {
         setGlobalTabsConfig(current);
         syncIndex(novelsMetadata, current, dirHandle);
@@ -1622,10 +1657,7 @@ export default function App() {
       const nho = lon?.subTabs?.find((s) => s.id === path[1]);
       if (nho) nho.tabCon = (nho.tabCon || []).filter((c) => c.id !== path[2]);
       if (activeNovelData) {
-        updateActiveNovelData((nov) => {
-          nov.tabsConfig = current;
-          pruneNovelDataBucket(nov);
-        });
+        setTabsConfig(current, { resyncAuto: true, mutateNovelData: pruneNovelDataBucket });
       } else {
         setGlobalTabsConfig(current);
         syncIndex(novelsMetadata, current, dirHandle);
@@ -1657,7 +1689,7 @@ export default function App() {
       const con = nho?.tabCon?.find(c => c.id === path[2]);
       if (con) con.label = label.trim();
     }
-    setTabsConfig(current);
+    setTabsConfig(current, { resyncAuto: true });
     setEditingTab(null);
   };
 
@@ -1685,7 +1717,7 @@ export default function App() {
         }
       }
     }
-    setTabsConfig(current);
+    setTabsConfig(current, { resyncAuto: true });
   };
 
   const handleSetTabAutoSyncRole = (lonId, nhoId, nextRoleValue) => {
@@ -1714,7 +1746,7 @@ export default function App() {
       delete nho.autoSyncFieldMap;
     }
 
-    setTabsConfig(current);
+    setTabsConfig(current, { resyncAuto: true });
   };
 
   const handleSetTabAutoSyncFieldMap = (lonId, nhoId, fieldKey, nextFieldIdValue) => {
@@ -1741,7 +1773,7 @@ export default function App() {
     if (Object.keys(normalizedMap).length > 0) nho.autoSyncFieldMap = normalizedMap;
     else delete nho.autoSyncFieldMap;
 
-    setTabsConfig(current);
+    setTabsConfig(current, { resyncAuto: true });
   };
 
   // ==========================================
@@ -2073,6 +2105,7 @@ export default function App() {
     handleAddTabCon,
     handleSetTabAutoSyncRole,
     handleSetTabAutoSyncFieldMap,
+    handleResyncAutoTabs,
   };
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden relative theme-wrapper ${activeThemeClass} ${performanceMode ? 'performance-mode' : ''}`}>

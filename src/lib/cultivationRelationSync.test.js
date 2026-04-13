@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './cultivationRelationSync.js';
+import { AUTO_SYNC_ROLE_OFF } from './tabAutoSyncRole.js';
 
 function createNovel() {
   return {
@@ -132,5 +133,22 @@ describe('cultivationRelationSync', () => {
     const theTu = novel.data['tu-luyen']['he-thong-tu-luyen'].entities[0];
     expect(theTu.info).toContain('Cảnh Giới Tu Vi Liên Quan (AUTO)');
     expect(theTu.info).toContain('[[Truc Co - The Canh]]');
+  });
+  it('cleans stale cultivation AUTO blocks when both tabs are turned off', () => {
+    const novel = createNovel();
+    expect(syncAllCultivationRelationBlocks(novel)).toBe(true);
+
+    novel.tabsConfig[0].subTabs[0].autoSyncRole = AUTO_SYNC_ROLE_OFF;
+    novel.tabsConfig[0].subTabs[1].autoSyncRole = AUTO_SYNC_ROLE_OFF;
+
+    const ok = syncAllCultivationRelationBlocks(novel);
+    expect(ok).toBe(true);
+
+    const systemInfo = String(novel.data['tu-luyen']['he-thong-tu-luyen'].entities[0].info || '');
+    const realmInfo = String(novel.data['tu-luyen']['canh-gioi-tu-vi'].entities[0].info || '');
+    expect(systemInfo).toContain('Ghi chu tay he thong');
+    expect(systemInfo).not.toContain('(AUTO)');
+    expect(realmInfo).toContain('Mo ta tay cap bac');
+    expect(realmInfo).not.toContain('(AUTO)');
   });
 });
