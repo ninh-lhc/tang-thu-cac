@@ -146,6 +146,20 @@ describe('collectionListCardSync', () => {
     expect(String(listCard.info || '')).toContain('- Tổng số thẻ: 2');
   });
 
+  it('removes and keeps AUTO list blocks disabled when the tab is explicitly turned off', () => {
+    const novel = buildNovel();
+    novel.tabsConfig[1].subTabs[0].autoSyncRole = 'khong-tu-dong';
+    const listCard = novel.data['he-thong']['goi-qua'].entities[0];
+    listCard.info = 'Ghi chu tay\n\n# Danh mục thẻ (AUTO)\n\n- Tổng số thẻ: 2\n\n## Huyen cap (1)\n\n1. [[Le Bao Tan Thu]]';
+
+    const changed = syncAllCollectionListCards(novel);
+
+    expect(changed).toBe(true);
+    expect(String(listCard.info || '')).toBe('Ghi chu tay');
+    expect(String(listCard.info || '')).not.toContain('# Danh mục thẻ (AUTO)');
+    expect(String(listCard.info || '')).not.toContain('[[Le Bao Tan Thu]]');
+  });
+
   it('merges equivalent group labels and restarts numbering from 1 per group', () => {
     const novel = buildNovel();
     novel.data['he-thong']['goi-qua'].entities.push({

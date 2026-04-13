@@ -14,6 +14,7 @@ import {
 } from './statusHierarchyParser.js';
 import { parseOwnerTimelineHint } from './autoOwnerMilestone.js';
 import { findEquivalentEntityByName } from './entityNameIdentity.js';
+import { isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
 
 const LEGACY_AUTO_LIST_START = '<!-- AUTO_COLLECTION_LIST:START -->';
 const LEGACY_AUTO_LIST_END = '<!-- AUTO_COLLECTION_LIST:END -->';
@@ -424,6 +425,21 @@ function syncListCardsInTab(tabData, context, ownerLookupEntities) {
   return changed;
 }
 
+function clearListCardsAutoInTab(tabData) {
+  const entities = Array.isArray(tabData?.entities) ? tabData.entities : [];
+  const listCards = entities.filter(isListCardEntity);
+  if (listCards.length === 0) return false;
+  let changed = false;
+  listCards.forEach((listCard) => {
+    const nextInfo = removeCollectionListAutoBlock(listCard.info);
+    if (safeString(nextInfo) !== safeString(listCard.info)) {
+      listCard.info = nextInfo;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 export function syncAllCollectionListCards(nov) {
   if (!nov?.data || !Array.isArray(nov?.tabsConfig)) return false;
   let changed = false;
@@ -441,6 +457,10 @@ export function syncAllCollectionListCards(nov) {
       if (!isCollectionTab(nho)) return;
       const tabData = nov?.data?.[lon.id]?.[nho.id];
       if (!tabData || typeof tabData !== 'object' || !Array.isArray(tabData.entities)) return;
+      if (isAutoSyncExplicitlyOff(nho)) {
+        changed = clearListCardsAutoInTab(tabData) || changed;
+        return;
+      }
       changed = syncListCardsInTab(
         tabData,
         {
