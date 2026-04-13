@@ -15,17 +15,170 @@ import {
   AlignLeft,
   RefreshCw,
   Sparkles,
+  CheckCircle2,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { safeString, getIconComponent } from './MasterUtils.jsx';
 import { useFocusTrap } from './lib/useFocusTrap.js';
 import {
   AUTO_SYNC_ROLE_OPTIONS,
-  getAutoSyncRoleLabel,
   getEffectiveAutoSyncRole,
   readExplicitAutoSyncRole,
 } from './lib/tabAutoSyncRole.js';
 import { getAutoSyncFieldDefs, getEffectiveAutoSyncFieldMap } from './lib/tabAutoSyncFieldMap.js';
 import { collectNovelAutoSyncDiagnostics } from './lib/autoSyncDiagnostics.js';
+
+const AUTO_ROLE_UI_COPY = Object.freeze({
+  '': {
+    selectLabel: 'Để hệ thống tự đoán',
+    helper:
+      'Nếu tên mục đã rõ như Gia Tộc, Địa Danh, Nhân Vật Chính... thì thường không cần chỉnh tay.',
+    example: 'Ví dụ: Gia Tộc, Địa Danh, Cảnh Giới, Nhân Vật Chính...',
+  },
+  'khong-tu-dong': {
+    selectLabel: 'Không dùng AUTO ở mục này',
+    helper: 'Mục này chỉ lưu dữ liệu thủ công, AUTO sẽ bỏ qua hoàn toàn.',
+    example: 'Dùng khi đây chỉ là nơi ghi chép tay, không cần tự liên kết.',
+  },
+  'the-luc': {
+    selectLabel: 'Thế lực / tổ chức',
+    helper: 'Dùng cho các mục chứa gia tộc, tông môn, đế quốc, liên minh, phe phái...',
+    example: 'Ví dụ: Gia Tộc, Tông Môn, Đế Quốc, Chính Tà...',
+  },
+  'ban-do': {
+    selectLabel: 'Địa danh / bản đồ',
+    helper: 'Dùng cho đại lục, thành trì, bí cảnh, khu vực, thế giới, tinh cầu...',
+    example: 'Ví dụ: Đại Lục, Thành Trì, Bí Cảnh, Tinh Cầu...',
+  },
+  'he-thong-tu-luyen': {
+    selectLabel: 'Hệ thống tu luyện',
+    helper: 'Dùng cho tab ghi các hệ như Luyện Khí, Trúc Cơ, Kim Đan...',
+    example: 'Ví dụ: Hệ Thống Tu Luyện, Hệ Cảnh Giới...',
+  },
+  'canh-gioi-tu-vi': {
+    selectLabel: 'Cảnh giới tu vi',
+    helper: 'Dùng cho tab ghi các cấp hoặc bậc cảnh giới thuộc một hệ thống tu luyện.',
+    example: 'Ví dụ: Cảnh Giới, Đại Cảnh Giới, Tiểu Cảnh Giới...',
+  },
+  'nhan-vat-chinh': {
+    selectLabel: 'Nhân vật chính',
+    helper: 'Dùng cho tab chứa hồ sơ nhân vật trung tâm của truyện.',
+    example: 'Ví dụ: Nhân Vật Chính, Main Character, Chủ Nhân...',
+  },
+  'nhan-vat-lien-quan': {
+    selectLabel: 'Nhân vật liên quan',
+    helper: 'Dùng cho tab đạo lữ, thân nhân, bằng hữu, sư phụ, đệ tử...',
+    example: 'Ví dụ: Đạo Lữ, Thân Nhân, Huynh Đệ, Bằng Hữu...',
+  },
+});
+
+function getAutoRoleUiCopy(role = '') {
+  return AUTO_ROLE_UI_COPY[role] || AUTO_ROLE_UI_COPY[''];
+}
+
+function getAutoRoleSelectLabel(role = '') {
+  return getAutoRoleUiCopy(role).selectLabel;
+}
+
+function getAutoRoleSummary({ explicitRole = '', effectiveRole = '' } = {}) {
+  if (explicitRole) return `AUTO đang dùng: ${getAutoRoleSelectLabel(explicitRole)}`;
+  if (effectiveRole) return `AUTO đang tự đoán: ${getAutoRoleSelectLabel(effectiveRole)}`;
+  return 'AUTO chưa đoán ra mục này dùng để quản lý gì';
+}
+
+function getAutoRoleHint({ explicitRole = '', effectiveRole = '' } = {}) {
+  if (explicitRole) return getAutoRoleUiCopy(explicitRole).helper;
+  if (effectiveRole) {
+    return `Hiện hệ thống đang tự đoán mục này là "${getAutoRoleSelectLabel(effectiveRole)}".`;
+  }
+  return getAutoRoleUiCopy('').helper;
+}
+
+function getAutoRoleExample({ explicitRole = '', effectiveRole = '' } = {}) {
+  if (explicitRole) return getAutoRoleUiCopy(explicitRole).example;
+  if (effectiveRole) return getAutoRoleUiCopy(effectiveRole).example;
+  return getAutoRoleUiCopy('').example;
+}
+
+function getFriendlyWarningText(warning = '') {
+  const text = safeString(warning).trim();
+  const missingMatch = text.match(/^Thiếu ánh xạ cho "(.+)"\.$/i);
+  if (missingMatch) {
+    return `AUTO chưa biết phải đọc "${missingMatch[1]}" ở trường nào.`;
+  }
+  const missingFieldMatch = text.match(/^Trường "(.+)" cho "(.+)" không còn trong mẫu\.$/i);
+  if (missingFieldMatch) {
+    return `Trường đang gắn cho "${missingFieldMatch[2]}" không còn tồn tại trong mẫu hiện tại.`;
+  }
+  return text;
+}
+
+function getTabHealthCopy(tabReport) {
+  if (!tabReport) {
+    return {
+      title: 'Chưa có dữ liệu kiểm tra',
+      message: 'Mục này chưa có đủ dữ liệu để AUTO tự đánh giá.',
+      toneClass: 'text-slate-300',
+      boxClass: 'border-slate-800 bg-slate-950/55',
+      icon: null,
+    };
+  }
+
+  if (tabReport.status === 'off') {
+    return {
+      title: 'AUTO đang tắt ở mục này',
+      message: 'Dữ liệu trong mục này sẽ không tham gia đồng bộ tự động.',
+      toneClass: 'text-slate-300',
+      boxClass: 'border-slate-800 bg-slate-950/55',
+      icon: null,
+    };
+  }
+
+  if (Array.isArray(tabReport.warnings) && tabReport.warnings.length > 0) {
+    return {
+      title: 'Cần xem lại trước khi quét AUTO',
+      message: `Còn ${tabReport.warnings.length} chỗ cần chọn đúng trường dữ liệu để AUTO đọc chính xác.`,
+      toneClass: 'text-amber-100',
+      boxClass: 'border-amber-700/35 bg-amber-950/20',
+      icon: AlertTriangle,
+    };
+  }
+
+  if (tabReport.status === 'ready') {
+    return {
+      title: 'Mục này đã sẵn sàng',
+      message: 'AUTO đã có thể chạy ổn cho mục này với cấu hình hiện tại.',
+      toneClass: 'text-emerald-200',
+      boxClass: 'border-emerald-700/25 bg-emerald-950/15',
+      icon: CheckCircle2,
+    };
+  }
+
+  return {
+    title: 'Nên chọn rõ mục này quản lý gì',
+    message: 'Nếu AUTO chưa đoán đúng, hãy chọn tay để kết quả ổn định hơn.',
+    toneClass: 'text-slate-300',
+    boxClass: 'border-slate-800 bg-slate-950/55',
+    icon: null,
+  };
+}
+
+function buildSimpleSetupSteps(diagnostics) {
+  const warningCount = diagnostics?.summary?.warningCount || 0;
+  const touchedCount = diagnostics?.preview?.touchedEntityCount || 0;
+
+  return [
+    'Chọn ở từng mục: mục này đang quản lý loại dữ liệu nào.',
+    warningCount > 0
+      ? `Mở phần "Chỉnh trường nâng cao" ở ${warningCount} chỗ đang có cảnh báo để AUTO đọc đúng dữ liệu.`
+      : 'Không cần mở phần nâng cao nếu mục đã hiện trạng thái sẵn sàng.',
+    touchedCount > 0
+      ? `Sau cùng bấm "Quét Lại AUTO"; lần quét tiếp theo sẽ cập nhật khoảng ${touchedCount} thực thể.`
+      : 'Sau cùng bấm "Quét Lại AUTO" để đồng bộ lại toàn bộ cây.',
+  ];
+}
 
 export function AppModalQuanLyTab({
   activeNovelData,
@@ -46,6 +199,7 @@ export function AppModalQuanLyTab({
   setConfirmDialog,
 }) {
   const trapRef = useFocusTrap(true);
+  const [advancedOpenByPath, setAdvancedOpenByPath] = React.useState({});
   const diagnostics = React.useMemo(
     () => (activeNovelData ? collectNovelAutoSyncDiagnostics(activeNovelData) : null),
     [activeNovelData]
@@ -54,6 +208,14 @@ export function AppModalQuanLyTab({
     () => new Map((diagnostics?.tabReports || []).map((report) => [report.id, report])),
     [diagnostics]
   );
+  const simpleSetupSteps = React.useMemo(() => buildSimpleSetupSteps(diagnostics), [diagnostics]);
+
+  const toggleAdvancedSection = React.useCallback((pathKey) => {
+    setAdvancedOpenByPath((prev) => ({
+      ...prev,
+      [pathKey]: !prev[pathKey],
+    }));
+  }, []);
 
   return (
     <div
@@ -101,10 +263,10 @@ export function AppModalQuanLyTab({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="text-[11px] uppercase tracking-[0.18em] text-cyan-300 font-bold">
-                    Wizard AUTO
+                    Thiết Lập AUTO
                   </div>
                   <p className="text-sm text-slate-100 font-semibold mt-1">
-                    Theo dõi độ sẵn sàng của cây AUTO trước khi quét lại.
+                    Chỉ cần chọn từng mục đang quản lý gì, khi cần mới chỉnh nâng cao rồi quét lại AUTO.
                   </p>
                 </div>
                 {typeof handleApplySuggestedAutoSyncSetup === 'function' && (
@@ -120,29 +282,29 @@ export function AppModalQuanLyTab({
 
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
-                  <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Sẵn sàng</div>
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Đã rõ mục nào</div>
                   <div className="mt-1 text-2xl font-bold text-emerald-300">{diagnostics.summary.readyCount}</div>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
-                  <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Cảnh báo</div>
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Cần xem lại</div>
                   <div className="mt-1 text-2xl font-bold text-amber-300">{diagnostics.summary.warningCount}</div>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
-                  <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Khóa / Tắt</div>
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Đang khóa / tắt</div>
                   <div className="mt-1 text-2xl font-bold text-cyan-100">
                     {diagnostics.summary.lockedCount} / {diagnostics.summary.disabledCount}
                   </div>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
-                  <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Preview quét</div>
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Sẽ cập nhật</div>
                   <div className="mt-1 text-2xl font-bold text-fuchsia-200">{diagnostics.preview.touchedEntityCount}</div>
                 </div>
               </div>
 
               <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold mb-2">Gợi ý tiếp theo</div>
+                <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold mb-2">Làm theo 3 bước</div>
                 <div className="space-y-1.5">
-                  {diagnostics.wizardSteps.map((step, index) => (
+                  {simpleSetupSteps.map((step, index) => (
                     <div key={`${step}-${index}`} className="text-sm text-slate-300 font-serif">
                       {index + 1}. {step}
                     </div>
@@ -163,7 +325,7 @@ export function AppModalQuanLyTab({
                       <div key={item.id} className="rounded-xl border border-slate-800/80 bg-slate-950/50 px-3 py-2">
                         <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide">
                           <span className={item.changed ? 'text-emerald-300 font-bold' : 'text-slate-500 font-bold'}>
-                            {item.changed ? 'Đã đổi' : 'Không đổi'}
+                            {item.changed ? 'Đã cập nhật' : 'Không thay đổi'}
                           </span>
                           <span className="text-slate-600">•</span>
                           <span className="text-slate-400">{safeString(item.scopeLabel || 'AUTO')}</span>
@@ -173,7 +335,7 @@ export function AppModalQuanLyTab({
                           </span>
                         </div>
                         <div className="mt-1 text-sm text-slate-300 font-serif">
-                          {(item.engines || []).map((engine) => safeString(engine.label || engine.id)).filter(Boolean).join(' • ')}
+                          {(item.engines || []).map((engine) => safeString(engine.label || engine.id)).filter(Boolean).join(', ')}
                         </div>
                       </div>
                     ))}
@@ -279,20 +441,18 @@ export function AppModalQuanLyTab({
                     const templateFields = Array.isArray(tabNho.fieldsTemplate)
                       ? tabNho.fieldsTemplate.filter((field) => field && safeString(field.id).trim())
                       : [];
-                    const explicitRoleOption =
-                      AUTO_SYNC_ROLE_OPTIONS.find((opt) => opt.value === explicitRole) || AUTO_SYNC_ROLE_OPTIONS[0];
-                    const effectiveRoleLabel = effectiveRole ? getAutoSyncRoleLabel(effectiveRole) : '';
-                    const tabReport = diagnosticsByPath.get(`${tabLon.id}::${tabNho.id}`);
-                    const autoRoleSummary = explicitRole
-                      ? getAutoSyncRoleLabel(explicitRole)
-                      : effectiveRoleLabel
-                        ? `Tự nhận diện → ${effectiveRoleLabel}`
-                        : 'Tự nhận diện';
-                    const autoRoleHint = explicitRole
-                      ? explicitRoleOption.hint
-                      : effectiveRoleLabel
-                        ? `Hiện hệ thống đang tự nhận diện mục này là ${effectiveRoleLabel}.`
-                        : AUTO_SYNC_ROLE_OPTIONS[0].hint;
+                    const tabPathKey = `${tabLon.id}::${tabNho.id}`;
+                    const tabReport = diagnosticsByPath.get(tabPathKey);
+                    const autoRoleSummary = getAutoRoleSummary({ explicitRole, effectiveRole });
+                    const autoRoleHint = getAutoRoleHint({ explicitRole, effectiveRole });
+                    const autoRoleExample = getAutoRoleExample({ explicitRole, effectiveRole });
+                    const healthCopy = getTabHealthCopy(tabReport);
+                    const HealthIcon = healthCopy.icon;
+                    const advancedOverride = advancedOpenByPath[tabPathKey];
+                    const showAdvanced =
+                      typeof advancedOverride === 'boolean'
+                        ? advancedOverride
+                        : Boolean(tabReport?.warnings?.length);
 
                     return (
                       <div key={tabNho.id} className="relative">
@@ -330,7 +490,7 @@ export function AppModalQuanLyTab({
                                     <span className="font-serif text-sm text-slate-200 font-medium block">{safeString(tabNho.label)}</span>
                                     {tabNho.viewType === 'collection-track' && (
                                       <span className="text-[10px] uppercase tracking-wide text-slate-500">
-                                        Vai trò auto: {autoRoleSummary}
+                                        {autoRoleSummary}
                                       </span>
                                     )}
                                   </div>
@@ -383,74 +543,106 @@ export function AppModalQuanLyTab({
 
                           {tabNho.viewType === 'collection-track' && (
                             <div className="border-t border-slate-800/80 pt-3 space-y-3">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">
-                                  Vai trò tự động
-                                </span>
+                              <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3 space-y-2">
+                                <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">
+                                  Mục này dùng để quản lý
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {!explicitRole && effectiveRole && (
+                                    <span className="rounded-full border border-cyan-700/40 bg-cyan-950/25 px-2 py-1 text-[11px] text-cyan-100 font-semibold">
+                                      Gợi ý hiện tại: {getAutoRoleSelectLabel(effectiveRole)}
+                                    </span>
+                                  )}
+                                  {explicitRole && (
+                                    <span className="rounded-full border border-amber-700/40 bg-amber-950/25 px-2 py-1 text-[11px] text-amber-100 font-semibold">
+                                      Đang chọn tay
+                                    </span>
+                                  )}
+                                </div>
                                 <select
                                   value={explicitRole}
                                   onChange={(e) => handleSetTabAutoSyncRole(tabLon.id, tabNho.id, e.target.value)}
-                                  className="min-w-[220px] bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-serif outline-none focus:border-amber-600/50"
+                                  className="w-full md:w-auto min-w-[240px] bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-sm text-slate-200 font-serif outline-none focus:border-amber-600/50"
                                 >
                                   {AUTO_SYNC_ROLE_OPTIONS.map((opt) => (
                                     <option key={opt.value || '__auto__'} value={opt.value}>
-                                      {opt.label}
+                                      {getAutoRoleSelectLabel(opt.value)}
                                     </option>
                                   ))}
                                 </select>
-                                <span className="text-[11px] text-slate-500 font-serif">
-                                  {autoRoleHint}
-                                </span>
+                                <div className="text-[12px] text-slate-300 font-serif">{autoRoleHint}</div>
+                                <div className="text-[11px] text-slate-500 font-serif">{autoRoleExample}</div>
                               </div>
 
                               {autoFieldDefs.length > 0 && (
-                                <div className="grid gap-2 md:grid-cols-2">
-                                  {autoFieldDefs.map((def) => {
-                                    const selectedFieldId = safeString(autoFieldMap[def.key]).trim();
-                                    const selectedMissing =
-                                      selectedFieldId &&
-                                      !templateFields.some((field) => safeString(field.id).trim() === selectedFieldId);
-                                    return (
-                                      <label
-                                        key={def.key}
-                                        className="flex flex-col gap-1 rounded-xl border border-slate-800 bg-slate-950/70 p-2.5"
-                                      >
-                                        <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                                          {def.label}
-                                        </span>
-                                        <select
-                                          value={selectedFieldId}
-                                          onChange={(e) =>
-                                            handleSetTabAutoSyncFieldMap(tabLon.id, tabNho.id, def.key, e.target.value)
-                                          }
-                                          className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-serif outline-none focus:border-amber-600/50"
-                                        >
-                                          <option value="">Tự đoán theo nhãn</option>
-                                          {templateFields.map((field) => (
-                                            <option key={field.id} value={field.id}>
-                                              {safeString(field.label || field.id)}
-                                            </option>
-                                          ))}
-                                          {selectedMissing && (
-                                            <option value={selectedFieldId}>
-                                              {selectedFieldId} (không còn trong mẫu)
-                                            </option>
-                                          )}
-                                        </select>
-                                        <span className="text-[11px] text-slate-500 font-serif">
-                                          {def.hint}
-                                        </span>
-                                      </label>
-                                    );
-                                  })}
+                                <div className="space-y-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleAdvancedSection(tabPathKey)}
+                                    className={`w-full rounded-xl border px-3 py-2.5 text-left text-sm font-semibold flex items-center justify-between gap-3 ${
+                                      tabReport?.warnings?.length
+                                        ? 'border-amber-700/40 bg-amber-950/20 text-amber-100'
+                                        : 'border-slate-800 bg-slate-950/45 text-slate-200'
+                                    }`}
+                                  >
+                                    <span>
+                                      {tabReport?.warnings?.length
+                                        ? `Chỉnh trường nâng cao (${tabReport.warnings.length} chỗ cần xem lại)`
+                                        : 'Chỉnh trường nâng cao nếu AUTO đang đọc sai dữ liệu'}
+                                    </span>
+                                    {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                  </button>
+
+                                  {showAdvanced && (
+                                    <div className="grid gap-2 md:grid-cols-2">
+                                      {autoFieldDefs.map((def) => {
+                                        const selectedFieldId = safeString(autoFieldMap[def.key]).trim();
+                                        const selectedMissing =
+                                          selectedFieldId &&
+                                          !templateFields.some((field) => safeString(field.id).trim() === selectedFieldId);
+                                        return (
+                                          <label
+                                            key={def.key}
+                                            className="flex flex-col gap-1 rounded-xl border border-slate-800 bg-slate-950/70 p-2.5"
+                                          >
+                                            <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                                              {safeString(def.label)}
+                                            </span>
+                                            <select
+                                              value={selectedFieldId}
+                                              onChange={(e) =>
+                                                handleSetTabAutoSyncFieldMap(tabLon.id, tabNho.id, def.key, e.target.value)
+                                              }
+                                              className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-serif outline-none focus:border-amber-600/50"
+                                            >
+                                              <option value="">Để AUTO tự đoán theo tên trường</option>
+                                              {templateFields.map((field) => (
+                                                <option key={field.id} value={field.id}>
+                                                  {safeString(field.label || field.id)}
+                                                </option>
+                                              ))}
+                                              {selectedMissing && (
+                                                <option value={selectedFieldId}>
+                                                  {selectedFieldId} (không còn trong mẫu)
+                                                </option>
+                                              )}
+                                            </select>
+                                            <span className="text-[11px] text-slate-500 font-serif">
+                                              {def.hint}
+                                            </span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                 </div>
                               )}
 
                               {tabReport && (
-                                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3 space-y-2">
+                                <div className={`rounded-xl border p-3 space-y-2 ${healthCopy.boxClass}`}>
                                   <div className="flex flex-wrap items-center gap-2 text-[11px]">
                                     <span className="uppercase tracking-wide text-slate-500 font-bold">
-                                      Diagnostics
+                                      Kiểm tra nhanh
                                     </span>
                                     <span className="rounded-full border border-slate-700 px-2 py-0.5 text-slate-300 font-semibold">
                                       {tabReport.entityCount} thực thể
@@ -466,25 +658,28 @@ export function AppModalQuanLyTab({
                                       </span>
                                     )}
                                   </div>
+                                  <div className={`flex items-start gap-2 text-sm font-serif ${healthCopy.toneClass}`}>
+                                    {HealthIcon ? <HealthIcon size={16} className="mt-0.5 shrink-0" /> : null}
+                                    <div>
+                                      <div className="font-semibold">{healthCopy.title}</div>
+                                      <div className="text-[12px] opacity-90 mt-1">{healthCopy.message}</div>
+                                    </div>
+                                  </div>
                                   {tabReport.engineLabels.length > 0 && (
                                     <div className="text-[12px] text-slate-400 font-serif">
-                                      Engine: {tabReport.engineLabels.join(' • ')}
+                                      AUTO sẽ cập nhật: {tabReport.engineLabels.join(', ')}
                                     </div>
                                   )}
-                                  {tabReport.warnings.length > 0 ? (
+                                  {tabReport.warnings.length > 0 && (
                                     <div className="space-y-1">
                                       {tabReport.warnings.map((warning) => (
                                         <div
                                           key={warning}
                                           className="rounded-lg border border-amber-700/35 bg-amber-950/20 px-2.5 py-1.5 text-[12px] text-amber-100 font-serif"
                                         >
-                                          {warning}
+                                          {getFriendlyWarningText(warning)}
                                         </div>
                                       ))}
-                                    </div>
-                                  ) : (
-                                    <div className="text-[12px] text-emerald-300 font-serif">
-                                      Cấu hình AUTO của mục này hiện đã sẵn sàng.
                                     </div>
                                   )}
                                 </div>
