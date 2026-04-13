@@ -23,7 +23,6 @@ import {
 import { safeString, getIconComponent } from './MasterUtils.jsx';
 import { useFocusTrap } from './lib/useFocusTrap.js';
 import {
-  AUTO_SYNC_ROLE_OPTIONS,
   getEffectiveAutoSyncRole,
   readExplicitAutoSyncRole,
 } from './lib/tabAutoSyncRole.js';
@@ -73,6 +72,17 @@ const AUTO_ROLE_UI_COPY = Object.freeze({
     example: 'Ví dụ: Đạo Lữ, Thân Nhân, Huynh Đệ, Bằng Hữu...',
   },
 });
+
+const AUTO_ROLE_CARD_VALUES = Object.freeze([
+  '',
+  'the-luc',
+  'ban-do',
+  'he-thong-tu-luyen',
+  'canh-gioi-tu-vi',
+  'nhan-vat-chinh',
+  'nhan-vat-lien-quan',
+  'khong-tu-dong',
+]);
 
 function getAutoRoleUiCopy(role = '') {
   return AUTO_ROLE_UI_COPY[role] || AUTO_ROLE_UI_COPY[''];
@@ -543,14 +553,19 @@ export function AppModalQuanLyTab({
 
                           {tabNho.viewType === 'collection-track' && (
                             <div className="border-t border-slate-800/80 pt-3 space-y-3">
-                              <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3 space-y-2">
-                                <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">
-                                  Mục này dùng để quản lý
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2">
+                              <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3 space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div>
+                                    <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">
+                                      Mục này dùng để quản lý
+                                    </div>
+                                    <div className="text-[12px] text-slate-300 font-serif mt-1">
+                                      Bấm 1 ô bên dưới để nói cho AUTO biết mục này đang chứa loại dữ liệu gì.
+                                    </div>
+                                  </div>
                                   {!explicitRole && effectiveRole && (
                                     <span className="rounded-full border border-cyan-700/40 bg-cyan-950/25 px-2 py-1 text-[11px] text-cyan-100 font-semibold">
-                                      Gợi ý hiện tại: {getAutoRoleSelectLabel(effectiveRole)}
+                                      AUTO đang gợi ý: {getAutoRoleSelectLabel(effectiveRole)}
                                     </span>
                                   )}
                                   {explicitRole && (
@@ -559,19 +574,61 @@ export function AppModalQuanLyTab({
                                     </span>
                                   )}
                                 </div>
-                                <select
-                                  value={explicitRole}
-                                  onChange={(e) => handleSetTabAutoSyncRole(tabLon.id, tabNho.id, e.target.value)}
-                                  className="w-full md:w-auto min-w-[240px] bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-sm text-slate-200 font-serif outline-none focus:border-amber-600/50"
-                                >
-                                  {AUTO_SYNC_ROLE_OPTIONS.map((opt) => (
-                                    <option key={opt.value || '__auto__'} value={opt.value}>
-                                      {getAutoRoleSelectLabel(opt.value)}
-                                    </option>
-                                  ))}
-                                </select>
-                                <div className="text-[12px] text-slate-300 font-serif">{autoRoleHint}</div>
-                                <div className="text-[11px] text-slate-500 font-serif">{autoRoleExample}</div>
+
+                                <div className="grid gap-2 md:grid-cols-2">
+                                  {AUTO_ROLE_CARD_VALUES.map((roleValue) => {
+                                    const copy = getAutoRoleUiCopy(roleValue);
+                                    const isManualActive = explicitRole === roleValue;
+                                    const isAutoModeCard = roleValue === '' && !explicitRole;
+                                    const isSuggested = !explicitRole && roleValue !== '' && effectiveRole === roleValue;
+                                    const isActive = isManualActive || isAutoModeCard;
+                                    const baseClass = isActive
+                                      ? 'border-amber-600/60 bg-amber-950/25 text-amber-50'
+                                      : isSuggested
+                                        ? 'border-cyan-700/45 bg-cyan-950/20 text-cyan-50'
+                                        : 'border-slate-800 bg-slate-950/70 text-slate-200 hover:border-slate-600 hover:bg-slate-900';
+
+                                    return (
+                                      <button
+                                        key={roleValue || '__auto__'}
+                                        type="button"
+                                        onClick={() => handleSetTabAutoSyncRole(tabLon.id, tabNho.id, roleValue)}
+                                        className={`rounded-xl border p-3 text-left transition-all ${baseClass}`}
+                                        aria-pressed={isActive}
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="text-sm font-semibold">{copy.selectLabel}</div>
+                                          {isManualActive && (
+                                            <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-100">
+                                              Đang dùng
+                                            </span>
+                                          )}
+                                          {isAutoModeCard && !isManualActive && (
+                                            <span className="shrink-0 rounded-full border border-slate-600/50 bg-slate-900/60 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-200">
+                                              Mặc định
+                                            </span>
+                                          )}
+                                          {isSuggested && (
+                                            <span className="shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-cyan-100">
+                                              AUTO gợi ý
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="mt-2 text-[12px] font-serif text-slate-300">
+                                          {copy.helper}
+                                        </div>
+                                        <div className="mt-2 text-[11px] font-serif text-slate-500">
+                                          {copy.example}
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="rounded-xl border border-slate-800/90 bg-slate-950/40 px-3 py-2">
+                                  <div className="text-[12px] text-slate-300 font-serif">{autoRoleHint}</div>
+                                  <div className="text-[11px] text-slate-500 font-serif mt-1">{autoRoleExample}</div>
+                                </div>
                               </div>
 
                               {autoFieldDefs.length > 0 && (
