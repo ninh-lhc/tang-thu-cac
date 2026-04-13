@@ -94,6 +94,26 @@ describe('mainCharacterRelationSync', () => {
     expect(daoLu.info).not.toContain('[[Lac Nam]]');
   });
 
+  it('prefers explicit related target tabs when the source tab is configured', () => {
+    const novel = createNovel();
+    novel.tabsConfig[0].subTabs[0].autoSyncTargetPaths = ['nhan-vat::dao-lu'];
+
+    const ok = syncAllMainCharacterRelationBlocks(novel);
+    expect(ok).toBe(true);
+
+    const main = novel.data['nhan-vat']['nhan-vat-chinh'].entities[0];
+    const daoLu = novel.data['nhan-vat']['dao-lu'].entities[0];
+    const thanNhan = novel.data['nhan-vat']['than-nhan'].entities[0];
+    const huynhDe = novel.data['nhan-vat']['huynh-de'].entities[0];
+
+    expect(main.info).toContain('[[Van Nhi]]');
+    expect(main.info).not.toContain('[[Lac Thien]]');
+    expect(main.info).not.toContain('[[Thach Dau]]');
+    expect(daoLu.info).toContain('[[Lac Nam]]');
+    expect(thanNhan.info).not.toContain('[[Lac Nam]]');
+    expect(huynhDe.info).not.toContain('[[Lac Nam]]');
+  });
+
   it('recognizes relation scope for nhan-vat tabs and custom labels', () => {
     expect(
       isMainCharacterRelationScope({

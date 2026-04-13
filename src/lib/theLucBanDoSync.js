@@ -21,6 +21,7 @@ import {
   isEntityAutoSyncLocked,
 } from './autoSyncEntityPrefs.js';
 import { hasAutoSyncFeature, isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
+import { buildAutoSyncTargetPath, collectExplicitAutoSyncLinkSources } from './tabAutoSyncLinks.js';
 
 const AUTO_FORCE_BLOCK_START = '<!-- AUTO_THE_LUC_META:START -->';
 const AUTO_FORCE_BLOCK_END = '<!-- AUTO_THE_LUC_META:END -->';
@@ -595,16 +596,35 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
   if (!nov) return { changed: false, warnings: [], applied: false };
 
   let changed = stripTheLucMapAutoBlocksFromNovel(nov);
-  const mapPaths = findMapTabPaths(nov).map((path) => ({
-    ...path,
-    tabData: ensureCollectionTabData(nov, path.lonId, path.nhoId),
-  }));
+  const explicitGroups = collectExplicitAutoSyncLinkSources(nov?.tabsConfig, {
+    sourceRoles: ['the-luc'],
+  });
+  const explicitTargetPathsBySourceKey = new Map();
+  const explicitMapTargetPathKeys = new Set();
+  explicitGroups.forEach((group) => {
+    const sourcePathKey = buildTabPathKey(group.sourcePath);
+    const targetPathKeys = new Set(group.targetPaths.map((targetPath) => buildAutoSyncTargetPath(targetPath.lonId, targetPath.nhoId)));
+    if (targetPathKeys.size === 0) return;
+    explicitTargetPathsBySourceKey.set(sourcePathKey, targetPathKeys);
+    targetPathKeys.forEach((pathKey) => explicitMapTargetPathKeys.add(pathKey));
+  });
+  const useExplicitTargets = explicitTargetPathsBySourceKey.size > 0;
+
+  const mapPaths = findMapTabPaths(nov)
+    .filter((path) => !useExplicitTargets || explicitMapTargetPathKeys.has(buildTabPathKey(path)))
+    .map((path) => ({
+      ...path,
+      tabData: ensureCollectionTabData(nov, path.lonId, path.nhoId),
+    }));
   if (mapPaths.length === 0) return { changed, warnings: [], applied: false };
 
-  const sourcePaths = findForceTabPaths(nov, { sourceLonId }).map((path) => ({
-    ...path,
-    tabData: ensureCollectionTabData(nov, path.lonId, path.nhoId),
-  }));
+  const sourcePaths = findForceTabPaths(nov, { sourceLonId })
+    .filter((path) => !useExplicitTargets || explicitTargetPathsBySourceKey.has(buildTabPathKey(path)))
+    .map((path) => ({
+      ...path,
+      tabData: ensureCollectionTabData(nov, path.lonId, path.nhoId),
+      explicitTargetPathKeys: explicitTargetPathsBySourceKey.get(buildTabPathKey(path)) || null,
+    }));
   if (sourcePaths.length === 0) return { changed, warnings: [], applied: false };
 
   const warnings = [];
@@ -652,6 +672,7 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
         name: safeString(entity.name),
         meta,
         sourcePath: path,
+        explicitTargetPathKeys: path.explicitTargetPathKeys || null,
       });
     });
   });
@@ -700,6 +721,14 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
   for (const [, item] of rowsByLoc.entries()) {
     const locationKey = normalizeAscii(item.name);
     let targetEntities = mapEntityTargetsByName.get(locationKey) || [];
+    const explicitAllowedTargetPathKeys = new Set();
+    item.rows.forEach((row) => {
+      (row?.explicitTargetPathKeys || []).forEach((pathKey) => explicitAllowedTargetPathKeys.add(pathKey));
+    });
+
+    if (useExplicitTargets && explicitAllowedTargetPathKeys.size > 0) {
+      targetEntities = targetEntities.filter((target) => explicitAllowedTargetPathKeys.has(buildTabPathKey(target.path)));
+    }
 
     if (targetEntities.length > 1) {
       pushSyncWarning(warnings, {
@@ -711,12 +740,31 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
     }
 
     if (targetEntities.length === 0) {
-      const preferredTarget = pickPreferredMapTabForLocation(item, mapEntityTargetsByName, mapPaths);
+      const preferredTarget = useExplicitTargets
+        ? (() => {
+            if (explicitAllowedTargetPathKeys.size !== 1) {
+              return {
+                mapPath: null,
+                reason: 'ambiguous_target_tab',
+                candidatePaths: mapPaths.filter((path) => explicitAllowedTargetPathKeys.has(buildTabPathKey(path))),
+              };
+            }
+            const wantedPathKey = [...explicitAllowedTargetPathKeys][0];
+            return {
+              mapPath: mapPaths.find((path) => buildTabPathKey(path) === wantedPathKey) || null,
+              reason: 'explicit_target',
+              candidatePaths: mapPaths.filter((path) => buildTabPathKey(path) === wantedPathKey),
+            };
+          })()
+        : pickPreferredMapTabForLocation(item, mapEntityTargetsByName, mapPaths);
       if (!preferredTarget.mapPath) {
         pushSyncWarning(warnings, {
           type: 'ambiguous_target_tab',
           locationName: item.name,
-          tabLabels: (preferredTarget.candidatePaths || []).map((path) => buildTabPathLabel(path)),
+          tabLabels: (
+            preferredTarget.candidatePaths ||
+            mapPaths.filter((path) => explicitAllowedTargetPathKeys.has(buildTabPathKey(path)))
+          ).map((path) => buildTabPathLabel(path)),
         });
         continue;
       }

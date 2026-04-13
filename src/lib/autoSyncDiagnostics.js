@@ -1,7 +1,7 @@
 /**
  * Read-only diagnostics for tree-driven AUTO sync.
- * Builds tab-level health, setup suggestions, preview counts, and recent log data
- * so the tab-manager modal can explain what AUTO will do before the user runs it.
+ * Builds tab health, setup hints, preview counts, and recent sync logs
+ * so the tree modal can explain what will happen before the user runs AUTO.
  */
 import { getAutoSyncFieldDefs, getEffectiveAutoSyncFieldMap } from './tabAutoSyncFieldMap.js';
 import {
@@ -11,10 +11,13 @@ import {
 } from './tabAutoSyncRole.js';
 import {
   getAutoSyncEngineLabel,
-  getAutoSyncEnginesForRole,
   summarizeEntityAutoSyncPrefs,
 } from './autoSyncEntityPrefs.js';
-import { buildFullAutoSyncPlan, previewNovelAutoSyncPlan } from './autoSyncManager.js';
+import {
+  buildAutoSyncPlanFromTabContext,
+  buildFullAutoSyncPlan,
+  previewNovelAutoSyncPlan,
+} from './autoSyncManager.js';
 
 function safeString(value) {
   if (value == null || value === 'null' || value === 'undefined') return '';
@@ -35,7 +38,7 @@ function buildTabPathLabel(lonLabel, nhoLabel) {
   const left = safeString(lonLabel).trim();
   const right = safeString(nhoLabel).trim();
   if (left && right) return `${left} > ${right}`;
-  return left || right || 'Mục chưa đặt tên';
+  return left || right || 'Muc chua dat ten';
 }
 
 function collectTabWarnings(tabNho, fieldDefs, fieldMap) {
@@ -49,11 +52,11 @@ function collectTabWarnings(tabNho, fieldDefs, fieldMap) {
   fieldDefs.forEach((def) => {
     const fieldId = safeString(fieldMap[def.key]).trim();
     if (!fieldId) {
-      warnings.push(`Thiếu ánh xạ cho "${def.label}".`);
+      warnings.push(`Thieu anh xa cho "${def.label}".`);
       return;
     }
     if (!templateFieldIds.has(fieldId)) {
-      warnings.push(`Trường "${fieldId}" cho "${def.label}" không còn trong mẫu.`);
+      warnings.push(`Truong "${fieldId}" cho "${def.label}" khong con trong mau.`);
     }
   });
   return warnings;
@@ -77,17 +80,15 @@ export function collectNovelAutoSyncDiagnostics(novelData) {
       const fieldDefs = getAutoSyncFieldDefs(effectiveRole);
       const fieldMap = getEffectiveAutoSyncFieldMap(tabContext);
       const warnings = collectTabWarnings(tabNho, fieldDefs, fieldMap);
-      const engineIds = getAutoSyncEnginesForRole(effectiveRole);
+      const engineIds = buildAutoSyncPlanFromTabContext(tabContext).engines;
       const entities = getTabEntities(novelData, tabLon.id, tabNho.id);
       const prefSummary = summarizeEntityAutoSyncPrefs(entities, engineIds);
       const status =
         explicitRole === 'khong-tu-dong'
           ? 'off'
-          : !effectiveRole
-            ? 'unassigned'
-            : warnings.length > 0
-              ? 'warning'
-              : 'ready';
+          : warnings.length > 0
+            ? 'warning'
+            : 'ready';
 
       tabReports.push({
         id: `${tabLon.id}::${tabNho.id}`,
@@ -96,7 +97,7 @@ export function collectNovelAutoSyncDiagnostics(novelData) {
         pathLabel: buildTabPathLabel(tabLon.label, tabNho.label),
         explicitRole,
         effectiveRole,
-        roleLabel: effectiveRole ? getAutoSyncRoleLabel(effectiveRole) : 'Chưa nhận diện',
+        roleLabel: effectiveRole ? getAutoSyncRoleLabel(effectiveRole) : 'AUTO noi bo',
         isInferred: !explicitRole && Boolean(effectiveRole),
         entityCount: countTabEntities(novelData, tabLon.id, tabNho.id),
         engineIds,
@@ -118,20 +119,20 @@ export function collectNovelAutoSyncDiagnostics(novelData) {
   const lockedCount = tabReports.reduce((sum, report) => sum + report.lockedEntityCount, 0);
   const disabledCount = tabReports.reduce((sum, report) => sum + report.disabledEntityCount, 0);
 
-  if (readyCount === 0 && tabReports.length > 0) {
-    wizardSteps.push('Chưa có mục AUTO nào ở trạng thái sẵn sàng hoàn toàn.');
+  if (tabReports.length > 0) {
+    wizardSteps.push('Moi tab Luoi se tu co AUTO noi bo cho the va Danh sach trong cung tab.');
   }
   if (warningCount > 0) {
-    wizardSteps.push(`Còn ${warningCount} cảnh báo ánh xạ trường cần xử lý.`);
+    wizardSteps.push(`Con ${warningCount} canh bao anh xa truong can xu ly.`);
   }
   if ((preview.diffSummary?.touchedEntityCount || 0) > 0) {
-    wizardSteps.push(`Quét lại ngay lúc này sẽ chạm tới ${preview.diffSummary.touchedEntityCount} thực thể.`);
+    wizardSteps.push(`Quet lai luc nay se cham toi ${preview.diffSummary.touchedEntityCount} thuc the.`);
   }
   if (lockedCount > 0 || disabledCount > 0) {
-    wizardSteps.push(`Có ${lockedCount} thực thể đang khóa AUTO và ${disabledCount} thực thể đang tắt riêng.`);
+    wizardSteps.push(`Co ${lockedCount} thuc the dang khoa AUTO va ${disabledCount} thuc the dang tat rieng.`);
   }
-  if (wizardSteps.length === 0 && tabReports.length > 0) {
-    wizardSteps.push('Cấu hình AUTO hiện đã khớp tốt với cây thư mục.');
+  if (wizardSteps.length === 1 && readyCount === tabReports.length && tabReports.length > 0) {
+    wizardSteps.push('Chi can bat lien tab o nhung muc thuc su can day du lieu sang noi khac.');
   }
 
   return {

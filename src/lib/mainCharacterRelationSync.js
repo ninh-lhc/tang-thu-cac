@@ -18,6 +18,7 @@ import {
   hasAutoSyncFeature,
   isAutoSyncExplicitlyOff,
 } from './tabAutoSyncRole.js';
+import { collectExplicitAutoSyncLinkSources } from './tabAutoSyncLinks.js';
 
 const MAIN_RELATED_TITLE = '## Nhân Vật Liên Quan (AUTO)';
 const RELATED_MAIN_TITLE = '## Nhân Vật Chính Liên Kết (AUTO)';
@@ -189,6 +190,64 @@ function buildMainRelatedAutoLines(records) {
   return lines;
 }
 
+function syncMainCharacterRelationGroup(novelData, mainPath, relatedPaths = []) {
+  if (!mainPath || !Array.isArray(relatedPaths) || relatedPaths.length === 0) return false;
+
+  let changed = false;
+  const mainEntities = getCollectionEntities(novelData, mainPath.lonId, mainPath.nhoId).filter(
+    (entity) => !isEntityAutoSyncDisabled(entity, AUTO_SYNC_ENGINE_MAIN_CHARACTER)
+  );
+  const relatedEntries = [];
+  relatedPaths.forEach((path) => {
+    const entities = getCollectionEntities(novelData, path.lonId, path.nhoId).filter(
+      (entity) => !isEntityAutoSyncDisabled(entity, AUTO_SYNC_ENGINE_MAIN_CHARACTER)
+    );
+    entities.forEach((entity) => relatedEntries.push({ entity, path }));
+  });
+
+  const mainEntity = mainEntities[0];
+  if (!mainEntity || relatedEntries.length === 0) return false;
+
+  const relatedRecords = [];
+  relatedEntries.forEach(({ entity, path }) => {
+    if (!entity || entity.id === mainEntity.id) return;
+    const relationLabel = resolveRelationLabel(entity, path);
+    const bodyLines = buildRelatedMainAutoLines(mainEntity, relationLabel, path?.label || '');
+    if (bodyLines.length === 0) return;
+
+    if (!isEntityAutoSyncLocked(entity, AUTO_SYNC_ENGINE_MAIN_CHARACTER)) {
+      const baseInfo = String(entity.info || '');
+      const nextInfo = upsertAutoBlock(baseInfo, RELATED_MAIN_TITLE, bodyLines);
+      if (nextInfo !== baseInfo) {
+        entity.info = nextInfo;
+        changed = true;
+      }
+    }
+
+    relatedRecords.push({
+      entity,
+      relationLabel,
+      tabLabel: safeString(path?.label || ''),
+      tabOrder: path?.order,
+      path,
+    });
+  });
+
+  if (relatedRecords.length === 0) return changed;
+  const mainBodyLines = buildMainRelatedAutoLines(relatedRecords);
+  if (mainBodyLines.length === 0) return changed;
+  if (!isEntityAutoSyncLocked(mainEntity, AUTO_SYNC_ENGINE_MAIN_CHARACTER)) {
+    const mainBaseInfo = String(mainEntity.info || '');
+    const mainNextInfo = upsertAutoBlock(mainBaseInfo, MAIN_RELATED_TITLE, mainBodyLines);
+    if (mainNextInfo !== mainBaseInfo) {
+      mainEntity.info = mainNextInfo;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 export function isMainCharacterRelationScope({
   activeTabLon = '',
   activeTabNho = '',
@@ -229,61 +288,17 @@ export function syncAllMainCharacterRelationBlocks(novelData) {
     }
   });
 
-  const { mainPath, relatedPaths } = findCharacterTabPaths(novelData);
-  if (!mainPath && relatedPaths.length === 0) return changed;
-
-  const mainEntities = mainPath
-    ? getCollectionEntities(novelData, mainPath.lonId, mainPath.nhoId).filter(
-        (entity) => !isEntityAutoSyncDisabled(entity, AUTO_SYNC_ENGINE_MAIN_CHARACTER)
-      )
-    : [];
-  const relatedEntries = [];
-  relatedPaths.forEach((path) => {
-    const entities = getCollectionEntities(novelData, path.lonId, path.nhoId).filter(
-      (entity) => !isEntityAutoSyncDisabled(entity, AUTO_SYNC_ENGINE_MAIN_CHARACTER)
-    );
-    entities.forEach((entity) => relatedEntries.push({ entity, path }));
+  const explicitGroups = collectExplicitAutoSyncLinkSources(novelData?.tabsConfig, {
+    sourceRoles: [AUTO_SYNC_ROLE_MAIN_CHARACTER],
   });
-
-  const mainEntity = mainEntities[0];
-  if (!mainEntity || relatedEntries.length === 0) return changed;
-
-  const relatedRecords = [];
-  relatedEntries.forEach(({ entity, path }) => {
-    if (!entity || entity.id === mainEntity.id) return;
-    const relationLabel = resolveRelationLabel(entity, path);
-    const bodyLines = buildRelatedMainAutoLines(mainEntity, relationLabel, path?.label || '');
-    if (bodyLines.length === 0) return;
-
-    if (!isEntityAutoSyncLocked(entity, AUTO_SYNC_ENGINE_MAIN_CHARACTER)) {
-      const baseInfo = String(entity.info || '');
-      const nextInfo = upsertAutoBlock(baseInfo, RELATED_MAIN_TITLE, bodyLines);
-      if (nextInfo !== baseInfo) {
-        entity.info = nextInfo;
-        changed = true;
-      }
-    }
-
-    relatedRecords.push({
-      entity,
-      relationLabel,
-      tabLabel: safeString(path?.label || ''),
-      tabOrder: path?.order,
-      path,
+  if (explicitGroups.length > 0) {
+    explicitGroups.forEach((group) => {
+      changed = syncMainCharacterRelationGroup(novelData, group.sourcePath, group.targetPaths) || changed;
     });
-  });
-
-  if (relatedRecords.length === 0) return changed;
-  const mainBodyLines = buildMainRelatedAutoLines(relatedRecords);
-  if (mainBodyLines.length === 0) return changed;
-  if (!isEntityAutoSyncLocked(mainEntity, AUTO_SYNC_ENGINE_MAIN_CHARACTER)) {
-    const mainBaseInfo = String(mainEntity.info || '');
-    const mainNextInfo = upsertAutoBlock(mainBaseInfo, MAIN_RELATED_TITLE, mainBodyLines);
-    if (mainNextInfo !== mainBaseInfo) {
-      mainEntity.info = mainNextInfo;
-      changed = true;
-    }
+    return changed;
   }
 
-  return changed;
+  const { mainPath, relatedPaths } = findCharacterTabPaths(novelData);
+  if (!mainPath || relatedPaths.length === 0) return changed;
+  return syncMainCharacterRelationGroup(novelData, mainPath, relatedPaths) || changed;
 }

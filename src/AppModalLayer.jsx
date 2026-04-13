@@ -138,6 +138,7 @@ export function AppModalLayer({
   handleAddTabNho,
   handleAddTabCon,
   handleSetTabAutoSyncRole,
+  handleSetTabAutoSyncTargets,
   handleSetTabAutoSyncFieldMap,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
@@ -329,6 +330,7 @@ export function AppModalLayer({
           handleAddTabNho={handleAddTabNho}
           handleAddTabCon={handleAddTabCon}
           handleSetTabAutoSyncRole={handleSetTabAutoSyncRole}
+          handleSetTabAutoSyncTargets={handleSetTabAutoSyncTargets}
           handleSetTabAutoSyncFieldMap={handleSetTabAutoSyncFieldMap}
           handleApplySuggestedAutoSyncSetup={handleApplySuggestedAutoSyncSetup}
           handleResyncAutoTabs={handleResyncAutoTabs}

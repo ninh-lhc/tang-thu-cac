@@ -19,6 +19,7 @@ import {
   getAutoSyncEngineLabel,
   getAutoSyncEnginesForRole,
 } from './autoSyncEntityPrefs.js';
+import { readExplicitAutoSyncTargetPaths, supportsAutoSyncLinkRole } from './tabAutoSyncLinks.js';
 import {
   summarizeTheLucMapSyncWarnings,
   syncAllTheLucMapAutoBlocksDetailed,
@@ -51,6 +52,49 @@ function cloneValue(value) {
 function sortEngines(engineIds = []) {
   const wanted = new Set(engineIds.filter(Boolean));
   return AUTO_SYNC_ENGINE_ORDER.filter((engineId) => wanted.has(engineId));
+}
+
+function getLocalAutoSyncEnginesForRole(role = '') {
+  if (!role) return [];
+  const roleEngines = getAutoSyncEnginesForRole(role);
+  return roleEngines.filter((engineId) => engineId === AUTO_SYNC_ENGINE_MAP_HIERARCHY);
+}
+
+function getLinkedAutoSyncEnginesForRole(role = '') {
+  if (!role) return [];
+  const roleEngines = getAutoSyncEnginesForRole(role);
+  return roleEngines.filter((engineId) => engineId !== AUTO_SYNC_ENGINE_MAP_HIERARCHY);
+}
+
+function buildEnginesForTabContext(tabContext = {}, { includeCollectionCards = true } = {}) {
+  const engineSet = new Set();
+  const currentTabConfig = tabContext?.currentTabConfig;
+  const isCollectionTab = currentTabConfig?.viewType === 'collection-track';
+  const role = getEffectiveAutoSyncRole(tabContext);
+
+  if (includeCollectionCards && isCollectionTab && role !== 'khong-tu-dong') {
+    engineSet.add(AUTO_SYNC_ENGINE_COLLECTION_CARDS);
+  }
+
+  getLocalAutoSyncEnginesForRole(role).forEach((engineId) => engineSet.add(engineId));
+
+  const hasExplicitTargets =
+    isCollectionTab &&
+    supportsAutoSyncLinkRole(role) &&
+    readExplicitAutoSyncTargetPaths(currentTabConfig).length > 0;
+
+  if (hasExplicitTargets) {
+    getLinkedAutoSyncEnginesForRole(role).forEach((engineId) => engineSet.add(engineId));
+  }
+
+  return sortEngines([...engineSet]);
+}
+
+function buildCleanupEnginesForTabContext(tabContext = {}, options = {}) {
+  const engineSet = new Set(buildEnginesForTabContext(tabContext, options));
+  const role = getEffectiveAutoSyncRole(tabContext);
+  getAutoSyncEnginesForRole(role).forEach((engineId) => engineSet.add(engineId));
+  return sortEngines([...engineSet]);
 }
 
 function buildEntitySnapshotMap(novelData) {
@@ -160,17 +204,18 @@ export function buildAutoSyncPlanFromRoles(roles = [], { includeCollectionCards 
 }
 
 export function buildAutoSyncPlanFromTabContext(tabContext = {}, options = {}) {
-  const role = getEffectiveAutoSyncRole(tabContext);
-  return buildAutoSyncPlanFromRoles(role ? [role] : [], options);
+  return {
+    engines: buildEnginesForTabContext(tabContext, options),
+  };
 }
 
 export function buildAutoSyncPlanFromTabDiff({ previousTabContext = null, nextTabContext = null } = {}, options = {}) {
-  const roles = [];
-  const prevRole = previousTabContext ? getEffectiveAutoSyncRole(previousTabContext) : '';
-  const nextRole = nextTabContext ? getEffectiveAutoSyncRole(nextTabContext) : '';
-  if (prevRole) roles.push(prevRole);
-  if (nextRole) roles.push(nextRole);
-  return buildAutoSyncPlanFromRoles(roles, options);
+  const engineSet = new Set();
+  buildCleanupEnginesForTabContext(previousTabContext || {}, options).forEach((engineId) => engineSet.add(engineId));
+  buildEnginesForTabContext(nextTabContext || {}, options).forEach((engineId) => engineSet.add(engineId));
+  return {
+    engines: sortEngines([...engineSet]),
+  };
 }
 
 export function buildFullAutoSyncPlan({ includeCollectionCards = true } = {}) {

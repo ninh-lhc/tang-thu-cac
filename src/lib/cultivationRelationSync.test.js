@@ -135,6 +135,36 @@ describe('cultivationRelationSync', () => {
     expect(theTu.info).toContain('Cảnh Giới Tu Vi Liên Quan (AUTO)');
     expect(theTu.info).toContain('[[Truc Co - The Canh]]');
   });
+  it('uses explicit realm target tabs when the system tab is configured', () => {
+    const novel = createNovel();
+    novel.tabsConfig[0].subTabs.push({
+      id: 'canh-gioi-phu',
+      label: 'Canh Gioi Phu',
+      viewType: 'collection-track',
+      autoSyncRole: 'canh-gioi-tu-vi',
+    });
+    novel.data['tu-luyen']['canh-gioi-phu'] = {
+      overview: '',
+      entities: [
+        {
+          id: 'realm-phu',
+          name: 'Dao Hai',
+          info: '',
+          dynamicData: { f_status: 'De Tam - Linh Canh' },
+        },
+      ],
+    };
+    novel.tabsConfig[0].subTabs[0].autoSyncTargetPaths = ['tu-luyen::canh-gioi-tu-vi'];
+
+    const ok = syncAllCultivationRelationBlocks(novel);
+    expect(ok).toBe(true);
+
+    const selectedRealm = novel.data['tu-luyen']['canh-gioi-tu-vi'].entities[0];
+    const skippedRealm = novel.data['tu-luyen']['canh-gioi-phu'].entities[0];
+    expect(selectedRealm.info).toContain('[[Linh Tu]]');
+    expect(skippedRealm.info).not.toContain('[[Linh Tu]]');
+  });
+
   it('cleans stale cultivation AUTO blocks when both tabs are turned off', () => {
     const novel = createNovel();
     expect(syncAllCultivationRelationBlocks(novel)).toBe(true);

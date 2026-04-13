@@ -54,6 +54,58 @@ describe('theLucBanDoSync', () => {
     expect(mapEntities[0].name).toBe('Tay-Bac Chau');
   });
 
+  it('writes force AUTO only into the explicit map target tab when configured', () => {
+    const nov = {
+      tabsConfig: [
+        {
+          id: 'the-luc',
+          label: 'The Luc',
+          subTabs: [
+            {
+              id: 'to-chuc',
+              label: 'To Chuc',
+              viewType: 'collection-track',
+              autoSyncRole: 'the-luc',
+              autoSyncTargetPaths: ['tai-nguyen::bi-canh'],
+            },
+          ],
+        },
+        {
+          id: 'tai-nguyen',
+          label: 'Tai Nguyen',
+          subTabs: [
+            { id: 'dia-danh', label: 'Ban do', viewType: 'collection-track', autoSyncRole: 'ban-do' },
+            { id: 'bi-canh', label: 'Bi Canh', viewType: 'collection-track', autoSyncRole: 'ban-do' },
+          ],
+        },
+      ],
+      data: {
+        'the-luc': {
+          'to-chuc': {
+            overview: '',
+            entities: [
+              {
+                id: 'tl1',
+                name: 'Lac Gia',
+                dynamicData: { f_status: 'Gia Toc - Bat Cap the luc - Huyen Thien Gioi' },
+                info: '',
+              },
+            ],
+          },
+        },
+        'tai-nguyen': {
+          'dia-danh': { overview: '', entities: [] },
+          'bi-canh': { overview: '', entities: [] },
+        },
+      },
+    };
+
+    const ok = syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId: 'the-luc' });
+    expect(ok.changed).toBe(true);
+    expect(nov.data['tai-nguyen']['dia-danh'].entities).toHaveLength(0);
+    expect(nov.data['tai-nguyen']['bi-canh'].entities.map((entity) => entity.name)).toContain('Huyen Thien Gioi');
+  });
+
   it('parses accented "Tám" rank higher than "Tam" rank', () => {
     const rankEight = 'T\u00E1m C\u1EA5p th\u1EBF l\u1EF1c';
     const rankThree = 'Tam C\u1EA5p th\u1EBF l\u1EF1c';

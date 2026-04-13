@@ -106,6 +106,12 @@ import {
   setEntityAutoFieldValue,
 } from './lib/tabAutoSyncFieldMap.js';
 import {
+  guessAutoSyncTargetPathsForTab,
+  hydrateTabsAutoSyncLinkTargets,
+  normalizeAutoSyncTargetPaths,
+  supportsAutoSyncLinkRole,
+} from './lib/tabAutoSyncLinks.js';
+import {
   buildAutoSyncPlanFromTabContext,
   buildAutoSyncPlanFromTabDiff,
   buildFullAutoSyncPlan,
@@ -1574,11 +1580,12 @@ export default function App() {
   const handleApplySuggestedAutoSyncSetup = () => {
     const currentTabs = structuredClone(getTabsToUpdate());
     const hydrated = hydrateTabsAutoSyncConfigs(currentTabs);
-    if (!hydrated.changed) {
+    const linkHydrated = hydrateTabsAutoSyncLinkTargets(hydrated.tabsConfig);
+    if (!hydrated.changed && !linkHydrated.changed) {
       showToast('Cấu hình AUTO hiện đã khớp với gợi ý từ cây thư mục.', 'success');
       return;
     }
-    setTabsConfig(hydrated.tabsConfig, {
+    setTabsConfig(linkHydrated.tabsConfig, {
       resyncAuto: true,
       autoSyncPlan: buildFullAutoSyncPlan(),
       autoSyncReason: 'wizard_setup',
@@ -1851,6 +1858,8 @@ export default function App() {
     const nextRole = normalizeAutoSyncRole(nextRoleValue);
     if (!nextRole) delete nho.autoSyncRole;
     else nho.autoSyncRole = nextRole;
+    delete nho.autoSyncTargetPaths;
+    delete nho.autoSyncTargetPath;
 
     const autoCtx = buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '');
     const effectiveRole = getEffectiveAutoSyncRole(autoCtx);
@@ -1864,6 +1873,10 @@ export default function App() {
       const seededFieldMap = normalizeAutoSyncFieldMap(getEffectiveAutoSyncFieldMap(autoCtx), effectiveRole);
       if (Object.keys(seededFieldMap).length > 0) nho.autoSyncFieldMap = seededFieldMap;
       else delete nho.autoSyncFieldMap;
+      if (supportsAutoSyncLinkRole(effectiveRole)) {
+        const guessedTargetPaths = guessAutoSyncTargetPathsForTab(current, autoCtx);
+        if (guessedTargetPaths.length > 0) nho.autoSyncTargetPaths = guessedTargetPaths;
+      }
     } else if (nextRole === AUTO_SYNC_ROLE_OFF) {
       delete nho.autoSyncFieldMap;
     }
@@ -1907,6 +1920,33 @@ export default function App() {
       resyncAuto: true,
       autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
       autoSyncReason: 'set_field_map',
+      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+    });
+  };
+
+  const handleSetTabAutoSyncTargets = (lonId, nhoId, nextTargetPaths) => {
+    const current = structuredClone(getTabsToUpdate());
+    const previousTabs = getTabsToUpdate();
+    const previousLon = previousTabs.find((tab) => tab.id === lonId);
+    const previousNho = previousLon?.subTabs?.find((sub) => sub.id === nhoId) || null;
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+
+    const normalizedTargets = normalizeAutoSyncTargetPaths(nextTargetPaths);
+    if (normalizedTargets.length > 0) nho.autoSyncTargetPaths = normalizedTargets;
+    else {
+      delete nho.autoSyncTargetPaths;
+      delete nho.autoSyncTargetPath;
+    }
+
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: buildAutoSyncPlanFromTabDiff({
+        previousTabContext: buildAutoSyncContext(lonId, nhoId, previousNho, previousLon?.label || ''),
+        nextTabContext: buildAutoSyncContext(lonId, nhoId, nho, lon?.label || ''),
+      }),
+      autoSyncReason: 'set_auto_targets',
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
   };
@@ -2240,6 +2280,7 @@ export default function App() {
     handleAddTabNho,
     handleAddTabCon,
     handleSetTabAutoSyncRole,
+    handleSetTabAutoSyncTargets,
     handleSetTabAutoSyncFieldMap,
     handleApplySuggestedAutoSyncSetup,
     handleResyncAutoTabs,

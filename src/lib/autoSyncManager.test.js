@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildAutoSyncPlanFromTabContext,
   buildAutoSyncPlanFromTabDiff,
   buildFullAutoSyncPlan,
   runNovelAutoSyncPlan,
@@ -41,6 +42,30 @@ function createNovel() {
 }
 
 describe('autoSyncManager', () => {
+  it('keeps collection AUTO local by default until a linked target is chosen', () => {
+    const localPlan = buildAutoSyncPlanFromTabContext({
+      activeTabLon: 'the-luc',
+      activeTabNho: 'gia-toc',
+      currentTabConfig: { id: 'gia-toc', label: 'Gia Toc', viewType: 'collection-track', autoSyncRole: AUTO_SYNC_ROLE_FORCE },
+      parentLabel: 'The Luc',
+    });
+    expect(localPlan.engines).toEqual(['collection_cards']);
+
+    const linkedPlan = buildAutoSyncPlanFromTabContext({
+      activeTabLon: 'the-luc',
+      activeTabNho: 'gia-toc',
+      currentTabConfig: {
+        id: 'gia-toc',
+        label: 'Gia Toc',
+        viewType: 'collection-track',
+        autoSyncRole: AUTO_SYNC_ROLE_FORCE,
+        autoSyncTargetPaths: ['ban-do::ha-gioi'],
+      },
+      parentLabel: 'The Luc',
+    });
+    expect(linkedPlan.engines).toEqual(['force_map', 'relation_notes', 'collection_cards']);
+  });
+
   it('builds a cleanup-aware plan when a tab changes from AUTO role to off', () => {
     const plan = buildAutoSyncPlanFromTabDiff({
       previousTabContext: {
