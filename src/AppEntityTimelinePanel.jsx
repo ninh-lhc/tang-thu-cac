@@ -53,6 +53,15 @@ function isAutoOwnerMilestone(ms) {
   return typeof ms.id === 'string' && ms.id.startsWith('ms-auto-');
 }
 
+function getMilestoneTitle(ms) {
+  return safeString(ms?.title).trim();
+}
+
+function getMilestoneBody(ms, parsed = null) {
+  const resolved = parsed || parseMilestoneLabel(ms?.event);
+  return safeString(resolved.body || ms?.event);
+}
+
 export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   collectionSubTab,
   selectedEntity,
@@ -229,7 +238,8 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
     const merged = {
       id: generateId('ms'),
       chapter: parseInt(sorted[0]?.chapter, 10) || 0,
-      event: `[?] Gộp ${picked.length} mốc:\n${mergedEvent}`,
+      title: `Gộp ${picked.length} mốc`,
+      event: `[?] ${mergedEvent}`,
       snapshot: newestWithSnapshot?.snapshot || null,
     };
     const remained = milestonesAll.filter((ms) => !selectedIdSet.has(ms.id));
@@ -319,6 +329,8 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                   if (!ms) return null;
                   const isSelected = selectedMilestoneId === ms.id;
                   const parsedMs = parseMilestoneLabel(ms.event);
+                  const milestoneTitle = getMilestoneTitle(ms);
+                  const milestoneBodyPreview = getMilestoneBody(ms, parsedMs).trim();
                   const isAutoMs = isAutoOwnerMilestone(ms);
                   return (
                     <div
@@ -365,7 +377,22 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                               </span>
                             )}
                           </div>
-                          <div className={`text-xs font-serif line-clamp-2 leading-relaxed ${isSelected ? 'text-slate-200' : 'text-slate-500 group-hover:text-slate-400'}`}>{safeString(parsedMs.body || ms.event)}</div>
+                          {milestoneTitle ? (
+                            <div className="space-y-1">
+                              <div className={`text-sm font-semibold leading-snug ${isSelected ? 'text-slate-100' : 'text-slate-300 group-hover:text-slate-200'}`}>
+                                {milestoneTitle}
+                              </div>
+                              {milestoneBodyPreview ? (
+                                <div className={`text-xs font-serif line-clamp-2 leading-relaxed ${isSelected ? 'text-slate-300' : 'text-slate-500 group-hover:text-slate-400'}`}>
+                                  {milestoneBodyPreview}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className={`text-xs font-serif line-clamp-2 leading-relaxed ${isSelected ? 'text-slate-200' : 'text-slate-500 group-hover:text-slate-400'}`}>
+                              {milestoneBodyPreview}
+                            </div>
+                          )}
                         </div>
                       </button>
                     </div>
@@ -493,13 +520,26 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                   <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1">{g.title} ({g.items.length})</div>
                   {g.items.length === 0 ? (
                     <div className="text-[11px] text-slate-600 italic mb-1">Không có mốc</div>
-                  ) : g.items.map((ms) => (
-                    <label key={ms.id} className="flex items-start gap-2 text-xs text-slate-200 py-1">
-                      <input type="checkbox" checked={reviewPick.has(ms.id)} onChange={() => toggleReviewPick(ms.id)} className="mt-0.5" />
-                      <span className="text-slate-500 w-12 flex-shrink-0">Ch.{safeString(ms.chapter)}</span>
-                      <span className="line-clamp-2">{safeString(ms.body || ms.event)}</span>
-                    </label>
-                  ))}
+                  ) : g.items.map((ms) => {
+                    const reviewTitle = getMilestoneTitle(ms);
+                    const reviewBody = safeString(ms.body || ms.event).trim();
+                    return (
+                      <label key={ms.id} className="flex items-start gap-2 py-1 text-xs text-slate-200">
+                        <input type="checkbox" checked={reviewPick.has(ms.id)} onChange={() => toggleReviewPick(ms.id)} className="mt-0.5" />
+                        <span className="text-slate-500 w-12 flex-shrink-0">Ch.{safeString(ms.chapter)}</span>
+                        <span className="min-w-0 flex-1">
+                          {reviewTitle ? (
+                            <>
+                              <span className="block font-semibold text-slate-100">{reviewTitle}</span>
+                              {reviewBody ? <span className="block line-clamp-2 text-slate-400">{reviewBody}</span> : null}
+                            </>
+                          ) : (
+                            <span className="line-clamp-2">{reviewBody}</span>
+                          )}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -508,6 +548,8 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
         {selectedMilestoneId && selectedEntity.milestones?.find((m) => m.id === selectedMilestoneId) ? (() => {
           const selectedMs = selectedEntity.milestones.find((m) => m.id === selectedMilestoneId);
           const selectedParsed = parseMilestoneLabel(selectedMs.event);
+          const selectedTitle = getMilestoneTitle(selectedMs);
+          const selectedBody = getMilestoneBody(selectedMs, selectedParsed);
           const selectedIsAuto = isAutoOwnerMilestone(selectedMs);
           const fields =
             currentTabConfig && activeTabLon
@@ -581,7 +623,12 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                         </span>
                       </div>
                     )}
-                    <h3 className="text-3xl font-heading font-bold text-amber-500">Giai đoạn chương {safeString(selectedMs.chapter)}</h3>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.24em] text-amber-600/75">
+                      Chương {safeString(selectedMs.chapter)}
+                    </div>
+                    <h3 className="mt-2 text-3xl font-heading font-bold text-amber-500">
+                      {selectedTitle || `Giai đoạn chương ${safeString(selectedMs.chapter)}`}
+                    </h3>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={() => { setEditingMilestoneData(selectedMs); setIsMilestoneModalOpen(true); }} className="p-2.5 bg-slate-950/50 hover:bg-slate-800 hover:text-amber-400 text-slate-500 rounded-xl transition-all border border-slate-800 hover:border-amber-900/50 shadow-sm" title="Sửa lại nội dung"><Edit2 size={18}/></button>
@@ -589,7 +636,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                   </div>
                 </div>
                 <div className="prose prose-invert max-w-none relative z-10 text-[17px] text-slate-200 font-serif leading-loose whitespace-pre-wrap">
-                  {renderMarkdown(safeString(selectedParsed.body || selectedMs.event), currentContextDirHandle, entityMap, globalLinkRegex, onNavigate, selectedEntity?.id)}
+                  {renderMarkdown(selectedBody, currentContextDirHandle, entityMap, globalLinkRegex, onNavigate, selectedEntity?.id)}
                 </div>
               </div>
 

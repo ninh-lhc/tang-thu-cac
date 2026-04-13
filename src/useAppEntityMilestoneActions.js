@@ -596,6 +596,7 @@ export function useAppEntityMilestoneActions({
               ent.milestones[idx] = {
                 ...ent.milestones[idx],
                 chapter: parseInt(formData.chapter, 10),
+                title: safeString(formData.title).trim(),
                 event: formData.event,
                 snapshot,
               };
@@ -604,6 +605,7 @@ export function useAppEntityMilestoneActions({
             ent.milestones.push({
               id: generateId('ms'),
               chapter: parseInt(formData.chapter, 10),
+              title: safeString(formData.title).trim(),
               event: formData.event,
               snapshot,
             });

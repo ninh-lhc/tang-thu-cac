@@ -78,7 +78,8 @@ export function searchNovelData(novel, q, res) {
                 snippet: ent.info || ent.name,
               });
             ent.milestones?.forEach((ms) => {
-              if (includesNormalized(ms.event, normalizedQuery))
+              const milestoneText = [ms.title, ms.event].filter((x) => typeof x === 'string' && x.trim()).join('\n');
+              if (includesNormalized(milestoneText, normalizedQuery))
                 res.push({
                   novelId: novel.id,
                   tabLonId: lonId,
@@ -86,7 +87,7 @@ export function searchNovelData(novel, q, res) {
                   entityId: ent.id,
                   novelTitle: novel.title,
                   location: `Sự kiện Ch.${ms.chapter} — ${ent.name}`,
-                  snippet: ms.event,
+                  snippet: ms.title ? `${ms.title}\n${ms.event || ''}`.trim() : ms.event,
                 });
             });
           });
@@ -172,9 +173,10 @@ export function buildNovelSearchIndex(novel) {
           },
         });
         (ent.milestones || []).forEach((ms) => {
-          if (typeof ms?.event !== 'string') return;
+          const milestoneText = [ms?.title, ms?.event].filter((x) => typeof x === 'string' && x.trim()).join('\n');
+          if (!milestoneText) return;
           rows.push({
-            haystack: normalizeSearchText(ms.event),
+            haystack: normalizeSearchText(milestoneText),
             result: {
               novelId: novel.id,
               tabLonId: lonId,
@@ -182,7 +184,7 @@ export function buildNovelSearchIndex(novel) {
               entityId: ent.id,
               novelTitle: novel.title,
               location: `Sự kiện Ch.${ms.chapter} — ${ent.name}`,
-              snippet: ms.event,
+              snippet: ms.title ? `${ms.title}\n${ms.event || ''}`.trim() : ms.event,
             },
           });
         });

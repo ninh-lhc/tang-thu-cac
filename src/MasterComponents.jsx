@@ -30,6 +30,10 @@ import {
   applyWikiLinkWrap,
   applyWikiLinkUnwrap,
   analyzeTextWithAI,
+  getEntityNotesToolbarState,
+  resolveEntityNotesBackspace,
+  resolveEntityNotesLineBreak,
+  resolveEntityNotesTabIndent,
   suggestWikiLinkSpotsWithAI,
   truncateForAI,
   mapGeminiErrorToUserMessage,
@@ -1672,13 +1676,16 @@ export const ModalMilestone = ({
   const [editingFieldLabel, setEditingFieldLabel] = useState('');
   const [linkSuggestField, setLinkSuggestField] = useState(null);
   const terms = getTerms(parentTabId);
-  const [formData, setFormData] = useState({ id: null, chapter: '', event: '' });
+  const [formData, setFormData] = useState({ id: null, chapter: '', title: '', event: '' });
   const [snapshotData, setSnapshotData] = useState({ avatar: '', dynamicData: {} });
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [eventToolbarState, setEventToolbarState] = useState(() => getEntityNotesToolbarState('', 0, 0));
   const [newFieldLabel, setNewFieldLabel] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const EVENT_WIKI_FIELD_ID = '__milestone_event__';
+  const EVENT_EDITOR_ID = 'milestone-event-editor';
   const dynamicFieldInputRefs = useRef({});
+  const eventTextareaRef = useRef(null);
   const pendingWikiCaretRef = useRef(null);
   const trapRefMs = useFocusTrap(isOpen);
   const patchFormData = (patch) =>
@@ -1702,17 +1709,30 @@ export const ModalMilestone = ({
       el.setSelectionRange(p.selStart, p.selEnd);
     }
   }, [snapshotData.dynamicData, formData.event]);
+
+  useEffect(() => {
+    const textarea = eventTextareaRef.current;
+    if (!textarea) return;
+    setEventToolbarState(
+      getEntityNotesToolbarState(textarea.value, textarea.selectionStart, textarea.selectionEnd)
+    );
+  }, [formData.event]);
   
   useEffect(() => { 
     if(isOpen) {
        setErrorMsg('');
        setIsAnalyzing(false);
        if (initialData) {
-           setFormData({ id: initialData.id, chapter: initialData.chapter, event: initialData.event });
+           setFormData({
+             id: initialData.id,
+             chapter: initialData.chapter,
+             title: safeString(initialData.title),
+             event: initialData.event,
+           });
            setSnapshotData(initialData.snapshot || { avatar: '', dynamicData: {} });
        } else {
            const dc = defaultChapterWhenNew != null && defaultChapterWhenNew !== '' ? String(defaultChapterWhenNew) : '';
-           setFormData({ id: null, chapter: dc, event: '' });
+           setFormData({ id: null, chapter: dc, title: '', event: '' });
            setSnapshotData({ avatar: '', dynamicData: {} });
        }
     } 
@@ -1737,7 +1757,7 @@ export const ModalMilestone = ({
       );
       const nextSnapshot = { ...snapshotData, dynamicData: wrappedDynamic };
       const hasData = nextSnapshot.avatar || Object.values(nextSnapshot.dynamicData || {}).some(v => v);
-      onSave({ ...formData, event: eventWrap.text }, hasData ? nextSnapshot : null);
+      onSave({ ...formData, title: safeString(formData.title).trim(), event: eventWrap.text }, hasData ? nextSnapshot : null);
       if (wrappedCount > 0 && autoLinkToastEnabled && typeof showToast === 'function') {
         showToast(`Đã tự bọc ${wrappedCount} [[liên kết]] theo thẻ có sẵn.`);
       }
@@ -1781,6 +1801,66 @@ export const ModalMilestone = ({
      setNewFieldLabel('');
   };
 
+  const syncEventToolbarStateFromEditor = () => {
+     const textarea = eventTextareaRef.current;
+     if (!textarea) return;
+     setEventToolbarState(
+       getEntityNotesToolbarState(textarea.value, textarea.selectionStart, textarea.selectionEnd)
+     );
+  };
+
+  const applyEventEditorMutation = (nextState) => {
+     const textarea = eventTextareaRef.current;
+     if (!textarea || !nextState) return;
+     textarea.value = nextState.newText;
+     textarea.focus();
+     textarea.setSelectionRange(nextState.selStart, nextState.selEnd);
+     patchFormData({ event: nextState.newText });
+     setEventToolbarState(
+       getEntityNotesToolbarState(nextState.newText, nextState.selStart, nextState.selEnd)
+     );
+  };
+
+  const handleEventEditorKeyDown = (event) => {
+     const textarea = event.currentTarget;
+     if (event.key === 'Tab') {
+       const nextState = resolveEntityNotesTabIndent(
+         textarea.value,
+         textarea.selectionStart,
+         textarea.selectionEnd,
+         { outdent: event.shiftKey }
+       );
+       if (nextState) {
+         event.preventDefault();
+         applyEventEditorMutation(nextState);
+       }
+       return;
+     }
+     if (event.key === 'Enter' && !event.shiftKey) {
+       const nextState = resolveEntityNotesLineBreak(
+         textarea.value,
+         textarea.selectionStart,
+         textarea.selectionEnd
+       );
+       if (nextState) {
+         event.preventDefault();
+         applyEventEditorMutation(nextState);
+       }
+       return;
+     }
+     if (event.key === 'Backspace') {
+       const nextState = resolveEntityNotesBackspace(
+         textarea.value,
+         textarea.selectionStart,
+         textarea.selectionEnd
+       );
+       if (nextState) {
+         event.preventDefault();
+         applyEventEditorMutation(nextState);
+       }
+     }
+  };
+
   const handleSave = () => {
      const eventWrap = autoWrapWikiLinksByEntityMapWithCount(safeString(formData.event), entityMap);
      let wrappedCount = eventWrap.count;
@@ -1794,7 +1874,7 @@ export const ModalMilestone = ({
      );
      const nextSnapshot = { ...snapshotData, dynamicData: wrappedDynamic };
      const hasData = nextSnapshot.avatar || Object.values(nextSnapshot.dynamicData).some(v => v);
-     onSave({ ...formData, event: eventWrap.text }, hasData ? nextSnapshot : null);
+     onSave({ ...formData, title: safeString(formData.title).trim(), event: eventWrap.text }, hasData ? nextSnapshot : null);
      if (wrappedCount > 0 && autoLinkToastEnabled && typeof showToast === 'function') {
        showToast(`Đã tự bọc ${wrappedCount} [[liên kết]] theo thẻ có sẵn.`);
      }
@@ -1809,13 +1889,23 @@ export const ModalMilestone = ({
       aria-modal="true"
       aria-label="Ghi chép mệnh số"
     >
-       <div data-testid="modal-milestone-root" ref={trapRefMs} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-5xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col md:flex-row h-[85vh]">
-          <div className="w-full md:w-5/12 bg-slate-950 border-r border-slate-800 p-6 flex flex-col relative">
+       <div data-testid="modal-milestone-root" ref={trapRefMs} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-6xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col md:flex-row h-[85vh]">
+          <div className="w-full md:w-1/2 bg-slate-950 border-r border-slate-800 p-6 flex flex-col relative">
              <h2 className="text-xl font-heading font-bold text-amber-500 mb-6 flex items-center gap-2"><Clock size={20}/> Ghi Chép Mệnh Số</h2>
              <div className="flex-1 flex flex-col space-y-4">
                 <div>
                    <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-widest">Mốc Chương *</label>
                    <input type="number" autoFocus value={safeString(formData.chapter)} onChange={e=>patchFormData({ chapter: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-amber-300 font-bold focus:border-amber-500 outline-none" placeholder="VD: 150" />
+                </div>
+                <div>
+                   <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-widest">TÃªn sá»± kiá»‡n</label>
+                   <input
+                     value={safeString(formData.title)}
+                     onChange={e=>patchFormData({ title: e.target.value })}
+                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-100 font-serif focus:border-amber-500 outline-none"
+                     placeholder="VD: Káº¿t Ä‘an thÃ nh cÃ´ng"
+                   />
+                   <p className="mt-1 text-[11px] text-slate-500 font-serif">DÃ²ng ngáº¯n Ä‘á»ƒ timeline dá»… quÃ©t; cÃ³ thá»ƒ bá» trá»‘ng náº¿u chá»‰ muá»‘n ghi chi tiáº¿t.</p>
                 </div>
                 {parentTabId === 'nhan-vat' && (
                   <div className="rounded-lg border border-cyan-800/50 bg-cyan-950/20 px-3 py-2">
@@ -1826,55 +1916,46 @@ export const ModalMilestone = ({
                   </div>
                 )}
                 <div className="flex flex-col flex-1 min-h-0">
-                   <div className="flex items-center justify-between gap-2 mb-1">
+                   <div className="mb-1">
                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">{terms.msEvent}</label>
-                     <div className="flex items-center gap-1 flex-shrink-0">
-                       <button
-                         type="button"
-                         onMouseDown={preventToolbarFocusSteal}
-                         onClick={() => {
-                           const cur = safeString(formData.event);
-                           const input = dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID];
-                           let a = cur.length; let b = cur.length;
-                           if (input && document.activeElement === input) {
-                             a = input.selectionStart ?? 0;
-                             b = input.selectionEnd ?? a;
-                           }
-                           const { newText, selStart, selEnd } = applyWikiLinkWrap(cur, a, b);
-                           pendingWikiCaretRef.current = { fieldId: EVENT_WIKI_FIELD_ID, selStart, selEnd };
-                           patchFormData({ event: newText });
-                         }}
-                         className="text-[10px] font-bold text-amber-500 hover:text-amber-300 bg-amber-900/30 px-2 py-1 rounded border border-amber-700/40"
-                         title="Chèn [[ ]] tại con trỏ hoặc bọc đoạn đang chọn"
-                       >[[]]</button>
-                       <button
-                         type="button"
-                         onMouseDown={preventToolbarFocusSteal}
-                         onClick={() => {
-                           const cur = safeString(formData.event);
-                           const input = dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID];
-                           let a = cur.length; let b = cur.length;
-                           if (input && document.activeElement === input) {
-                             a = input.selectionStart ?? 0;
-                             b = input.selectionEnd ?? a;
-                           }
-                           const { newText, selStart, selEnd } = applyWikiLinkUnwrap(cur, a, b);
-                           pendingWikiCaretRef.current = { fieldId: EVENT_WIKI_FIELD_ID, selStart, selEnd };
-                           patchFormData({ event: newText });
-                         }}
-                         className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-900/20 px-2 py-1 rounded border border-cyan-700/35"
-                         title="Gỡ [[ ]] ở vùng chọn hoặc đoạn chứa con trỏ"
-                       >Bỏ</button>
-                     </div>
+                     <p className="mt-1 text-[11px] text-slate-500 font-serif">Phần này dùng khung soạn rộng giống ghi chép chi tiết; tiêu đề để ngắn gọn, còn diễn biến viết ở đây.</p>
                    </div>
-                   <div className="relative flex-1 min-h-[120px]">
-                     <textarea
-                       ref={(el) => { if (el) dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID] = el; else delete dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID]; }}
-                       value={safeString(formData.event)}
-                       onChange={e=>patchFormData({ event: e.target.value })}
-                       className="w-full h-full min-h-[120px] bg-slate-900 border border-slate-700 rounded-lg p-4 text-sm text-slate-300 font-serif focus:border-amber-500 outline-none resize-none custom-scrollbar"
-                       placeholder="Nhập sự kiện… Dùng [[Tên]] để liên kết wiki; [[]] / Bỏ để bọc hoặc gỡ link tại con trỏ."
+                   <div className="flex flex-1 min-h-[260px] flex-col rounded-[28px] border border-slate-800/80 bg-slate-950/45 px-4 py-4 shadow-[inset_0_1px_0_rgba(148,163,184,0.08)]">
+                     <MarkdownToolbar
+                       editorId={EVENT_EDITOR_ID}
+                       variant="standard"
+                       onInsertImage={(editorId) =>
+                         handlePickLocalImage?.(null, editorId, 'milestone-event-inline-image')
+                       }
+                       onEditorContentChange={(nextText) => {
+                         patchFormData({ event: nextText });
+                       }}
+                       entityNotesToolbarState={eventToolbarState}
                      />
+                     <div className="flex min-h-0 flex-1 rounded-[24px] border border-slate-800 bg-slate-950/70 px-5 py-4">
+                       <textarea
+                         id={EVENT_EDITOR_ID}
+                         ref={(el) => {
+                           eventTextareaRef.current = el;
+                           if (el) dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID] = el;
+                           else delete dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID];
+                         }}
+                         value={safeString(formData.event)}
+                         onChange={(e) => {
+                           patchFormData({ event: e.target.value });
+                           setEventToolbarState(
+                             getEntityNotesToolbarState(e.target.value, e.target.selectionStart, e.target.selectionEnd)
+                           );
+                         }}
+                         className="w-full min-h-[260px] flex-1 resize-none bg-transparent text-[15px] leading-loose text-slate-200 font-serif outline-none custom-scrollbar"
+                         placeholder="Nhập chi tiết sự kiện… Dùng [[Tên]] để liên kết wiki, xuống dòng/bullet như khung ghi chép chi tiết."
+                         spellCheck
+                         onKeyDown={handleEventEditorKeyDown}
+                         onKeyUp={syncEventToolbarStateFromEditor}
+                         onClick={syncEventToolbarStateFromEditor}
+                         onSelect={syncEventToolbarStateFromEditor}
+                       />
+                     </div>
                    </div>
                 </div>
                 <button onClick={handleAI} disabled={isAnalyzing || !formData.event.trim()} className="w-full py-3 bg-gradient-to-r from-emerald-800 to-emerald-600 hover:from-emerald-700 text-white rounded-xl font-bold flex items-center justify-center gap-2">
@@ -1884,7 +1965,7 @@ export const ModalMilestone = ({
                 {errorMsg && <p className="text-rose-400 text-xs mt-1 text-center">{safeString(errorMsg)}</p>}
              </div>
           </div>
-          <div className="w-full md:w-7/12 p-6 md:p-8 flex flex-col bg-slate-900 relative">
+          <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col bg-slate-900 relative">
              <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
                 <div>
                    <h2 className="text-2xl font-heading font-bold text-slate-100">Trạng Thái Tại Mốc Này</h2>

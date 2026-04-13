@@ -34,7 +34,11 @@ function buildEntityProfilePrintHtml({ entity, fields, novelTitle, tabLabel }) {
   const milestonesHTML = (entity?.milestones || [])
     .slice()
     .sort((a, b) => Number(a?.chapter || 0) - Number(b?.chapter || 0))
-    .map((ms) => `<div class="milestone"><div class="ms-chapter">Chương ${escapeHtml(ms?.chapter)}</div><div class="ms-event">${escapeHtml(ms?.event || '')}</div></div>`)
+    .map((ms) => {
+      const title = escapeHtml(ms?.title || '');
+      const eventHtml = escapeHtml(ms?.event || '').replace(/\n/g, '<br/>');
+      return `<div class="milestone"><div class="ms-chapter">Chương ${escapeHtml(ms?.chapter)}</div>${title ? `<div class="ms-title">${title}</div>` : ''}<div class="ms-event">${eventHtml}</div></div>`;
+    })
     .join('');
 
   const infoHTML = escapeHtml(entity?.info || '').replace(/\n/g, '<br/>');
@@ -55,9 +59,10 @@ function buildEntityProfilePrintHtml({ entity, fields, novelTitle, tabLabel }) {
     + '.field-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .1em; min-width: 160px; padding-top: 2px; }'
     + '.field-value { font-size: 14px; color: #1e293b; flex: 1; line-height: 1.6; }'
     + '.info-text { font-size: 14px; line-height: 1.8; color: #334155; }'
-    + '.milestone { padding: 12px 16px; border-left: 3px solid #fbbf24; margin-bottom: 10px; background: #fffbeb; border-radius: 0 6px 6px 0; }'
-    + '.ms-chapter { font-size: 11px; font-weight: 700; color: #92400e; text-transform: uppercase; margin-bottom: 4px; }'
-    + '.ms-event { font-size: 13px; color: #374151; line-height: 1.6; }'
+     + '.milestone { padding: 12px 16px; border-left: 3px solid #fbbf24; margin-bottom: 10px; background: #fffbeb; border-radius: 0 6px 6px 0; }'
+     + '.ms-chapter { font-size: 11px; font-weight: 700; color: #92400e; text-transform: uppercase; margin-bottom: 4px; }'
+     + '.ms-title { font-family: "Playfair Display", "Noto Serif", Georgia, serif; font-size: 17px; font-weight: 700; color: #111827; margin-bottom: 6px; }'
+     + '.ms-event { font-size: 13px; color: #374151; line-height: 1.6; }'
     + '.no-print { background:#1e293b; color:#f8fafc; padding:12px 20px; margin:-40px -40px 30px; display:flex; justify-content:space-between; align-items:center; }'
     + '.print-btn { background:#b45309;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-weight:bold; }'
     + '.footer { margin-top:40px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8;text-align:center; }'
