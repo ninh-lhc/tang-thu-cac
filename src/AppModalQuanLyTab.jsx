@@ -84,6 +84,91 @@ const AUTO_ROLE_CARD_VALUES = Object.freeze([
   'khong-tu-dong',
 ]);
 
+const AUTO_ROLE_DEFAULT_VISIBLE_COUNT = 4;
+
+const AUTO_ROLE_KEYWORDS = Object.freeze({
+  'the-luc': ['gia toc', 'tong mon', 'de quoc', 'the luc', 'to chuc', 'phe phai', 'lien minh', 'mon phai'],
+  'ban-do': ['dia danh', 'ban do', 'thanh tri', 'dai luc', 'bi canh', 'tinh cau', 'the gioi', 'khu vuc', 'dia ban'],
+  'he-thong-tu-luyen': ['he thong tu luyen', 'he canh gioi', 'he thong', 'tu luyen'],
+  'canh-gioi-tu-vi': ['canh gioi', 'tu vi', 'cap bac', 'dai canh', 'tieu canh'],
+  'nhan-vat-chinh': ['nhan vat chinh', 'main character', 'chu nhan', 'vai chinh', 'protagonist'],
+  'nhan-vat-lien-quan': ['nhan vat lien quan', 'dao lu', 'than nhan', 'huynh de', 'de tu', 'su phu', 'bang huu', 'ban be'],
+});
+
+function normalizeAutoRoleSearchText(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\[\[|\]\]/g, ' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function scoreAutoRoleMatch(roleValue, haystack = '', { explicitRole = '', effectiveRole = '' } = {}) {
+  if (roleValue === '') return 1000;
+
+  let score = 0;
+  if (roleValue === explicitRole) score += 800;
+  if (roleValue === effectiveRole && effectiveRole) score += 500;
+  if (roleValue === 'khong-tu-dong') score -= 200;
+
+  const keywords = AUTO_ROLE_KEYWORDS[roleValue] || [];
+  keywords.forEach((keyword) => {
+    if (!keyword) return;
+    if (haystack === keyword) {
+      score += 240;
+      return;
+    }
+    if (haystack.includes(keyword)) {
+      score += 110 + Math.min(keyword.length, 18);
+    }
+  });
+
+  if (roleValue === 'nhan-vat-chinh' && haystack.includes('nhan vat')) score += 40;
+  if (roleValue === 'nhan-vat-lien-quan' && haystack.includes('nhan vat')) score += 25;
+  if (roleValue === 'canh-gioi-tu-vi' && haystack.includes('gioi')) score += 20;
+  if (roleValue === 'ban-do' && haystack.includes('dia')) score += 20;
+
+  return score;
+}
+
+function getAutoRoleCardGroups({ tabLon = null, tabNho = null, explicitRole = '', effectiveRole = '' } = {}) {
+  const haystack = normalizeAutoRoleSearchText(
+    [
+      safeString(tabLon?.id),
+      safeString(tabLon?.label),
+      safeString(tabNho?.id),
+      safeString(tabNho?.label),
+    ].join(' ')
+  );
+
+  const sortedRoles = AUTO_ROLE_CARD_VALUES
+    .filter((roleValue) => roleValue)
+    .map((roleValue, index) => ({
+      roleValue,
+      score: scoreAutoRoleMatch(roleValue, haystack, { explicitRole, effectiveRole }),
+      index,
+    }))
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .map((item) => item.roleValue);
+
+  const visibleSet = new Set(['']);
+  sortedRoles.forEach((roleValue) => {
+    if (visibleSet.size < AUTO_ROLE_DEFAULT_VISIBLE_COUNT) {
+      visibleSet.add(roleValue);
+    }
+  });
+  if (explicitRole) visibleSet.add(explicitRole);
+  if (effectiveRole) visibleSet.add(effectiveRole);
+
+  const orderedRoles = ['', ...sortedRoles];
+  return {
+    visibleRoles: orderedRoles.filter((roleValue) => visibleSet.has(roleValue)),
+    hiddenRoles: orderedRoles.filter((roleValue) => !visibleSet.has(roleValue)),
+  };
+}
+
 function getAutoRoleUiCopy(role = '') {
   return AUTO_ROLE_UI_COPY[role] || AUTO_ROLE_UI_COPY[''];
 }
@@ -210,6 +295,7 @@ export function AppModalQuanLyTab({
 }) {
   const trapRef = useFocusTrap(true);
   const [advancedOpenByPath, setAdvancedOpenByPath] = React.useState({});
+  const [expandedRoleChoicesByPath, setExpandedRoleChoicesByPath] = React.useState({});
   const diagnostics = React.useMemo(
     () => (activeNovelData ? collectNovelAutoSyncDiagnostics(activeNovelData) : null),
     [activeNovelData]
@@ -222,6 +308,13 @@ export function AppModalQuanLyTab({
 
   const toggleAdvancedSection = React.useCallback((pathKey) => {
     setAdvancedOpenByPath((prev) => ({
+      ...prev,
+      [pathKey]: !prev[pathKey],
+    }));
+  }, []);
+
+  const toggleRoleChoicesSection = React.useCallback((pathKey) => {
+    setExpandedRoleChoicesByPath((prev) => ({
       ...prev,
       [pathKey]: !prev[pathKey],
     }));
@@ -459,10 +552,62 @@ export function AppModalQuanLyTab({
                     const healthCopy = getTabHealthCopy(tabReport);
                     const HealthIcon = healthCopy.icon;
                     const advancedOverride = advancedOpenByPath[tabPathKey];
+                    const roleCardGroups = getAutoRoleCardGroups({
+                      tabLon,
+                      tabNho,
+                      explicitRole,
+                      effectiveRole,
+                    });
+                    const showAllRoleChoices = Boolean(expandedRoleChoicesByPath[tabPathKey]);
                     const showAdvanced =
                       typeof advancedOverride === 'boolean'
                         ? advancedOverride
                         : Boolean(tabReport?.warnings?.length);
+                    const renderRoleCard = (roleValue, group = 'visible') => {
+                      const copy = getAutoRoleUiCopy(roleValue);
+                      const isManualActive = explicitRole === roleValue;
+                      const isAutoModeCard = roleValue === '' && !explicitRole;
+                      const isSuggested = !explicitRole && roleValue !== '' && effectiveRole === roleValue;
+                      const isActive = isManualActive || isAutoModeCard;
+                      const baseClass = isActive
+                        ? 'border-amber-600/60 bg-amber-950/25 text-amber-50'
+                        : isSuggested
+                          ? 'border-cyan-700/45 bg-cyan-950/20 text-cyan-50'
+                          : group === 'hidden'
+                            ? 'border-slate-800 bg-slate-950/50 text-slate-300 hover:border-slate-600 hover:bg-slate-900/80'
+                            : 'border-slate-800 bg-slate-950/70 text-slate-200 hover:border-slate-600 hover:bg-slate-900';
+
+                      return (
+                        <button
+                          key={`${group}-${roleValue || '__auto__'}`}
+                          type="button"
+                          onClick={() => handleSetTabAutoSyncRole(tabLon.id, tabNho.id, roleValue)}
+                          className={`rounded-xl border p-3 text-left transition-all ${baseClass}`}
+                          aria-pressed={isActive}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="text-sm font-semibold">{copy.selectLabel}</div>
+                            {isManualActive && (
+                              <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-100">
+                                Đang dùng
+                              </span>
+                            )}
+                            {isAutoModeCard && !isManualActive && (
+                              <span className="shrink-0 rounded-full border border-slate-600/50 bg-slate-900/60 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-200">
+                                Mặc định
+                              </span>
+                            )}
+                            {isSuggested && (
+                              <span className="shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-cyan-100">
+                                AUTO gợi ý
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-2 text-[12px] font-serif text-slate-300">{copy.helper}</div>
+                          <div className="mt-2 text-[11px] font-serif text-slate-500">{copy.example}</div>
+                        </button>
+                      );
+                    };
 
                     return (
                       <div key={tabNho.id} className="relative">
@@ -576,54 +721,36 @@ export function AppModalQuanLyTab({
                                 </div>
 
                                 <div className="grid gap-2 md:grid-cols-2">
-                                  {AUTO_ROLE_CARD_VALUES.map((roleValue) => {
-                                    const copy = getAutoRoleUiCopy(roleValue);
-                                    const isManualActive = explicitRole === roleValue;
-                                    const isAutoModeCard = roleValue === '' && !explicitRole;
-                                    const isSuggested = !explicitRole && roleValue !== '' && effectiveRole === roleValue;
-                                    const isActive = isManualActive || isAutoModeCard;
-                                    const baseClass = isActive
-                                      ? 'border-amber-600/60 bg-amber-950/25 text-amber-50'
-                                      : isSuggested
-                                        ? 'border-cyan-700/45 bg-cyan-950/20 text-cyan-50'
-                                        : 'border-slate-800 bg-slate-950/70 text-slate-200 hover:border-slate-600 hover:bg-slate-900';
-
-                                    return (
-                                      <button
-                                        key={roleValue || '__auto__'}
-                                        type="button"
-                                        onClick={() => handleSetTabAutoSyncRole(tabLon.id, tabNho.id, roleValue)}
-                                        className={`rounded-xl border p-3 text-left transition-all ${baseClass}`}
-                                        aria-pressed={isActive}
-                                      >
-                                        <div className="flex items-start justify-between gap-3">
-                                          <div className="text-sm font-semibold">{copy.selectLabel}</div>
-                                          {isManualActive && (
-                                            <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-100">
-                                              Đang dùng
-                                            </span>
-                                          )}
-                                          {isAutoModeCard && !isManualActive && (
-                                            <span className="shrink-0 rounded-full border border-slate-600/50 bg-slate-900/60 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-200">
-                                              Mặc định
-                                            </span>
-                                          )}
-                                          {isSuggested && (
-                                            <span className="shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-cyan-100">
-                                              AUTO gợi ý
-                                            </span>
-                                          )}
-                                        </div>
-                                        <div className="mt-2 text-[12px] font-serif text-slate-300">
-                                          {copy.helper}
-                                        </div>
-                                        <div className="mt-2 text-[11px] font-serif text-slate-500">
-                                          {copy.example}
-                                        </div>
-                                      </button>
-                                    );
-                                  })}
+                                  {roleCardGroups.visibleRoles.map((roleValue) => renderRoleCard(roleValue, 'visible'))}
                                 </div>
+
+                                {roleCardGroups.hiddenRoles.length > 0 && (
+                                  <div className="space-y-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleRoleChoicesSection(tabPathKey)}
+                                      className="w-full rounded-xl border border-slate-800 bg-slate-950/35 px-3 py-2.5 text-left text-sm font-semibold text-slate-200 flex items-center justify-between gap-3 hover:border-slate-700 hover:bg-slate-950/55"
+                                    >
+                                      <span>
+                                        {showAllRoleChoices
+                                          ? 'Thu gọn các lựa chọn ít phù hợp hơn'
+                                          : `Xem thêm ${roleCardGroups.hiddenRoles.length} lựa chọn khác`}
+                                      </span>
+                                      {showAllRoleChoices ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                    </button>
+
+                                    {showAllRoleChoices && (
+                                      <div className="rounded-xl border border-slate-800/80 bg-slate-950/35 p-3 space-y-2">
+                                        <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">
+                                          Lựa chọn khác
+                                        </div>
+                                        <div className="grid gap-2 md:grid-cols-2">
+                                          {roleCardGroups.hiddenRoles.map((roleValue) => renderRoleCard(roleValue, 'hidden'))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
 
                                 <div className="rounded-xl border border-slate-800/90 bg-slate-950/40 px-3 py-2">
                                   <div className="text-[12px] text-slate-300 font-serif">{autoRoleHint}</div>
