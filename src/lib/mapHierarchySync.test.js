@@ -5,6 +5,7 @@ import {
   syncMapHierarchyAutoBlocks,
   syncMapHierarchyNameReferences,
 } from './mapHierarchySync.js';
+import { AUTO_SYNC_ENGINE_MAP_HIERARCHY } from './autoSyncEntityPrefs.js';
 import { normalizeAsciiText } from './statusHierarchyParser.js';
 import { AUTO_SYNC_ROLE_OFF } from './tabAutoSyncRole.js';
 
@@ -332,5 +333,43 @@ describe('mapHierarchySync', () => {
     const mapEntities = novel.data['tai-nguyen']['dia-danh'].entities;
     expect(String(mapEntities.find((ent) => ent.id === 'm1')?.info || '')).not.toContain('AUTO_MAP_HIERARCHY_META');
     expect(String(mapEntities.find((ent) => ent.name === 'Viet Long Tinh Cau')?.info || '')).not.toContain('AUTO_MAP_CHILDREN_LIST');
+  });
+
+  it('keeps locked map entity blocks unchanged while the hierarchy around it moves on', () => {
+    const novel = createNovelWithMapEntities([
+      {
+        id: 'm1',
+        name: 'Man Hoang Dai Luc',
+        info: '',
+        dynamicData: {
+          f_title: 'Dai Luc',
+          f_vi_tri: 'Viet Long Tinh Cau',
+        },
+      },
+      {
+        id: 'm2',
+        name: 'Viet Long Tinh Cau',
+        info: '',
+        dynamicData: { f_title: 'Tinh Cau' },
+      },
+      {
+        id: 'm3',
+        name: 'Thien Ha Tinh Cau',
+        info: '',
+        dynamicData: { f_title: 'Tinh Cau' },
+      },
+    ]);
+
+    expect(syncAllMapHierarchyAutoBlocks(novel)).toBe(true);
+    const child = novel.data['tai-nguyen']['dia-danh'].entities.find((ent) => ent.id === 'm1');
+    const lockedSnapshot = String(child.info || '');
+    child.autoSyncPrefs = { lockedEngines: [AUTO_SYNC_ENGINE_MAP_HIERARCHY] };
+    child.dynamicData.f_vi_tri = 'Thien Ha Tinh Cau';
+
+    const ok = syncAllMapHierarchyAutoBlocks(novel);
+    expect(ok).toBe(true);
+
+    expect(String(child.info || '')).toBe(lockedSnapshot);
+    expect(String(novel.data['tai-nguyen']['dia-danh'].entities.find((ent) => ent.id === 'm3')?.info || '')).toContain('[[Man Hoang Dai Luc]]');
   });
 });

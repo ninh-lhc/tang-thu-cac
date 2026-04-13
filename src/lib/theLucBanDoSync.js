@@ -15,6 +15,11 @@ import {
 import { buildPreferredWikiName } from './entityWikiDisambiguation.js';
 import { isMapCollectionScope } from './mapHierarchySync.js';
 import { getEntityAutoFieldValue, setEntityAutoFieldValue } from './tabAutoSyncFieldMap.js';
+import {
+  AUTO_SYNC_ENGINE_FORCE_MAP,
+  isEntityAutoSyncDisabled,
+  isEntityAutoSyncLocked,
+} from './autoSyncEntityPrefs.js';
 import { hasAutoSyncFeature, isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
 
 const AUTO_FORCE_BLOCK_START = '<!-- AUTO_THE_LUC_META:START -->';
@@ -98,6 +103,7 @@ function stripTheLucMapAutoBlocksFromNovel(nov) {
   let changed = false;
   forEachCollectionEntity(nov, (entity) => {
     if (!entity || typeof entity !== 'object') return;
+    if (isEntityAutoSyncLocked(entity, AUTO_SYNC_ENGINE_FORCE_MAP)) return;
     const original = safeString(entity.info || '');
     const next = removeAutoBlock(
       removeAutoBlock(original, AUTO_FORCE_BLOCK_START, AUTO_FORCE_BLOCK_END),
@@ -546,6 +552,9 @@ export function syncTheLucMapAutoBlocksDetailed(nov, { sourceLonId, sourceNhoId,
   const sourceTab = ensureCollectionTabData(nov, sourceLonId, sourceNhoId);
   const source = (sourceTab.entities || []).find((entity) => entity.id === entityId);
   if (!source) return { changed: false, warnings: [], applied: false, reason: 'source_not_found' };
+  if (isEntityAutoSyncDisabled(source, AUTO_SYNC_ENGINE_FORCE_MAP)) {
+    return { changed: false, warnings: [], applied: false, reason: 'source_disabled' };
+  }
 
   const meta = parseForceMetaFromEntity(source, {
     sourceLonId,
@@ -604,11 +613,17 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
   sourcePaths.forEach((path) => {
     const entities = Array.isArray(path.tabData?.entities) ? path.tabData.entities : [];
     entities.forEach((entity) => {
-      const cleanedInfo = removeAutoBlock(entity.info, AUTO_FORCE_BLOCK_START, AUTO_FORCE_BLOCK_END);
-      if (cleanedInfo !== safeString(entity.info).trim()) {
-        entity.info = cleanedInfo;
-        changed = true;
+      const disabled = isEntityAutoSyncDisabled(entity, AUTO_SYNC_ENGINE_FORCE_MAP);
+      const locked = isEntityAutoSyncLocked(entity, AUTO_SYNC_ENGINE_FORCE_MAP);
+      let cleanedInfo = safeString(entity.info).trim();
+      if (!locked) {
+        cleanedInfo = removeAutoBlock(entity.info, AUTO_FORCE_BLOCK_START, AUTO_FORCE_BLOCK_END);
+        if (cleanedInfo !== safeString(entity.info).trim()) {
+          entity.info = cleanedInfo;
+          changed = true;
+        }
       }
+      if (disabled) return;
 
       const meta = parseForceMetaFromEntity(entity, {
         sourceLonId: path.lonId,
@@ -619,15 +634,17 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
       });
       if (!meta) return;
 
-      const nextInfo = mergeAutoBlock(
-        cleanedInfo,
-        AUTO_FORCE_BLOCK_START,
-        AUTO_FORCE_BLOCK_END,
-        buildForceMetaBlockLines(meta).join('\n')
-      );
-      if (nextInfo !== cleanedInfo) {
-        entity.info = nextInfo;
-        changed = true;
+      if (!locked) {
+        const nextInfo = mergeAutoBlock(
+          cleanedInfo,
+          AUTO_FORCE_BLOCK_START,
+          AUTO_FORCE_BLOCK_END,
+          buildForceMetaBlockLines(meta).join('\n')
+        );
+        if (nextInfo !== cleanedInfo) {
+          entity.info = nextInfo;
+          changed = true;
+        }
       }
 
       allForceEntities.push({
@@ -659,6 +676,7 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
   mapPaths.forEach((path) => {
     const entities = Array.isArray(path.tabData?.entities) ? path.tabData.entities : [];
     entities.forEach((entity) => {
+      if (isEntityAutoSyncLocked(entity, AUTO_SYNC_ENGINE_FORCE_MAP)) return;
       const cleanedInfo = removeAutoBlock(entity.info, AUTO_MAP_BLOCK_START, AUTO_MAP_BLOCK_END);
       if (cleanedInfo !== safeString(entity.info).trim()) {
         entity.info = cleanedInfo;
@@ -671,6 +689,7 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
   mapPaths.forEach((path) => {
     const entities = Array.isArray(path.tabData?.entities) ? path.tabData.entities : [];
     entities.forEach((entity) => {
+      if (isEntityAutoSyncDisabled(entity, AUTO_SYNC_ENGINE_FORCE_MAP)) return;
       const key = normalizeAscii(entity?.name);
       if (!key) return;
       if (!mapEntityTargetsByName.has(key)) mapEntityTargetsByName.set(key, []);
@@ -708,6 +727,9 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
         currentTabConfig: preferredTarget.mapPath.currentTabConfig || null,
         parentLabel: preferredTarget.mapPath.parentLabel || '',
       });
+      if (isEntityAutoSyncDisabled(ensured.entity, AUTO_SYNC_ENGINE_FORCE_MAP)) {
+        continue;
+      }
       if (ensured.created) changed = true;
       targetEntities = [{ path: preferredTarget.mapPath, entity: ensured.entity }];
       mapEntityTargetsByName.set(locationKey, targetEntities);
@@ -721,6 +743,8 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
 
     targetEntities.forEach((target) => {
       if (!target?.entity) return;
+      if (isEntityAutoSyncDisabled(target.entity, AUTO_SYNC_ENGINE_FORCE_MAP)) return;
+      if (isEntityAutoSyncLocked(target.entity, AUTO_SYNC_ENGINE_FORCE_MAP)) return;
       const nextInfo = mergeAutoBlock(
         target.entity.info,
         AUTO_MAP_BLOCK_START,

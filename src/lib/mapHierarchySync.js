@@ -5,6 +5,11 @@
  */
 import { normalizeAsciiText, splitStatusHierarchyTokens } from './statusHierarchyParser.js';
 import { getEntityAutoFieldValue, setEntityAutoFieldValue } from './tabAutoSyncFieldMap.js';
+import {
+  AUTO_SYNC_ENGINE_MAP_HIERARCHY,
+  isEntityAutoSyncDisabled,
+  isEntityAutoSyncLocked,
+} from './autoSyncEntityPrefs.js';
 import { hasAutoSyncFeature, isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
 
 const AUTO_MAP_META_START = '<!-- AUTO_MAP_HIERARCHY_META:START -->';
@@ -69,6 +74,7 @@ function stripMapHierarchyAutoBlocksFromNovel(nov) {
   let changed = false;
   forEachCollectionEntity(nov, (entity) => {
     if (!entity || typeof entity !== 'object') return;
+    if (isEntityAutoSyncLocked(entity, AUTO_SYNC_ENGINE_MAP_HIERARCHY)) return;
     const original = safeString(entity.info || '');
     const next = removeAutoBlock(
       removeAutoBlock(original, AUTO_MAP_META_START, AUTO_MAP_META_END),
@@ -394,6 +400,7 @@ function syncMapHierarchyInTab(mapTab, mapPath = {}) {
   const mapContext = buildMapFieldContext(mapPath);
   const referencedParents = new Set();
   (mapTab.entities || []).forEach((ent) => {
+    if (isEntityAutoSyncDisabled(ent, AUTO_SYNC_ENGINE_MAP_HIERARCHY)) return;
     const parentPath =
       getEntityAutoFieldValue(ent, mapContext, 'parent_path') ||
       ent?.dynamicData?.f_vi_tri;
@@ -408,7 +415,10 @@ function syncMapHierarchyInTab(mapTab, mapPath = {}) {
     if (mapTab.entities.length !== beforeCount) changed = true;
   });
 
-  const records = buildMapRecords(mapTab.entities, mapContext);
+  const records = buildMapRecords(
+    (mapTab.entities || []).filter((entity) => !isEntityAutoSyncDisabled(entity, AUTO_SYNC_ENGINE_MAP_HIERARCHY)),
+    mapContext
+  );
   const byName = new Map(records.map((record) => [record.nameKey, record]));
   records.forEach((record) => {
     record.fullChain = resolveFullChain(record, byName);
@@ -417,6 +427,7 @@ function syncMapHierarchyInTab(mapTab, mapPath = {}) {
 
   records.forEach((record) => {
     const original = safeString(record.entity?.info || '');
+    if (isEntityAutoSyncLocked(record.entity, AUTO_SYNC_ENGINE_MAP_HIERARCHY)) return;
     const base = removeAutoBlock(
       removeAutoBlock(original, AUTO_MAP_META_START, AUTO_MAP_META_END),
       AUTO_MAP_CHILDREN_START,

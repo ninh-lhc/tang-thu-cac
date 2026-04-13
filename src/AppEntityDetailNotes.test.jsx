@@ -6,6 +6,14 @@ import { AppEntityDetailNotes } from './AppEntityDetailNotes.jsx';
 function createProps(overrides = {}) {
   return {
     activeTabLon: 'thien-dia-ki-vat',
+    activeTabNho: 'dia-danh',
+    currentTabConfig: {
+      id: 'dia-danh',
+      label: 'Bản đồ / Bí cảnh',
+      viewType: 'collection-track',
+      autoSyncRole: 'ban-do',
+      _parentLabel: 'Tài Nguyên',
+    },
     getTerms: () => ({ infoDesc: 'Ghi chu chi tiet' }),
     isEntityEditing: true,
     isExtractingAI: false,
@@ -23,6 +31,7 @@ function createProps(overrides = {}) {
       info: 'Linh Gioi Chau xuat hien giua troi.',
     },
     handleUpdateEntityInfo: vi.fn(),
+    handleSetSelectedEntityAutoSyncState: vi.fn(),
     setIsEntityEditing: vi.fn(),
     setImageForm: vi.fn(),
     setIsInsertImageModalOpen: vi.fn(),
@@ -232,5 +241,17 @@ describe('AppEntityDetailNotes', () => {
 
     expect(document.activeElement).toBe(textbox);
     expect(textbox.selectionStart).toBe(info.indexOf('### Tieu muc'));
+  });
+
+  it('renders entity-level AUTO controls and forwards toggle actions', () => {
+    const props = createProps({
+      isEntityEditing: false,
+    });
+    render(<AppEntityDetailNotes {...props} />);
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Tắt riêng/i })[0]);
+
+    expect(props.handleSetSelectedEntityAutoSyncState).toHaveBeenCalledTimes(1);
+    expect(props.handleSetSelectedEntityAutoSyncState).toHaveBeenCalledWith('force_map', 'disabled', true);
   });
 });

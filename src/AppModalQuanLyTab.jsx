@@ -14,6 +14,7 @@ import {
   LayoutGrid,
   AlignLeft,
   RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 import { safeString, getIconComponent } from './MasterUtils.jsx';
 import { useFocusTrap } from './lib/useFocusTrap.js';
@@ -24,6 +25,7 @@ import {
   readExplicitAutoSyncRole,
 } from './lib/tabAutoSyncRole.js';
 import { getAutoSyncFieldDefs, getEffectiveAutoSyncFieldMap } from './lib/tabAutoSyncFieldMap.js';
+import { collectNovelAutoSyncDiagnostics } from './lib/autoSyncDiagnostics.js';
 
 export function AppModalQuanLyTab({
   activeNovelData,
@@ -39,10 +41,19 @@ export function AppModalQuanLyTab({
   handleAddTabCon,
   handleSetTabAutoSyncRole,
   handleSetTabAutoSyncFieldMap,
+  handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
   setConfirmDialog,
 }) {
   const trapRef = useFocusTrap(true);
+  const diagnostics = React.useMemo(
+    () => (activeNovelData ? collectNovelAutoSyncDiagnostics(activeNovelData) : null),
+    [activeNovelData]
+  );
+  const diagnosticsByPath = React.useMemo(
+    () => new Map((diagnostics?.tabReports || []).map((report) => [report.id, report])),
+    [diagnostics]
+  );
 
   return (
     <div
@@ -85,6 +96,93 @@ export function AppModalQuanLyTab({
         </div>
 
         <div id="tab-manager-scroll-container" className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-4 bg-slate-900/50">
+          {diagnostics && (
+            <div className="rounded-2xl border border-cyan-800/35 bg-cyan-950/15 p-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-cyan-300 font-bold">
+                    Wizard AUTO
+                  </div>
+                  <p className="text-sm text-slate-100 font-semibold mt-1">
+                    Theo dõi độ sẵn sàng của cây AUTO trước khi quét lại.
+                  </p>
+                </div>
+                {typeof handleApplySuggestedAutoSyncSetup === 'function' && (
+                  <button
+                    type="button"
+                    onClick={handleApplySuggestedAutoSyncSetup}
+                    className="px-4 py-2.5 rounded-xl border border-cyan-700/40 bg-cyan-950/30 text-cyan-100 text-sm font-bold flex items-center gap-2 hover:bg-cyan-900/30"
+                  >
+                    <Sparkles size={15} /> Áp Gợi Ý AUTO
+                  </button>
+                )}
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Sẵn sàng</div>
+                  <div className="mt-1 text-2xl font-bold text-emerald-300">{diagnostics.summary.readyCount}</div>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Cảnh báo</div>
+                  <div className="mt-1 text-2xl font-bold text-amber-300">{diagnostics.summary.warningCount}</div>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Khóa / Tắt</div>
+                  <div className="mt-1 text-2xl font-bold text-cyan-100">
+                    {diagnostics.summary.lockedCount} / {diagnostics.summary.disabledCount}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Preview quét</div>
+                  <div className="mt-1 text-2xl font-bold text-fuchsia-200">{diagnostics.preview.touchedEntityCount}</div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold mb-2">Gợi ý tiếp theo</div>
+                <div className="space-y-1.5">
+                  {diagnostics.wizardSteps.map((step, index) => (
+                    <div key={`${step}-${index}`} className="text-sm text-slate-300 font-serif">
+                      {index + 1}. {step}
+                    </div>
+                  ))}
+                </div>
+                {diagnostics.preview.forceWarning && (
+                  <div className="mt-3 rounded-xl border border-amber-700/40 bg-amber-950/25 px-3 py-2 text-sm text-amber-100 font-serif">
+                    {diagnostics.preview.forceWarning}
+                  </div>
+                )}
+              </div>
+
+              {diagnostics.recentLogs.length > 0 && (
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold mb-2">Lịch sử AUTO gần đây</div>
+                  <div className="space-y-2">
+                    {diagnostics.recentLogs.slice(0, 3).map((item) => (
+                      <div key={item.id} className="rounded-xl border border-slate-800/80 bg-slate-950/50 px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide">
+                          <span className={item.changed ? 'text-emerald-300 font-bold' : 'text-slate-500 font-bold'}>
+                            {item.changed ? 'Đã đổi' : 'Không đổi'}
+                          </span>
+                          <span className="text-slate-600">•</span>
+                          <span className="text-slate-400">{safeString(item.scopeLabel || 'AUTO')}</span>
+                          <span className="text-slate-600">•</span>
+                          <span className="text-slate-500">
+                            {item.at ? new Date(item.at).toLocaleString('vi-VN') : ''}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-sm text-slate-300 font-serif">
+                          {(item.engines || []).map((engine) => safeString(engine.label || engine.id)).filter(Boolean).join(' • ')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {sortedTabs.map((tabLon) => (
             <div key={tabLon.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-5 shadow-inner">
               <div className="flex items-center gap-3">
@@ -184,6 +282,7 @@ export function AppModalQuanLyTab({
                     const explicitRoleOption =
                       AUTO_SYNC_ROLE_OPTIONS.find((opt) => opt.value === explicitRole) || AUTO_SYNC_ROLE_OPTIONS[0];
                     const effectiveRoleLabel = effectiveRole ? getAutoSyncRoleLabel(effectiveRole) : '';
+                    const tabReport = diagnosticsByPath.get(`${tabLon.id}::${tabNho.id}`);
                     const autoRoleSummary = explicitRole
                       ? getAutoSyncRoleLabel(explicitRole)
                       : effectiveRoleLabel
@@ -344,6 +443,50 @@ export function AppModalQuanLyTab({
                                       </label>
                                     );
                                   })}
+                                </div>
+                              )}
+
+                              {tabReport && (
+                                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3 space-y-2">
+                                  <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                                    <span className="uppercase tracking-wide text-slate-500 font-bold">
+                                      Diagnostics
+                                    </span>
+                                    <span className="rounded-full border border-slate-700 px-2 py-0.5 text-slate-300 font-semibold">
+                                      {tabReport.entityCount} thực thể
+                                    </span>
+                                    {tabReport.lockedEntityCount > 0 && (
+                                      <span className="rounded-full border border-amber-700/40 bg-amber-950/30 px-2 py-0.5 text-amber-200 font-semibold">
+                                        {tabReport.lockedEntityCount} khóa
+                                      </span>
+                                    )}
+                                    {tabReport.disabledEntityCount > 0 && (
+                                      <span className="rounded-full border border-rose-700/40 bg-rose-950/30 px-2 py-0.5 text-rose-200 font-semibold">
+                                        {tabReport.disabledEntityCount} tắt riêng
+                                      </span>
+                                    )}
+                                  </div>
+                                  {tabReport.engineLabels.length > 0 && (
+                                    <div className="text-[12px] text-slate-400 font-serif">
+                                      Engine: {tabReport.engineLabels.join(' • ')}
+                                    </div>
+                                  )}
+                                  {tabReport.warnings.length > 0 ? (
+                                    <div className="space-y-1">
+                                      {tabReport.warnings.map((warning) => (
+                                        <div
+                                          key={warning}
+                                          className="rounded-lg border border-amber-700/35 bg-amber-950/20 px-2.5 py-1.5 text-[12px] text-amber-100 font-serif"
+                                        >
+                                          {warning}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-[12px] text-emerald-300 font-serif">
+                                      Cấu hình AUTO của mục này hiện đã sẵn sàng.
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>

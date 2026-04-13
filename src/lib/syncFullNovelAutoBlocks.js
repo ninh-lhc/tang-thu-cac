@@ -1,29 +1,10 @@
 /**
  * Full AUTO resync helper for a novel.
- * Runs every auto engine after tabsConfig/data changes so the tree config becomes the source of truth.
- * Returns whether anything changed plus the summarized force/map warning for UI to surface.
+ * Legacy wrapper kept for callers that only need a full pass.
+ * New selective/manual flows should use autoSyncManager directly.
  */
-import { syncAllAutoRelationNotesForNovel } from './autoRelationDetailNote.js';
-import { syncAllCollectionListCards } from './collectionListCardSync.js';
-import { syncAllCultivationRelationBlocks } from './cultivationRelationSync.js';
-import { syncAllMainCharacterRelationBlocks } from './mainCharacterRelationSync.js';
-import { syncAllMapHierarchyAutoBlocks } from './mapHierarchySync.js';
-import {
-  summarizeTheLucMapSyncWarnings,
-  syncAllTheLucMapAutoBlocksDetailed,
-} from './theLucBanDoSync.js';
+import { buildFullAutoSyncPlan, runNovelAutoSyncPlan } from './autoSyncManager.js';
 
 export function syncFullNovelAutoBlocks(novelData) {
-  let changed = false;
-  const forceSyncResult = syncAllTheLucMapAutoBlocksDetailed(novelData);
-  changed = forceSyncResult.changed || changed;
-  changed = syncAllAutoRelationNotesForNovel(novelData) || changed;
-  changed = syncAllMainCharacterRelationBlocks(novelData) || changed;
-  changed = syncAllCultivationRelationBlocks(novelData) || changed;
-  changed = syncAllMapHierarchyAutoBlocks(novelData) || changed;
-  changed = syncAllCollectionListCards(novelData) || changed;
-  return {
-    changed,
-    forceWarning: summarizeTheLucMapSyncWarnings(forceSyncResult.warnings),
-  };
+  return runNovelAutoSyncPlan(novelData, buildFullAutoSyncPlan(), { recordLog: false });
 }

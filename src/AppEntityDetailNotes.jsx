@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { BookOpen, Link2, Save, Edit3, Eye, ScrollText, RefreshCw, AlertTriangle, Sparkles, Wand2 } from 'lucide-react';
+import { BookOpen, Link2, Save, Edit3, Eye, ScrollText, RefreshCw, AlertTriangle, Sparkles, Wand2, Lock } from 'lucide-react';
 import { MarkdownToolbar } from './MasterComponents.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import {
@@ -29,6 +29,14 @@ import {
   subscribeEntityNotesPrefs,
 } from './lib/entityNotesPrefs.js';
 import { resolveEntityNotesTemplateProfile } from './lib/entityNotesSemantics.js';
+import { getEffectiveAutoSyncRole, getAutoSyncRoleLabel } from './lib/tabAutoSyncRole.js';
+import {
+  getAutoSyncEngineDescription,
+  getAutoSyncEngineLabel,
+  getAutoSyncEnginesForRole,
+  isEntityAutoSyncDisabled,
+  isEntityAutoSyncLocked,
+} from './lib/autoSyncEntityPrefs.js';
 
 const HIST_MAX = 120;
 
@@ -739,6 +747,8 @@ Yêu cầu trả về:
 
 export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   activeTabLon,
+  activeTabNho,
+  currentTabConfig,
   getTerms,
   isEntityEditing,
   isExtractingAI,
@@ -752,6 +762,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   setIsSplitPreview,
   selectedEntity,
   handleUpdateEntityInfo,
+  handleSetSelectedEntityAutoSyncState,
   setIsEntityEditing,
   setImageForm,
   setIsInsertImageModalOpen,
@@ -767,6 +778,33 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   onOpenAutoSyncGuide,
   onOpenEntityNotesGuide,
 }) {
+  const autoSyncControls = useMemo(() => {
+    if (!selectedEntity || !currentTabConfig) return [];
+    const role = getEffectiveAutoSyncRole({
+      activeTabLon,
+      activeTabNho,
+      currentTabConfig,
+      parentLabel: currentTabConfig?._parentLabel || '',
+    });
+    return getAutoSyncEnginesForRole(role).map((engineId) => ({
+      id: engineId,
+      label: getAutoSyncEngineLabel(engineId),
+      description: getAutoSyncEngineDescription(engineId),
+      disabled: isEntityAutoSyncDisabled(selectedEntity, engineId),
+      locked: isEntityAutoSyncLocked(selectedEntity, engineId),
+    }));
+  }, [activeTabLon, activeTabNho, currentTabConfig, selectedEntity]);
+  const autoSyncRoleLabel = useMemo(() => {
+    if (!currentTabConfig) return '';
+    const role = getEffectiveAutoSyncRole({
+      activeTabLon,
+      activeTabNho,
+      currentTabConfig,
+      parentLabel: currentTabConfig?._parentLabel || '',
+    });
+    return role ? getAutoSyncRoleLabel(role) : '';
+  }, [activeTabLon, activeTabNho, currentTabConfig]);
+
   return (
     <div className="flex flex-col mt-4">
       <div className="flex justify-between items-end mb-6 pb-2 border-b border-slate-800/80">
@@ -817,6 +855,76 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
           )}
         </div>
       </div>
+
+      {selectedEntity && autoSyncControls.length > 0 && typeof handleSetSelectedEntityAutoSyncState === 'function' && (
+        <div className="mb-5 rounded-[32px] border border-cyan-800/40 bg-cyan-950/15 px-5 py-4">
+          <div className="flex items-center gap-2 text-cyan-200 font-semibold text-sm">
+            <Lock size={15} />
+            AUTO cho thẻ này
+            {autoSyncRoleLabel && (
+              <span className="rounded-full border border-cyan-800/40 bg-slate-950/50 px-2.5 py-0.5 text-[11px] uppercase tracking-wide text-cyan-100">
+                {autoSyncRoleLabel}
+              </span>
+            )}
+          </div>
+          <p className="mt-2 text-[12px] text-cyan-100/85 font-serif leading-relaxed">
+            `Tắt riêng` sẽ rút thẻ này khỏi engine AUTO tương ứng. `Khóa block` sẽ giữ nguyên block AUTO hiện có trên chính thẻ này.
+          </p>
+          <div className="mt-3 space-y-2">
+            {autoSyncControls.map((control) => (
+              <div
+                key={control.id}
+                className="flex flex-col gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/55 px-4 py-3 md:flex-row md:items-center md:justify-between"
+              >
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-slate-100">{control.label}</span>
+                    {control.disabled && (
+                      <span className="rounded-full border border-rose-800/40 bg-rose-950/35 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-200">
+                        Đang tắt
+                      </span>
+                    )}
+                    {control.locked && (
+                      <span className="rounded-full border border-amber-800/40 bg-amber-950/35 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+                        Đang khóa
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-[12px] text-slate-400 font-serif">{control.description}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleSetSelectedEntityAutoSyncState(control.id, 'disabled', !control.disabled)
+                    }
+                    className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition-colors ${
+                      control.disabled
+                        ? 'border-emerald-700/50 bg-emerald-950/30 text-emerald-200 hover:bg-emerald-900/30'
+                        : 'border-rose-700/40 bg-rose-950/30 text-rose-200 hover:bg-rose-900/30'
+                    }`}
+                  >
+                    {control.disabled ? 'Bật lại' : 'Tắt riêng'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleSetSelectedEntityAutoSyncState(control.id, 'locked', !control.locked)
+                    }
+                    className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition-colors ${
+                      control.locked
+                        ? 'border-cyan-700/50 bg-cyan-950/35 text-cyan-100 hover:bg-cyan-900/35'
+                        : 'border-amber-700/40 bg-amber-950/30 text-amber-200 hover:bg-amber-900/30'
+                    }`}
+                  >
+                    {control.locked ? 'Mở khóa' : 'Khóa block'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div
         className={`flex flex-col transition-all duration-300 backdrop-blur-md ${

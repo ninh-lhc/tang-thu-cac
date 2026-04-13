@@ -13,6 +13,12 @@ import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './
 import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
 import {
+  AUTO_SYNC_ENGINE_COLLECTION_CARDS,
+  getAutoSyncEngineLabel,
+  setEntityAutoSyncState,
+} from './lib/autoSyncEntityPrefs.js';
+import { runNovelAutoSyncPlan } from './lib/autoSyncManager.js';
+import {
   appendOwnerAcquisitionMilestoneDetailed,
   ownerMilestoneApplyReasonToMessage,
   parseOwnerTimelineHintDetailed,
@@ -33,6 +39,7 @@ import {
   syncTheLucMapAutoBlocksDetailed,
 } from './lib/theLucBanDoSync.js';
 import { buildEntityNoteTemplate } from './lib/entityNoteTemplateVi.js';
+import { getEffectiveAutoSyncRole } from './lib/tabAutoSyncRole.js';
 
 export function useAppEntityMilestoneActions({
   activeNovelData,
@@ -127,6 +134,58 @@ export function useAppEntityMilestoneActions({
       hasAnyAutoSyncFieldChanged(currentAutoFieldContext, changedFieldIds, fieldKeys) ||
       fallbackFieldIds.some((fieldId) => changedFieldIds?.has?.(fieldId)),
     [currentAutoFieldContext]
+  );
+  const currentAutoSyncRole = useMemo(
+    () => getEffectiveAutoSyncRole(currentAutoFieldContext),
+    [currentAutoFieldContext]
+  );
+
+  const handleSetSelectedEntityAutoSyncState = useCallback(
+    (engineId, kind, enabled) => {
+      if (!selectedEntityId || !activeTabLon) return;
+      let prefsChanged = false;
+      let forceWarning = '';
+      const entityName = safeString(selectedEntity?.name).trim() || 'Thẻ đang chọn';
+      const engineLabel = getAutoSyncEngineLabel(engineId);
+
+      updateActiveNovelData((nov) => {
+        const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
+        const ent = tabData?.entities?.find((item) => item.id === selectedEntityId);
+        if (!ent) return;
+        prefsChanged = setEntityAutoSyncState(ent, engineId, kind, enabled) || prefsChanged;
+        if (!prefsChanged) return;
+        const autoSyncResult = runNovelAutoSyncPlan(
+          nov,
+          { engines: [engineId, AUTO_SYNC_ENGINE_COLLECTION_CARDS] },
+          {
+            recordLog: true,
+            reason: kind === 'locked' ? 'entity_lock' : 'entity_disable',
+            scopeLabel: `${safeString(currentTabConfig?.label || currentAutoSyncRole || 'AUTO')} > ${entityName}`,
+          }
+        );
+        forceWarning = autoSyncResult.forceWarning || '';
+      });
+
+      if (!prefsChanged) return;
+      const actionLabel = kind === 'locked' ? 'khóa' : 'tắt riêng';
+      showToast(
+        enabled
+          ? `Đã ${actionLabel} AUTO "${engineLabel}" cho ${entityName}.`
+          : `Đã bật lại AUTO "${engineLabel}" cho ${entityName}.`,
+        'success'
+      );
+      if (forceWarning) showToast(forceWarning, 'warning');
+    },
+    [
+      selectedEntityId,
+      activeTabLon,
+      activeTabNho,
+      selectedEntity?.name,
+      currentTabConfig,
+      currentAutoSyncRole,
+      updateActiveNovelData,
+      showToast,
+    ]
   );
 
   const handleSaveEntity = useCallback(
@@ -1007,6 +1066,7 @@ export function useAppEntityMilestoneActions({
     handleOpenCreateEntity,
     handleOpenEditEntity,
     handleSaveEntity,
+    handleSetSelectedEntityAutoSyncState,
     handleAddImageToSelectedEntity,
     handleRemoveImageFromSelectedEntity,
     handleUpdateEntityInfo,

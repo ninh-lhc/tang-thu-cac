@@ -117,6 +117,7 @@ export function AppCollectionSection({
   setDebouncedMarkdownPreview,
   setIsSplitPreview,
   handleUpdateEntityInfo,
+  handleSetSelectedEntityAutoSyncState,
   setImageForm,
   setIsInsertImageModalOpen,
   handlePickLocalImage,
@@ -604,8 +605,11 @@ export function AppCollectionSection({
                   setLivePreviewText={setLivePreviewText}
                   setDebouncedMarkdownPreview={setDebouncedMarkdownPreview}
                   setIsSplitPreview={setIsSplitPreview}
+                  activeTabNho={activeTabNho}
+                  currentTabConfig={currentTabConfig}
                   selectedEntity={selectedEntity}
                   handleUpdateEntityInfo={handleUpdateEntityInfo}
+                  handleSetSelectedEntityAutoSyncState={handleSetSelectedEntityAutoSyncState}
                   setIsEntityEditing={setIsEntityEditing}
                   setImageForm={setImageForm}
                   setIsInsertImageModalOpen={setIsInsertImageModalOpen}

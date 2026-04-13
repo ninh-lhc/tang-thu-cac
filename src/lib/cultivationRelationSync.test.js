@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './cultivationRelationSync.js';
+import { AUTO_SYNC_ENGINE_CULTIVATION } from './autoSyncEntityPrefs.js';
 import { AUTO_SYNC_ROLE_OFF } from './tabAutoSyncRole.js';
 
 function createNovel() {
@@ -150,5 +151,26 @@ describe('cultivationRelationSync', () => {
     expect(systemInfo).not.toContain('(AUTO)');
     expect(realmInfo).toContain('Mo ta tay cap bac');
     expect(realmInfo).not.toContain('(AUTO)');
+  });
+
+  it('preserves locked system AUTO blocks while still syncing new realms', () => {
+    const novel = createNovel();
+    expect(syncAllCultivationRelationBlocks(novel)).toBe(true);
+
+    const system = novel.data['tu-luyen']['he-thong-tu-luyen'].entities[0];
+    const lockedSnapshot = String(system.info || '');
+    system.autoSyncPrefs = { lockedEngines: [AUTO_SYNC_ENGINE_CULTIVATION] };
+    novel.data['tu-luyen']['canh-gioi-tu-vi'].entities.push({
+      id: 'realm-kim-dan',
+      name: 'Kim Dan',
+      info: '',
+      dynamicData: { f_status: 'De Tam - Linh Canh' },
+    });
+
+    const ok = syncAllCultivationRelationBlocks(novel);
+    expect(ok).toBe(true);
+
+    expect(String(system.info || '')).toBe(lockedSnapshot);
+    expect(String(novel.data['tu-luyen']['canh-gioi-tu-vi'].entities[2].info || '')).toContain('[[Linh Tu]]');
   });
 });

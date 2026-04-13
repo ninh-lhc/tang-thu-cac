@@ -8,6 +8,11 @@ import { findEquivalentEntityByName } from './entityNameIdentity.js';
 import { normalizeAsciiText, parseRankNumber as parseStatusRankNumber, splitStatusHierarchyTokens } from './statusHierarchyParser.js';
 import { getEntityAutoFieldValue } from './tabAutoSyncFieldMap.js';
 import {
+  AUTO_SYNC_ENGINE_CULTIVATION,
+  isEntityAutoSyncDisabled,
+  isEntityAutoSyncLocked,
+} from './autoSyncEntityPrefs.js';
+import {
   AUTO_SYNC_ROLE_CULTIVATION_REALM,
   AUTO_SYNC_ROLE_CULTIVATION_SYSTEM,
   getEffectiveAutoSyncRole,
@@ -313,6 +318,7 @@ export function syncAllCultivationRelationBlocks(novelData) {
   let changed = false;
   forEachCollectionEntity(novelData, (entity) => {
     if (!entity || typeof entity !== 'object') return;
+    if (isEntityAutoSyncLocked(entity, AUTO_SYNC_ENGINE_CULTIVATION)) return;
     const before = String(entity.info || '');
     const after = stripCultivationAutoBlocks(before);
     if (after !== before) {
@@ -324,8 +330,16 @@ export function syncAllCultivationRelationBlocks(novelData) {
   const { systemPath, realmPath } = findCultivationTabPaths(novelData);
   if (!systemPath && !realmPath) return changed;
 
-  const systemEntities = systemPath ? getCollectionEntities(novelData, systemPath.lonId, systemPath.nhoId) : [];
-  const realmEntities = realmPath ? getCollectionEntities(novelData, realmPath.lonId, realmPath.nhoId) : [];
+  const systemEntities = systemPath
+    ? getCollectionEntities(novelData, systemPath.lonId, systemPath.nhoId).filter(
+        (entity) => !isEntityAutoSyncDisabled(entity, AUTO_SYNC_ENGINE_CULTIVATION)
+      )
+    : [];
+  const realmEntities = realmPath
+    ? getCollectionEntities(novelData, realmPath.lonId, realmPath.nhoId).filter(
+        (entity) => !isEntityAutoSyncDisabled(entity, AUTO_SYNC_ENGINE_CULTIVATION)
+      )
+    : [];
 
   if (systemEntities.length === 0 || realmEntities.length === 0) {
     return changed;
@@ -336,11 +350,13 @@ export function syncAllCultivationRelationBlocks(novelData) {
     const match = resolveRealmToSystemMatch(realmEntity, systemEntities, systemPath, realmPath);
     if (!match?.systemEntity) return;
     const rankScore = rankScoreFromText(match.rankToken);
-    const baseInfo = String(realmEntity.info || '');
-    const nextInfo = upsertAutoBlock(baseInfo, REALM_AUTO_TITLE, buildRealmAutoBlockLines(match));
-    if (nextInfo !== baseInfo) {
-      realmEntity.info = nextInfo;
-      changed = true;
+    if (!isEntityAutoSyncLocked(realmEntity, AUTO_SYNC_ENGINE_CULTIVATION)) {
+      const baseInfo = String(realmEntity.info || '');
+      const nextInfo = upsertAutoBlock(baseInfo, REALM_AUTO_TITLE, buildRealmAutoBlockLines(match));
+      if (nextInfo !== baseInfo) {
+        realmEntity.info = nextInfo;
+        changed = true;
+      }
     }
 
     const systemId = match.systemEntity.id;
@@ -357,11 +373,13 @@ export function syncAllCultivationRelationBlocks(novelData) {
     const realmRecords = realmRecordsBySystemId.get(systemEntity.id) || [];
     if (realmRecords.length === 0) return;
     realmRecords.sort(compareRealmRecords);
-    const baseInfo = String(systemEntity.info || '');
-    const nextInfo = upsertAutoBlock(baseInfo, SYSTEM_AUTO_TITLE, buildSystemAutoBlockLines(realmRecords));
-    if (nextInfo !== baseInfo) {
-      systemEntity.info = nextInfo;
-      changed = true;
+    if (!isEntityAutoSyncLocked(systemEntity, AUTO_SYNC_ENGINE_CULTIVATION)) {
+      const baseInfo = String(systemEntity.info || '');
+      const nextInfo = upsertAutoBlock(baseInfo, SYSTEM_AUTO_TITLE, buildSystemAutoBlockLines(realmRecords));
+      if (nextInfo !== baseInfo) {
+        systemEntity.info = nextInfo;
+        changed = true;
+      }
     }
   });
 

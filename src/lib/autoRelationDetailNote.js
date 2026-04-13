@@ -7,6 +7,11 @@ import {
   splitStatusHierarchyTokens,
 } from './statusHierarchyParser.js';
 import { getEntityAutoFieldValue } from './tabAutoSyncFieldMap.js';
+import {
+  AUTO_SYNC_ENGINE_RELATION_NOTES,
+  isEntityAutoSyncDisabled,
+  isEntityAutoSyncLocked,
+} from './autoSyncEntityPrefs.js';
 import { hasAutoSyncFeature, isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
 
 const AUTO_REL_TITLE = '## Quan h\u1ec7 b\u1ea3n \u0111\u1ed3 - th\u1ebf l\u1ef1c (t\u1ef1 \u0111\u1ed9ng)';
@@ -543,6 +548,9 @@ export function applyAutoRelationNotesForEntity(novelData, options) {
   const sourceNhoConfig = options?.sourceNhoConfig || null;
   const sourceParentLabel = options?.sourceParentLabel || '';
   if (!sourceEntity) return { applied: false, touchedTargets: 0 };
+  if (isEntityAutoSyncDisabled(sourceEntity, AUTO_SYNC_ENGINE_RELATION_NOTES)) {
+    return { applied: false, touchedTargets: 0 };
+  }
   const statusLine =
     String(options?.statusLine || '').trim() ||
     getEntityAutoFieldValue(
@@ -564,12 +572,16 @@ export function applyAutoRelationNotesForEntity(novelData, options) {
   const parsed = parseRelationHierarchyFromStatus(statusLine);
   if (!parsed) return { applied: false, touchedTargets: 0 };
 
-  sourceEntity.info = upsertAutoRelationDetailNote(sourceEntity.info || '', statusLine);
+  if (!isEntityAutoSyncLocked(sourceEntity, AUTO_SYNC_ENGINE_RELATION_NOTES)) {
+    sourceEntity.info = upsertAutoRelationDetailNote(sourceEntity.info || '', statusLine);
+  }
 
   let touchedTargets = 0;
   parsed.chain.forEach((name) => {
     const target = findEntityGlobalByName(novelData, name);
     if (!target || target.id === sourceEntity.id) return;
+    if (isEntityAutoSyncDisabled(target, AUTO_SYNC_ENGINE_RELATION_NOTES)) return;
+    if (isEntityAutoSyncLocked(target, AUTO_SYNC_ENGINE_RELATION_NOTES)) return;
     const before = String(target.info || '');
     const after = upsertRelatedBacklinkNote(before, target.name || '', sourceEntity.name, statusLine);
     if (after !== before) {
@@ -604,11 +616,14 @@ export function syncAllAutoRelationNotesForNovel(novelData) {
       const entities = Array.isArray(nhoData?.entities) ? nhoData.entities : [];
       entities.forEach((entity) => {
         const before = String(entity?.info || '');
-        const after = stripAllAutoRelationBlocks(before);
+        const after = isEntityAutoSyncLocked(entity, AUTO_SYNC_ENGINE_RELATION_NOTES)
+          ? before
+          : stripAllAutoRelationBlocks(before);
         if (after !== before) {
           entity.info = after;
           changed = true;
         }
+        if (isEntityAutoSyncDisabled(entity, AUTO_SYNC_ENGINE_RELATION_NOTES)) return;
         const statusLine =
           getEntityAutoFieldValue(
             entity,

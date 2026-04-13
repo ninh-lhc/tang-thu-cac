@@ -101,10 +101,16 @@ import {
   getAutoSyncFieldDefs,
   getEffectiveAutoSyncFieldMap,
   getEntityAutoFieldValue,
+  hydrateTabsAutoSyncConfigs,
   normalizeAutoSyncFieldMap,
   setEntityAutoFieldValue,
 } from './lib/tabAutoSyncFieldMap.js';
-import { syncFullNovelAutoBlocks } from './lib/syncFullNovelAutoBlocks.js';
+import {
+  buildAutoSyncPlanFromTabContext,
+  buildAutoSyncPlanFromTabDiff,
+  buildFullAutoSyncPlan,
+  runNovelAutoSyncPlan,
+} from './lib/autoSyncManager.js';
 import { AppMainPane } from './AppMainPane.jsx';
 import { AppModalLayer } from './AppModalLayer.jsx';
 
@@ -1216,7 +1222,16 @@ export default function App() {
           else delete nho.autoSyncFieldMap;
         }
        }
-       forceWarning = syncFullNovelAutoBlocks(nov).forceWarning || '';
+       const autoSyncResult = runNovelAutoSyncPlan(
+         nov,
+         buildAutoSyncPlanFromTabContext(buildAutoSyncContext(activeTabLon, activeTabNho, nho, lon?.label || '')),
+         {
+           recordLog: true,
+           reason: 'tab_template',
+           scopeLabel: buildTabScopeLabel(activeTabLon, activeTabNho, nov.tabsConfig),
+         }
+       );
+       forceWarning = autoSyncResult.forceWarning || '';
     });
     if (forceWarning) showToast(forceWarning, 'warning');
   };
@@ -1324,6 +1339,7 @@ export default function App() {
     handleOpenCreateEntity,
     handleOpenEditEntity,
     handleSaveEntity,
+    handleSetSelectedEntityAutoSyncState,
     handleAddImageToSelectedEntity,
     handleRemoveImageFromSelectedEntity,
     handleUpdateEntityInfo,
@@ -1490,14 +1506,40 @@ export default function App() {
 
   // Tab management helpers
   const getTabsToUpdate = () => activeNovelData ? activeNovelData.tabsConfig : globalTabsConfig;
-  const setTabsConfig = (newTabs, { resyncAuto = false, mutateNovelData = null } = {}) => {
+  const buildTabScopeLabel = (lonId, nhoId, currentTabs = getTabsToUpdate()) => {
+    const lon = (currentTabs || []).find((tab) => tab.id === lonId);
+    if (!lon) return 'Cây thư mục';
+    if (!nhoId) return safeString(lon.label || lonId) || 'Cây thư mục';
+    const nho = (lon.subTabs || []).find((tab) => tab.id === nhoId);
+    const lonLabel = safeString(lon.label || lonId).trim();
+    const nhoLabel = safeString(nho?.label || nhoId).trim();
+    return [lonLabel, nhoLabel].filter(Boolean).join(' > ') || 'Cây thư mục';
+  };
+  const setTabsConfig = (
+    newTabs,
+    {
+      resyncAuto = false,
+      mutateNovelData = null,
+      autoSyncPlan = null,
+      autoSyncReason = 'tab_config',
+      autoSyncScopeLabel = 'Cây thư mục',
+    } = {}
+  ) => {
     let forceWarning = '';
     if (activeNovelData) {
       updateActiveNovelData((nov) => {
         nov.tabsConfig = newTabs;
         if (typeof mutateNovelData === 'function') mutateNovelData(nov);
         if (resyncAuto) {
-          const autoSyncResult = syncFullNovelAutoBlocks(nov);
+          const autoSyncResult = runNovelAutoSyncPlan(
+            nov,
+            autoSyncPlan || buildFullAutoSyncPlan(),
+            {
+              recordLog: true,
+              reason: autoSyncReason,
+              scopeLabel: autoSyncScopeLabel,
+            }
+          );
           forceWarning = autoSyncResult.forceWarning || '';
         }
       });
@@ -1513,7 +1555,11 @@ export default function App() {
     let changed = false;
     let forceWarning = '';
     updateActiveNovelData((nov) => {
-      const autoSyncResult = syncFullNovelAutoBlocks(nov);
+      const autoSyncResult = runNovelAutoSyncPlan(nov, buildFullAutoSyncPlan(), {
+        recordLog: true,
+        reason: 'manual_resync',
+        scopeLabel: 'Toàn bộ truyện',
+      });
       changed = autoSyncResult.changed;
       forceWarning = autoSyncResult.forceWarning || '';
     });
@@ -1525,6 +1571,21 @@ export default function App() {
     );
     if (forceWarning) showToast(forceWarning, 'warning');
   }, [activeNovelData, updateActiveNovelData, showToast]);
+  const handleApplySuggestedAutoSyncSetup = () => {
+    const currentTabs = structuredClone(getTabsToUpdate());
+    const hydrated = hydrateTabsAutoSyncConfigs(currentTabs);
+    if (!hydrated.changed) {
+      showToast('Cấu hình AUTO hiện đã khớp với gợi ý từ cây thư mục.', 'success');
+      return;
+    }
+    setTabsConfig(hydrated.tabsConfig, {
+      resyncAuto: true,
+      autoSyncPlan: buildFullAutoSyncPlan(),
+      autoSyncReason: 'wizard_setup',
+      autoSyncScopeLabel: 'Thiết lập nhanh AUTO',
+    });
+    showToast('Đã áp dụng gợi ý vai trò và ánh xạ AUTO theo cây thư mục.', 'success');
+  };
   const buildAutoSyncContext = (lonId, nhoId, nho, parentLabel = '') => ({
     activeTabLon: lonId,
     activeTabNho: nhoId,
@@ -1638,7 +1699,13 @@ export default function App() {
     if (path.length === 1) {
       const nextTabs = current.filter((t) => t.id !== path[0]);
       if (activeNovelData) {
-        setTabsConfig(nextTabs, { resyncAuto: true, mutateNovelData: pruneNovelDataBucket });
+        setTabsConfig(nextTabs, {
+          resyncAuto: true,
+          mutateNovelData: pruneNovelDataBucket,
+          autoSyncPlan: buildFullAutoSyncPlan(),
+          autoSyncReason: 'delete_tab',
+          autoSyncScopeLabel: 'Xóa mục khỏi cây thư mục',
+        });
       } else {
         setGlobalTabsConfig(nextTabs);
         syncIndex(novelsMetadata, nextTabs, dirHandle);
@@ -1647,7 +1714,13 @@ export default function App() {
       const lon = current.find((t) => t.id === path[0]);
       if (lon) lon.subTabs = (lon.subTabs || []).filter((s) => s.id !== path[1]);
       if (activeNovelData) {
-        setTabsConfig(current, { resyncAuto: true, mutateNovelData: pruneNovelDataBucket });
+        setTabsConfig(current, {
+          resyncAuto: true,
+          mutateNovelData: pruneNovelDataBucket,
+          autoSyncPlan: buildFullAutoSyncPlan(),
+          autoSyncReason: 'delete_tab',
+          autoSyncScopeLabel: 'Xóa mục khỏi cây thư mục',
+        });
       } else {
         setGlobalTabsConfig(current);
         syncIndex(novelsMetadata, current, dirHandle);
@@ -1657,7 +1730,10 @@ export default function App() {
       const nho = lon?.subTabs?.find((s) => s.id === path[1]);
       if (nho) nho.tabCon = (nho.tabCon || []).filter((c) => c.id !== path[2]);
       if (activeNovelData) {
-        setTabsConfig(current, { resyncAuto: true, mutateNovelData: pruneNovelDataBucket });
+        setTabsConfig(current, {
+          resyncAuto: false,
+          mutateNovelData: pruneNovelDataBucket,
+        });
       } else {
         setGlobalTabsConfig(current);
         syncIndex(novelsMetadata, current, dirHandle);
@@ -1669,10 +1745,22 @@ export default function App() {
   const handleSaveEditLabel = (path, label) => {
     if (!label.trim()) return;
     const current = structuredClone(getTabsToUpdate());
+    let autoSyncPlan = null;
+    let shouldResyncAuto = false;
+    let scopeLabel = 'Cây thư mục';
     if (path.length === 1) {
+      const previousTabs = getTabsToUpdate();
       const t = current.find(t => t.id === path[0]);
       if (t) t.label = label.trim();
+      shouldResyncAuto = true;
+      autoSyncPlan = buildFullAutoSyncPlan();
+      scopeLabel = safeString(
+        previousTabs.find((tab) => tab.id === path[0])?.label || label.trim()
+      ) || 'Cây thư mục';
     } else if (path.length === 2) {
+      const previousTabs = getTabsToUpdate();
+      const previousLon = previousTabs.find((tab) => tab.id === path[0]);
+      const previousNho = previousLon?.subTabs?.find((sub) => sub.id === path[1]) || null;
       const lon = current.find(t => t.id === path[0]);
       const nho = lon?.subTabs?.find(s => s.id === path[1]);
       if (nho) {
@@ -1682,6 +1770,12 @@ export default function App() {
           const guessed = guessFieldsByLabel(label.trim());
           if (guessed) nho.fieldsTemplate = structuredClone(guessed);
         }
+        shouldResyncAuto = true;
+        autoSyncPlan = buildAutoSyncPlanFromTabDiff({
+          previousTabContext: buildAutoSyncContext(path[0], path[1], previousNho, previousLon?.label || ''),
+          nextTabContext: buildAutoSyncContext(path[0], path[1], nho, lon?.label || ''),
+        });
+        scopeLabel = buildTabScopeLabel(path[0], path[1], current);
       }
     } else if (path.length === 3) {
       const lon = current.find(t => t.id === path[0]);
@@ -1689,16 +1783,30 @@ export default function App() {
       const con = nho?.tabCon?.find(c => c.id === path[2]);
       if (con) con.label = label.trim();
     }
-    setTabsConfig(current, { resyncAuto: true });
+    setTabsConfig(current, {
+      resyncAuto: shouldResyncAuto,
+      autoSyncPlan,
+      autoSyncReason: 'rename_tab',
+      autoSyncScopeLabel: scopeLabel,
+    });
     setEditingTab(null);
   };
 
   const handleToggleViewType = (path) => {
     const current = structuredClone(getTabsToUpdate());
+    let autoSyncPlan = null;
+    let shouldResyncAuto = false;
+    let scopeLabel = 'Cây thư mục';
     if (path.length === 1) {
       const t = current.find(t => t.id === path[0]);
       if (t) t.viewType = t.viewType === 'collection-track' ? 'standard' : 'collection-track';
+      shouldResyncAuto = true;
+      autoSyncPlan = buildFullAutoSyncPlan();
+      scopeLabel = buildTabScopeLabel(path[0], null, current);
     } else if (path.length === 2) {
+      const previousTabs = getTabsToUpdate();
+      const previousLon = previousTabs.find((tab) => tab.id === path[0]);
+      const previousNho = previousLon?.subTabs?.find((sub) => sub.id === path[1]) || null;
       const lon = current.find(t => t.id === path[0]);
       const nho = lon?.subTabs?.find(s => s.id === path[1]);
       if (nho) {
@@ -1715,13 +1823,27 @@ export default function App() {
             structuredClone(DEFAULT_ENTITY_FIELDS);
           nho.fieldsTemplate = structuredClone(guessed);
         }
+        shouldResyncAuto = true;
+        autoSyncPlan = buildAutoSyncPlanFromTabDiff({
+          previousTabContext: buildAutoSyncContext(path[0], path[1], previousNho, previousLon?.label || ''),
+          nextTabContext: buildAutoSyncContext(path[0], path[1], nho, lon?.label || ''),
+        });
+        scopeLabel = buildTabScopeLabel(path[0], path[1], current);
       }
     }
-    setTabsConfig(current, { resyncAuto: true });
+    setTabsConfig(current, {
+      resyncAuto: shouldResyncAuto,
+      autoSyncPlan,
+      autoSyncReason: 'toggle_view_type',
+      autoSyncScopeLabel: scopeLabel,
+    });
   };
 
   const handleSetTabAutoSyncRole = (lonId, nhoId, nextRoleValue) => {
     const current = structuredClone(getTabsToUpdate());
+    const previousTabs = getTabsToUpdate();
+    const previousLon = previousTabs.find((tab) => tab.id === lonId);
+    const previousNho = previousLon?.subTabs?.find((sub) => sub.id === nhoId) || null;
     const lon = current.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
     if (!nho || nho.viewType !== 'collection-track') return;
@@ -1746,7 +1868,15 @@ export default function App() {
       delete nho.autoSyncFieldMap;
     }
 
-    setTabsConfig(current, { resyncAuto: true });
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: buildAutoSyncPlanFromTabDiff({
+        previousTabContext: buildAutoSyncContext(lonId, nhoId, previousNho, previousLon?.label || ''),
+        nextTabContext: buildAutoSyncContext(lonId, nhoId, nho, lon?.label || ''),
+      }),
+      autoSyncReason: 'set_auto_role',
+      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+    });
   };
 
   const handleSetTabAutoSyncFieldMap = (lonId, nhoId, fieldKey, nextFieldIdValue) => {
@@ -1773,7 +1903,12 @@ export default function App() {
     if (Object.keys(normalizedMap).length > 0) nho.autoSyncFieldMap = normalizedMap;
     else delete nho.autoSyncFieldMap;
 
-    setTabsConfig(current, { resyncAuto: true });
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: 'set_field_map',
+      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+    });
   };
 
   // ==========================================
@@ -1939,6 +2074,7 @@ export default function App() {
     setDebouncedMarkdownPreview,
     setIsSplitPreview,
     handleUpdateEntityInfo,
+    handleSetSelectedEntityAutoSyncState,
     setImageForm,
     setIsInsertImageModalOpen,
     handlePickLocalImage,
@@ -2105,6 +2241,7 @@ export default function App() {
     handleAddTabCon,
     handleSetTabAutoSyncRole,
     handleSetTabAutoSyncFieldMap,
+    handleApplySuggestedAutoSyncSetup,
     handleResyncAutoTabs,
   };
   return (

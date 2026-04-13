@@ -3,6 +3,7 @@ import {
   isMainCharacterRelationScope,
   syncAllMainCharacterRelationBlocks,
 } from './mainCharacterRelationSync.js';
+import { AUTO_SYNC_ENGINE_MAIN_CHARACTER } from './autoSyncEntityPrefs.js';
 import { AUTO_SYNC_ROLE_OFF } from './tabAutoSyncRole.js';
 
 function createNovel() {
@@ -135,5 +136,26 @@ describe('mainCharacterRelationSync', () => {
     expect(mainInfo).not.toContain('(AUTO)');
     expect(daoLuInfo).toContain('Ghi chu tay dao lu');
     expect(daoLuInfo).not.toContain('(AUTO)');
+  });
+
+  it('keeps locked entity AUTO blocks frozen while still syncing other participants', () => {
+    const novel = createNovel();
+    expect(syncAllMainCharacterRelationBlocks(novel)).toBe(true);
+
+    const main = novel.data['nhan-vat']['nhan-vat-chinh'].entities[0];
+    const lockedSnapshot = String(main.info || '');
+    main.autoSyncPrefs = { lockedEngines: [AUTO_SYNC_ENGINE_MAIN_CHARACTER] };
+    novel.data['nhan-vat']['dao-lu'].entities.push({
+      id: 'dl-2',
+      name: 'Nguyet Nhi',
+      info: '',
+      dynamicData: { f_quan_he: 'Dao lu' },
+    });
+
+    const ok = syncAllMainCharacterRelationBlocks(novel);
+    expect(ok).toBe(true);
+
+    expect(String(main.info || '')).toBe(lockedSnapshot);
+    expect(String(novel.data['nhan-vat']['dao-lu'].entities[1].info || '')).toContain('[[Lac Nam]]');
   });
 });
