@@ -777,6 +777,11 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   entityTemplateHint,
   onOpenAutoSyncGuide,
   onOpenEntityNotesGuide,
+  detailProfileMode = 'original',
+  onChangeDetailProfileMode = null,
+  canViewTimelineCurrentProfile = false,
+  timelineCurrentProfileLabel = '',
+  onOpenTimelineCurrentEdit = null,
 }) {
   const autoSyncControls = useMemo(() => {
     if (!selectedEntity || !currentTabConfig) return [];
@@ -804,6 +809,13 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
     });
     return role ? getAutoSyncRoleLabel(role) : '';
   }, [activeTabLon, activeTabNho, currentTabConfig]);
+  const isCurrentTimelineMode = detailProfileMode === 'current';
+
+  useEffect(() => {
+    if (isCurrentTimelineMode && isEntityEditing) {
+      setIsEntityEditing(false);
+    }
+  }, [isCurrentTimelineMode, isEntityEditing, setIsEntityEditing]);
 
   return (
     <div className="flex flex-col mt-4">
@@ -820,6 +832,46 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
           </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap justify-end">
+          {typeof onChangeDetailProfileMode === 'function' && (
+            <div className="inline-flex items-center gap-1 rounded-[40px] border border-slate-700 bg-slate-950/60 p-1">
+              <button
+                type="button"
+                onClick={() => onChangeDetailProfileMode('original')}
+                className={`rounded-[32px] px-3 py-2 text-[11px] font-bold transition-colors ${
+                  detailProfileMode === 'original'
+                    ? 'bg-slate-200 text-slate-950 shadow-sm'
+                    : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                Ban đầu
+              </button>
+              <button
+                type="button"
+                disabled={!canViewTimelineCurrentProfile}
+                onClick={() => {
+                  if (isEntityEditing) setIsEntityEditing(false);
+                  onChangeDetailProfileMode('current');
+                }}
+                title={
+                  canViewTimelineCurrentProfile && timelineCurrentProfileLabel
+                    ? `Lấy trạng thái mới nhất từ timeline: ${timelineCurrentProfileLabel}`
+                    : 'Timeline chưa có mốc nào để dựng trạng thái hiện tại'
+                }
+                className={`rounded-[32px] px-3 py-2 text-[11px] font-bold transition-colors ${
+                  detailProfileMode === 'current'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'text-slate-300 hover:bg-slate-800'
+                } disabled:cursor-not-allowed disabled:opacity-40`}
+              >
+                Hiện tại
+              </button>
+            </div>
+          )}
+          {detailProfileMode === 'current' && timelineCurrentProfileLabel && (
+            <span className="rounded-full border border-amber-700/40 bg-amber-950/25 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+              {timelineCurrentProfileLabel}
+            </span>
+          )}
           {onOpenAutoSyncGuide && (
             <button
               type="button"
@@ -843,6 +895,10 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
               id="save-entity-btn"
               type="button"
               onClick={() => {
+                if (isCurrentTimelineMode && typeof onOpenTimelineCurrentEdit === 'function') {
+                  onOpenTimelineCurrentEdit();
+                  return;
+                }
                 const s = safeString(selectedEntity?.info || '');
                 setLivePreviewText(s);
                 setDebouncedMarkdownPreview(s);
@@ -850,7 +906,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
               }}
               className="px-5 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700"
             >
-              <Edit3 size={16} /> Viết ghi chép
+              <Edit3 size={16} /> {isCurrentTimelineMode ? 'Sửa timeline' : 'Viết ghi chép'}
             </button>
           )}
         </div>
@@ -933,9 +989,9 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             : 'bg-slate-900/30 border border-slate-800/60 p-8 rounded-[40px]'
         }`}
       >
-        {isEntityEditing && selectedEntity ? (
+        {isEntityEditing && selectedEntity && !isCurrentTimelineMode ? (
           <EntityNotesEditSession
-            key={selectedEntity.id}
+            key={`${selectedEntity.id}:${detailProfileMode}`}
             activeTabLon={activeTabLon}
             initialInfo={selectedEntity.info}
             geminiApiKeys={geminiApiKeys}

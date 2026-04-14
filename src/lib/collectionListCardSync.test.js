@@ -1,5 +1,5 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { syncAllCollectionListCards } from './collectionListCardSync.js';
+import { ensureCollectionListCardsForNovel, syncAllCollectionListCards } from './collectionListCardSync.js';
 
 function buildNovel() {
   return {
@@ -75,6 +75,77 @@ function buildNovel() {
 }
 
 describe('collectionListCardSync', () => {
+  it('ensures each collection tab has a list card named by sub-tab label', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'he-thong',
+          label: 'He thong',
+          subTabs: [
+            { id: 'goi-qua', label: 'Goi Qua', viewType: 'collection-track' },
+          ],
+        },
+      ],
+      data: {
+        'he-thong': {
+          'goi-qua': {
+            overview: '',
+            entities: [{ id: 'gift-1', name: 'Ruong Dai Le', info: '', dynamicData: {}, milestones: [] }],
+          },
+        },
+      },
+    };
+    const changed = ensureCollectionListCardsForNovel(novel);
+    expect(changed).toBe(true);
+    expect(novel.data['he-thong']['goi-qua'].entities[0].name).toBe('Danh Sách Goi Qua');
+  });
+
+  it('can create missing tab buckets and list cards for a new novel', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'he-thong',
+          label: 'He thong',
+          subTabs: [
+            { id: 'goi-qua', label: 'Goi Qua', viewType: 'collection-track' },
+          ],
+        },
+      ],
+      data: {},
+    };
+    const changed = ensureCollectionListCardsForNovel(novel, { createMissingTabBuckets: true });
+    expect(changed).toBe(true);
+    expect(Array.isArray(novel.data['he-thong']['goi-qua'].entities)).toBe(true);
+    expect(novel.data['he-thong']['goi-qua'].entities[0].name).toBe('Danh Sách Goi Qua');
+    expect(novel.tabsConfig[0].subTabs[0].autoSyncLevelConfig).toEqual({
+      enabled: true,
+      levels: {
+        level_1_card: true,
+        level_2_list: true,
+        level_3_linked: false,
+        level_4_timeline: false,
+      },
+    });
+  });
+
+  it('seeds default auto levels 1/2 when canonical list card exists', () => {
+    const novel = buildNovel();
+    novel.data['he-thong']['goi-qua'].entities[0].name = 'Danh Sách Goi Qua / Ruong';
+    novel.tabsConfig[1].subTabs[0].autoSyncLevelConfig = undefined;
+
+    const changed = syncAllCollectionListCards(novel);
+    expect(changed).toBe(true);
+    expect(novel.tabsConfig[1].subTabs[0].autoSyncLevelConfig).toEqual({
+      enabled: true,
+      levels: {
+        level_1_card: true,
+        level_2_list: true,
+        level_3_linked: false,
+        level_4_timeline: false,
+      },
+    });
+  });
+
   it('writes an AUTO list block into list cards while preserving manual notes', () => {
     const novel = buildNovel();
 
@@ -311,5 +382,18 @@ describe('collectionListCardSync', () => {
     expect(idxThienTon).toBeGreaterThan(idxHoangThu);
     expect(idxDiaTon).toBeGreaterThan(idxThienTon);
     expect(info).toContain('1. [[Thanh Vân Các]] - Thiên Vương cấp thế lực');
+  });
+
+  it('supports explicit list grouping strategy override per tab', () => {
+    const novel = buildNovel();
+    novel.tabsConfig[1].subTabs[0].autoListGroupStrategy = 'owner';
+    novel.data['he-thong']['goi-qua'].entities[2].dynamicData = {
+      ...novel.data['he-thong']['goi-qua'].entities[2].dynamicData,
+      f_chu: 'Vân Y (12) ?',
+    };
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['he-thong']['goi-qua'].entities[0].info || '');
+    expect(info).toContain('## Lac Nam (37) ? (1)');
+    expect(info).toContain('## Vân Y (12) ? (1)');
   });
 });

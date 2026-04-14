@@ -23,6 +23,8 @@ import { AppEntityDetailNotes } from './AppEntityDetailNotes.jsx';
 import { AppEntityTimelinePanel } from './AppEntityTimelinePanel.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import { MarkdownToolbar } from './MasterComponents.jsx';
+import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
+import { buildTimelineCurrentProfileView, buildTimelineCurrentNotesText } from './appCollectionTimelineProfile.js';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
 import { isForceCollectionScope } from './lib/theLucBanDoSync.js';
@@ -142,6 +144,7 @@ export function AppCollectionSection({
 }) {
   void AdvancedFieldSelect;
   void recentlyMergedFields;
+  void memoizedEntityInfo;
   /** Uncontrolled + ref: tránh React ghi đè DOM khi gõ Telex/IME (controlled value + sync làm vỡ dấu). */
   const collectionSearchInputRef = React.useRef(null);
   const searchDebounceTimerRef = React.useRef(0);
@@ -218,7 +221,68 @@ export function AppCollectionSection({
       }),
     [handlePickLocalImage, standardImageFileStemParts]
   );
+  const [detailProfileMode, setDetailProfileMode] = React.useState('original');
+  const timelineCurrentProfile = React.useMemo(
+    () => buildTimelineCurrentProfileView(selectedEntity),
+    [selectedEntity]
+  );
+  const detailProfileSourceLabel = React.useMemo(() => {
+    const latestMilestone = timelineCurrentProfile.latestMilestone;
+    if (!latestMilestone) return '';
+    const chapter = safeString(latestMilestone.chapter).trim();
+    const title = safeString(latestMilestone.title).trim();
+    if (chapter && title) return `Chương ${chapter} · ${title}`;
+    if (chapter) return `Chương ${chapter}`;
+    return title;
+  }, [timelineCurrentProfile.latestMilestone]);
+  const detailEntity =
+    detailProfileMode === 'current' && timelineCurrentProfile.hasTimelineCurrentView
+      ? timelineCurrentProfile.entity
+      : selectedEntity;
+  const detailNotesText = React.useMemo(() => {
+    if (!selectedEntity) return '';
+    return detailProfileMode === 'current'
+      ? buildTimelineCurrentNotesText(selectedEntity)
+      : safeString(selectedEntity.info);
+  }, [detailProfileMode, selectedEntity]);
+  const detailNotesEntity = React.useMemo(() => {
+    if (!detailEntity) return detailEntity;
+    return {
+      ...detailEntity,
+      info: detailNotesText,
+    };
+  }, [detailEntity, detailNotesText]);
+  const detailMemoizedEntityInfo = React.useMemo(() => {
+    if (!detailNotesEntity || collectionSubTab !== 'detail' || isEntityEditing) return null;
+    return (
+      <div className="font-serif max-w-none animate-fade-in min-h-[200px]">
+        {renderEntityNotesMarkdown(
+          safeString(detailNotesEntity.info),
+          currentContextDirHandle,
+          entityMap,
+          globalLinkRegex,
+          handleNavigate,
+          detailNotesEntity?.id
+        )}
+      </div>
+    );
+  }, [
+    collectionSubTab,
+    currentContextDirHandle,
+    detailNotesEntity,
+    entityMap,
+    globalLinkRegex,
+    handleNavigate,
+    isEntityEditing,
+  ]);
+  const handleOpenCurrentTimelineEdit = React.useCallback(() => {
+    const latestMilestone = timelineCurrentProfile.latestMilestone;
+    if (!latestMilestone) return;
+    setEditingMilestoneData(latestMilestone);
+    setIsMilestoneModalOpen(true);
+  }, [setEditingMilestoneData, setIsMilestoneModalOpen, timelineCurrentProfile.latestMilestone]);
   React.useEffect(() => { setEntityFilterValueDraft(entityFilterValue || ''); }, [entityFilterValue]);
+  React.useEffect(() => { setDetailProfileMode('original'); }, [selectedEntity?.id]);
   React.useEffect(() => {
     const t = setTimeout(() => setEntityFilterValue(entityFilterValueDraft), 260);
     return () => clearTimeout(t);
@@ -506,14 +570,14 @@ export function AppCollectionSection({
                 currentTabConfig,
                 parentLabel: currentTabConfig?._parentLabel || '',
               });
-              const mapParentLine = safeString(selectedEntity.dynamicData?.f_vi_tri).trim();
+              const mapParentLine = safeString(detailEntity?.dynamicData?.f_vi_tri).trim();
               const forceLocationLine = getLeafHierarchyLabel(
-                safeString(selectedEntity.dynamicData?.f_dia_ban || selectedEntity.dynamicData?.f_vi_tri)
+                safeString(detailEntity?.dynamicData?.f_dia_ban || detailEntity?.dynamicData?.f_vi_tri)
               );
               const forceTypeLine = safeString(currentTabConfig?.label || '').trim();
               const statusLine =
-                safeString(selectedEntity.status).trim() ||
-                safeString(selectedEntity.dynamicData?.f_status).trim();
+                safeString(detailEntity?.status).trim() ||
+                safeString(detailEntity?.dynamicData?.f_status).trim();
               const profileSubtitle = isMapDetail
                 ? [...new Set([mapParentLine, statusLine].filter(Boolean))].join(' · ')
                 : isForceDetail
@@ -532,33 +596,33 @@ export function AppCollectionSection({
                   <div className="flex items-center gap-6">
                     <div
                       className="w-24 h-24 rounded-[40px] bg-slate-950 border-2 border-amber-500/40 overflow-hidden flex items-center justify-center text-4xl text-amber-500 font-bold shadow-[0_0_30px_rgba(245,158,11,0.15)] group cursor-zoom-in"
-                      onClick={() => selectedEntity.avatar && setLightboxSrc(selectedEntity.avatar)}
+                      onClick={() => detailEntity?.avatar && setLightboxSrc(detailEntity.avatar)}
                       title="Nhấp để xem ảnh đầy đủ"
                     >
-                      {selectedEntity.avatar ? (
-                        selectedEntity.avatar.startsWith('local_image:') ? (
+                      {detailEntity?.avatar ? (
+                        detailEntity.avatar.startsWith('local_image:') ? (
                           <AsyncLocalImage
-                            filename={selectedEntity.avatar.replace('local_image:', '')}
+                            filename={detailEntity.avatar.replace('local_image:', '')}
                             alt="avatar"
                             dirHandle={currentContextDirHandle}
                             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                           />
                         ) : (
                           <img
-                            src={selectedEntity.avatar}
+                            src={detailEntity.avatar}
                             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                             alt=""
                             onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }}
                           />
                         )
-                      ) : safeString(selectedEntity.name).charAt(0).toUpperCase()}
+                      ) : safeString(detailEntity?.name).charAt(0).toUpperCase()}
                     </div>
                     <div className="flex flex-col">
                       <div className="flex items-center gap-3 mb-2">
-                        <h2 className="text-4xl font-heading font-bold text-slate-100">{safeString(selectedEntity.name)}</h2>
-                        {safeString(selectedEntity.title).trim() && (
+                        <h2 className="text-4xl font-heading font-bold text-slate-100">{safeString(detailEntity?.name)}</h2>
+                        {safeString(detailEntity?.title).trim() && (
                           <span className="px-3 py-1 bg-amber-900/30 text-amber-400 text-[10px] font-bold uppercase tracking-widest rounded-full border border-amber-700/30 shadow-inner">
-                            {safeString(selectedEntity.title)}
+                            {safeString(detailEntity.title)}
                           </span>
                         )}
                       </div>
@@ -566,19 +630,19 @@ export function AppCollectionSection({
                         <Shield size={14} className="text-slate-500 shrink-0" aria-hidden />
                         <span>{profileSubtitle || tabTerms.profileSubtitleEmpty}</span>
                       </p>
-                      {safeString(selectedEntity.dynamicData?.f_alias).trim() && (
+                      {safeString(detailEntity?.dynamicData?.f_alias).trim() && (
                         <p className="text-sm text-indigo-200/90 font-serif mt-3 leading-relaxed max-w-2xl border-l-2 border-indigo-700/50 pl-3">
                           <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 block mb-0.5">
                             Biệt danh — cùng liên kết wiki với tên chính
                           </span>
-                          {safeString(selectedEntity.dynamicData.f_alias)}
+                          {safeString(detailEntity.dynamicData.f_alias)}
                         </p>
                       )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => handleExportEntityPDF(selectedEntity, currentTabConfig)}
+                      onClick={() => handleExportEntityPDF(detailEntity, currentTabConfig)}
                       className="px-4 py-2.5 bg-indigo-900/30 hover:bg-indigo-800/50 border border-indigo-700/40 text-indigo-300 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors shadow-md"
                     >
                       <Download size={13}/> Xuất PDF
@@ -607,7 +671,7 @@ export function AppCollectionSection({
                   setIsSplitPreview={setIsSplitPreview}
                   activeTabNho={activeTabNho}
                   currentTabConfig={currentTabConfig}
-                  selectedEntity={selectedEntity}
+                  selectedEntity={detailNotesEntity}
                   handleUpdateEntityInfo={handleUpdateEntityInfo}
                   handleSetSelectedEntityAutoSyncState={handleSetSelectedEntityAutoSyncState}
                   setIsEntityEditing={setIsEntityEditing}
@@ -620,14 +684,19 @@ export function AppCollectionSection({
                   entityMap={entityMap}
                   globalLinkRegex={globalLinkRegex}
                   onNavigate={handleNavigate}
-                  memoizedEntityInfo={memoizedEntityInfo}
+                  memoizedEntityInfo={detailMemoizedEntityInfo}
                   entityTemplateHint={currentTabConfig?.label || ''}
                   onOpenAutoSyncGuide={onOpenAutoSyncGuide}
                   onOpenEntityNotesGuide={onOpenEntityNotesGuide}
+                  detailProfileMode={detailProfileMode}
+                  onChangeDetailProfileMode={setDetailProfileMode}
+                  canViewTimelineCurrentProfile={timelineCurrentProfile.hasTimelineCurrentView}
+                  timelineCurrentProfileLabel={detailProfileSourceLabel}
+                  onOpenTimelineCurrentEdit={handleOpenCurrentTimelineEdit}
                 />
 
                 <AppEntitySummaryBlocks
-                  selectedEntity={selectedEntity}
+                  selectedEntity={detailEntity}
                   collectionSubTab={collectionSubTab}
                   currentContextDirHandle={currentContextDirHandle}
                   relatedEntities={relatedEntities}

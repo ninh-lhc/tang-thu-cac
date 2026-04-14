@@ -481,6 +481,66 @@ export function syncAutoOwnerMilestonesItemRename(novelData, itemRef) {
   return changed;
 }
 
+function buildTabConfigLookupMap(tabsConfig = []) {
+  const map = new Map();
+  (Array.isArray(tabsConfig) ? tabsConfig : []).forEach((lonTab) => {
+    const lonId = String(lonTab?.id || '').trim();
+    if (!lonId) return;
+    (lonTab?.subTabs || []).forEach((nhoTab) => {
+      const nhoId = String(nhoTab?.id || '').trim();
+      if (!nhoId) return;
+      map.set(`${lonId}::${nhoId}`, nhoTab);
+    });
+  });
+  return map;
+}
+
+export function syncAllAutoOwnerTimelineMilestonesForNovel(novelData) {
+  if (!novelData?.data || typeof novelData.data !== 'object') {
+    return { changed: false, appliedCount: 0, warningCount: 0 };
+  }
+  const tabConfigLookup = buildTabConfigLookupMap(novelData.tabsConfig || []);
+  let appliedCount = 0;
+  let warningCount = 0;
+
+  Object.entries(novelData.data || {}).forEach(([lonId, lonData]) => {
+    if (!lonData || typeof lonData !== 'object') return;
+    if (lonId === 'nhan-vat') return;
+    Object.entries(lonData).forEach(([nhoId, tabData]) => {
+      const entities = Array.isArray(tabData?.entities) ? tabData.entities : [];
+      if (entities.length === 0) return;
+      const tabConfig = tabConfigLookup.get(`${lonId}::${nhoId}`) || null;
+      const fieldsTemplate = Array.isArray(tabConfig?.fieldsTemplate) ? tabConfig.fieldsTemplate : [];
+      entities.forEach((entity) => {
+        if (!entity || typeof entity !== 'object') return;
+        const hintDetail = parseOwnerTimelineHintDetailed({
+          dynamicData: entity.dynamicData || {},
+          fieldsTemplate,
+          rawText: entity.rawText || entity.info || '',
+        });
+        const hint = hintDetail?.hint || null;
+        if (!hint) return;
+        const result = appendOwnerAcquisitionMilestoneDetailed(
+          novelData,
+          hint,
+          { name: String(entity.name || '').trim(), entityId: String(entity.id || '').trim() }
+        );
+        if (result.applied) {
+          appliedCount += 1;
+        } else if (result.reason === 'owner_ambiguous' || result.reason === 'owner_not_found') {
+          warningCount += 1;
+        }
+      });
+    });
+  });
+
+  return {
+    changed: appliedCount > 0,
+    appliedCount,
+    warningCount,
+  };
+}
+
 export const OWNER_TOKEN_GUIDE_TEXT =
   '[?] Chưa rõ · [!] Quan trọng · [!!] Bước ngoặt · [...] Xuyên suốt · [x] Tạm bỏ';
 

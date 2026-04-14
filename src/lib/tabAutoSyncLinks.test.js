@@ -40,10 +40,12 @@ describe('tabAutoSyncLinks', () => {
       normalizeAutoSyncTargetPaths([
         'ban-do::ha-gioi',
         { lonId: 'ban-do', nhoId: 'ha-gioi' },
+        'lich-su-quy-tich::cung-bien-doạt-dich',
+        'lich-su-quy-tich::cung-bien-doat-dich',
         '',
         null,
       ])
-    ).toEqual(['ban-do::ha-gioi']);
+    ).toEqual(['ban-do::ha-gioi', 'lich-su-quy-tich::cung-bien-doat-dich']);
   });
 
   it('lists only compatible receiver tabs for a source role', () => {

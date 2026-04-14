@@ -5,6 +5,7 @@ import {
   ownerMilestoneApplyReasonToMessage,
   parseOwnerTimelineHint,
   removeOwnerAcquisitionMilestonesByItem,
+  syncAllAutoOwnerTimelineMilestonesForNovel,
   syncAutoOwnerMilestonesItemRename,
 } from './autoOwnerMilestone.js';
 
@@ -447,6 +448,52 @@ describe('autoOwnerMilestone', () => {
       const auto = ent.milestones.filter((ms) => ms?.meta?.source === 'auto-owner');
       expect(auto.some((ms) => String(ms?.meta?.itemEntityId || '') === 'item-5')).toBe(false);
     });
+  });
+
+  it('resyncs owner timeline milestones across tabs using tree config', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'nhan-vat',
+          label: 'Nhân Vật',
+          subTabs: [{ id: 'nhan-vat-chinh', label: 'Nhân Vật Chính', viewType: 'collection-track' }],
+        },
+        {
+          id: 'ky-tran-di-bao',
+          label: 'Kỳ Trân Dị Bảo',
+          subTabs: [{ id: 'than-binh-loi-khi', label: 'Thần Binh', viewType: 'collection-track', fieldsTemplate: [{ id: 'f_chu', label: 'Chủ nhân' }] }],
+        },
+      ],
+      data: {
+        'nhan-vat': {
+          'nhan-vat-chinh': {
+            entities: [{ id: 'nv1', name: 'Lạc Nam', dynamicData: {}, milestones: [] }],
+          },
+        },
+        'ky-tran-di-bao': {
+          'than-binh-loi-khi': {
+            entities: [
+              {
+                id: 'item-1',
+                name: 'Thiên Địa Công',
+                dynamicData: { f_chu: 'Lạc Nam (88) !' },
+                rawText: '',
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const out = syncAllAutoOwnerTimelineMilestonesForNovel(novel);
+    expect(out.changed).toBe(true);
+    expect(out.appliedCount).toBe(1);
+
+    const ownerMs = novel.data['nhan-vat']['nhan-vat-chinh'].entities[0].milestones;
+    expect(ownerMs.length).toBe(1);
+    expect(ownerMs[0].chapter).toBe(88);
+    expect(ownerMs[0].event).toContain('[[Thiên Địa Công]]');
   });
 });
 

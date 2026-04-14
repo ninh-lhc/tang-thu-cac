@@ -62,7 +62,11 @@ import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
 import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
 import { resolveEntityPageForSelection } from './lib/entitySelectionPage.js';
-import { syncAllCollectionListCards } from './lib/collectionListCardSync.js';
+import {
+  ensureCollectionListCardsForNovel,
+  normalizeListGroupStrategy,
+  syncAllCollectionListCards,
+} from './lib/collectionListCardSync.js';
 import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
 import { useAppPersistence } from './useAppPersistence.js';
 import { useAppShellState } from './useAppShellState.js';
@@ -105,6 +109,7 @@ import {
   normalizeAutoSyncFieldMap,
   setEntityAutoFieldValue,
 } from './lib/tabAutoSyncFieldMap.js';
+import { normalizeTabAutoSyncLevelConfig } from './lib/tabAutoSyncLevels.js';
 import {
   guessAutoSyncTargetPathsForTab,
   hydrateTabsAutoSyncLinkTargets,
@@ -119,6 +124,13 @@ import {
 } from './lib/autoSyncManager.js';
 import { AppMainPane } from './AppMainPane.jsx';
 import { AppModalLayer } from './AppModalLayer.jsx';
+import { saveGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
+import {
+  ensureWikiAliasInFieldsTemplate,
+  sanitizeFieldsTemplate,
+  linesToSuggestionArray,
+  normalizeFieldSuggestionLists,
+} from './lib/tabFieldSuggestions.js';
 
 export default function App() {
   const {
@@ -1593,6 +1605,33 @@ export default function App() {
     });
     showToast('Đã áp dụng gợi ý vai trò và ánh xạ AUTO theo cây thư mục.', 'success');
   };
+  const handleSaveCurrentTabsAsGenreTemplate = useCallback(() => {
+    if (!activeNovelData) {
+      showToast('Cần mở truyện trước khi lưu mẫu cây thư mục.', 'warning');
+      return;
+    }
+    const genres = Array.isArray(activeNovelData.genres)
+      ? activeNovelData.genres.filter(Boolean)
+      : typeof activeNovelData.genres === 'string'
+        ? [activeNovelData.genres]
+        : activeNovelData.genre
+          ? [activeNovelData.genre]
+          : [];
+    if (genres.length === 0) {
+      showToast('Truyện này chưa có thể loại để lưu mẫu.', 'warning');
+      return;
+    }
+    const tabsConfig = Array.isArray(activeNovelData.tabsConfig) ? activeNovelData.tabsConfig : [];
+    if (tabsConfig.length === 0) {
+      showToast('Không có cây thư mục để lưu làm mẫu.', 'warning');
+      return;
+    }
+    if (!saveGenreTabsTemplate(genres, tabsConfig)) {
+      showToast('Lưu mẫu thất bại.', 'error');
+      return;
+    }
+    showToast(`Đã lưu cây mẫu cho: ${genres.join(', ')}.`, 'success');
+  }, [activeNovelData, showToast]);
   const buildAutoSyncContext = (lonId, nhoId, nho, parentLabel = '') => ({
     activeTabLon: lonId,
     activeTabNho: nhoId,
@@ -1654,13 +1693,27 @@ export default function App() {
       DEFAULT_FIELDS_MAP[lonId] ||
       guessFieldsByLabel(lon.label || '') ||
       structuredClone(DEFAULT_ENTITY_FIELDS);
-    lon.subTabs.push({
+    const newSubTab = {
       id: generateId('sub'),
       label: 'Chương Mục Mới',
       viewType: 'collection-track',
       tabCon: [],
       fieldsTemplate: defaultFields
-    });
+    };
+    lon.subTabs.push(newSubTab);
+    if (activeNovelData) {
+      setTabsConfig(current, {
+        mutateNovelData: (nov) => {
+          if (!nov.data || typeof nov.data !== 'object') nov.data = {};
+          if (!nov.data[lonId] || typeof nov.data[lonId] !== 'object') nov.data[lonId] = {};
+          if (!nov.data[lonId][newSubTab.id] || typeof nov.data[lonId][newSubTab.id] !== 'object') {
+            nov.data[lonId][newSubTab.id] = { overview: '', entities: [] };
+          }
+          ensureCollectionListCardsForNovel(nov, { createMissingTabBuckets: false });
+        },
+      });
+      return;
+    }
     setTabsConfig(current);
   };
 
@@ -1947,6 +2000,144 @@ export default function App() {
         nextTabContext: buildAutoSyncContext(lonId, nhoId, nho, lon?.label || ''),
       }),
       autoSyncReason: 'set_auto_targets',
+      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+    });
+  };
+  const handleSetTabListGroupStrategy = (lonId, nhoId, nextStrategyValue) => {
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const normalized = normalizeListGroupStrategy(nextStrategyValue);
+    if (normalized === 'auto') delete nho.autoListGroupStrategy;
+    else nho.autoListGroupStrategy = normalized;
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: 'set_list_group_strategy',
+      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+    });
+  };
+
+  const handleSetTabMapEntrySuggestions = (lonId, nhoId, which, text) => {
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const prev = nho.mapEntrySuggestions && typeof nho.mapEntrySuggestions === 'object' ? nho.mapEntrySuggestions : {};
+    const prevTypes = Array.isArray(prev.types) ? prev.types : [];
+    const prevHierarchy = Array.isArray(prev.hierarchy) ? prev.hierarchy : [];
+    const types = which === 'types' ? linesToSuggestionArray(text) : prevTypes;
+    const hierarchy = which === 'hierarchy' ? linesToSuggestionArray(text) : prevHierarchy;
+    const next = {};
+    if (types.length) next.types = types;
+    if (hierarchy.length) next.hierarchy = hierarchy;
+    if (Object.keys(next).length === 0) delete nho.mapEntrySuggestions;
+    else nho.mapEntrySuggestions = next;
+    setTabsConfig(current, { resyncAuto: false });
+  };
+
+  const handleMergeTabFieldSuggestionList = (lonId, nhoId, fieldId, text) => {
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const fid = safeString(fieldId).trim();
+    if (!fid) return;
+    const parsed = linesToSuggestionArray(text);
+    const base = {
+      ...(nho.fieldSuggestionLists && typeof nho.fieldSuggestionLists === 'object' ? nho.fieldSuggestionLists : {}),
+    };
+    if (parsed.length === 0) delete base[fid];
+    else base[fid] = parsed;
+    const normalized = normalizeFieldSuggestionLists(base);
+    if (Object.keys(normalized).length === 0) delete nho.fieldSuggestionLists;
+    else nho.fieldSuggestionLists = normalized;
+    setTabsConfig(current, { resyncAuto: false });
+  };
+
+  const handleAddTabTemplateField = (lonId, nhoId, label) => {
+    const L = safeString(label).trim();
+    if (!L) return;
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const fields = ensureWikiAliasInFieldsTemplate(nho.fieldsTemplate || []);
+    const newId = `f_tc_${generateId('tc')}`;
+    const idx = fields.findIndex((f) => f.id === 'f_alias');
+    const newField = { id: newId, label: L };
+    const nextFields = idx === -1 ? [...fields, newField] : [...fields.slice(0, idx), newField, ...fields.slice(idx)];
+    nho.fieldsTemplate = nextFields;
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: 'tab_add_field',
+      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+    });
+  };
+
+  const handleRemoveTabTemplateField = (lonId, nhoId, fieldId) => {
+    const fid = safeString(fieldId).trim();
+    if (!fid || fid === 'f_alias') return;
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const filtered = sanitizeFieldsTemplate((nho.fieldsTemplate || []).filter((f) => f.id !== fid));
+    nho.fieldsTemplate = ensureWikiAliasInFieldsTemplate(filtered);
+    if (nho.fieldSuggestionLists?.[fid]) {
+      const nextLists = { ...nho.fieldSuggestionLists };
+      delete nextLists[fid];
+      const normalized = normalizeFieldSuggestionLists(nextLists);
+      if (Object.keys(normalized).length === 0) delete nho.fieldSuggestionLists;
+      else nho.fieldSuggestionLists = normalized;
+    }
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: 'tab_remove_field',
+      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+    });
+  };
+
+  const handleRenameTabTemplateFieldLabel = (lonId, nhoId, fieldId, nextLabel) => {
+    const fid = safeString(fieldId).trim();
+    if (!fid) return;
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const L = safeString(nextLabel).trim();
+    const nextFields = (nho.fieldsTemplate || []).map((f) => (f.id === fid ? { ...f, label: L || f.id } : f));
+    nho.fieldsTemplate = ensureWikiAliasInFieldsTemplate(nextFields);
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: 'tab_rename_field',
+      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+    });
+  };
+
+  const handleSetTabAutoSyncLevels = (lonId, nhoId, updater) => {
+    const current = structuredClone(getTabsToUpdate());
+    const previousTabs = getTabsToUpdate();
+    const previousLon = previousTabs.find((tab) => tab.id === lonId);
+    const previousNho = previousLon?.subTabs?.find((sub) => sub.id === nhoId) || null;
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const prevCfg = normalizeTabAutoSyncLevelConfig(nho.autoSyncLevelConfig);
+    const nextRaw = typeof updater === 'function' ? updater(prevCfg) : updater;
+    const nextCfg = normalizeTabAutoSyncLevelConfig(nextRaw);
+    nho.autoSyncLevelConfig = nextCfg;
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: buildAutoSyncPlanFromTabDiff({
+        previousTabContext: buildAutoSyncContext(lonId, nhoId, previousNho, previousLon?.label || ''),
+        nextTabContext: buildAutoSyncContext(lonId, nhoId, nho, lon?.label || ''),
+      }),
+      autoSyncReason: 'set_auto_levels',
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
   };
@@ -2281,9 +2472,17 @@ export default function App() {
     handleAddTabCon,
     handleSetTabAutoSyncRole,
     handleSetTabAutoSyncTargets,
+    handleSetTabAutoSyncLevels,
     handleSetTabAutoSyncFieldMap,
+    handleSetTabListGroupStrategy,
+    handleSetTabMapEntrySuggestions,
+    handleMergeTabFieldSuggestionList,
+    handleAddTabTemplateField,
+    handleRemoveTabTemplateField,
+    handleRenameTabTemplateFieldLabel,
     handleApplySuggestedAutoSyncSetup,
     handleResyncAutoTabs,
+    handleSaveCurrentTabsAsGenreTemplate,
   };
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden relative theme-wrapper ${activeThemeClass} ${performanceMode ? 'performance-mode' : ''}`}>

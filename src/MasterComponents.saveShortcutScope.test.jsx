@@ -176,6 +176,75 @@ describe('modal ttc-save scope', () => {
     });
   });
 
+  it('uses urban map presets when novel genres include Đô Thị', () => {
+    const activeNovelData = {
+      genres: ['Hệ Thống', 'Đô Thị'],
+      tabsConfig: [],
+      data: {},
+    };
+    const { getByLabelText } = render(
+      <ModalEntity
+        {...entityProps({
+          initialData: null,
+          parentTabId: 'ban-do',
+          parentLabel: 'Ban do',
+          tabConfig: { id: 'ban-do-su-nghiep', label: 'Ban do su nghiep', viewType: 'collection-track' },
+          activeNovelData,
+        })}
+      />
+    );
+    const mapTypeInput = getByLabelText('Loại địa bàn');
+    const listEl = document.getElementById(mapTypeInput.getAttribute('list') || '');
+    const options = Array.from(listEl?.querySelectorAll('option') || []).map((item) => item.getAttribute('value') || '');
+    expect(options).toContain('Thành phố');
+    expect(options).not.toContain('Tiên tinh');
+  });
+
+  it('suggests custom map systems from existing novel entities', async () => {
+    const activeNovelData = {
+      tabsConfig: [
+        {
+          id: 'ban-do',
+          label: 'Ban do',
+          subTabs: [{ id: 'vi-dien', label: 'Vi dien', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'ban-do': {
+          'vi-dien': {
+            entities: [
+              {
+                id: 'map-custom-1',
+                name: 'Ha Gioi',
+                info: '',
+                dynamicData: { f_title: 'Giới', f_status: 'Giới · Chí Tôn Vũ Trụ' },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+    const { getByLabelText } = render(
+      <ModalEntity
+        {...entityProps({
+          initialData: null,
+          parentTabId: 'ban-do',
+          parentLabel: 'Ban do',
+          tabConfig: { id: 'vi-dien', label: 'Vi dien', viewType: 'collection-track' },
+          activeNovelData,
+        })}
+      />
+    );
+
+    const mapSystemInput = getByLabelText('Hệ phân cấp bản đồ');
+    const listId = mapSystemInput.getAttribute('list');
+    expect(listId).toBe('ttc-force-system-options');
+    const listEl = document.getElementById(listId);
+    const options = Array.from(listEl?.querySelectorAll('option') || []).map((item) => item.getAttribute('value') || '');
+    expect(options).toContain('Chí Tôn Vũ Trụ');
+  });
+
   it('when multiple dialogs coexist, only top trap modal consumes ttc-save', async () => {
     const onEntitySave = vi.fn();
     const onMilestoneSave = vi.fn();
@@ -204,6 +273,50 @@ describe('modal ttc-save scope', () => {
     dispatchSaveShortcut();
     expect(onMilestoneSave).toHaveBeenCalledTimes(1);
     expect(onEntitySave).not.toHaveBeenCalled();
+  });
+
+  it('saves snapshot fields together with the milestone payload', async () => {
+    const onMilestoneSave = vi.fn();
+    const { getByLabelText, getByRole, getByTestId } = render(
+      <ModalMilestone
+        {...milestoneProps({
+          onSave: onMilestoneSave,
+          initialData: null,
+          defaultChapterWhenNew: 10,
+          parentTabId: 'nhan-vat',
+          parentLabel: 'Nhan vat',
+          tabConfig: {
+            id: 'nhan-vat-chinh',
+            label: 'Nhan vat chinh',
+            viewType: 'collection-track',
+            fieldsTemplate: [
+              { id: 'f_status', label: 'Cảnh giới' },
+              { id: 'f_alias', label: 'Biệt danh' },
+            ],
+          },
+        })}
+      />
+    );
+
+    const milestoneRoot = getByTestId('modal-milestone-root');
+    const eventTextarea = milestoneRoot.querySelector('textarea#milestone-event-editor');
+
+    expect(eventTextarea).toBeTruthy();
+
+    fireEvent.change(eventTextarea, { target: { value: 'Dot pha canh gioi moi.' } });
+    fireEvent.change(getByLabelText('Cảnh giới'), { target: { value: 'Kim Đan' } });
+    fireEvent.change(getByLabelText(/Biệt danh/i), { target: { value: 'Tiểu Nam' } });
+    fireEvent.click(getByRole('button', { name: /^Lưu$/i }));
+
+    expect(onMilestoneSave).toHaveBeenCalledTimes(1);
+    const [, snapshot] = onMilestoneSave.mock.calls[0];
+    expect(snapshot).toMatchObject({
+      avatar: '',
+      dynamicData: {
+        f_status: 'Kim Đan',
+        f_alias: 'Tiểu Nam',
+      },
+    });
   });
 
   it('pulls focus back into modal when external element is focused', async () => {

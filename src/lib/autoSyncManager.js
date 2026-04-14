@@ -8,6 +8,14 @@ import { syncAllCollectionListCards } from './collectionListCardSync.js';
 import { syncAllCultivationRelationBlocks } from './cultivationRelationSync.js';
 import { syncAllMainCharacterRelationBlocks } from './mainCharacterRelationSync.js';
 import { syncAllMapHierarchyAutoBlocks } from './mapHierarchySync.js';
+import { syncAllAutoOwnerTimelineMilestonesForNovel } from './autoOwnerMilestone.js';
+import {
+  AUTO_SYNC_LEVEL_1,
+  AUTO_SYNC_LEVEL_2,
+  AUTO_SYNC_LEVEL_3,
+  AUTO_SYNC_LEVEL_4,
+  getEffectiveTabAutoSyncLevelConfig,
+} from './tabAutoSyncLevels.js';
 import { getEffectiveAutoSyncRole } from './tabAutoSyncRole.js';
 import {
   AUTO_SYNC_ENGINE_COLLECTION_CARDS,
@@ -15,6 +23,7 @@ import {
   AUTO_SYNC_ENGINE_FORCE_MAP,
   AUTO_SYNC_ENGINE_MAIN_CHARACTER,
   AUTO_SYNC_ENGINE_MAP_HIERARCHY,
+  AUTO_SYNC_ENGINE_OWNER_TIMELINE,
   AUTO_SYNC_ENGINE_RELATION_NOTES,
   getAutoSyncEngineLabel,
   getAutoSyncEnginesForRole,
@@ -31,6 +40,7 @@ const AUTO_SYNC_ENGINE_ORDER = Object.freeze([
   AUTO_SYNC_ENGINE_MAIN_CHARACTER,
   AUTO_SYNC_ENGINE_CULTIVATION,
   AUTO_SYNC_ENGINE_MAP_HIERARCHY,
+  AUTO_SYNC_ENGINE_OWNER_TIMELINE,
   AUTO_SYNC_ENGINE_COLLECTION_CARDS,
 ]);
 
@@ -71,19 +81,26 @@ function buildEnginesForTabContext(tabContext = {}, { includeCollectionCards = t
   const currentTabConfig = tabContext?.currentTabConfig;
   const isCollectionTab = currentTabConfig?.viewType === 'collection-track';
   const role = getEffectiveAutoSyncRole(tabContext);
+  const levelConfig = getEffectiveTabAutoSyncLevelConfig(currentTabConfig);
+  if (!levelConfig.enabled) return [];
 
-  if (includeCollectionCards && isCollectionTab && role !== 'khong-tu-dong') {
+  if (levelConfig.levels[AUTO_SYNC_LEVEL_2] && includeCollectionCards && isCollectionTab && role !== 'khong-tu-dong') {
     engineSet.add(AUTO_SYNC_ENGINE_COLLECTION_CARDS);
   }
+  if (levelConfig.levels[AUTO_SYNC_LEVEL_4] && isCollectionTab && tabContext?.activeTabLon !== 'nhan-vat') {
+    engineSet.add(AUTO_SYNC_ENGINE_OWNER_TIMELINE);
+  }
 
-  getLocalAutoSyncEnginesForRole(role).forEach((engineId) => engineSet.add(engineId));
+  if (levelConfig.levels[AUTO_SYNC_LEVEL_1]) {
+    getLocalAutoSyncEnginesForRole(role).forEach((engineId) => engineSet.add(engineId));
+  }
 
   const hasExplicitTargets =
     isCollectionTab &&
     supportsAutoSyncLinkRole(role) &&
     readExplicitAutoSyncTargetPaths(currentTabConfig).length > 0;
 
-  if (hasExplicitTargets) {
+  if (levelConfig.levels[AUTO_SYNC_LEVEL_3] && hasExplicitTargets) {
     getLinkedAutoSyncEnginesForRole(role).forEach((engineId) => engineSet.add(engineId));
   }
 
@@ -92,8 +109,12 @@ function buildEnginesForTabContext(tabContext = {}, { includeCollectionCards = t
 
 function buildCleanupEnginesForTabContext(tabContext = {}, options = {}) {
   const engineSet = new Set(buildEnginesForTabContext(tabContext, options));
+  const currentTabConfig = tabContext?.currentTabConfig;
+  const isCollectionTab = currentTabConfig?.viewType === 'collection-track';
   const role = getEffectiveAutoSyncRole(tabContext);
   getAutoSyncEnginesForRole(role).forEach((engineId) => engineSet.add(engineId));
+  if (isCollectionTab && role !== 'khong-tu-dong') engineSet.add(AUTO_SYNC_ENGINE_COLLECTION_CARDS);
+  if (isCollectionTab && tabContext?.activeTabLon !== 'nhan-vat') engineSet.add(AUTO_SYNC_ENGINE_OWNER_TIMELINE);
   return sortEngines([...engineSet]);
 }
 
@@ -218,6 +239,27 @@ export function buildAutoSyncPlanFromTabDiff({ previousTabContext = null, nextTa
   };
 }
 
+export function buildAutoSyncPlanFromTabsConfig(tabsConfig = [], { includeCollectionCards = true } = {}) {
+  const engineSet = new Set();
+  const tabs = Array.isArray(tabsConfig) ? tabsConfig : [];
+  tabs.forEach((lon) => {
+    const parentLabel = safeString(lon?.label || '');
+    (lon?.subTabs || []).forEach((nho) => {
+      if (nho?.viewType !== 'collection-track') return;
+      const tabContext = {
+        activeTabLon: lon?.id || '',
+        activeTabNho: nho?.id || '',
+        currentTabConfig: nho,
+        parentLabel,
+      };
+      buildEnginesForTabContext(tabContext, { includeCollectionCards }).forEach((engineId) => engineSet.add(engineId));
+    });
+  });
+  return {
+    engines: sortEngines([...engineSet]),
+  };
+}
+
 export function buildFullAutoSyncPlan({ includeCollectionCards = true } = {}) {
   const engines = [
     AUTO_SYNC_ENGINE_FORCE_MAP,
@@ -225,6 +267,7 @@ export function buildFullAutoSyncPlan({ includeCollectionCards = true } = {}) {
     AUTO_SYNC_ENGINE_MAIN_CHARACTER,
     AUTO_SYNC_ENGINE_CULTIVATION,
     AUTO_SYNC_ENGINE_MAP_HIERARCHY,
+    AUTO_SYNC_ENGINE_OWNER_TIMELINE,
   ];
   if (includeCollectionCards) engines.push(AUTO_SYNC_ENGINE_COLLECTION_CARDS);
   return { engines: sortEngines(engines) };
@@ -279,6 +322,11 @@ export function runNovelAutoSyncPlan(novelData, plan = {}, options = {}) {
     }
     if (engineId === AUTO_SYNC_ENGINE_MAP_HIERARCHY) {
       changed = syncAllMapHierarchyAutoBlocks(novelData) || changed;
+      return;
+    }
+    if (engineId === AUTO_SYNC_ENGINE_OWNER_TIMELINE) {
+      const ownerTimelineResult = syncAllAutoOwnerTimelineMilestonesForNovel(novelData);
+      changed = ownerTimelineResult.changed || changed;
       return;
     }
     if (engineId === AUTO_SYNC_ENGINE_COLLECTION_CARDS) {

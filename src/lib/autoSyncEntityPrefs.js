@@ -18,6 +18,7 @@ export const AUTO_SYNC_ENGINE_MAP_HIERARCHY = 'map_hierarchy';
 export const AUTO_SYNC_ENGINE_RELATION_NOTES = 'relation_notes';
 export const AUTO_SYNC_ENGINE_CULTIVATION = 'cultivation_relation';
 export const AUTO_SYNC_ENGINE_MAIN_CHARACTER = 'main_character_relation';
+export const AUTO_SYNC_ENGINE_OWNER_TIMELINE = 'owner_timeline';
 export const AUTO_SYNC_ENGINE_COLLECTION_CARDS = 'collection_cards';
 
 const ENGINE_LABELS = Object.freeze({
@@ -26,6 +27,7 @@ const ENGINE_LABELS = Object.freeze({
   [AUTO_SYNC_ENGINE_RELATION_NOTES]: 'Liên kết vị trí/liên quan',
   [AUTO_SYNC_ENGINE_CULTIVATION]: 'Tu luyện',
   [AUTO_SYNC_ENGINE_MAIN_CHARACTER]: 'Nhân vật',
+  [AUTO_SYNC_ENGINE_OWNER_TIMELINE]: 'Mốc timeline sở hữu',
   [AUTO_SYNC_ENGINE_COLLECTION_CARDS]: 'Danh sách thẻ',
 });
 
@@ -35,6 +37,7 @@ const ENGINE_DESCRIPTIONS = Object.freeze({
   [AUTO_SYNC_ENGINE_RELATION_NOTES]: 'Đồng bộ block quan hệ giữa Thế lực/Bản đồ và các mục liên quan.',
   [AUTO_SYNC_ENGINE_CULTIVATION]: 'Ghép Hệ thống Tu luyện <-> Cảnh giới Tu Vi.',
   [AUTO_SYNC_ENGINE_MAIN_CHARACTER]: 'Ghép Nhân vật chính <-> các tab nhân vật liên quan.',
+  [AUTO_SYNC_ENGINE_OWNER_TIMELINE]: 'Tự tạo mốc timeline sở hữu từ dữ kiện Chủ nhân/Người sở hữu.',
   [AUTO_SYNC_ENGINE_COLLECTION_CARDS]: 'Làm mới các thẻ Danh sách (AUTO).',
 });
 

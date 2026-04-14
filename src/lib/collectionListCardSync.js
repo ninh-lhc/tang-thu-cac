@@ -15,6 +15,7 @@ import {
 import { parseOwnerTimelineHint } from './autoOwnerMilestone.js';
 import { findEquivalentEntityByName } from './entityNameIdentity.js';
 import { isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
+import { normalizeTabAutoSyncLevelConfig } from './tabAutoSyncLevels.js';
 
 const LEGACY_AUTO_LIST_START = '<!-- AUTO_COLLECTION_LIST:START -->';
 const LEGACY_AUTO_LIST_END = '<!-- AUTO_COLLECTION_LIST:END -->';
@@ -49,6 +50,22 @@ const TIER_LEVEL_ORDER = [
 ];
 
 const TIER_SUB_ORDER = ['ha pham', 'trung pham', 'thuong pham', 'cuc pham'];
+
+const LIST_GROUP_STRATEGY_VALUES = new Set([
+  'auto',
+  'title',
+  'status',
+  'rank',
+  'location',
+  'relation',
+  'owner',
+  'text',
+]);
+
+export function normalizeListGroupStrategy(value = '') {
+  const raw = String(value || '').trim().toLowerCase();
+  return LIST_GROUP_STRATEGY_VALUES.has(raw) ? raw : 'auto';
+}
 
 function computeTierOrder(label) {
   const normalized = normalize(label);
@@ -142,6 +159,49 @@ function isCollectionTab(tabConfig) {
 
 function isListCardEntity(entity) {
   return normalize(entity?.name).startsWith('danh sach');
+}
+
+function buildListCardName(tabLabel = '') {
+  const suffix = safeString(tabLabel).trim();
+  return suffix ? `Danh Sách ${suffix}` : 'Danh Sách';
+}
+
+function hasCanonicalListCard(tabData, tabLabel = '') {
+  const entities = Array.isArray(tabData?.entities) ? tabData.entities : [];
+  const canonical = normalize(buildListCardName(tabLabel));
+  if (!canonical) return false;
+  return entities.some((entity) => normalize(entity?.name) === canonical);
+}
+
+function seedAutoLevelsForCanonicalListCard(tabConfig, tabData, tabLabel = '') {
+  if (!tabConfig || typeof tabConfig !== 'object') return false;
+  if (!hasCanonicalListCard(tabData, tabLabel)) return false;
+  if (tabConfig.autoSyncLevelConfig && typeof tabConfig.autoSyncLevelConfig === 'object') return false;
+  tabConfig.autoSyncLevelConfig = normalizeTabAutoSyncLevelConfig({
+    enabled: true,
+    levels: {
+      level_1_card: true,
+      level_2_list: true,
+      level_3_linked: false,
+      level_4_timeline: false,
+    },
+  });
+  return true;
+}
+
+function ensureListCardEntity(tabData, tabLabel = '') {
+  const entities = Array.isArray(tabData?.entities) ? tabData.entities : [];
+  if (entities.some(isListCardEntity)) return false;
+  entities.unshift({
+    id: `ent-list-${Math.random().toString(36).slice(2, 9)}`,
+    name: buildListCardName(tabLabel),
+    info: '',
+    dynamicData: {},
+    milestones: [],
+    images: [],
+  });
+  tabData.entities = entities;
+  return true;
 }
 
 function pickFirstFilled(entity, fieldIds) {
@@ -248,7 +308,28 @@ function resolveOwnerLabel(entity, ownerLookupEntities = []) {
   return safeString(matched?.entity?.name).trim() || ownerName;
 }
 
-function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentLabel = '' } = {}) {
+function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentLabel = '', tabConfig = null } = {}) {
+  const strategyOverride = normalizeListGroupStrategy(tabConfig?.autoListGroupStrategy || '');
+  if (strategyOverride !== 'auto') {
+    switch (strategyOverride) {
+      case 'title':
+        return { kind: 'text', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_title']) };
+      case 'status':
+        return { kind: 'text', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_status']) };
+      case 'rank':
+        return { kind: 'tier', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_cap', 'f_status']) };
+      case 'location':
+        return { kind: 'force-location', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri', 'f_status']) };
+      case 'relation':
+        return { kind: 'text', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_quan_he', 'f_title', 'f_status']) };
+      case 'owner':
+        return { kind: 'text', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_chu', 'f_owner', 'f_nguoi_so_huu']) };
+      case 'text':
+      default:
+        return { kind: 'text', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']) };
+    }
+  }
+
   const scope = normalize([lonId, nhoId, tabLabel, parentLabel].filter(Boolean).join(' '));
 
   if (scope.includes('di thuoc tinh')) {
@@ -457,6 +538,7 @@ export function syncAllCollectionListCards(nov) {
       if (!isCollectionTab(nho)) return;
       const tabData = nov?.data?.[lon.id]?.[nho.id];
       if (!tabData || typeof tabData !== 'object' || !Array.isArray(tabData.entities)) return;
+      changed = seedAutoLevelsForCanonicalListCard(nho, tabData, nho.label || nho.id) || changed;
       if (isAutoSyncExplicitlyOff(nho)) {
         changed = clearListCardsAutoInTab(tabData) || changed;
         return;
@@ -468,9 +550,45 @@ export function syncAllCollectionListCards(nov) {
           nhoId: nho.id,
           tabLabel: nho.label || '',
           parentLabel: lon.label || '',
+          tabConfig: nho,
         },
         ownerLookupEntities
       ) || changed;
+    });
+  });
+
+  return changed;
+}
+
+export function ensureCollectionListCardsForNovel(nov, { createMissingTabBuckets = false } = {}) {
+  if (!nov || !Array.isArray(nov?.tabsConfig)) return false;
+  if (!nov.data || typeof nov.data !== 'object') nov.data = {};
+  let changed = false;
+
+  (nov.tabsConfig || []).forEach((lon) => {
+    const lonId = safeString(lon?.id).trim();
+    if (!lonId) return;
+    if (!nov.data[lonId] || typeof nov.data[lonId] !== 'object') {
+      if (!createMissingTabBuckets) return;
+      nov.data[lonId] = {};
+      changed = true;
+    }
+    (lon?.subTabs || []).forEach((nho) => {
+      if (!isCollectionTab(nho)) return;
+      const nhoId = safeString(nho?.id).trim();
+      if (!nhoId) return;
+      if (!nov.data[lonId][nhoId] || typeof nov.data[lonId][nhoId] !== 'object') {
+        if (!createMissingTabBuckets) return;
+        nov.data[lonId][nhoId] = { overview: '', entities: [] };
+        changed = true;
+      }
+      const tabData = nov.data[lonId][nhoId];
+      if (!Array.isArray(tabData.entities)) {
+        tabData.entities = [];
+        changed = true;
+      }
+      changed = ensureListCardEntity(tabData, nho?.label || nhoId) || changed;
+      changed = seedAutoLevelsForCanonicalListCard(nho, tabData, nho?.label || nhoId) || changed;
     });
   });
 

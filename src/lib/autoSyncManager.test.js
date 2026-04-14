@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildAutoSyncPlanFromTabsConfig,
   buildAutoSyncPlanFromTabContext,
   buildAutoSyncPlanFromTabDiff,
   buildFullAutoSyncPlan,
@@ -49,7 +50,7 @@ describe('autoSyncManager', () => {
       currentTabConfig: { id: 'gia-toc', label: 'Gia Toc', viewType: 'collection-track', autoSyncRole: AUTO_SYNC_ROLE_FORCE },
       parentLabel: 'The Luc',
     });
-    expect(localPlan.engines).toEqual(['collection_cards']);
+    expect(localPlan.engines).toEqual(['owner_timeline', 'collection_cards']);
 
     const linkedPlan = buildAutoSyncPlanFromTabContext({
       activeTabLon: 'the-luc',
@@ -63,7 +64,7 @@ describe('autoSyncManager', () => {
       },
       parentLabel: 'The Luc',
     });
-    expect(linkedPlan.engines).toEqual(['force_map', 'relation_notes', 'collection_cards']);
+    expect(linkedPlan.engines).toEqual(['force_map', 'relation_notes', 'owner_timeline', 'collection_cards']);
   });
 
   it('builds a cleanup-aware plan when a tab changes from AUTO role to off', () => {
@@ -82,7 +83,7 @@ describe('autoSyncManager', () => {
       },
     });
 
-    expect(plan.engines).toEqual(['force_map', 'relation_notes', 'collection_cards']);
+    expect(plan.engines).toEqual(['force_map', 'relation_notes', 'owner_timeline', 'collection_cards']);
   });
 
   it('runs the full AUTO plan and records a compact sync log entry', () => {
@@ -100,5 +101,50 @@ describe('autoSyncManager', () => {
     expect(novel.autoSyncLog).toHaveLength(1);
     expect(novel.autoSyncLog[0].reason).toBe('test_run');
     expect(novel.autoSyncLog[0].scopeLabel).toBe('Toan bo truyen');
+  });
+
+  it('builds a lightweight plan from tabs config for load-time sync', () => {
+    const novel = createNovel();
+    const plan = buildAutoSyncPlanFromTabsConfig(novel.tabsConfig);
+    expect(plan.engines).toEqual(['map_hierarchy', 'owner_timeline', 'collection_cards']);
+  });
+
+  it('supports 4-level auto toggles per tab', () => {
+    const plan = buildAutoSyncPlanFromTabContext({
+      activeTabLon: 'the-luc',
+      activeTabNho: 'gia-toc',
+      currentTabConfig: {
+        id: 'gia-toc',
+        label: 'Gia Toc',
+        viewType: 'collection-track',
+        autoSyncRole: AUTO_SYNC_ROLE_FORCE,
+        autoSyncTargetPaths: ['ban-do::ha-gioi'],
+        autoSyncLevelConfig: {
+          enabled: true,
+          levels: {
+            level_1_card: false,
+            level_2_list: true,
+            level_3_linked: false,
+            level_4_timeline: true,
+          },
+        },
+      },
+      parentLabel: 'The Luc',
+    });
+    expect(plan.engines).toEqual(['owner_timeline', 'collection_cards']);
+
+    const disabledPlan = buildAutoSyncPlanFromTabContext({
+      activeTabLon: 'the-luc',
+      activeTabNho: 'gia-toc',
+      currentTabConfig: {
+        id: 'gia-toc',
+        label: 'Gia Toc',
+        viewType: 'collection-track',
+        autoSyncRole: AUTO_SYNC_ROLE_FORCE,
+        autoSyncLevelConfig: { enabled: false },
+      },
+      parentLabel: 'The Luc',
+    });
+    expect(disabledPlan.engines).toEqual([]);
   });
 });

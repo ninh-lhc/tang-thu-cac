@@ -1,10 +1,10 @@
-// ==========================================
+﻿// ==========================================
 // TRỤ 3: HÌNH THỂ GIAO DIỆN & MODAL
 // File: MasterComponents.jsx
 // Vai trò: UI components tĩnh + tất cả Modal
 // ==========================================
 
-import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, memo, useSyncExternalStore } from 'react';
+import React, { useState, useMemo, useEffect, useRef, memo, useSyncExternalStore, useCallback, useId } from 'react';
 import {
   Menu, Search, BookOpen, Filter, ChevronRight, ChevronDown,
   Settings, Network, Plus, Trash2, X, Save,
@@ -12,7 +12,7 @@ import {
   FolderOpen, Cloud, Upload, HardDrive, Clock, Shield, Download, UploadCloud,
   Image as ImageIcon, History, LayoutGrid, Link2, ScrollText, User,
   Undo2, Redo2, Underline, Strikethrough, Highlighter, ListOrdered, Quote,
-  TrendingUp, BarChart2, BookMarked, Users, Layers, Activity, Eye,
+  TrendingUp, BarChart2, BookMarked, Users, Layers, Activity, Eye, AlertTriangle,
   GitBranch, ZoomIn, ZoomOut, Maximize2, RefreshCw, SlidersHorizontal, Atom, Edit2, Command, Type,
 } from 'lucide-react';
 import {
@@ -21,15 +21,14 @@ import {
   WIKI_ALIAS_FIELD,
 } from './MasterEngines.js';
 import {
-  generateId, safeString, getTerms, AsyncLocalImage,
+  safeString, getTerms, AsyncLocalImage,
   handleToolbarClick,
   handleToolbarSmartWrap,
   handleToolbarInsertText,
   handleToolbarApplyColor,
   handleToolbarToggleLinePrefix,
-  applyWikiLinkWrap,
-  applyWikiLinkUnwrap,
   analyzeTextWithAI,
+  callGeminiAPIText,
   getEntityNotesToolbarState,
   resolveEntityNotesBackspace,
   resolveEntityNotesLineBreak,
@@ -41,6 +40,7 @@ import {
 import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
 import { autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
 import { MILESTONE_LABELS } from './lib/milestoneLabels.js';
+import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import {
   OWNER_HINT_INPUT_FORMAT_TEXT,
   OWNER_HINT_PREFIX_GUIDE_TEXT,
@@ -49,14 +49,22 @@ import {
 import { isCultivationRelationScope } from './lib/cultivationRelationSync.js';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
 import { isForceCollectionScope } from './lib/theLucBanDoSync.js';
-import { getForceRankOptionsForSystem, inferForceSystemLabel, FORCE_SYSTEM_PRESETS } from './lib/forceRankLadder.js';
+import { getForceRankOptionsForSystem, inferForceSystemLabel } from './lib/forceRankLadder.js';
+import {
+  getMapFieldPlaceholders,
+  getMapHierarchySeedLabels,
+  getMapTypeSeedPresets,
+  resolveMapFieldPresetFlavor,
+} from './lib/mapEntityFieldPresets.js';
 import { normalizeAsciiText, splitStatusHierarchyTokens } from './lib/statusHierarchyParser.js';
 import { mergeTabsByGenres } from './genreTabsMap.js';
+import { getGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
 import { searchNovelData, dedupeDeepSearchResults, metadataSearchHits } from './deepSearchCore.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
 import {
   ENTITY_NOTES_FONT_OPTIONS,
   ENTITY_NOTES_FONT_SIZE_OPTIONS,
+  getEntityNotesFontStack,
   getEntityNotesPrefs,
   setEntityNotesPrefs,
   subscribeEntityNotesPrefs,
@@ -67,7 +75,15 @@ import {
   ENTITY_NOTES_LABEL_VALUE_PRESETS,
   ENTITY_NOTES_SEMANTIC_TEMPLATES,
   buildEntityNotesCalloutBlock,
+  resolveEntityNotesTemplateProfile,
 } from './lib/entityNotesSemantics.js';
+import { cleanupEntityNotesText } from './lib/entityNotesTextCleanup.js';
+import {
+  applyEntityNotesDiagnosticFix,
+  collectEntityNotesDiagnostics,
+  fixAllEntityNotesDiagnostics,
+} from './lib/entityNotesDiagnostics.js';
+import { syncEntityNotesDuplicateWordFormatting } from './lib/entityNotesDuplicateWordFormatting.js';
 
 const preventToolbarFocusSteal = (e) => e.preventDefault();
 
@@ -1050,18 +1066,12 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
   );
 });
 
-const MAP_TYPE_PRESETS = [
-  'Vị diện',
-  'Giới',
-  'Tiên tinh',
-  'Tinh cầu',
-  'Đại lục',
-  'Châu',
-  'Đế quốc',
-  'Khu vực',
-  'Thành/Trấn',
-  'Địa danh',
-];
+function normalizeNovelGenresForMapPresets(novel) {
+  if (!novel || typeof novel !== 'object') return [];
+  if (Array.isArray(novel.genres)) return novel.genres.filter(Boolean);
+  if (typeof novel.genre === 'string' && novel.genre.trim()) return [novel.genre.trim()];
+  return [];
+}
 
 function dedupeCaseInsensitive(values) {
   const out = [];
@@ -1105,9 +1115,11 @@ function parseForceQuickState(dynamicData) {
   };
 }
 
-function collectMapEntityHints(activeNovelData) {
+function collectMapEntityHints(activeNovelData, mapTabConfig = null) {
   const mapNameList = [];
-  const mapTypeList = [...MAP_TYPE_PRESETS];
+  const presetFlavor = resolveMapFieldPresetFlavor(normalizeNovelGenresForMapPresets(activeNovelData));
+  let mapTypeList = [...getMapTypeSeedPresets(presetFlavor)];
+  let forceSystemList = [...getMapHierarchySeedLabels(presetFlavor)];
   const recordsByName = new Map();
   for (const lon of activeNovelData?.tabsConfig || []) {
     for (const nho of lon?.subTabs || []) {
@@ -1125,9 +1137,15 @@ function collectMapEntityHints(activeNovelData) {
       entities.forEach((entity) => {
         const name = safeString(entity?.name).trim();
         if (!name) return;
+        // List cards are meta containers, not real map entities.
+        if (normalizeAsciiText(name).startsWith('danh sach')) return;
         mapNameList.push(name);
         const mapType = safeString(entity?.dynamicData?.f_title).trim();
         if (mapType) mapTypeList.push(mapType);
+        const statusTokens = splitDotMetaTokens(entity?.dynamicData?.f_status || entity?.status);
+        if (statusTokens.length > 1) {
+          forceSystemList.push(statusTokens.slice(1).join(' · '));
+        }
         const key = normalizeAsciiText(name);
         const nextList = recordsByName.get(key) || [];
         nextList.push({
@@ -1141,9 +1159,16 @@ function collectMapEntityHints(activeNovelData) {
       });
     }
   }
+  const extraMap = mapTabConfig?.mapEntrySuggestions;
+  if (extraMap && typeof extraMap === 'object') {
+    if (Array.isArray(extraMap.types)) mapTypeList.push(...extraMap.types);
+    if (Array.isArray(extraMap.hierarchy)) forceSystemList.push(...extraMap.hierarchy);
+  }
   return {
     mapNames: dedupeCaseInsensitive(mapNameList),
     mapTypes: dedupeCaseInsensitive(mapTypeList),
+    forceSystems: dedupeCaseInsensitive(forceSystemList),
+    presetFlavor,
     recordsByName,
   };
 }
@@ -1217,15 +1242,22 @@ export const ModalEntity = ({
       }),
     [parentTabId, tabConfig]
   );
-  const mapEntityHints = useMemo(() => collectMapEntityHints(activeNovelData), [activeNovelData]);
+  const mapEntityHints = useMemo(
+    () => collectMapEntityHints(activeNovelData, isMapScope ? tabConfig : null),
+    [activeNovelData, tabConfig, isMapScope]
+  );
+  const mapFieldPlaceholders = useMemo(
+    () => getMapFieldPlaceholders(mapEntityHints.presetFlavor),
+    [mapEntityHints.presetFlavor]
+  );
   const mapNameSuggestions = mapEntityHints.mapNames;
   const mapTypeSuggestions = mapEntityHints.mapTypes;
-  const forceSystemSuggestions = useMemo(() => FORCE_SYSTEM_PRESETS.map((item) => item.label), []);
+  const forceSystemSuggestions = mapEntityHints.forceSystems;
   const statusFieldPlaceholder = isMapScope
-    ? 'Ví dụ: Giới · Tôn giới / Tiên tinh · Vương giới'
+    ? mapFieldPlaceholders.quickLine
     : 'Ví dụ: Kim Đan kỳ · Đang hoạt động · UI hệ thống... (một dòng, hiện dưới tên ở Hồ sơ)';
   const statusFieldHint = isMapScope
-    ? 'Ở thẻ bản đồ, ghi Loại địa bàn · Hệ phân cấp. Ví dụ: Hoang Thú giới = Giới · Tôn giới.'
+    ? mapFieldPlaceholders.mapProfileHint
     : 'Nhãn ô theo mục sưu tập (cảnh giới, cấp độ, loại chức năng...). Có thể để trống.';
   const [formData, setFormData] = useState({ id: null, name: '', avatar: '', rawText: '' });
   const [dynamicData, setDynamicData] = useState({});
@@ -1249,7 +1281,7 @@ export const ModalEntity = ({
     [forceQuickRank, inferredForceSystem]
   );
   const resolvedStatusFieldPlaceholder = isMapScope
-    ? 'Ví dụ: Giới · Tôn giới / Tiên tinh · Vương giới'
+    ? mapFieldPlaceholders.quickLine
     : isForceScope
       ? 'Ví dụ: Thiên Tôn cấp thế lực / Địa Vương cấp thế lực'
       : statusFieldPlaceholder;
@@ -1452,7 +1484,7 @@ export const ModalEntity = ({
                     value={mapQuickType}
                     onChange={(e) => handleMapTypeChange(e.target.value)}
                     className="w-full bg-slate-950/80 border border-sky-800/50 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-sky-500 outline-none"
-                    placeholder="Ví dụ: Giới / Tiên tinh / Đại lục"
+                    placeholder={mapFieldPlaceholders.mapType}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1463,7 +1495,7 @@ export const ModalEntity = ({
                     value={mapQuickSystem}
                     onChange={(e) => handleMapSystemChange(e.target.value)}
                     className="w-full bg-slate-950/80 border border-sky-800/50 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-sky-500 outline-none"
-                    placeholder="Ví dụ: Vương giới / Tôn giới / Đế giới"
+                    placeholder={mapFieldPlaceholders.mapHierarchy}
                   />
                 </div>
               </div>
@@ -1600,8 +1632,8 @@ export const ModalEntity = ({
                 Gợi ý điền nhanh: <code className="text-sky-200">{statusFieldPlaceholder}</code>
               </p>
               <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
-                Ví dụ: <code className="text-sky-200">Hoang Thú giới = Giới · Tôn giới</code>,{' '}
-                <code className="text-sky-200">Dạ Lang Tiên Tinh = Tiên tinh · Vương giới</code>.
+                Ví dụ: <code className="text-sky-200">{mapFieldPlaceholders.exampleA}</code>,{' '}
+                <code className="text-sky-200">{mapFieldPlaceholders.exampleB}</code>.
               </p>
               <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
                 {statusFieldHint} Các nhãn như <code className="text-sky-200">Thiên Tôn cấp thế lực</code> không ghi ở đây; chúng thuộc thẻ{' '}
@@ -1658,7 +1690,6 @@ export const ModalMilestone = ({
   initialData,
   defaultChapterWhenNew,
   tabConfig,
-  onUpdateTemplate,
   handleAvatarDrop,
   handlePickLocalImage,
   dirHandle,
@@ -1669,25 +1700,53 @@ export const ModalMilestone = ({
   entityMap = [],
   showToast,
   autoLinkToastEnabled = true,
-  onOpenAutoSyncGuide,
 }) => {
   const fieldsTemplate = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
-  const [editingFieldId, setEditingFieldId] = useState(null);
-  const [editingFieldLabel, setEditingFieldLabel] = useState('');
-  const [linkSuggestField, setLinkSuggestField] = useState(null);
+  const fieldSuggestions =
+    tabConfig?.fieldSuggestionLists && typeof tabConfig.fieldSuggestionLists === 'object'
+      ? tabConfig.fieldSuggestionLists
+      : {};
+  const milestoneHintListPrefix = useId().replace(/:/g, '');
   const terms = getTerms(parentTabId);
-  const [formData, setFormData] = useState({ id: null, chapter: '', title: '', event: '' });
-  const [snapshotData, setSnapshotData] = useState({ avatar: '', dynamicData: {} });
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [eventToolbarState, setEventToolbarState] = useState(() => getEntityNotesToolbarState('', 0, 0));
-  const [newFieldLabel, setNewFieldLabel] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
-  const EVENT_WIKI_FIELD_ID = '__milestone_event__';
   const EVENT_EDITOR_ID = 'milestone-event-editor';
-  const dynamicFieldInputRefs = useRef({});
+  const HISTORY_LIMIT = 120;
+  const notesTypo = useSyncExternalStore(subscribeEntityNotesPrefs, getEntityNotesPrefs, getEntityNotesPrefs);
+  const [formData, setFormData] = useState({ id: null, chapter: '', title: '' });
+  const [snapshotData, setSnapshotData] = useState({ avatar: '', dynamicData: {} });
+  const [eventEdit, setEventEdit] = useState(() => ({ text: '', history: [''], hIndex: 0 }));
+  const [toolbarState, setToolbarState] = useState(() => getEntityNotesToolbarState('', 0, 0));
+  const [isSplitPreview, setIsSplitPreview] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isLinkingAi, setIsLinkingAi] = useState(false);
+  const [isFormattingStructure, setIsFormattingStructure] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
   const eventTextareaRef = useRef(null);
-  const pendingWikiCaretRef = useRef(null);
+  const previewScrollRef = useRef(null);
+  const scrollSyncLockRef = useRef(false);
   const trapRefMs = useFocusTrap(isOpen);
+  const eventText = eventEdit.text;
+  const toast = useCallback((message, tone = 'success', options = null) => {
+    if (typeof showToast === 'function') showToast(message, tone, options);
+  }, [showToast]);
+  const geminiKeys = useMemo(
+    () => (Array.isArray(geminiApiKey) ? geminiApiKey.filter(Boolean) : geminiApiKey ? [geminiApiKey] : []),
+    [geminiApiKey]
+  );
+  const milestoneSubject = useMemo(() => {
+    const title = safeString(formData.title).trim();
+    if (title) return title;
+    const chapter = safeString(formData.chapter).trim();
+    return chapter ? `Mốc chương ${chapter}` : 'Sự kiện timeline';
+  }, [formData.chapter, formData.title]);
+  const templateProfile = useMemo(
+    () =>
+      resolveEntityNotesTemplateProfile({
+        tabLabel: parentLabel || tabConfig?.label || '',
+        activeTabLon: parentTabId,
+        entityName: milestoneSubject,
+      }),
+    [parentLabel, tabConfig, parentTabId, milestoneSubject]
+  );
   const patchFormData = (patch) =>
     setFormData((prev) => {
       const nextPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
@@ -1698,68 +1757,191 @@ export const ModalMilestone = ({
       const nextPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
       return { ...(prev || {}), ...nextPatch };
     });
-
-  useLayoutEffect(() => {
-    const p = pendingWikiCaretRef.current;
-    if (!p) return;
-    pendingWikiCaretRef.current = null;
-    const el = dynamicFieldInputRefs.current[p.fieldId];
-    if (el) {
-      el.focus();
-      el.setSelectionRange(p.selStart, p.selEnd);
+  const patchSnapshotField = (fieldId, value) =>
+    patchSnapshotData((prev) => ({
+      dynamicData: {
+        ...(prev?.dynamicData || {}),
+        [fieldId]: value,
+      },
+    }));
+  const prepareSnapshotPayload = useCallback(() => {
+    let wrappedCount = 0;
+    const normalizedDynamicEntries = Object.entries(snapshotData.dynamicData || {}).flatMap(([key, value]) => {
+      if (typeof value !== 'string') return [];
+      const trimmed = safeString(value).trim();
+      if (!trimmed) return [];
+      const fieldWrap = autoWrapWikiLinksByEntityMapWithCount(trimmed, entityMap);
+      wrappedCount += fieldWrap.count;
+      return [[key, fieldWrap.text]];
+    });
+    const avatar = safeString(snapshotData.avatar).trim();
+    return {
+      snapshot: {
+        avatar,
+        dynamicData: Object.fromEntries(normalizedDynamicEntries),
+      },
+      wrappedCount,
+      hasSnapshot: Boolean(avatar || normalizedDynamicEntries.length > 0),
+    };
+  }, [entityMap, snapshotData]);
+  const recordAndSetEventDraft = (next) => {
+    setEventEdit(({ text, history, hIndex }) => {
+      if (history[hIndex] === next && text === next) {
+        return { text, history, hIndex };
+      }
+      if (history[hIndex] === next) {
+        return { text: next, history, hIndex };
+      }
+      const nextHistory = history.slice(0, hIndex + 1);
+      nextHistory.push(next);
+      let nextIndex = nextHistory.length - 1;
+      if (nextHistory.length > HISTORY_LIMIT) {
+        nextHistory.shift();
+        nextIndex -= 1;
+      }
+      return { text: next, history: nextHistory, hIndex: nextIndex };
+    });
+  };
+  const undo = () => {
+    setEventEdit((state) => {
+      if (state.hIndex <= 0) return state;
+      const nextIndex = state.hIndex - 1;
+      return { ...state, text: state.history[nextIndex], hIndex: nextIndex };
+    });
+  };
+  const redo = () => {
+    setEventEdit((state) => {
+      if (state.hIndex >= state.history.length - 1) return state;
+      const nextIndex = state.hIndex + 1;
+      return { ...state, text: state.history[nextIndex], hIndex: nextIndex };
+    });
+  };
+  const syncToolbarStateFromEditor = () => {
+    const textarea = eventTextareaRef.current;
+    if (!textarea) return;
+    setToolbarState(
+      getEntityNotesToolbarState(textarea.value, textarea.selectionStart, textarea.selectionEnd)
+    );
+  };
+  const applyEditorMutation = (nextState) => {
+    const textarea = eventTextareaRef.current;
+    if (!textarea || !nextState) return;
+    textarea.value = nextState.newText;
+    textarea.focus();
+    textarea.setSelectionRange(nextState.selStart, nextState.selEnd);
+    recordAndSetEventDraft(nextState.newText);
+    setToolbarState(
+      getEntityNotesToolbarState(nextState.newText, nextState.selStart, nextState.selEnd)
+    );
+  };
+  const normalizeEventDraft = (sourceText, { announceIfChanged = false, announceIfSame = false } = {}) => {
+    const cleaned = fixAllEntityNotesDiagnostics(sourceText);
+    const changed = cleaned !== sourceText;
+    if (changed) {
+      recordAndSetEventDraft(cleaned);
+      if (announceIfChanged) {
+        toast('Đã làm sạch khoảng trắng và xuống dòng trước khi xử lý.');
+      }
+    } else if (announceIfSame) {
+      toast('Nội dung đã gọn sẵn, không cần làm sạch thêm.');
     }
-  }, [snapshotData.dynamicData, formData.event]);
+    return { text: changed ? cleaned : sourceText, changed };
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setErrorMsg('');
+    setIsAnalyzing(false);
+    setIsLinkingAi(false);
+    setIsFormattingStructure(false);
+    setIsSplitPreview(false);
+    const nextEvent = safeString(initialData?.event);
+    if (initialData) {
+      setFormData({
+        id: initialData.id,
+        chapter: safeString(initialData.chapter),
+        title: safeString(initialData.title),
+      });
+      setSnapshotData(initialData.snapshot || { avatar: '', dynamicData: {} });
+    } else {
+      const defaultChapter =
+        defaultChapterWhenNew != null && defaultChapterWhenNew !== '' ? String(defaultChapterWhenNew) : '';
+      setFormData({ id: null, chapter: defaultChapter, title: '' });
+      setSnapshotData({ avatar: '', dynamicData: {} });
+    }
+    setEventEdit({ text: nextEvent, history: [nextEvent], hIndex: 0 });
+    setToolbarState(getEntityNotesToolbarState(nextEvent, 0, 0));
+  }, [isOpen, initialData, defaultChapterWhenNew]);
 
   useEffect(() => {
     const textarea = eventTextareaRef.current;
     if (!textarea) return;
-    setEventToolbarState(
-      getEntityNotesToolbarState(textarea.value, textarea.selectionStart, textarea.selectionEnd)
+    setToolbarState(
+      getEntityNotesToolbarState(textarea.value, textarea.selectionStart ?? 0, textarea.selectionEnd ?? 0)
     );
-  }, [formData.event]);
-  
-  useEffect(() => { 
-    if(isOpen) {
-       setErrorMsg('');
-       setIsAnalyzing(false);
-       if (initialData) {
-           setFormData({
-             id: initialData.id,
-             chapter: initialData.chapter,
-             title: safeString(initialData.title),
-             event: initialData.event,
-           });
-           setSnapshotData(initialData.snapshot || { avatar: '', dynamicData: {} });
-       } else {
-           const dc = defaultChapterWhenNew != null && defaultChapterWhenNew !== '' ? String(defaultChapterWhenNew) : '';
-           setFormData({ id: null, chapter: dc, title: '', event: '' });
-           setSnapshotData({ avatar: '', dynamicData: {} });
-       }
-    } 
-  }, [isOpen, initialData, defaultChapterWhenNew]);
+  }, [eventText]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onSelectionChange = () => {
+      if (document.activeElement !== eventTextareaRef.current) return;
+      syncToolbarStateFromEditor();
+    };
+    document.addEventListener('selectionchange', onSelectionChange);
+    return () => document.removeEventListener('selectionchange', onSelectionChange);
+  }, [isOpen, eventText]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event) => {
+      if (document.activeElement !== eventTextareaRef.current) return;
+      if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+      } else if (
+        (event.ctrlKey || event.metaKey) &&
+        (event.key === 'y' || (event.key === 'z' && event.shiftKey))
+      ) {
+        event.preventDefault();
+        redo();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [isOpen, eventEdit.hIndex, eventEdit.history.length]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const focusTarget = window.requestAnimationFrame(() => {
+      const input = document.querySelector('[data-milestone-chapter-input="true"]');
+      if (input && typeof input.focus === 'function') input.focus();
+    });
+    return () => window.cancelAnimationFrame(focusTarget);
+  }, [isOpen]);
 
   useEffect(() => {
     const handler = (event) => {
-      if (!isOpen || !formData.chapter || !formData.event.trim()) return;
+      if (!isOpen || !formData.chapter || !eventText.trim()) return;
       const trapEl = trapRefMs.current;
       const activeEl = document.activeElement;
       if (event?.defaultPrevented) return;
       if (trapEl && activeEl && !trapEl.contains(activeEl)) return;
-      const eventWrap = autoWrapWikiLinksByEntityMapWithCount(safeString(formData.event), entityMap);
-      let wrappedCount = eventWrap.count;
-      const wrappedDynamic = Object.fromEntries(
-        Object.entries(snapshotData.dynamicData || {}).map(([k, v]) => {
-          if (typeof v !== 'string') return [k, v];
-          const fWrap = autoWrapWikiLinksByEntityMapWithCount(v, entityMap);
-          wrappedCount += fWrap.count;
-          return [k, fWrap.text];
-        })
+      const cleanedText = notesTypo.autoCleanOnSave ? fixAllEntityNotesDiagnostics(eventText) : eventText;
+      const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
+      const preparedText = formatSync.text;
+      const eventWrap = autoWrapWikiLinksByEntityMapWithCount(preparedText, entityMap);
+      const preparedSnapshot = prepareSnapshotPayload();
+      const nextSnapshot = preparedSnapshot.snapshot;
+      const wrappedCount = eventWrap.count + preparedSnapshot.wrappedCount;
+      onSave(
+        { ...formData, title: safeString(formData.title).trim(), event: eventWrap.text },
+        preparedSnapshot.hasSnapshot ? nextSnapshot : null
       );
-      const nextSnapshot = { ...snapshotData, dynamicData: wrappedDynamic };
-      const hasData = nextSnapshot.avatar || Object.values(nextSnapshot.dynamicData || {}).some(v => v);
-      onSave({ ...formData, title: safeString(formData.title).trim(), event: eventWrap.text }, hasData ? nextSnapshot : null);
-      if (wrappedCount > 0 && autoLinkToastEnabled && typeof showToast === 'function') {
-        showToast(`Đã tự bọc ${wrappedCount} [[liên kết]] theo thẻ có sẵn.`);
+      if (preparedText !== eventText) {
+        recordAndSetEventDraft(preparedText);
+      }
+      if (wrappedCount > 0 && autoLinkToastEnabled) {
+        toast(`Đã tự bọc ${wrappedCount} [[liên kết]] theo thẻ có sẵn.`);
       }
       onClose();
       if (event?.cancelable) event.preventDefault();
@@ -1767,118 +1949,359 @@ export const ModalMilestone = ({
     };
     window.addEventListener('ttc-save', handler);
     return () => window.removeEventListener('ttc-save', handler);
-  }, [isOpen, formData, snapshotData, onSave, onClose, entityMap, showToast, autoLinkToastEnabled, trapRefMs]);
+  }, [
+    isOpen,
+    formData,
+    snapshotData,
+    eventText,
+    onSave,
+    onClose,
+    entityMap,
+    toast,
+    autoLinkToastEnabled,
+    trapRefMs,
+    notesTypo.autoCleanOnSave,
+    prepareSnapshotPayload,
+  ]);
 
-  const handleAI = async () => {
-     const keys = Array.isArray(geminiApiKey) ? geminiApiKey : (geminiApiKey ? [geminiApiKey] : []);
-     if (keys.length === 0) { setErrorMsg("Vui lòng thiết lập API Key trong phần Cài Đặt để dùng tính năng AI."); return; }
-     if (!formData.event.trim()) return;
-     const { wasTruncated } = truncateForAI(formData.event);
-     setIsAnalyzing(true); setErrorMsg(wasTruncated ? "Đoạn quá dài — AI chỉ xử lý ~12k ký tự đầu." : '');
-     try {
-         const result = await analyzeTextWithAI(formData.event, fieldsTemplate, keys, geminiMode);
-         if (result) {
-             const newDyn = { ...snapshotData.dynamicData };
-             fieldsTemplate.forEach(f => { if (result[f.id]) newDyn[f.id] = safeString(result[f.id]); });
-             patchSnapshotData({ avatar: safeString(result.avatar) || snapshotData.avatar, dynamicData: newDyn });
-         }
-         const linkRes = await suggestWikiLinkSpotsWithAI(formData.event, keys, geminiMode);
-         const spots = Array.isArray(linkRes?.linkSpots) ? linkRes.linkSpots : [];
-         if (spots.length > 0) {
-           setFormData((p) => {
-             const current = safeString(p.event);
-             const next = applyWikiLinkSpots(current, spots);
-             return next === current ? p : { ...p, event: next };
-           });
-         }
-     } catch (e) { setErrorMsg(mapGeminiErrorToUserMessage(e)); } finally { setIsAnalyzing(false); }
+  const formatDiagnostics = useMemo(() => collectEntityNotesDiagnostics(eventText), [eventText]);
+  const fixableDiagnostics = useMemo(
+    () => formatDiagnostics.filter((item) => item.fixable),
+    [formatDiagnostics]
+  );
+  const undoDisabled = eventEdit.hIndex <= 0;
+  const redoDisabled = eventEdit.hIndex >= eventEdit.history.length - 1;
+  const resolveLineStartFromLineNumber = (lineNumber) => {
+    const text = safeString(eventTextareaRef.current?.value ?? eventText);
+    if (!Number.isFinite(lineNumber) || lineNumber <= 1) return 0;
+    let cursor = 0;
+    let line = 1;
+    while (line < lineNumber && cursor < text.length) {
+      const nextBreak = text.indexOf('\n', cursor);
+      if (nextBreak === -1) return text.length;
+      cursor = nextBreak + 1;
+      line += 1;
+    }
+    return cursor;
   };
-
-  const handleAddField = () => {
-     if (!newFieldLabel.trim()) return;
-     const newField = { id: generateId('f'), label: newFieldLabel.trim() };
-     onUpdateTemplate([...fieldsTemplate, newField]);
-     setNewFieldLabel('');
+  const focusEditorRange = (selStart, selEnd = selStart) => {
+    const textarea = eventTextareaRef.current;
+    if (!textarea) return;
+    const start = Math.max(0, Math.min(selStart, textarea.value.length));
+    const end = Math.max(start, Math.min(selEnd, textarea.value.length));
+    textarea.focus();
+    textarea.setSelectionRange(start, end);
+    const before = textarea.value.slice(0, start);
+    const lineIndex = Math.max(0, before.split('\n').length - 1);
+    const totalLines = Math.max(1, textarea.value.split('\n').length - 1);
+    const maxScroll = Math.max(0, textarea.scrollHeight - textarea.clientHeight);
+    textarea.scrollTop = totalLines > 0 ? (lineIndex / totalLines) * maxScroll : 0;
+    syncToolbarStateFromEditor();
   };
-
-  const syncEventToolbarStateFromEditor = () => {
-     const textarea = eventTextareaRef.current;
-     if (!textarea) return;
-     setEventToolbarState(
-       getEntityNotesToolbarState(textarea.value, textarea.selectionStart, textarea.selectionEnd)
-     );
+  const jumpToEditorLine = (lineNumber) => {
+    const start = resolveLineStartFromLineNumber(lineNumber);
+    const text = safeString(eventTextareaRef.current?.value ?? eventText);
+    const nextBreak = text.indexOf('\n', start);
+    const end = nextBreak === -1 ? text.length : nextBreak;
+    focusEditorRange(start, end);
   };
-
-  const applyEventEditorMutation = (nextState) => {
-     const textarea = eventTextareaRef.current;
-     if (!textarea || !nextState) return;
-     textarea.value = nextState.newText;
-     textarea.focus();
-     textarea.setSelectionRange(nextState.selStart, nextState.selEnd);
-     patchFormData({ event: nextState.newText });
-     setEventToolbarState(
-       getEntityNotesToolbarState(nextState.newText, nextState.selStart, nextState.selEnd)
-     );
+  const syncScrollRatio = (source, target) => {
+    if (!source || !target) return;
+    const sourceMax = Math.max(1, source.scrollHeight - source.clientHeight);
+    const targetMax = Math.max(0, target.scrollHeight - target.clientHeight);
+    target.scrollTop = (source.scrollTop / sourceMax) * targetMax;
   };
-
+  const handleEditorScroll = (event) => {
+    if (!isSplitPreview || scrollSyncLockRef.current) return;
+    const previewEl = previewScrollRef.current;
+    if (!previewEl) return;
+    scrollSyncLockRef.current = true;
+    syncScrollRatio(event.currentTarget, previewEl);
+    requestAnimationFrame(() => {
+      scrollSyncLockRef.current = false;
+    });
+  };
+  const handlePreviewScroll = (event) => {
+    if (!isSplitPreview || scrollSyncLockRef.current) return;
+    const textarea = eventTextareaRef.current;
+    if (!textarea) return;
+    scrollSyncLockRef.current = true;
+    syncScrollRatio(event.currentTarget, textarea);
+    requestAnimationFrame(() => {
+      scrollSyncLockRef.current = false;
+    });
+  };
+  const applySingleDiagnosticFix = (diagnostic) => {
+    if (!diagnostic?.fixable) return;
+    const patched = applyEntityNotesDiagnosticFix(eventText, diagnostic);
+    if (patched !== eventText) {
+      recordAndSetEventDraft(patched);
+      toast(`Đã sửa: ${diagnostic.label}`);
+    }
+  };
+  const fixAllDiagnostics = () => {
+    const patched = fixAllEntityNotesDiagnostics(eventText);
+    if (patched === eventText) {
+      toast('Không còn lỗi nhẹ nào để sửa thêm.');
+      return;
+    }
+    recordAndSetEventDraft(patched);
+    toast('Đã sửa các lỗi định dạng nhẹ và chuẩn hoá lại ghi chú.');
+  };
+  const handleEditorPaste = (event) => {
+    const clipboardText = event.clipboardData?.getData?.('text/plain') || '';
+    if (!clipboardText || event.clipboardData?.files?.length) return;
+    const textarea = event.currentTarget;
+    const cleaned = cleanupEntityNotesText(clipboardText);
+    if (!cleaned) {
+      event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    const nextText =
+      textarea.value.slice(0, textarea.selectionStart) +
+      cleaned +
+      textarea.value.slice(textarea.selectionEnd);
+    const caret = textarea.selectionStart + cleaned.length;
+    applyEditorMutation({ newText: nextText, selStart: caret, selEnd: caret });
+  };
   const handleEventEditorKeyDown = (event) => {
-     const textarea = event.currentTarget;
-     if (event.key === 'Tab') {
-       const nextState = resolveEntityNotesTabIndent(
-         textarea.value,
-         textarea.selectionStart,
-         textarea.selectionEnd,
-         { outdent: event.shiftKey }
-       );
-       if (nextState) {
-         event.preventDefault();
-         applyEventEditorMutation(nextState);
-       }
-       return;
-     }
-     if (event.key === 'Enter' && !event.shiftKey) {
-       const nextState = resolveEntityNotesLineBreak(
-         textarea.value,
-         textarea.selectionStart,
-         textarea.selectionEnd
-       );
-       if (nextState) {
-         event.preventDefault();
-         applyEventEditorMutation(nextState);
-       }
-       return;
-     }
-     if (event.key === 'Backspace') {
-       const nextState = resolveEntityNotesBackspace(
-         textarea.value,
-         textarea.selectionStart,
-         textarea.selectionEnd
-       );
-       if (nextState) {
-         event.preventDefault();
-         applyEventEditorMutation(nextState);
-       }
-     }
+    const textarea = event.currentTarget;
+    if (event.key === 'Tab') {
+      const nextState = resolveEntityNotesTabIndent(
+        textarea.value,
+        textarea.selectionStart,
+        textarea.selectionEnd,
+        { outdent: event.shiftKey }
+      );
+      if (nextState) {
+        event.preventDefault();
+        applyEditorMutation(nextState);
+      }
+      return;
+    }
+    if (event.key === 'Enter' && !event.shiftKey) {
+      const nextState = resolveEntityNotesLineBreak(
+        textarea.value,
+        textarea.selectionStart,
+        textarea.selectionEnd
+      );
+      if (nextState) {
+        event.preventDefault();
+        applyEditorMutation(nextState);
+      }
+      return;
+    }
+    if (event.key === 'Backspace') {
+      const nextState = resolveEntityNotesBackspace(
+        textarea.value,
+        textarea.selectionStart,
+        textarea.selectionEnd
+      );
+      if (nextState) {
+        event.preventDefault();
+        applyEditorMutation(nextState);
+      }
+    }
   };
+  const handleAnalyzeMilestone = async () => {
+    if (geminiKeys.length === 0) {
+      setErrorMsg('Vui lòng thiết lập API Key trong phần Cài Đặt để dùng tính năng AI.');
+      return;
+    }
+    if (!eventText.trim()) return;
+    const normalized = normalizeEventDraft(eventText).text;
+    const { wasTruncated } = truncateForAI(normalized);
+    setIsAnalyzing(true);
+    setErrorMsg(wasTruncated ? 'Đoạn quá dài - AI chỉ xử lý khoảng 12k ký tự đầu.' : '');
+    try {
+      const result = await analyzeTextWithAI(normalized, fieldsTemplate, geminiKeys, geminiMode);
+      if (result) {
+        const newDyn = { ...(snapshotData.dynamicData || {}) };
+        fieldsTemplate.forEach((field) => {
+          if (result[field.id]) newDyn[field.id] = safeString(result[field.id]);
+        });
+        patchSnapshotData({
+          avatar: safeString(result.avatar).trim() || snapshotData.avatar,
+          dynamicData: newDyn,
+        });
+        toast('AI đã đọc mốc và cập nhật hồ sơ thời kỳ ẩn cho timeline.');
+      }
+    } catch (error) {
+      setErrorMsg(mapGeminiErrorToUserMessage(error));
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+  const handleLinkWithAi = async () => {
+    if (!eventText.trim()) {
+      toast('Chưa có nội dung để AI tạo link.', 'warning');
+      return;
+    }
+    const cleanedEarly = normalizeEventDraft(eventText);
+    const workingText = cleanedEarly.text;
+    const localWrapEarly = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap);
+    if (localWrapEarly.count > 0 && localWrapEarly.text !== workingText) {
+      recordAndSetEventDraft(localWrapEarly.text);
+      toast(`Đã tự bọc ${localWrapEarly.count} [[liên kết]] theo thẻ có sẵn. Bấm lại AI nếu muốn gợi ý thêm cho khó.`);
+      return;
+    }
+    if (geminiKeys.length === 0) {
+      toast('Vui lòng thiết lập API Key để dùng AI.', 'warning');
+      return;
+    }
+    const { wasTruncated } = truncateForAI(workingText);
+    if (wasTruncated) {
+      toast('Đoạn quá dài - chỉ gửi khoảng 12.000 ký tự đầu cho AI.', 'warning');
+    }
+    setIsLinkingAi(true);
+    try {
+      const res = await suggestWikiLinkSpotsWithAI(workingText, geminiKeys, geminiMode);
+      const spots = Array.isArray(res?.linkSpots) ? res.linkSpots : [];
+      const aiNext = applyWikiLinkSpots(workingText, spots);
+      const fallbackWrap = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap);
+      const nextText = aiNext !== workingText ? aiNext : fallbackWrap.text;
+      if (nextText !== workingText) {
+        recordAndSetEventDraft(nextText);
+        if (aiNext !== workingText) {
+          toast('Đã thêm [[liên kết]] bằng AI, giữ nguyên nội dung bạn đã nhập.');
+        } else {
+          toast('AI chưa định vị được spot rõ ràng, đã tự bọc link theo danh sách thẻ có sẵn.');
+        }
+      } else if (spots.length > 0) {
+        toast('AI gợi ý link nhưng không khớp văn bản hiện tại, thử lại sau khi rút gọn đoạn.', 'warning');
+      } else {
+        toast('Không có chỗ mới cần bọc link, hoặc nội dung đã có [[...]].');
+      }
+    } catch (error) {
+      const msg = mapGeminiErrorToUserMessage(error);
+      const rateLimited = /429|503|rate_limit|qua tai api/i.test(String(error?.message || ''));
+      const fallbackWrap = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap);
+      if (rateLimited && fallbackWrap.text !== workingText) {
+        recordAndSetEventDraft(fallbackWrap.text);
+        toast('AI đang quá tải (429/503), đã tự bọc link theo danh sách thẻ có sẵn.', 'warning');
+      } else {
+        toast(msg, rateLimited ? 'warning' : 'error');
+      }
+    } finally {
+      setIsLinkingAi(false);
+    }
+  };
+  const formatNotesStructureWithAI = async () => {
+    if (!eventText.trim()) {
+      toast('Chưa có nội dung để AI dàn khung.', 'warning');
+      return;
+    }
+    if (geminiKeys.length === 0) {
+      toast('Vui lòng thiết lập API Key để dùng AI dàn khung.', 'warning');
+      return;
+    }
+    const normalized = normalizeEventDraft(eventText).text;
+    const { text: truncated } = truncateForAI(normalized, geminiMode === 'quick' ? 7000 : undefined);
+    const payload = {
+      contents: [
+        {
+          parts: [
+            {
+              text: `Chủ thể ghi chú: ${milestoneSubject}\n\nVăn bản gốc:\n${truncated}`,
+            },
+          ],
+        },
+      ],
+      systemInstruction: {
+        parts: [
+          {
+            text: `Bạn là trợ lý chỉ chuyên DÀN LẠI CẤU TRÚC ghi chép chi tiết.
+
+Mục tiêu:
+- Giữ nguyên ý nghĩa, thuật ngữ, tên riêng và dữ kiện đã có.
+- Không bịa thêm thông tin mới.
+- Không xoá ý quan trọng.
+- Chỉ sắp xếp lại thành markdown thuần dễ đọc hơn: tiêu đề, tiểu mục, bullet, số thứ tự, callout, đoạn mở đầu, tổng kết.
+- Giữ nguyên wiki link [[...]] và thẻ [color=...] nếu đã có.
+- Nếu nội dung đã ổn, vẫn trả lại văn bản nhưng chỉnh nhẹ khoảng trắng, xuống dòng, thứ bậc mục.
+
+Yêu cầu trả về:
+- Chỉ trả về một khối văn bản markdown hoàn chỉnh.
+- Không giải thích, không mở đầu, không dùng code fence.`,
+          },
+        ],
+      },
+    };
+    setIsFormattingStructure(true);
+    try {
+      const raw = await callGeminiAPIText(payload, geminiKeys, { timeoutMs: 45000 });
+      const formatted = safeString(raw)
+        .replace(/^```(?:markdown|md)?\s*/i, '')
+        .replace(/\s*```$/, '')
+        .trim();
+      if (!formatted) {
+        toast('AI chưa trả về bản dàn khung hợp lệ.', 'warning');
+        return;
+      }
+      if (formatted.length < normalized.length * 0.45) {
+        toast('AI trả về bản quá ngắn nên mình chưa áp dụng để tránh mất ý.', 'warning');
+        return;
+      }
+      const finalText = fixAllEntityNotesDiagnostics(formatted);
+      if (finalText === eventText) {
+        toast('AI chưa đề xuất bố cục mới rõ ràng.');
+        return;
+      }
+      recordAndSetEventDraft(finalText);
+      toast('AI đã dàn lại bố cục ghi chú sự kiện.');
+    } catch (error) {
+      toast(mapGeminiErrorToUserMessage(error), 'warning');
+    } finally {
+      setIsFormattingStructure(false);
+    }
+  };
+  const handleInsertImageByUrl = () => {
+    const rawUrl = window.prompt('Dán URL ảnh muốn chèn vào ghi chép sự kiện:', '');
+    const imageUrl = safeString(rawUrl).trim();
+    if (!imageUrl) return;
+    if (/^javascript:/i.test(imageUrl)) {
+      toast('URL ảnh không hợp lệ.', 'warning');
+      return;
+    }
+    handleToolbarInsertText(
+      `![${safeString(formData.title).trim() || 'Minh hoạ sự kiện'}](${imageUrl})`,
+      EVENT_EDITOR_ID,
+      (nextText) => recordAndSetEventDraft(nextText)
+    );
+  };
+  const handlePickMilestoneEditorImage = (setAvatarCallback, editorId = null) =>
+    handlePickLocalImage?.(setAvatarCallback, editorId, 'milestone-event-inline-image');
 
   const handleSave = () => {
-     const eventWrap = autoWrapWikiLinksByEntityMapWithCount(safeString(formData.event), entityMap);
-     let wrappedCount = eventWrap.count;
-     const wrappedDynamic = Object.fromEntries(
-       Object.entries(snapshotData.dynamicData || {}).map(([k, v]) => {
-         if (typeof v !== 'string') return [k, v];
-         const fWrap = autoWrapWikiLinksByEntityMapWithCount(v, entityMap);
-         wrappedCount += fWrap.count;
-         return [k, fWrap.text];
-       })
-     );
-     const nextSnapshot = { ...snapshotData, dynamicData: wrappedDynamic };
-     const hasData = nextSnapshot.avatar || Object.values(nextSnapshot.dynamicData).some(v => v);
-     onSave({ ...formData, title: safeString(formData.title).trim(), event: eventWrap.text }, hasData ? nextSnapshot : null);
-     if (wrappedCount > 0 && autoLinkToastEnabled && typeof showToast === 'function') {
-       showToast(`Đã tự bọc ${wrappedCount} [[liên kết]] theo thẻ có sẵn.`);
-     }
-     onClose();
+    const cleanedText = notesTypo.autoCleanOnSave ? fixAllEntityNotesDiagnostics(eventText) : eventText;
+    const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
+    const preparedText = formatSync.text;
+    const remainingWarnings = collectEntityNotesDiagnostics(preparedText);
+    const eventWrap = autoWrapWikiLinksByEntityMapWithCount(preparedText, entityMap);
+    const preparedSnapshot = prepareSnapshotPayload();
+    const nextSnapshot = preparedSnapshot.snapshot;
+    const wrappedCount = eventWrap.count + preparedSnapshot.wrappedCount;
+    if (preparedText !== eventText) {
+      recordAndSetEventDraft(preparedText);
+      if (cleanedText !== eventText && formatSync.propagatedCount > 0) {
+        toast('Đã tự chuẩn hoá ghi chú và đồng bộ định dạng cho các cụm trùng trước khi lưu.');
+      } else if (formatSync.propagatedCount > 0) {
+        toast(`Đã đồng bộ định dạng cho ${formatSync.propagatedCount} cụm trùng trước khi lưu.`);
+      } else {
+        toast('Đã tự chuẩn hoá ghi chú trước khi lưu.');
+      }
+    } else if (remainingWarnings.length > 0) {
+      toast(`Đã lưu nhưng vẫn còn ${remainingWarnings.length} cảnh báo định dạng nhẹ.`, 'warning');
+    }
+    if (wrappedCount > 0 && autoLinkToastEnabled) {
+      toast(`Đã tự bọc ${wrappedCount} [[liên kết]] theo thẻ có sẵn.`);
+    }
+    onSave(
+      { ...formData, title: safeString(formData.title).trim(), event: eventWrap.text },
+      preparedSnapshot.hasSnapshot ? nextSnapshot : null
+    );
+    onClose();
   };
 
   if (!isOpen) return null;
@@ -1889,221 +2312,435 @@ export const ModalMilestone = ({
       aria-modal="true"
       aria-label="Ghi chép mệnh số"
     >
-       <div data-testid="modal-milestone-root" ref={trapRefMs} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-6xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col md:flex-row h-[85vh]">
-          <div className="w-full md:w-1/2 bg-slate-950 border-r border-slate-800 p-6 flex flex-col relative">
-             <h2 className="text-xl font-heading font-bold text-amber-500 mb-6 flex items-center gap-2"><Clock size={20}/> Ghi Chép Mệnh Số</h2>
-             <div className="flex-1 flex flex-col space-y-4">
-                <div>
-                   <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-widest">Mốc Chương *</label>
-                   <input type="number" autoFocus value={safeString(formData.chapter)} onChange={e=>patchFormData({ chapter: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-amber-300 font-bold focus:border-amber-500 outline-none" placeholder="VD: 150" />
+      <div
+        data-testid="modal-milestone-root"
+        ref={trapRefMs}
+        className="flex h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-[32px] border border-amber-700/50 bg-slate-950 shadow-[0_0_50px_rgba(217,119,6,0.16)]"
+      >
+        <div className="border-b border-slate-800 px-6 py-5 md:px-8">
+          <h2 className="flex items-center gap-2 text-xl font-bold font-heading text-amber-400">
+            <Clock size={20} /> Ghi Chép Mệnh Số
+          </h2>
+          <p className="mt-1 text-sm font-serif text-slate-400">
+            Form timeline mới tập trung vào ảnh, mốc chương, tên sự kiện và khung ghi chép sự kiện.
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-6 md:px-8">
+          <div className="space-y-6">
+            <section className="rounded-[28px] border border-slate-800/80 bg-slate-900/60 p-5 shadow-[inset_0_1px_0_rgba(148,163,184,0.05)]">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start">
+                <div
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => handleAvatarDrop && handleAvatarDrop(event, (url) => patchSnapshotData({ avatar: url }))}
+                  onClick={() =>
+                    handlePickLocalImage &&
+                    handlePickLocalImage((url) => patchSnapshotData({ avatar: url }), null, 'avatar-snapshot')
+                  }
+                  className="group flex h-28 w-28 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-[24px] border border-dashed border-slate-700 bg-slate-950 transition-colors hover:border-amber-500"
+                  title="Nhấp hoặc kéo thả ảnh vào đây"
+                >
+                  {snapshotData.avatar ? (
+                    safeString(snapshotData.avatar).startsWith('local_image:') ? (
+                      <AsyncLocalImage
+                        filename={snapshotData.avatar.replace('local_image:', '')}
+                        alt="ảnh timeline"
+                        dirHandle={dirHandle}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <img
+                        src={snapshotData.avatar}
+                        className="h-full w-full object-cover"
+                        alt="ảnh timeline"
+                        onError={(event) => {
+                          event.target.onerror = null;
+                          event.target.src = FALLBACK_IMG;
+                        }}
+                      />
+                    )
+                  ) : (
+                    <ImageIcon className="text-slate-600 transition-colors group-hover:text-amber-400" />
+                  )}
                 </div>
-                <div>
-                   <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-widest">TÃªn sá»± kiá»‡n</label>
-                   <input
-                     value={safeString(formData.title)}
-                     onChange={e=>patchFormData({ title: e.target.value })}
-                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-100 font-serif focus:border-amber-500 outline-none"
-                     placeholder="VD: Káº¿t Ä‘an thÃ nh cÃ´ng"
-                   />
-                   <p className="mt-1 text-[11px] text-slate-500 font-serif">DÃ²ng ngáº¯n Ä‘á»ƒ timeline dá»… quÃ©t; cÃ³ thá»ƒ bá» trá»‘ng náº¿u chá»‰ muá»‘n ghi chi tiáº¿t.</p>
-                </div>
-                {parentTabId === 'nhan-vat' && (
-                  <div className="rounded-lg border border-cyan-800/50 bg-cyan-950/20 px-3 py-2">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-300 mb-1">Bộ ký tự nhãn timeline (Nhân vật)</p>
-                    <p className="text-[11px] text-slate-300 leading-relaxed font-serif">
-                      {MILESTONE_LABELS.map((x) => `${x.bracketToken} ${x.title}`).join(' · ')}
-                    </p>
+                <div className="flex-1 space-y-3">
+                  <div>
+                    <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.2em] text-emerald-400">
+                      <span className="inline-flex items-center gap-1">
+                        <Upload size={12} /> {terms.image} tại mốc này
+                      </span>
+                    </label>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <input
+                        value={safeString(snapshotData.avatar)}
+                        onChange={(event) => patchSnapshotData({ avatar: event.target.value })}
+                        className="w-full flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-200 outline-none transition-colors focus:border-amber-500"
+                        placeholder="Dán URL ảnh hoặc chọn file"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handlePickLocalImage &&
+                          handlePickLocalImage((url) => patchSnapshotData({ avatar: url }), null, 'avatar-snapshot')
+                        }
+                        className="rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-bold text-slate-200 transition-colors hover:border-amber-700/50 hover:bg-slate-700"
+                      >
+                        Chọn File
+                      </button>
+                    </div>
                   </div>
-                )}
-                <div className="flex flex-col flex-1 min-h-0">
-                   <div className="mb-1">
-                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">{terms.msEvent}</label>
-                     <p className="mt-1 text-[11px] text-slate-500 font-serif">Phần này dùng khung soạn rộng giống ghi chép chi tiết; tiêu đề để ngắn gọn, còn diễn biến viết ở đây.</p>
-                   </div>
-                   <div className="flex flex-1 min-h-[260px] flex-col rounded-[28px] border border-slate-800/80 bg-slate-950/45 px-4 py-4 shadow-[inset_0_1px_0_rgba(148,163,184,0.08)]">
-                     <MarkdownToolbar
-                       editorId={EVENT_EDITOR_ID}
-                       variant="standard"
-                       onInsertImage={(editorId) =>
-                         handlePickLocalImage?.(null, editorId, 'milestone-event-inline-image')
-                       }
-                       onEditorContentChange={(nextText) => {
-                         patchFormData({ event: nextText });
-                       }}
-                       entityNotesToolbarState={eventToolbarState}
-                     />
-                     <div className="flex min-h-0 flex-1 rounded-[24px] border border-slate-800 bg-slate-950/70 px-5 py-4">
-                       <textarea
-                         id={EVENT_EDITOR_ID}
-                         ref={(el) => {
-                           eventTextareaRef.current = el;
-                           if (el) dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID] = el;
-                           else delete dynamicFieldInputRefs.current[EVENT_WIKI_FIELD_ID];
-                         }}
-                         value={safeString(formData.event)}
-                         onChange={(e) => {
-                           patchFormData({ event: e.target.value });
-                           setEventToolbarState(
-                             getEntityNotesToolbarState(e.target.value, e.target.selectionStart, e.target.selectionEnd)
-                           );
-                         }}
-                         className="w-full min-h-[260px] flex-1 resize-none bg-transparent text-[15px] leading-loose text-slate-200 font-serif outline-none custom-scrollbar"
-                         placeholder="Nhập chi tiết sự kiện… Dùng [[Tên]] để liên kết wiki, xuống dòng/bullet như khung ghi chép chi tiết."
-                         spellCheck
-                         onKeyDown={handleEventEditorKeyDown}
-                         onKeyUp={syncEventToolbarStateFromEditor}
-                         onClick={syncEventToolbarStateFromEditor}
-                         onSelect={syncEventToolbarStateFromEditor}
-                       />
-                     </div>
-                   </div>
-                </div>
-                <button onClick={handleAI} disabled={isAnalyzing || !formData.event.trim()} className="w-full py-3 bg-gradient-to-r from-emerald-800 to-emerald-600 hover:from-emerald-700 text-white rounded-xl font-bold flex items-center justify-center gap-2">
-                   {isAnalyzing ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Sparkles size={18} />}
-                   {isAnalyzing ? 'Đang dung hợp...' : 'Nhờ AI Bọc Link & Điền Form'}
-                </button>
-                {errorMsg && <p className="text-rose-400 text-xs mt-1 text-center">{safeString(errorMsg)}</p>}
-             </div>
-          </div>
-          <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col bg-slate-900 relative">
-             <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
-                <div>
-                   <h2 className="text-2xl font-heading font-bold text-slate-100">Trạng Thái Tại Mốc Này</h2>
-                   <p className="text-xs text-slate-400 font-serif mt-1 italic">{terms.snapshotHint}</p>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {onOpenAutoSyncGuide && (
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={onOpenAutoSyncGuide}
-                      className="inline-flex items-center gap-2 rounded-xl border border-cyan-800/40 bg-cyan-950/20 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-cyan-300 transition-colors hover:border-cyan-500/60 hover:bg-cyan-900/30 hover:text-cyan-200"
+                      onClick={handleAnalyzeMilestone}
+                      disabled={isAnalyzing || !eventText.trim()}
+                      className="inline-flex items-center gap-2 rounded-full border border-emerald-700/40 bg-emerald-950/30 px-4 py-2 text-[11px] font-bold text-emerald-200 transition-colors hover:bg-emerald-900/40 disabled:opacity-50"
+                      title="AI đọc nội dung mốc để gợi ý hồ sơ thời kỳ ẩn cho timeline"
                     >
-                      <BookOpen size={14} /> Quy chuẩn
+                      {isAnalyzing ? (
+                        <div className="h-4 w-4 rounded-full border-2 border-emerald-100 border-t-transparent animate-spin" />
+                      ) : (
+                        <Sparkles size={13} />
+                      )}
+                      {isAnalyzing ? 'Đang đọc mốc...' : 'AI Đọc Mốc'}
                     </button>
+                    <p className="self-center text-[11px] font-serif text-slate-500">
+                      Khối này giữ lại phần thêm hình ảnh, kéo thả hoặc chọn file đều dùng được.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase tracking-widest text-slate-400">
+                  Mốc Chương *
+                </label>
+                <input
+                  data-milestone-chapter-input="true"
+                  type="number"
+                  value={safeString(formData.chapter)}
+                  onChange={(event) => patchFormData({ chapter: event.target.value })}
+                  className="w-full rounded-[22px] border border-slate-700 bg-slate-900 px-4 py-3 text-base font-bold text-amber-300 outline-none transition-colors focus:border-amber-500"
+                  placeholder="VD: 150"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase tracking-widest text-slate-400">
+                  Tên sự kiện
+                </label>
+                <input
+                  value={safeString(formData.title)}
+                  onChange={(event) => patchFormData({ title: event.target.value })}
+                  className="w-full rounded-[22px] border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 font-serif outline-none transition-colors focus:border-amber-500"
+                  placeholder="VD: Kết đan thành công"
+                />
+              </div>
+
+              {parentTabId === 'nhan-vat' && (
+                <div className="rounded-2xl border border-cyan-800/50 bg-cyan-950/20 px-4 py-3">
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-cyan-300">
+                    Bộ ký tự nhãn timeline (Nhân vật)
+                  </p>
+                  <p className="text-[11px] font-serif leading-relaxed text-slate-300">
+                    {MILESTONE_LABELS.map((item) => `${item.bracketToken} ${item.title}`).join(' · ')}
+                  </p>
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-[32px] border border-slate-800/80 bg-slate-900/45 p-5 shadow-[inset_0_1px_0_rgba(148,163,184,0.05)]">
+              <div className="mb-4">
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-400">
+                  Thông tin sự kiện *
+                </label>
+                <p className="mt-1 text-[11px] font-serif text-slate-500">
+                  Khung này dùng cùng giao diện, toolbar, preview và AI như phần ghi chép chi tiết.
+                </p>
+              </div>
+
+              <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => normalizeEventDraft(eventText, { announceIfChanged: true, announceIfSame: true })}
+                  className="flex items-center gap-1.5 rounded-[40px] border border-slate-700 bg-slate-800/90 px-3 py-2.5 text-[11px] font-bold text-slate-200 transition-all hover:bg-slate-700"
+                  title="Làm sạch khoảng trắng, ký tự rác và các dòng bị ngắt không hợp lý"
+                >
+                  <RefreshCw size={13} /> Làm sạch
+                </button>
+                <button
+                  type="button"
+                  disabled={isLinkingAi}
+                  onClick={handleLinkWithAi}
+                  className="flex items-center gap-2 rounded-[40px] bg-indigo-700 px-4 py-2.5 text-xs font-bold text-white shadow-md transition-all hover:bg-indigo-600 disabled:opacity-50"
+                  title="AI chỉ thêm [[liên kết]], không đổi nội dung bạn đã nhập"
+                >
+                  {isLinkingAi ? (
+                    <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                  ) : (
+                    <Link2 size={14} />
                   )}
-                  <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={20}/></button>
+                  {isLinkingAi ? 'Đang xử lý...' : 'AI Tạo Link'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isFormattingStructure}
+                  onClick={formatNotesStructureWithAI}
+                  className="flex items-center gap-2 rounded-[40px] bg-violet-700 px-4 py-2.5 text-xs font-bold text-white shadow-md transition-all hover:bg-violet-600 disabled:opacity-50"
+                  title="AI chỉ dàn lại bố cục: tiêu đề, mục, bullet, callout"
+                >
+                  {isFormattingStructure ? (
+                    <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                  ) : (
+                    <Sparkles size={14} />
+                  )}
+                  {isFormattingStructure ? 'Đang dàn khung...' : 'AI Dàn Khung'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSplitPreview((prev) => !prev)}
+                  className={`ml-auto flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
+                    isSplitPreview
+                      ? 'border-amber-700/40 bg-amber-700/30 text-amber-400'
+                      : 'border-slate-700 bg-slate-800 text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  <Eye size={12} /> Preview
+                </button>
+              </div>
+
+              <div className="flex min-h-[420px] flex-col">
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <MarkdownToolbar
+                    editorId={EVENT_EDITOR_ID}
+                    variant="entityNotes"
+                    onInsertImage={handleInsertImageByUrl}
+                    onPickLocalImage={handlePickMilestoneEditorImage}
+                    onUndo={undo}
+                    onRedo={redo}
+                    undoDisabled={undoDisabled}
+                    redoDisabled={redoDisabled}
+                    onEditorContentChange={(nextText) => recordAndSetEventDraft(nextText)}
+                    notesFontKey={notesTypo.fontKey}
+                    notesFontSizePx={notesTypo.sizePx}
+                    onNotesFontKey={(fontKey) => setEntityNotesPrefs({ fontKey })}
+                    onNotesFontSizePx={(sizePx) => setEntityNotesPrefs({ sizePx })}
+                    entityNotesSubject={milestoneSubject}
+                    entityNotesToolbarState={toolbarState}
+                    entityNotesTemplateProfile={templateProfile}
+                    notesAutoCleanOnSave={notesTypo.autoCleanOnSave}
+                    onNotesAutoCleanOnSave={(enabled) => setEntityNotesPrefs({ autoCleanOnSave: enabled })}
+                    onAiFormatStructure={formatNotesStructureWithAI}
+                  />
                 </div>
-             </div>
-             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-5">
-                <div className="flex gap-4 mb-4">
-                   <div
-                      onDragOver={e => e.preventDefault()}
-                      onDrop={e => handleAvatarDrop && handleAvatarDrop(e, url => patchSnapshotData({ avatar: url }))}
-                      onClick={() => handlePickLocalImage && handlePickLocalImage(url => patchSnapshotData({ avatar: url }), null, 'avatar-snapshot')}
-                      className="w-16 h-16 rounded-xl bg-slate-950 border border-dashed border-slate-600 flex items-center justify-center overflow-hidden flex-shrink-0 group cursor-pointer hover:border-amber-500 transition-colors"
-                      title="Nhấp hoặc kéo thả ảnh vào đây"
-                   >
-                      {snapshotData.avatar ? (
-                         snapshotData.avatar.startsWith('local_image:') ? (
-                            <AsyncLocalImage filename={snapshotData.avatar.replace('local_image:', '')} alt="avatar" dirHandle={dirHandle} className="w-full h-full object-cover" />
-                         ) : <img src={snapshotData.avatar} className="w-full h-full object-cover" alt="avatar" onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />
-                      ) : <ImageIcon className="text-slate-600 group-hover:text-amber-500 transition-colors" />}
-                   </div>
-                   <div className="flex-1 flex flex-col justify-center">
-                      <label className="block text-[10px] font-bold text-emerald-500 mb-1 uppercase tracking-widest flex items-center justify-between">
-                         <span className="flex items-center gap-1"><Upload size={12}/> {terms.image} lúc này</span>
-                      </label>
-                      <div className="flex gap-2">
-                         <input value={safeString(snapshotData.avatar)} onChange={e=>patchSnapshotData({ avatar: e.target.value })} className="flex-1 w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:border-amber-500 outline-none" />
-                         <button onClick={() => handlePickLocalImage && handlePickLocalImage(url => patchSnapshotData({ avatar: url }), null, 'avatar-snapshot')} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 text-xs font-bold">Chọn File</button>
+
+                {formatDiagnostics.length > 0 && (
+                  <div className="mb-3 rounded-2xl border border-amber-700/40 bg-amber-950/20 px-4 py-3 text-[12px] text-amber-100">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 font-semibold text-amber-300">
+                        <AlertTriangle size={14} />
+                        Cảnh báo định dạng
                       </div>
-                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4 pt-2">
-                   {fieldsTemplate.map(field => (
-                      <div key={field.id} className="group/msfield">
-                         <div className="flex items-center gap-1 mb-1">
-                           {editingFieldId === field.id ? (
-                             <div className="flex items-center gap-1 flex-1">
-                               <input autoFocus value={editingFieldLabel} onChange={e => setEditingFieldLabel(e.target.value)}
-                                 onKeyDown={e => { if(e.key==='Enter' && editingFieldLabel.trim()) { onUpdateTemplate(fieldsTemplate.map(f => f.id===field.id ? {...f, label: editingFieldLabel.trim()} : f)); setEditingFieldId(null); } if(e.key==='Escape') setEditingFieldId(null); }}
-                                 className="flex-1 bg-slate-950 border border-amber-600/60 rounded px-2 py-0.5 text-[10px] font-bold text-amber-300 uppercase outline-none" />
-                               <button onClick={() => { if(editingFieldLabel.trim()) { onUpdateTemplate(fieldsTemplate.map(f => f.id===field.id ? {...f, label: editingFieldLabel.trim()} : f)); setEditingFieldId(null); }}} className="p-0.5 text-emerald-400"><Check size={12}/></button>
-                               <button onClick={() => setEditingFieldId(null)} className="p-0.5 text-slate-500"><X size={12}/></button>
-                             </div>
-                           ) : (
-                             <>
-                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex-1 truncate">{safeString(field.label)}</label>
-                               <button onClick={() => { setEditingFieldId(field.id); setEditingFieldLabel(field.label); }} className="p-1 text-slate-600 hover:text-amber-400 transition-all rounded hover:bg-slate-800" title="Đổi tên trường"><Edit2 size={11}/></button>
-                               {!['f_status','f_title','f_desc'].includes(field.id) && (
-                                 <button onClick={() => onUpdateTemplate(fieldsTemplate.filter(f => f.id !== field.id))} className="p-1 text-slate-600 hover:text-rose-400 transition-all rounded hover:bg-slate-800" title="Xóa trường"><Trash2 size={11}/></button>
-                               )}
-                             </>
-                           )}
-                         </div>
-                        <div className="relative">
-                          <input
-                            ref={(el) => { if (el) dynamicFieldInputRefs.current[field.id] = el; else delete dynamicFieldInputRefs.current[field.id]; }}
-                            value={safeString(snapshotData.dynamicData[field.id])}
-                            onChange={e=>patchSnapshotData((prev) => ({ dynamicData: { ...(prev.dynamicData || {}), [field.id]: e.target.value } }))}
-                            onFocus={() => setLinkSuggestField(field.id)}
-                            onBlur={() => setTimeout(() => setLinkSuggestField(null), 200)}
-                            className="w-full bg-slate-950/80 border border-slate-700 rounded-lg p-2.5 pr-20 text-sm text-slate-200 font-serif focus:border-amber-500 outline-none"
-                            placeholder="Nhập giá trị hoặc [[Tên]] để liên kết..."
-                          />
-                          {linkSuggestField === field.id && (
-                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                              <button
-                                type="button"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => {
-                                  const cur = safeString(snapshotData.dynamicData[field.id]);
-                                  const input = dynamicFieldInputRefs.current[field.id];
-                                  let a = cur.length; let b = cur.length;
-                                  if (input && document.activeElement === input) {
-                                    a = input.selectionStart ?? 0;
-                                    b = input.selectionEnd ?? a;
-                                  }
-                                  const { newText, selStart, selEnd } = applyWikiLinkWrap(cur, a, b);
-                                  pendingWikiCaretRef.current = { fieldId: field.id, selStart, selEnd };
-                                  patchSnapshotData((prev) => ({ dynamicData: { ...(prev.dynamicData || {}), [field.id]: newText } }));
-                                }}
-                                className="text-[10px] font-bold text-amber-500 hover:text-amber-300 bg-amber-900/30 px-1.5 py-0.5 rounded border border-amber-700/40"
-                                title="Chèn [[ ]] tại con trỏ hoặc bọc đoạn đang chọn"
-                              >[[]]</button>
-                              <button
-                                type="button"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => {
-                                  const cur = safeString(snapshotData.dynamicData[field.id]);
-                                  const input = dynamicFieldInputRefs.current[field.id];
-                                  let a = cur.length; let b = cur.length;
-                                  if (input && document.activeElement === input) {
-                                    a = input.selectionStart ?? 0;
-                                    b = input.selectionEnd ?? a;
-                                  }
-                                  const { newText, selStart, selEnd } = applyWikiLinkUnwrap(cur, a, b);
-                                  pendingWikiCaretRef.current = { fieldId: field.id, selStart, selEnd };
-                                  patchSnapshotData((prev) => ({ dynamicData: { ...(prev.dynamicData || {}), [field.id]: newText } }));
-                                }}
-                                className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-900/20 px-1.5 py-0.5 rounded border border-cyan-700/35"
-                                title="Gỡ [[ ]] ở vùng chọn hoặc đoạn chứa con trỏ"
-                              >Bỏ</button>
-                            </div>
+                      {fixableDiagnostics.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={fixAllDiagnostics}
+                          className="rounded-full border border-amber-700/40 bg-slate-950/60 px-3 py-1 text-[11px] font-semibold text-amber-100 hover:bg-slate-900"
+                        >
+                          Sửa hết lỗi nhẹ
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {formatDiagnostics.map((warning) => (
+                        <div
+                          key={warning.id}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-amber-700/40 bg-slate-950/50 pl-2.5 pr-1 py-1 text-[11px] text-amber-100"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => focusEditorRange(warning.start, warning.end)}
+                            className="text-left hover:text-white"
+                            title={`Nhảy tới dòng ${warning.line}`}
+                          >
+                            {warning.label}
+                          </button>
+                          {warning.fixable && (
+                            <button
+                              type="button"
+                              onClick={() => applySingleDiagnosticFix(warning)}
+                              className="rounded-full border border-amber-700/30 bg-amber-950/30 px-2 py-0.5 text-[10px] font-semibold text-amber-100 hover:bg-amber-900/30"
+                              title={warning.fixLabel || 'Sửa nhanh'}
+                            >
+                              {warning.fixLabel || 'Sửa'}
+                            </button>
                           )}
                         </div>
-                      </div>
-                   ))}
-                </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                <div className="pt-4 mt-2 border-t border-slate-800/80">
-                   <label className="block text-[10px] font-bold text-emerald-500 mb-2 uppercase tracking-widest flex items-center gap-1"><Plus size={12}/> Thêm Trường Mới</label>
-                   <div className="flex gap-2">
-                      <input value={safeString(newFieldLabel)} onChange={e=>setNewFieldLabel(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') handleAddField()}} className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 outline-none focus:border-emerald-500" placeholder="VD: Cấp độ, Hiệu năng..." />
-                      <button onClick={handleAddField} className="px-4 py-2 bg-slate-800 text-emerald-400 border border-emerald-900/50 rounded-lg text-sm font-bold">Tạo</button>
-                   </div>
+                <div className={`flex flex-1 gap-4 min-h-[320px] ${isSplitPreview ? 'flex-row' : 'flex-col'}`}>
+                  <textarea
+                    id={EVENT_EDITOR_ID}
+                    ref={eventTextareaRef}
+                    value={eventText}
+                    onChange={(event) => {
+                      recordAndSetEventDraft(event.target.value);
+                      setToolbarState(
+                        getEntityNotesToolbarState(
+                          event.target.value,
+                          event.target.selectionStart,
+                          event.target.selectionEnd
+                        )
+                      );
+                    }}
+                    className={`resize-none bg-transparent text-slate-200 leading-loose outline-none custom-scrollbar ${
+                      isSplitPreview ? 'w-1/2 flex-shrink-0' : 'flex-1 min-h-[320px]'
+                    }`}
+                    style={{
+                      fontFamily: getEntityNotesFontStack(notesTypo.fontKey),
+                      fontSize: `${notesTypo.sizePx}px`,
+                    }}
+                    placeholder="Nhập diễn biến sự kiện... Dùng [[Tên]] để liên kết wiki, xuống dòng/bullet như khung ghi chép chi tiết."
+                    spellCheck
+                    onKeyDown={handleEventEditorKeyDown}
+                    onKeyUp={syncToolbarStateFromEditor}
+                    onClick={syncToolbarStateFromEditor}
+                    onSelect={syncToolbarStateFromEditor}
+                    onPaste={handleEditorPaste}
+                    onScroll={handleEditorScroll}
+                  />
+                  {isSplitPreview && (
+                    <MarkdownPreviewPane
+                      text={eventText}
+                      dirHandle={dirHandle}
+                      entityMap={entityMap}
+                      linkRegex={null}
+                      onNavigate={null}
+                      selfEntityId={null}
+                      variant="entityNotes"
+                      containerRef={previewScrollRef}
+                      onScroll={handlePreviewScroll}
+                      onJumpToAnchor={(item) => jumpToEditorLine(item.line)}
+                      onJumpToLine={jumpToEditorLine}
+                      className="w-1/2 min-h-[320px] overflow-y-auto border-l border-slate-700 pl-4 font-serif custom-scrollbar"
+                    />
+                  )}
                 </div>
+              </div>
 
-             </div>
-             <div className="pt-6 mt-4 border-t border-slate-800 flex justify-end gap-3">
-                <button onClick={onClose} className="px-6 py-2.5 text-slate-400 hover:text-white font-serif rounded-xl">Hủy bỏ</button>
-                <button onClick={handleSave} disabled={!formData.chapter || !formData.event.trim()} className="px-8 py-2.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl font-bold font-serif shadow-lg flex items-center gap-2"><Save size={18}/> {formData.id ? 'Cập Nhật' : 'Lưu Kỷ Nguyên'}</button>
-             </div>
+              {errorMsg && <p className="mt-3 text-xs text-rose-400">{safeString(errorMsg)}</p>}
+            </section>
+
+            <section className="rounded-[28px] border border-violet-800/35 bg-violet-950/10 p-5 shadow-[inset_0_1px_0_rgba(148,163,184,0.05)]">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold uppercase tracking-[0.22em] text-violet-300">
+                    Hồ sơ thời kỳ này
+                  </h3>
+                  <p className="mt-1 text-[11px] font-serif leading-relaxed text-slate-400">
+                    Ảnh ở đầu form và các ô dưới đây sẽ đi vào snapshot của mốc. Để trống nếu mốc này không làm thay đổi field tương ứng.
+                  </p>
+                </div>
+                <div className="rounded-full border border-violet-700/30 bg-slate-950/50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-violet-200">
+                  {Object.values(snapshotData.dynamicData || {}).filter((value) => safeString(value).trim()).length} field đang ghi nhận
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                {fieldsTemplate.map((field) => {
+                  const fieldId = safeString(field?.id);
+                  if (!fieldId) return null;
+                  const isMultiline = fieldId === WIKI_ALIAS_FIELD.id || fieldId === 'f_desc';
+                  const label = safeString(field?.label || fieldId);
+                  const value = safeString(snapshotData.dynamicData?.[fieldId]);
+                  const hintOpts = Array.isArray(fieldSuggestions[fieldId])
+                    ? fieldSuggestions[fieldId].filter((h) => safeString(h).trim())
+                    : [];
+                  const listDomId =
+                    !isMultiline && hintOpts.length > 0
+                      ? `${milestoneHintListPrefix}-hint-${fieldId.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+                      : undefined;
+                  return (
+                    <div
+                      key={fieldId}
+                      className={`space-y-2 ${isMultiline ? 'md:col-span-2' : ''}`}
+                    >
+                      <label
+                        htmlFor={`milestone-snapshot-${fieldId}`}
+                        className="block text-[10px] font-bold uppercase tracking-widest text-violet-200"
+                      >
+                        {label}
+                      </label>
+                      {isMultiline ? (
+                        <textarea
+                          id={`milestone-snapshot-${fieldId}`}
+                          aria-label={label}
+                          value={value}
+                          onChange={(event) => patchSnapshotField(fieldId, event.target.value)}
+                          rows={fieldId === WIKI_ALIAS_FIELD.id ? 3 : 4}
+                          className="min-h-[5.5rem] w-full resize-y rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm font-serif text-slate-100 outline-none transition-colors focus:border-violet-500"
+                          placeholder={`Để trống nếu mốc này không đổi ${label.toLowerCase()}`}
+                        />
+                      ) : (
+                        <>
+                          <input
+                            id={`milestone-snapshot-${fieldId}`}
+                            aria-label={label}
+                            list={listDomId}
+                            value={value}
+                            onChange={(event) => patchSnapshotField(fieldId, event.target.value)}
+                            className="w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm font-serif text-slate-100 outline-none transition-colors focus:border-violet-500"
+                            placeholder={`Để trống nếu mốc này không đổi ${label.toLowerCase()}`}
+                          />
+                          {listDomId && (
+                            <datalist id={listDomId}>
+                              {hintOpts.map((h) => (
+                                <option key={h} value={h} />
+                              ))}
+                            </datalist>
+                          )}
+                        </>
+                      )}
+                      {fieldId === WIKI_ALIAS_FIELD.id && (
+                        <p className="text-[11px] font-serif leading-relaxed text-slate-500">
+                          Biệt danh ở snapshot sẽ hiện cho đúng thời kỳ này; có thể tách bằng dấu phẩy, <code>/</code> hoặc <code>|</code>.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
           </div>
-       </div>
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-slate-800 px-6 py-4 md:px-8">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl px-5 py-2.5 font-serif text-slate-400 transition-colors hover:text-white"
+          >
+            Huỷ
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!formData.chapter || !eventText.trim()}
+            className="flex items-center gap-2 rounded-2xl bg-amber-700 px-6 py-2.5 font-bold font-serif text-white shadow-lg transition-colors hover:bg-amber-600 disabled:opacity-50"
+          >
+            <Save size={18} /> {formData.id ? 'Lưu cập nhật' : 'Lưu'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
+
 
 export const ModalQuickCreate = ({ isOpen, onClose, quickCreateName, onConfirm, activeTabs }) => {
     const [selectedPath, setSelectedPath] = useState('');
@@ -2501,6 +3138,9 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
           return { ...(prev || {}), genres: [...currentGenres, g] };
       });
   };
+  const selectedGenres = Array.isArray(formData.genres) ? formData.genres : [];
+  const savedGenreTemplate = mode === "create" ? getGenreTabsTemplate(selectedGenres) : null;
+  const hasSavedGenreTemplate = Boolean(savedGenreTemplate?.tabsConfig?.length);
 
   return (
     <div
@@ -2588,13 +3228,20 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
                          type="button"
                          disabled={(formData.genres || []).length === 0}
                          onClick={() => {
-                           const cfg = mergeTabsByGenres(formData.genres || []);
+                          const cfg = hasSavedGenreTemplate
+                            ? savedGenreTemplate.tabsConfig
+                            : mergeTabsByGenres(formData.genres || []);
                            if (cfg) patchFormData({ tabsConfig: cfg });
                          }}
                          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-serif bg-amber-900/30 border border-amber-600/40 text-amber-300 hover:bg-amber-800/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                        >
-                         <Sparkles size={16} /> Tạo cấu trúc theo thể loại
+                        <Sparkles size={16} /> {hasSavedGenreTemplate ? 'Dùng mẫu đã lưu theo thể loại' : 'Tạo cấu trúc theo thể loại'}
                        </button>
+                      {hasSavedGenreTemplate && (
+                        <span className="text-xs text-cyan-300 font-serif">
+                          ✓ Đã có cây mẫu cá nhân cho tổ hợp thể loại này
+                        </span>
+                      )}
                        {formData.tabsConfig && (
                          <span className="text-xs text-emerald-500 font-serif">✓ Đã có cấu trúc</span>
                        )}
@@ -2960,3 +3607,4 @@ export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) =
     </div>
   );
 };
+

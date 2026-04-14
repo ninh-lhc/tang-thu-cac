@@ -2,7 +2,18 @@
 // CẤU TRÚC MỤC LỤC THEO THỂ LOẠI (từ cau-truc.txt)
 // Dùng khi chọn thể loại + bấm "Tạo cấu trúc theo thể loại"
 // ==========================================
+import { DEFAULT_FIELDS_MAP } from './MasterEngines.js';
+import { normalizeGenreSubTabId } from './lib/genreSubTabIdNormalize.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
+import { hydrateTabsAutoSyncLinkTargets } from './lib/tabAutoSyncLinks.js';
+import {
+  AUTO_SYNC_ROLE_CHARACTER_RELATED,
+  AUTO_SYNC_ROLE_FORCE,
+  AUTO_SYNC_ROLE_MAP,
+  AUTO_SYNC_ROLE_MAIN_CHARACTER,
+} from './lib/tabAutoSyncRole.js';
+
+export { normalizeGenreSubTabId };
 
 const DEFAULT_FIELDS = [
   { id: 'f_status', label: 'Trạng thái / Cấp' },
@@ -10,12 +21,584 @@ const DEFAULT_FIELDS = [
   { id: 'f_desc', label: 'Mô tả' }
 ];
 
-const sub = (id, label, fields = DEFAULT_FIELDS) => ({
-  id, label, viewType: 'collection-track', tabCon: [], fieldsTemplate: fields
+function cloneValue(value) {
+  try {
+    return typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
+}
+
+const cloneFields = (fields = DEFAULT_FIELDS) => cloneValue(fields);
+const fromDefault = (key) => DEFAULT_FIELDS_MAP[key] || DEFAULT_FIELDS;
+const buildFields = (entries) => entries.map(([id, label]) => ({ id, label }));
+
+const FIELD_PRESETS = Object.freeze({
+  default: DEFAULT_FIELDS,
+  protagonistCultivation: fromDefault('nhan-vat-chinh'),
+  companionCultivation: fromDefault('dao-lu'),
+  characterCultivation: fromDefault('phu'),
+  rivalCultivation: fromDefault('ke-thu'),
+  factionSect: fromDefault('tong-mon'),
+  factionFamily: fromDefault('gia-toc'),
+  factionNation: fromDefault('quoc-gia'),
+  mapLocation: fromDefault('dia-danh'),
+  artifact: fromDefault('phap-bao'),
+  weapon: fromDefault('binh-khi'),
+  shop: fromDefault('cua-hang'),
+  pill: fromDefault('dan-duoc'),
+  formation: fromDefault('tran-phap'),
+  systemFeature: fromDefault('chuc-nang-he-thong'),
+  quest: fromDefault('nhiem-vu'),
+  rewardPack: fromDefault('goi-qua'),
+  questType: fromDefault('loai-nhiem-vu'),
+  cultivationSystem: fromDefault('he-thong-tu-luyen'),
+  realm: fromDefault('canh-gioi'),
+  skill: fromDefault('cong-phap'),
+  constitution: fromDefault('the-chat'),
+  romanceLead: buildFields([
+    ['f_status', 'Thân phận / vai vế'],
+    ['f_title', 'Vai trò tình cảm'],
+    ['f_quan_he', 'Mối quan hệ chính'],
+    ['f_dong_luc', 'Nút thắt / động cơ'],
+    ['f_desc', 'Ấn tượng / tính cách']
+  ]),
+  romanceRival: buildFields([
+    ['f_status', 'Thân phận / vai vế'],
+    ['f_title', 'Vị trí trong drama'],
+    ['f_quan_he', 'Liên kết với cặp chính'],
+    ['f_dong_luc', 'Mưu tính / tổn thương'],
+    ['f_desc', 'Ấn tượng / thủ đoạn']
+  ]),
+  romanceSetting: buildFields([
+    ['f_status', 'Bối cảnh / niên đại'],
+    ['f_title', 'Loại tuyến'],
+    ['f_dia_ban', 'Không gian trọng tâm'],
+    ['f_quy_tac', 'Quy tắc / áp lực xã hội'],
+    ['f_desc', 'Chất cảm / tông truyện']
+  ]),
+  romanceArc: buildFields([
+    ['f_status', 'Giai đoạn cảm xúc'],
+    ['f_title', 'Loại tuyến tình cảm'],
+    ['f_quan_he', 'Nhân vật liên quan'],
+    ['f_dieu_kien', 'Chướng ngại / bước ngoặt'],
+    ['f_desc', 'Nhịp cảm xúc']
+  ]),
+  romancePlot: buildFields([
+    ['f_status', 'Mức độ drama'],
+    ['f_title', 'Loại kịch bản'],
+    ['f_quan_he', 'Phe liên quan'],
+    ['f_dieu_kien', 'Điểm bùng nổ'],
+    ['f_desc', 'Hậu quả / sức nặng']
+  ]),
+  modernLead: buildFields([
+    ['f_status', 'Thân phận / nghề nghiệp'],
+    ['f_title', 'Danh xưng / archetype'],
+    ['f_to_chuc', 'Gia thế / vòng tròn'],
+    ['f_nang_luc', 'Năng lực / sở trường'],
+    ['f_desc', 'Tính cách / ấn tượng']
+  ]),
+  modernFaction: buildFields([
+    ['f_status', 'Quy mô / đẳng cấp'],
+    ['f_title', 'Lĩnh vực / loại thế lực'],
+    ['f_lanh_dao', 'Người đứng đầu'],
+    ['f_dia_ban', 'Địa bàn / phạm vi'],
+    ['f_desc', 'Ảnh hưởng / đặc trưng']
+  ]),
+  modernDomain: buildFields([
+    ['f_status', 'Độ hiếm / cấp độ'],
+    ['f_title', 'Lĩnh vực / chuyên môn'],
+    ['f_hieu_qua', 'Giá trị / công dụng'],
+    ['f_dieu_kien', 'Điều kiện triển khai'],
+    ['f_desc', 'Phong cách / ghi chú']
+  ]),
+  fantasyRace: buildFields([
+    ['f_status', 'Huyết mạch / cấp bậc'],
+    ['f_title', 'Chủng tộc / phân nhánh'],
+    ['f_dia_ban', 'Lãnh địa / nơi cư trú'],
+    ['f_nang_luc', 'Thiên phú / đặc quyền'],
+    ['f_desc', 'Đặc trưng văn hóa']
+  ]),
+  fantasyPower: buildFields([
+    ['f_status', 'Cấp / vòng'],
+    ['f_title', 'Hệ / trường phái'],
+    ['f_dieu_kien', 'Điều kiện thức tỉnh'],
+    ['f_hieu_qua', 'Hiệu quả / chiêu bài'],
+    ['f_desc', 'Giới hạn / ghi chú']
+  ]),
+  fantasySetting: buildFields([
+    ['f_status', 'Cấp tầng / mức nguy hiểm'],
+    ['f_title', 'Loại khu vực'],
+    ['f_dia_ban', 'Thuộc giới / liên hệ'],
+    ['f_co_duyen', 'Di sản / tài nguyên'],
+    ['f_desc', 'Không khí / quy tắc']
+  ]),
+  fantasyCreature: buildFields([
+    ['f_status', 'Huyết mạch / cấp bậc'],
+    ['f_title', 'Loài / hệ'],
+    ['f_chu', 'Ràng buộc / chủ nhân'],
+    ['f_hieu_qua', 'Năng lực / thiên phú'],
+    ['f_desc', 'Điểm yếu / tập tính']
+  ]),
+  systemCore: buildFields([
+    ['f_status', 'Phân hệ / phiên bản'],
+    ['f_title', 'Nguồn gốc / loại hệ thống'],
+    ['f_quyen_han', 'Quyền hạn / cấp truy cập'],
+    ['f_rang_buoc', 'Ràng buộc / giới hạn'],
+    ['f_desc', 'Ghi chú vận hành']
+  ]),
+  systemStat: buildFields([
+    ['f_status', 'Giá trị / cấp'],
+    ['f_title', 'Loại thuộc tính'],
+    ['f_nguon', 'Nguồn tăng trưởng'],
+    ['f_dieu_kien', 'Điều kiện hiển thị'],
+    ['f_desc', 'Ý nghĩa / ghi chú']
+  ]),
+  systemReward: buildFields([
+    ['f_status', 'Tỷ lệ / độ hiếm'],
+    ['f_title', 'Loại thưởng'],
+    ['f_noi_dung', 'Phần thưởng / pool'],
+    ['f_dieu_kien', 'Điều kiện kích hoạt'],
+    ['f_desc', 'Ghi chú vận hành']
+  ]),
+  rebirthNode: buildFields([
+    ['f_status', 'Mốc thời gian'],
+    ['f_title', 'Loại bước ngoặt'],
+    ['f_quan_he', 'Nhân quả liên quan'],
+    ['f_loi_the', 'Lợi thế / bí mật'],
+    ['f_desc', 'Dấu vết để lại']
+  ]),
+  rebirthKarma: buildFields([
+    ['f_status', 'Thân phận hiện tại'],
+    ['f_title', 'Loại nhân quả'],
+    ['f_quan_he', 'Liên hệ tiền thế'],
+    ['f_dong_luc', 'Ân oán / chấp niệm'],
+    ['f_desc', 'Mức độ ảnh hưởng']
+  ]),
+  rebirthCheat: buildFields([
+    ['f_status', 'Cấp / độ hiếm'],
+    ['f_title', 'Loại cơ duyên'],
+    ['f_dieu_kien', 'Điều kiện kích hoạt'],
+    ['f_hieu_qua', 'Lợi ích / sức mạnh'],
+    ['f_desc', 'Giới hạn / cái giá']
+  ]),
+  infiniteSpace: buildFields([
+    ['f_status', 'Cấp / quyền hạn'],
+    ['f_title', 'Loại không gian'],
+    ['f_quy_tac', 'Quy tắc / luật chơi'],
+    ['f_phan_thuong', 'Phần thưởng / trừng phạt'],
+    ['f_desc', 'Ghi chú vận hành']
+  ]),
+  infiniteMember: buildFields([
+    ['f_status', 'Cấp sinh tồn'],
+    ['f_title', 'Vai trò trong đội'],
+    ['f_nang_luc', 'Năng lực chủ lực'],
+    ['f_dao_cu', 'Đạo cụ / huyết thống'],
+    ['f_desc', 'Thói quen / điểm yếu']
+  ]),
+  infiniteScenario: buildFields([
+    ['f_status', 'Độ khó / rank'],
+    ['f_title', 'Loại phó bản'],
+    ['f_chan_tuong', 'Chân tướng / quy tắc'],
+    ['f_dieu_kien', 'Điều kiện sống sót'],
+    ['f_phan_thuong', 'Thưởng / mở khóa']
+  ]),
+  infiniteUpgrade: buildFields([
+    ['f_status', 'Cấp / lượng điểm'],
+    ['f_title', 'Loại cường hóa'],
+    ['f_dieu_kien', 'Điều kiện đổi'],
+    ['f_hieu_qua', 'Hiệu quả / buff'],
+    ['f_desc', 'Tác dụng phụ / ghi chú']
+  ]),
+  gameProfile: buildFields([
+    ['f_status', 'Level / cấp'],
+    ['f_title', 'Class / nghề'],
+    ['f_chi_so', 'Chỉ số nổi bật'],
+    ['f_to_chuc', 'Guild / phe'],
+    ['f_desc', 'Phong cách build']
+  ]),
+  gameGear: buildFields([
+    ['f_status', 'Phẩm chất / rarity'],
+    ['f_title', 'Loại trang bị'],
+    ['f_chu', 'Người dùng / class phù hợp'],
+    ['f_hieu_qua', 'Hiệu ứng / set bonus'],
+    ['f_nguon', 'Nguồn rơi / cách kiếm']
+  ]),
+  gameFaction: buildFields([
+    ['f_status', 'Xếp hạng / cấp hội'],
+    ['f_title', 'Loại tổ chức'],
+    ['f_lanh_dao', 'Người cầm đầu'],
+    ['f_dia_ban', 'Máy chủ / lãnh địa'],
+    ['f_desc', 'Phong cách / văn hóa']
+  ]),
+  gameQuest: buildFields([
+    ['f_status', 'Độ khó'],
+    ['f_title', 'Loại gameplay'],
+    ['f_muc_tieu', 'Mục tiêu / thử thách'],
+    ['f_phan_thuong', 'Phần thưởng'],
+    ['f_desc', 'Ghi chú chiến thuật']
+  ]),
+  scifiWorld: buildFields([
+    ['f_status', 'Cấp văn minh / mức độ'],
+    ['f_title', 'Loại khu vực'],
+    ['f_to_chuc', 'Thế lực kiểm soát'],
+    ['f_tai_nguyen', 'Tài nguyên / đặc sản'],
+    ['f_desc', 'Môi trường / nguy cơ']
+  ]),
+  scifiTech: buildFields([
+    ['f_status', 'Tier / cấp công nghệ'],
+    ['f_title', 'Loại công nghệ'],
+    ['f_chu', 'Nhà phát triển / chủ sở hữu'],
+    ['f_hieu_qua', 'Thông số nổi bật'],
+    ['f_desc', 'Ứng dụng / giới hạn']
+  ]),
+  scifiEvolution: buildFields([
+    ['f_status', 'Cấp tiến hóa'],
+    ['f_title', 'Nhánh biến đổi'],
+    ['f_dieu_kien', 'Điều kiện thức tỉnh'],
+    ['f_hieu_qua', 'Năng lực / hiệu quả'],
+    ['f_desc', 'Tác dụng phụ / di chứng']
+  ]),
+  apocalypseBackdrop: buildFields([
+    ['f_status', 'Giai đoạn / mức nguy cơ'],
+    ['f_title', 'Loại biến cố'],
+    ['f_dia_ban', 'Khu vực chịu ảnh hưởng'],
+    ['f_tac_nhan', 'Tác nhân / nguồn cơn'],
+    ['f_desc', 'Tàn phá / bối cảnh']
+  ]),
+  apocalypseThreat: buildFields([
+    ['f_status', 'Cấp đe dọa'],
+    ['f_title', 'Loại mối nguy'],
+    ['f_dia_ban', 'Khu vực hoạt động'],
+    ['f_hieu_qua', 'Năng lực / đặc tính'],
+    ['f_desc', 'Điểm yếu / dấu hiệu']
+  ]),
+  apocalypseFaction: buildFields([
+    ['f_status', 'Cấp phòng thủ / quy mô'],
+    ['f_title', 'Loại căn cứ / phe'],
+    ['f_lanh_dao', 'Người đứng đầu'],
+    ['f_tai_nguyen', 'Nguồn lực / hậu cần'],
+    ['f_desc', 'Quy tắc sinh tồn']
+  ]),
+  apocalypseResource: buildFields([
+    ['f_status', 'Độ khan hiếm / cấp'],
+    ['f_title', 'Loại tài nguyên'],
+    ['f_nguon', 'Nguồn cung / cách kiếm'],
+    ['f_hieu_qua', 'Công dụng'],
+    ['f_desc', 'Rủi ro / ghi chú']
+  ]),
+  awakenedCharacter: buildFields([
+    ['f_status', 'Cấp thức tỉnh'],
+    ['f_title', 'Hệ dị năng'],
+    ['f_vai_tro', 'Vai trò sinh tồn'],
+    ['f_vu_khi', 'Vũ khí / trang bị'],
+    ['f_desc', 'Ưu thế / khuyết điểm']
+  ]),
+  fanficWorld: buildFields([
+    ['f_status', 'Mốc canon / phần truyện'],
+    ['f_title', 'Loại thiết lập'],
+    ['f_quy_tac', 'Quy tắc cốt lõi'],
+    ['f_phan_nhanh', 'Nhánh thay đổi'],
+    ['f_desc', 'Ghi chú đối chiếu']
+  ]),
+  fanficCharacter: buildFields([
+    ['f_status', 'Thân phận / tuyến'],
+    ['f_title', 'Vai trò canon / AU'],
+    ['f_quan_he', 'Liên hệ với nguyên tác'],
+    ['f_khac_biet', 'Khác biệt / OOC'],
+    ['f_desc', 'Dấu ấn / ghi chú']
+  ]),
+  fanficPlot: buildFields([
+    ['f_status', 'Mức lệch canon'],
+    ['f_title', 'Loại nhánh truyện'],
+    ['f_quan_he', 'Nhân vật bị ảnh hưởng'],
+    ['f_dieu_kien', 'Điểm kích hoạt'],
+    ['f_desc', 'Hướng kết cục']
+  ]),
+  historyBackdrop: buildFields([
+    ['f_status', 'Giai đoạn / niên hiệu'],
+    ['f_title', 'Loại cục diện'],
+    ['f_dia_ban', 'Phạm vi ảnh hưởng'],
+    ['f_to_chuc', 'Phe thống trị'],
+    ['f_desc', 'Xu thế chính']
+  ]),
+  historyCharacter: buildFields([
+    ['f_status', 'Chức vị / thân phận'],
+    ['f_title', 'Phe phái / vị trí'],
+    ['f_dia_ban', 'Địa bàn / căn cơ'],
+    ['f_nang_luc', 'Mưu lược / sở trường'],
+    ['f_desc', 'Dã tâm / dấu ấn']
+  ]),
+  historyEvent: buildFields([
+    ['f_status', 'Giai đoạn / quy mô'],
+    ['f_title', 'Loại sự kiện'],
+    ['f_quan_he', 'Phe liên quan'],
+    ['f_ket_qua', 'Kết quả trực tiếp'],
+    ['f_desc', 'Ảnh hưởng lịch sử']
+  ]),
+  historyDevelopment: buildFields([
+    ['f_status', 'Mức phát triển / quy mô'],
+    ['f_title', 'Loại hạng mục'],
+    ['f_nguon_luc', 'Nguồn lực / hậu cần'],
+    ['f_dia_ban', 'Phạm vi triển khai'],
+    ['f_desc', 'Tác động / hiệu quả']
+  ]),
+  horrorHuman: buildFields([
+    ['f_status', 'Tình trạng / độ nhiễm'],
+    ['f_title', 'Vai trò trong vụ việc'],
+    ['f_quan_he', 'Ràng buộc / nhân quả'],
+    ['f_dia_ban', 'Khu vực hoạt động'],
+    ['f_desc', 'Nỗi sợ / bí mật']
+  ]),
+  horrorEntity: buildFields([
+    ['f_status', 'Mức nguy hiểm'],
+    ['f_title', 'Loại linh thể'],
+    ['f_rang_buoc', 'Chấp niệm / vật neo'],
+    ['f_dia_ban', 'Vùng ám ảnh'],
+    ['f_desc', 'Dấu hiệu / cách đối phó']
+  ]),
+  horrorPlace: buildFields([
+    ['f_status', 'Mức độ ma ám'],
+    ['f_title', 'Loại địa điểm'],
+    ['f_quy_tac', 'Quy tắc / cấm kỵ'],
+    ['f_dia_ban', 'Vị trí / vùng liên quan'],
+    ['f_desc', 'Bí mật / dị thường']
+  ]),
+  horrorEvent: buildFields([
+    ['f_status', 'Mức dị thường'],
+    ['f_title', 'Loại hiện tượng'],
+    ['f_nguon', 'Nguồn cơn / truyền thuyết'],
+    ['f_dieu_kien', 'Điều kiện kích hoạt'],
+    ['f_desc', 'Ảnh hưởng / ghi nhận']
+  ]),
 });
 
+const buildGenrePathKey = (tabId = '', subId = '') => `${tabId}::${normalizeGenreSubTabId(subId)}`;
+
+const FIELD_PRESET_BY_PATH_KEY = {};
+const assignPreset = (presetName, tabId, ids = []) => {
+  const preset = FIELD_PRESETS[presetName] || FIELD_PRESETS.default;
+  ids.forEach((subId) => {
+    FIELD_PRESET_BY_PATH_KEY[buildGenrePathKey(tabId, subId)] = preset;
+  });
+};
+
+assignPreset('protagonistCultivation', 'tu-si', ['thien-menh-chi-tu']);
+assignPreset('companionCultivation', 'tu-si', ['dao-lu', 'hong-nhan-tri-ky', 'sinh-tu-giao', 'dong-mon-su-de']);
+assignPreset('rivalCultivation', 'tu-si', ['tu-dich', 'phan-dien']);
+assignPreset('realm', 'dai-dao', ['canh-gioi-tu-vi']);
+assignPreset('skill', 'dai-dao', ['cong-phap', 'vo-ky', 'cam-thuat', 'bi-phap']);
+assignPreset('constitution', 'dai-dao', ['dac-thu-the-chat', 'thai-co-huyet-mach', 'linh-can', 'ngo-tinh-thien-phu', 'thien-phu']);
+assignPreset('mapLocation', 'chu-thien-van-gioi', ['tu-tien-gioi', 'vi-dien-tinh-vuc', 'thuong-gioi-tien-gioi', 'cam-dia', 'thuong-co-di-tich']);
+assignPreset('factionSect', 'dinh-cap-the-luc', ['tong-mon-thanh-dia', 'an-the-tong-mon']);
+assignPreset('factionFamily', 'dinh-cap-the-luc', ['truong-ton-the-gia']);
+assignPreset('artifact', 'ky-tran-di-bao', ['phap-bao-tien-khi', 'than-binh-loi-khi', 'thien-tai-dia-bao', 'linh-phu-bua-chu']);
+assignPreset('pill', 'ky-tran-di-bao', ['dan-duoc', 'tien-thao-linh-duoc']);
+assignPreset('formation', 'ky-tran-di-bao', ['tran-phap']);
+
+assignPreset('protagonistCultivation', 'sinh-linh', ['khi-van-chi-tu']);
+assignPreset('companionCultivation', 'sinh-linh', ['dong-bon-khe-uoc-gia', 'su-ma-tinh-linh']);
+assignPreset('rivalCultivation', 'sinh-linh', ['hac-am-cu-dau', 'ma-vuong-ta-than']);
+assignPreset('fantasyPower', 'the-he-luc-luong', ['ma-phap-chu-ngu', 'dau-khi-nguyen-luc', 'chuc-nghiep', 'than-cach-than-hoa']);
+assignPreset('fantasySetting', 'vi-dien-dai-luc', ['dai-luc', 'vuc-sau', 'than-quoc-tinh-gioi']);
+assignPreset('fantasyRace', 'van-toc-quan-dao', ['chung-toc']);
+assignPreset('factionNation', 'van-toc-quan-dao', ['de-quoc-vuong-quoc']);
+assignPreset('factionSect', 'van-toc-quan-dao', ['than-dien-giao-hoi', 'cong-hoi-linh-danh-thue']);
+assignPreset('artifact', 'than-vat-ma-vat', ['than-khi-thanh-khi', 'than-vat-truyen-thua']);
+assignPreset('fantasyCreature', 'than-vat-ma-vat', ['ma-thu-cu-long', 'ma-hach-tinh-mach', 'yeu-dan']);
+
+assignPreset('romanceLead', 'quan-chung-tuyen', ['nu-chu-nam-chu']);
+assignPreset('romanceRival', 'quan-chung-tuyen', ['bach-nguyet-quang', 'tra-xanh-bach-lien-hoa', 'co-chap-cuong-benh-kieu', 'tra-nam-tien-nu', 'hao-mon-the-gia']);
+assignPreset('romanceSetting', 'boi-canh-thiet-lap', ['co-dai-gia-khong', 'cung-dinh-hau-tuoc', 'do-thi-hao-mon-tong-tai', 'thanh-xuan-vuon-truong']);
+assignPreset('romanceArc', 'ai-tinh-tuyen', ['ngot-sung-chua-lanh', 'nguoc-tam-nguoc-than', 'cuoi-truoc-yeu-sau', 'guong-vo-lai-lanh', 'tu-la-trang']);
+assignPreset('romancePlot', 'kich-ban-kich-tinh', ['trach-dau-gia-dau', 'cung-dau-doat-dich', 'va-mat-sang-van', 'gioi-giai-tri-showbiz', 'hac-dao-giao-phong']);
+
+assignPreset('systemCore', 'ban-the-he-thong', ['nguon-goc-he-thong', 'ma-dinh-danh-phien-ban', 'tri-nao-he-thong-tinh-linh', 'quyen-han-cap-do']);
+assignPreset('systemStat', 'giao-dien-thuoc-tinh', ['ca-nhan-mieu-ta', 'diem-kinh-nghiem', 'diem-tich-luy-tien-te', 'dan-hieu', 'do-thuan-thuc']);
+assignPreset('shop', 'chuc-nang-cot-loi', ['he-thong-thuong-thanh']);
+assignPreset('quest', 'chuc-nang-cot-loi', ['nhiem-vu-chu-tuyen', 'nhiem-vu-chi-nhanh', 'che-tai-trung-phat']);
+assignPreset('systemReward', 'chuc-nang-cot-loi', ['gacha-vong-quay-may-man']);
+
+assignPreset('rebirthNode', 'dong-chay-luan-hoi', ['nguyen-nhan-trung-sinh', 'tien-the-ky-uc', 'bat-diem', 'hieu-ung-canh-buom']);
+assignPreset('rebirthKarma', 'nhan-qua-nghiet-duyen', ['tu-dich-tien-the', 'an-nhan-kim-sinh', 'tiec-nuoi-tien-the', 'va-mat-phan-dien']);
+assignPreset('rebirthCheat', 'kim-chi-nam', ['tien-tri', 'tien-co-cuop-co-duyen', 'tuy-than-khong-gian', 'di-nang-thuc-tinh-som']);
+
+assignPreset('modernLead', 'do-thi-nhan-vat', ['long-ngao-thien', 'o-re-cao-thu-xuong-nui', 'ba-dao-tong-tai', 'bang-son-my-nu-hoa-khoi', 'phu-nhi-dai-hoan-kho-di-tu', 'the-gia-lao-hu']);
+assignPreset('modernFaction', 'dinh-cap-vong-tron', ['tu-dai-co-toc', 'dinh-cap-tai-phiet', 'hac-dao-cu-phach', 'the-gioi-ngam-linh-danh-thue', 'cuc-di-nang-long-to', 'co-vo-gia-an-mon']);
+assignPreset('modernDomain', 'ban-do-su-nghiep', ['thuong-vi-khong-che-kinh-te', 'y-thuat-tien-thien', 'phong-thuy-tuong-thuat', 'giam-bao-do-thach', 'dau-gia-hoi-cap-cao']);
+
+assignPreset('infiniteSpace', 'chu-than-khong-gian', ['chu-than-he-thong-mau', 'luan-hoi-dien-quang-truong', 'khu-vuc-nghi-ngoi', 'chu-than-quy-tac']);
+assignPreset('infiniteMember', 'luan-hoi-tieu-doi', ['luan-hoi-gia', 'doi-truong', 'tri-gia', 'hoa-luc-thu', 'nai-ma', 'tu-chien-tieu-doi']);
+assignPreset('infiniteScenario', 'the-gioi-nhiem-vu', ['kich-ban-the-gioi', 'chan-tuong-nhiem-vu', 'nhiem-vu-sinh-ton', 'cap-do-ac-mong']);
+assignPreset('infiniteUpgrade', 'hoi-doai-cuong-hoa', ['diem-sinh-ton-khen-thuong', 'tien-hoa-huyet-thong', 'cuong-hoa-the-chat', 'ky-nang-cay', 'di-nang-thuc-tinh', 'dao-cu-bao-menh']);
+
+assignPreset('gameProfile', 'so-lieu-nhan-vat', ['id-tro-choi', 'bang-trang-thai', 'chuc-nghiep', 'thien-phu-ky-nang']);
+assignPreset('gameGear', 'trang-bi-than-vat', ['than-khi-truyen-thuyet-vu-khi', 'sao-trang', 'sung-vat-toa-ky', 'do-te-luyen']);
+assignPreset('gameFaction', 'tran-doanh-the-luc', ['dai-cong-hoi', 'cau-lac-bo-esport', 'lien-minh-tran-doanh', 'npc-the-luc']);
+assignPreset('gameQuest', 'cot-truyen-gameplay', ['main-quests', 'chuoi-nhiem-vu-an', 'phu-ban-bi-canh', 'da-ngoai-boss', 'lich-su-pk-hong-danh', 'thi-dau-chuyen-nghiep']);
+
+assignPreset('scifiWorld', 'tinh-te-cuong-vuc', ['ngan-ha-vi-tinh-he', 'trai-dat-co-mau-tinh', 'tinh-te-lien-bang', 'vuc-ngoai-chung-toc', 'co-so-hac-am']);
+assignPreset('scifiTech', 'hac-khoa-ky', ['co-giap', 'tinh-ham-phi-thuyen', 'quang-nao-sieu-ai', 'vu-khi-phan-vat-chat', 'buoc-nhay-khong-gian']);
+assignPreset('scifiEvolution', 'tien-hoa-lo-tuyen', ['tinh-than-luc', 'the-thuat-khai-giap-thuat', 'gien-dot-bien', 'dung-hop-duoc-te', 'co-the-sinh-hoa']);
+
+assignPreset('apocalypseBackdrop', 'ky-nguyen-hac-am', ['bao-phat-nguy-co', 'tien-mat-the-hau-mat-the', 'bien-doi-khi-hau', 'phe-tich-van-minh']);
+assignPreset('apocalypseThreat', 'nguy-co-tu-phia', ['thi-toc-tang-thi-vi-quan', 'di-thu-lanh-chua', 'ma-hoa-thuc-vat', 'ta-ac-nguoi-sinh-ton']);
+assignPreset('apocalypseFaction', 'doanh-trai-sinh-ton', ['khu-an-toan-can-cu-dia', 'liep-sat-gia', 'quan-bo-chinh-phu-tan-du', 'the-luc-ton-giao-moi']);
+assignPreset('awakenedCharacter', 'tinh-hach-vat-tu', ['giac-tinh-gia']);
+assignPreset('fantasyPower', 'tinh-hach-vat-tu', ['di-nang-phan-he']);
+assignPreset('apocalypseResource', 'tinh-hach-vat-tu', ['tinh-hach-tinh-nguyen', 'vat-tu-cuu-sinh', 'hoa-khi-khi-gioi-lanh']);
+
+assignPreset('fanficWorld', 'nguyen-tac-vi-dien', ['canon-world', 'nguyen-tac-thiet-lap', 'quy-tac-the-gioi']);
+assignPreset('fanficCharacter', 'nhom-nhan-vat-dong-nhan', ['canon-character', 'original-character', 'bang-hoai-kich-tinh', 'ke-xuyen-thu-trong-sinh']);
+assignPreset('fanficPlot', 'tuyen-truyen-ma-cai', ['diem-re-nhanh', 'hieu-ung-canh-buom', 'cuu-roi-tuyen', 'hac-hoa-tuyen', 'ket-cuc-moi']);
+
+assignPreset('historyBackdrop', 'thien-ha-dai-the', ['trieu-dai-ky-nguyen', 'de-vuong-thong-tri', 'loan-the-tranh-hung', 'phien-tran-cat-cu', 'quan-hung-truc-loc']);
+assignPreset('historyCharacter', 'vuong-hau-tuong-linh', ['chan-long-thien-tu', 'hau-cung-phi-tan', 'muu-si-mon-khach', 'van-than-vo-tuong', 'man-di-phien-bang', 'thao-menh-anh-hung']);
+assignPreset('historyEvent', 'lich-su-quy-tich', ['sa-ban-tranh-ba', 'cung-bien-doat-dich', 'bien-phap-cai-cach', 'khoa-cu-ky']);
+assignPreset('historyDevelopment', 'chung-dien-co-so', ['luyen-binh-tri-quan', 'cong-trinh-binh-phap', 'hac-khoa-ky-lich-su', 'nong-thuong-chi-dao', 'kien-thiet-tri-sanh']);
+
+assignPreset('horrorHuman', 'linh-di-nhan-vat', ['nguoi-song', 'phu-tro']);
+assignPreset('horrorEntity', 'linh-di-nhan-vat', ['linh-the-ma-quy', 'phan-dien']);
+assignPreset('horrorPlace', 'boi-canh-kinh-di', ['dia-diem-ma-am', 'quy-tac-sinh-ton', 'bi-mat-the-gioi']);
+assignPreset('horrorEvent', 'su-kien-truyen-thuyet', ['su-kien-bat-thuong', 'truyen-thuyet-urban', 'loi-nguyen-linh-hon']);
+
+const AUTO_ROLE_BY_PATH_KEY = {};
+const assignAutoRole = (role, tabId, ids = []) => {
+  ids.forEach((subId) => {
+    AUTO_ROLE_BY_PATH_KEY[buildGenrePathKey(tabId, subId)] = role;
+  });
+};
+
+const AUTO_TARGET_PATHS_BY_PATH_KEY = {};
+const assignAutoTargets = (tabId, subId, targetPaths = []) => {
+  const key = buildGenrePathKey(tabId, subId);
+  AUTO_TARGET_PATHS_BY_PATH_KEY[key] = (Array.isArray(targetPaths) ? targetPaths : [])
+    .map((pathKey) => String(pathKey || '').trim())
+    .filter(Boolean);
+};
+
+assignAutoRole(AUTO_SYNC_ROLE_MAIN_CHARACTER, 'tu-si', ['thien-menh-chi-tu']);
+assignAutoRole(AUTO_SYNC_ROLE_CHARACTER_RELATED, 'tu-si', ['dao-lu', 'hong-nhan-tri-ky', 'sinh-tu-giao', 'dong-mon-su-de']);
+assignAutoRole(AUTO_SYNC_ROLE_MAP, 'chu-thien-van-gioi', ['tu-tien-gioi']);
+assignAutoRole(AUTO_SYNC_ROLE_FORCE, 'dinh-cap-the-luc', ['tong-mon-thanh-dia']);
+assignAutoRole(AUTO_SYNC_ROLE_MAIN_CHARACTER, 'sinh-linh', ['khi-van-chi-tu']);
+assignAutoRole(AUTO_SYNC_ROLE_CHARACTER_RELATED, 'sinh-linh', ['dong-bon-khe-uoc-gia', 'su-ma-tinh-linh']);
+assignAutoRole(AUTO_SYNC_ROLE_MAP, 'vi-dien-dai-luc', ['dai-luc']);
+assignAutoRole(AUTO_SYNC_ROLE_FORCE, 'van-toc-quan-dao', ['de-quoc-vuong-quoc']);
+assignAutoRole(AUTO_SYNC_ROLE_MAIN_CHARACTER, 'quan-chung-tuyen', ['nu-chu-nam-chu']);
+assignAutoRole(AUTO_SYNC_ROLE_CHARACTER_RELATED, 'quan-chung-tuyen', ['bach-nguyet-quang', 'tra-xanh-bach-lien-hoa', 'co-chap-cuong-benh-kieu', 'tra-nam-tien-nu', 'hao-mon-the-gia']);
+assignAutoRole(AUTO_SYNC_ROLE_MAIN_CHARACTER, 'do-thi-nhan-vat', ['long-ngao-thien']);
+assignAutoRole(AUTO_SYNC_ROLE_CHARACTER_RELATED, 'do-thi-nhan-vat', ['o-re-cao-thu-xuong-nui', 'ba-dao-tong-tai', 'bang-son-my-nu-hoa-khoi', 'phu-nhi-dai-hoan-kho-di-tu', 'the-gia-lao-hu']);
+assignAutoRole(AUTO_SYNC_ROLE_MAP, 'ban-do-su-nghiep', ['thuong-vi-khong-che-kinh-te']);
+assignAutoRole(AUTO_SYNC_ROLE_FORCE, 'dinh-cap-vong-tron', ['tu-dai-co-toc']);
+assignAutoRole(AUTO_SYNC_ROLE_MAIN_CHARACTER, 'luan-hoi-tieu-doi', ['luan-hoi-gia']);
+assignAutoRole(AUTO_SYNC_ROLE_CHARACTER_RELATED, 'luan-hoi-tieu-doi', ['doi-truong', 'tri-gia', 'hoa-luc-thu', 'nai-ma']);
+assignAutoRole(AUTO_SYNC_ROLE_MAP, 'the-gioi-nhiem-vu', ['kich-ban-the-gioi']);
+assignAutoRole(AUTO_SYNC_ROLE_FORCE, 'chu-than-khong-gian', ['chu-than-he-thong-mau']);
+assignAutoRole(AUTO_SYNC_ROLE_MAIN_CHARACTER, 'nhom-nhan-vat-dong-nhan', ['canon-character']);
+assignAutoRole(AUTO_SYNC_ROLE_CHARACTER_RELATED, 'nhom-nhan-vat-dong-nhan', ['original-character', 'bang-hoai-kich-tinh', 'ke-xuyen-thu-trong-sinh']);
+assignAutoRole(AUTO_SYNC_ROLE_MAP, 'nguyen-tac-vi-dien', ['canon-world']);
+assignAutoRole(AUTO_SYNC_ROLE_MAIN_CHARACTER, 'vuong-hau-tuong-linh', ['chan-long-thien-tu']);
+assignAutoRole(AUTO_SYNC_ROLE_CHARACTER_RELATED, 'vuong-hau-tuong-linh', ['hau-cung-phi-tan', 'muu-si-mon-khach', 'van-than-vo-tuong']);
+assignAutoRole(AUTO_SYNC_ROLE_MAP, 'thien-ha-dai-the', ['trieu-dai-ky-nguyen']);
+assignAutoRole(AUTO_SYNC_ROLE_FORCE, 'chung-dien-co-so', ['luyen-binh-tri-quan']);
+assignAutoRole(AUTO_SYNC_ROLE_MAIN_CHARACTER, 'linh-di-nhan-vat', ['nguoi-song']);
+assignAutoRole(AUTO_SYNC_ROLE_CHARACTER_RELATED, 'linh-di-nhan-vat', ['phan-dien', 'phu-tro']);
+assignAutoRole(AUTO_SYNC_ROLE_MAP, 'boi-canh-kinh-di', ['dia-diem-ma-am']);
+assignAutoRole(AUTO_SYNC_ROLE_MAP, 'ky-nguyen-hac-am', ['bao-phat-nguy-co']);
+assignAutoRole(AUTO_SYNC_ROLE_FORCE, 'doanh-trai-sinh-ton', ['khu-an-toan-can-cu-dia']);
+
+assignAutoTargets('tu-si', 'thien-menh-chi-tu', [
+  'tu-si::dao-lu',
+  'tu-si::hong-nhan-tri-ky',
+  'tu-si::sinh-tu-giao',
+  'tu-si::dong-mon-su-de',
+]);
+assignAutoTargets('sinh-linh', 'khi-van-chi-tu', [
+  'sinh-linh::dong-bon-khe-uoc-gia',
+  'sinh-linh::su-ma-tinh-linh',
+]);
+assignAutoTargets('dinh-cap-the-luc', 'tong-mon-thanh-dia', [
+  'chu-thien-van-gioi::tu-tien-gioi',
+]);
+assignAutoTargets('van-toc-quan-dao', 'de-quoc-vuong-quoc', [
+  'vi-dien-dai-luc::dai-luc',
+]);
+assignAutoTargets('quan-chung-tuyen', 'nu-chu-nam-chu', [
+  'quan-chung-tuyen::bach-nguyet-quang',
+  'quan-chung-tuyen::tra-xanh-bach-lien-hoa',
+  'quan-chung-tuyen::co-chap-cuong-benh-kieu',
+  'quan-chung-tuyen::tra-nam-tien-nu',
+  'quan-chung-tuyen::hao-mon-the-gia',
+]);
+assignAutoTargets('do-thi-nhan-vat', 'long-ngao-thien', [
+  'do-thi-nhan-vat::o-re-cao-thu-xuong-nui',
+  'do-thi-nhan-vat::ba-dao-tong-tai',
+  'do-thi-nhan-vat::bang-son-my-nu-hoa-khoi',
+  'do-thi-nhan-vat::phu-nhi-dai-hoan-kho-di-tu',
+  'do-thi-nhan-vat::the-gia-lao-hu',
+]);
+assignAutoTargets('dinh-cap-vong-tron', 'tu-dai-co-toc', [
+  'ban-do-su-nghiep::thuong-vi-khong-che-kinh-te',
+]);
+assignAutoTargets('luan-hoi-tieu-doi', 'luan-hoi-gia', [
+  'luan-hoi-tieu-doi::doi-truong',
+  'luan-hoi-tieu-doi::tri-gia',
+  'luan-hoi-tieu-doi::hoa-luc-thu',
+  'luan-hoi-tieu-doi::nai-ma',
+]);
+assignAutoTargets('chu-than-khong-gian', 'chu-than-he-thong-mau', [
+  'the-gioi-nhiem-vu::kich-ban-the-gioi',
+]);
+assignAutoTargets('nhom-nhan-vat-dong-nhan', 'canon-character', [
+  'nhom-nhan-vat-dong-nhan::original-character',
+  'nhom-nhan-vat-dong-nhan::bang-hoai-kich-tinh',
+  'nhom-nhan-vat-dong-nhan::ke-xuyen-thu-trong-sinh',
+]);
+assignAutoTargets('vuong-hau-tuong-linh', 'chan-long-thien-tu', [
+  'vuong-hau-tuong-linh::hau-cung-phi-tan',
+  'vuong-hau-tuong-linh::muu-si-mon-khach',
+  'vuong-hau-tuong-linh::van-than-vo-tuong',
+]);
+assignAutoTargets('chung-dien-co-so', 'luyen-binh-tri-quan', [
+  'thien-ha-dai-the::trieu-dai-ky-nguyen',
+]);
+assignAutoTargets('linh-di-nhan-vat', 'nguoi-song', [
+  'linh-di-nhan-vat::phan-dien',
+  'linh-di-nhan-vat::phu-tro',
+]);
+assignAutoTargets('doanh-trai-sinh-ton', 'khu-an-toan-can-cu-dia', [
+  'ky-nguyen-hac-am::bao-phat-nguy-co',
+]);
+
+const sub = (id, label, fields = DEFAULT_FIELDS) => ({
+  id: normalizeGenreSubTabId(id),
+  label,
+  viewType: 'collection-track',
+  tabCon: [],
+  fieldsTemplate: cloneFields(fields),
+});
+
+function applySubGenreConfig(parentId, subTab) {
+  const normalizedSubId = normalizeGenreSubTabId(subTab?.id || '');
+  const pathKey = buildGenrePathKey(parentId, normalizedSubId);
+  const preset = FIELD_PRESET_BY_PATH_KEY[pathKey];
+  const autoSyncRole = AUTO_ROLE_BY_PATH_KEY[pathKey] || subTab?.autoSyncRole || '';
+  const autoSyncTargetPaths = AUTO_TARGET_PATHS_BY_PATH_KEY[pathKey] || subTab?.autoSyncTargetPaths || [];
+  return {
+    ...subTab,
+    id: normalizedSubId || subTab?.id || '',
+    fieldsTemplate: cloneFields(preset || subTab?.fieldsTemplate || DEFAULT_FIELDS),
+    ...(autoSyncRole ? { autoSyncRole } : {}),
+    ...(autoSyncTargetPaths.length > 0 ? { autoSyncTargetPaths: cloneValue(autoSyncTargetPaths) } : {}),
+  };
+}
+
 const tab = (id, label, iconName, subTabs) => ({
-  id, label, iconName, subTabs
+  id,
+  label,
+  iconName,
+  subTabs: (subTabs || []).map((subTab) => applySubGenreConfig(id, subTab)),
 });
 
 // Map thể loại GENRES -> cấu trúc tabs (không gồm Tổng Quan)
@@ -121,7 +704,7 @@ export const GENRE_TABS_MAP = {
     ]),
     tab('kich-ban-kich-tinh', 'Kịch Bản Kịch Tình (Sự Kiện)', 'ScrollText', [
       sub('trach-dau-gia-dau', 'Trạch Đấu / Gia Đấu'),
-      sub('cung-dau-doạt-dich', 'Cung Đấu / Đoạt Đích'),
+      sub('cung-dau-doat-dich', 'Cung Đấu / Đoạt Đích'),
       sub('va-mat-sang-van', 'Vả Mặt / Sảng Văn (Báo thù)'),
       sub('gioi-giai-tri-showbiz', 'Giới Giải Trí / Showbiz'),
       sub('hac-dao-giao-phong', 'Hắc Đạo Giao Phong')
@@ -340,7 +923,7 @@ export const GENRE_TABS_MAP = {
     ]),
     tab('lich-su-quy-tich', 'Lịch Sử Quỹ Tích (Sự Kiện)', 'ScrollText', [
       sub('sa-ban-tranh-ba', 'Sa Bàn Tranh Bá (Chiến dịch)'),
-      sub('cung-bien-doạt-dich', 'Cung Biến / Đoạt Đích'),
+      sub('cung-bien-doat-dich', 'Cung Biến / Đoạt Đích'),
       sub('bien-phap-cai-cach', 'Biến Pháp Cải Cách'),
       sub('khoa-cu-ky', 'Khoa Cử Ký')
     ]),
@@ -427,6 +1010,8 @@ export function mergeTabsByGenres(genres) {
       }
     }
   }
-  const result = hydrateTabsAutoSyncConfigs([TONG_QUAN, ...Array.from(merged.values())]).tabsConfig;
+  const hydrated = hydrateTabsAutoSyncConfigs([TONG_QUAN, ...Array.from(merged.values())]);
+  const linked = hydrateTabsAutoSyncLinkTargets(hydrated.tabsConfig);
+  const result = linked.tabsConfig;
   return result.length > 1 ? result : null;
 }

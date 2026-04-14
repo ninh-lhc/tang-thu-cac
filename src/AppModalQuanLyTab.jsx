@@ -21,6 +21,8 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { safeString, getIconComponent } from './MasterUtils.jsx';
+import { WIKI_ALIAS_FIELD } from './MasterEngines.js';
+import { isMapCollectionScope } from './lib/mapHierarchySync.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
 import {
   getEffectiveAutoSyncRole,
@@ -37,6 +39,14 @@ import {
   resolveExplicitAutoSyncTargets,
   supportsAutoSyncLinkRole,
 } from './lib/tabAutoSyncLinks.js';
+import { normalizeListGroupStrategy } from './lib/collectionListCardSync.js';
+import {
+  AUTO_SYNC_LEVEL_1,
+  AUTO_SYNC_LEVEL_2,
+  AUTO_SYNC_LEVEL_3,
+  AUTO_SYNC_LEVEL_4,
+  getEffectiveTabAutoSyncLevelConfig,
+} from './lib/tabAutoSyncLevels.js';
 
 const AUTO_ROLE_UI_COPY = Object.freeze({
   '': {
@@ -452,6 +462,30 @@ function buildSimpleSetupSteps(diagnostics) {
   ];
 }
 
+function buildCollectionTrackPathOptions(tabs, { excludePathKey = '' } = {}) {
+  const out = [];
+  (Array.isArray(tabs) ? tabs : []).forEach((lon) => {
+    const lonId = safeString(lon?.id).trim();
+    const lonLabel = safeString(lon?.label || lonId).trim();
+    (lon?.subTabs || []).forEach((nho) => {
+      if (nho?.viewType !== 'collection-track') return;
+      const nhoId = safeString(nho?.id).trim();
+      const nhoLabel = safeString(nho?.label || nhoId).trim();
+      const pathKey = `${lonId}::${nhoId}`;
+      if (!lonId || !nhoId || !pathKey || pathKey === excludePathKey) return;
+      out.push({
+        pathKey,
+        lonId,
+        nhoId,
+        lonLabel,
+        nhoLabel,
+        label: lonLabel && nhoLabel ? `${lonLabel} > ${nhoLabel}` : pathKey,
+      });
+    });
+  });
+  return out.sort((a, b) => a.label.localeCompare(b.label, 'vi'));
+}
+
 export function AppModalQuanLyTab({
   activeNovelData,
   onClose,
@@ -466,16 +500,26 @@ export function AppModalQuanLyTab({
   handleAddTabCon,
   handleSetTabAutoSyncRole,
   handleSetTabAutoSyncTargets,
+  handleSetTabAutoSyncLevels,
   handleSetTabAutoSyncFieldMap,
+  handleSetTabListGroupStrategy,
+  handleSetTabMapEntrySuggestions,
+  handleMergeTabFieldSuggestionList,
+  handleAddTabTemplateField,
+  handleRemoveTabTemplateField,
+  handleRenameTabTemplateFieldLabel,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
+  handleSaveCurrentTabsAsGenreTemplate,
   setConfirmDialog,
 }) {
   const trapRef = useFocusTrap(true);
+  const [extraFieldDraftByPath, setExtraFieldDraftByPath] = React.useState({});
   const [advancedOpenByPath, setAdvancedOpenByPath] = React.useState({});
   const [expandedRoleChoicesByPath, setExpandedRoleChoicesByPath] = React.useState({});
   const [openAutoTabPath, setOpenAutoTabPath] = React.useState(null);
   const [showAutoOverview, setShowAutoOverview] = React.useState(false);
+  const [manualTargetPickerByPath, setManualTargetPickerByPath] = React.useState({});
   const novelGenres = React.useMemo(() => extractNovelGenres(activeNovelData), [activeNovelData]);
   const diagnostics = React.useMemo(
     () => (activeNovelData ? collectNovelAutoSyncDiagnostics(activeNovelData) : null),
@@ -507,6 +551,18 @@ export function AppModalQuanLyTab({
 
   const toggleAutoOverview = React.useCallback(() => {
     setShowAutoOverview((prev) => !prev);
+  }, []);
+
+  const getManualTargetPickerValue = React.useCallback(
+    (pathKey) => safeString(manualTargetPickerByPath[pathKey]).trim(),
+    [manualTargetPickerByPath]
+  );
+
+  const setManualTargetPickerValue = React.useCallback((pathKey, value) => {
+    setManualTargetPickerByPath((prev) => ({
+      ...prev,
+      [pathKey]: value,
+    }));
   }, []);
 
   return (
@@ -588,7 +644,16 @@ export function AppModalQuanLyTab({
                       onClick={handleApplySuggestedAutoSyncSetup}
                       className="px-4 py-2.5 rounded-xl border border-cyan-700/40 bg-cyan-950/30 text-cyan-100 text-sm font-bold flex items-center gap-2 hover:bg-cyan-900/30"
                     >
-                      <Sparkles size={15} /> Áp Gợi Ý AUTO
+                      <Sparkles size={15} /> Áp Preset AUTO Theo Thể Loại
+                    </button>
+                  )}
+                  {typeof handleSaveCurrentTabsAsGenreTemplate === 'function' && (
+                    <button
+                      type="button"
+                      onClick={handleSaveCurrentTabsAsGenreTemplate}
+                      className="px-4 py-2.5 rounded-xl border border-emerald-700/40 bg-emerald-950/25 text-emerald-100 text-sm font-bold flex items-center gap-2 hover:bg-emerald-900/30"
+                    >
+                      <Save size={15} /> Lưu Cây Này Thành Mẫu
                     </button>
                   )}
                 </div>
@@ -773,17 +838,33 @@ export function AppModalQuanLyTab({
                     const templateFields = Array.isArray(tabNho.fieldsTemplate)
                       ? tabNho.fieldsTemplate.filter((field) => field && safeString(field.id).trim())
                       : [];
+                    const isMapTab = isMapCollectionScope({
+                      activeTabLon: tabLon.id,
+                      activeTabNho: tabNho.id,
+                      currentTabConfig: tabNho,
+                      parentLabel: tabLon.label || '',
+                    });
                     const tabPathKey = `${tabLon.id}::${tabNho.id}`;
                     const tabReport = diagnosticsByPath.get(tabPathKey);
                     const explicitTargetPaths = readExplicitAutoSyncTargetPaths(tabNho);
                     const supportsLink = supportsAutoSyncLinkRole(effectiveRole);
                     const targetCandidates = supportsLink ? listAutoSyncTargetCandidates(sortedTabs, tabAutoContext) : [];
                     const selectedTargets = supportsLink ? resolveExplicitAutoSyncTargets(sortedTabs, tabAutoContext) : [];
+                    const selectedTargetPathSet = new Set(selectedTargets.map((item) => item.pathKey));
                     const suggestedTargetPaths = new Set(
                       supportsLink ? guessAutoSyncTargetPathsForTab(sortedTabs, tabAutoContext) : []
                     );
+                    const allCollectionTrackOptions = supportsLink
+                      ? buildCollectionTrackPathOptions(sortedTabs, { excludePathKey: tabPathKey })
+                      : [];
+                    const addableManualOptions = allCollectionTrackOptions.filter(
+                      (item) => !selectedTargetPathSet.has(item.pathKey)
+                    );
+                    const manualPickerValue = getManualTargetPickerValue(tabPathKey);
                     const linkSelectionMode = getAutoSyncLinkSelectionMode(effectiveRole);
                     const linkTargetLabel = getAutoSyncLinkTargetLabel(effectiveRole);
+                    const autoLevelConfig = getEffectiveTabAutoSyncLevelConfig(tabNho);
+                    const listGroupStrategy = normalizeListGroupStrategy(tabNho?.autoListGroupStrategy || '');
                     const autoRoleSummary = getAutoModeSummary({
                       explicitRole,
                       effectiveRole,
@@ -1080,6 +1161,247 @@ export function AppModalQuanLyTab({
                                 </div>
                               </div>
 
+                              <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3 space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div>
+                                    <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">
+                                      4 bậc AUTO
+                                    </div>
+                                    <div className="text-[12px] text-slate-300 font-serif mt-1">
+                                      Bật/tắt từng bậc theo ngữ cảnh của tab này.
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleSetTabAutoSyncLevels?.(tabLon.id, tabNho.id, {
+                                        ...autoLevelConfig,
+                                        enabled: !autoLevelConfig.enabled,
+                                      })
+                                    }
+                                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold ${
+                                      autoLevelConfig.enabled
+                                        ? 'border-emerald-700/50 bg-emerald-950/25 text-emerald-100'
+                                        : 'border-slate-700 bg-slate-900/80 text-slate-300'
+                                    }`}
+                                  >
+                                    {autoLevelConfig.enabled ? 'AUTO: Đang bật' : 'AUTO: Đang tắt'}
+                                  </button>
+                                </div>
+                                <div className="grid gap-2 md:grid-cols-2">
+                                  {[
+                                    [AUTO_SYNC_LEVEL_1, 'Bậc 1: AUTO trong chính thẻ'],
+                                    [AUTO_SYNC_LEVEL_2, 'Bậc 2: AUTO thẻ danh sách cùng tab'],
+                                    [AUTO_SYNC_LEVEL_3, 'Bậc 3: AUTO giữa thẻ có quan hệ'],
+                                    [AUTO_SYNC_LEVEL_4, 'Bậc 4: AUTO timeline liên hệ'],
+                                  ].map(([levelKey, label]) => {
+                                    const isOn = autoLevelConfig.levels[levelKey];
+                                    return (
+                                      <button
+                                        key={levelKey}
+                                        type="button"
+                                        disabled={!autoLevelConfig.enabled}
+                                        onClick={() =>
+                                          handleSetTabAutoSyncLevels?.(tabLon.id, tabNho.id, {
+                                            ...autoLevelConfig,
+                                            levels: {
+                                              ...autoLevelConfig.levels,
+                                              [levelKey]: !isOn,
+                                            },
+                                          })
+                                        }
+                                        className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                                          !autoLevelConfig.enabled
+                                            ? 'border-slate-800 bg-slate-950/30 text-slate-600 cursor-not-allowed'
+                                            : isOn
+                                              ? 'border-cyan-700/50 bg-cyan-950/25 text-cyan-100'
+                                              : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:border-slate-700'
+                                        }`}
+                                      >
+                                        {label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3 space-y-2">
+                                <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">
+                                  Sắp xếp thẻ Danh Sách
+                                </div>
+                                <div className="text-[12px] text-slate-300 font-serif">
+                                  Chuẩn hoá cách gom nhóm dữ liệu cho tab này để dùng ổn định giữa các truyện.
+                                </div>
+                                <select
+                                  value={listGroupStrategy}
+                                  onChange={(e) => handleSetTabListGroupStrategy?.(tabLon.id, tabNho.id, e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-200 font-serif outline-none focus:border-amber-600/50"
+                                >
+                                  <option value="auto">Tự đoán theo tab/genre (khuyến nghị)</option>
+                                  <option value="title">Theo Loại / Tiêu đề (f_title)</option>
+                                  <option value="status">Theo Trạng thái (f_status)</option>
+                                  <option value="rank">Theo Cấp bậc (f_cap/f_status)</option>
+                                  <option value="location">Theo Địa bàn / Vị trí</option>
+                                  <option value="relation">Theo Quan hệ</option>
+                                  <option value="owner">Theo Chủ sở hữu</option>
+                                  <option value="text">Theo Text tổng quát</option>
+                                </select>
+                              </div>
+
+                              <div className="rounded-xl border border-amber-800/45 bg-amber-950/15 p-3 space-y-3">
+                                <div>
+                                  <div className="text-[10px] uppercase tracking-wide text-amber-400 font-bold">
+                                    Trường hồ sơ &amp; gợi ý nhập
+                                  </div>
+                                  <div className="text-[12px] text-slate-300 font-serif mt-1">
+                                    Thêm cột (cấp bậc, hệ pháp…) và danh sách gợi ý cho ô một dòng khi thêm mốc timeline. Tab Bản đồ có
+                                    thêm ô gợi ý riêng cho Loại địa bàn / Hệ phân cấp.
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-end gap-2">
+                                  <input
+                                    type="text"
+                                    value={extraFieldDraftByPath[tabPathKey] ?? ''}
+                                    onChange={(e) =>
+                                      setExtraFieldDraftByPath((prev) => ({
+                                        ...prev,
+                                        [tabPathKey]: e.target.value,
+                                      }))
+                                    }
+                                    placeholder="Tên trường mới (vd. Phẩm cấp, Tộc hệ)"
+                                    className="min-w-[200px] flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-100 font-serif outline-none focus:border-amber-600/50"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const raw = safeString(extraFieldDraftByPath[tabPathKey]).trim();
+                                      if (!raw) return;
+                                      handleAddTabTemplateField?.(tabLon.id, tabNho.id, raw);
+                                      setExtraFieldDraftByPath((prev) => ({ ...prev, [tabPathKey]: '' }));
+                                    }}
+                                    className="rounded-lg border border-amber-700/50 bg-amber-950/30 px-3 py-2 text-[11px] font-bold text-amber-100 hover:bg-amber-900/40"
+                                  >
+                                    Thêm trường
+                                  </button>
+                                </div>
+
+                                <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1 custom-scrollbar">
+                                  {templateFields.map((field) => {
+                                    const fid = safeString(field?.id).trim();
+                                    if (!fid) return null;
+                                    const isWiki = fid === WIKI_ALIAS_FIELD.id;
+                                    const suggestionLines = (tabNho.fieldSuggestionLists?.[fid] || []).join('\n');
+                                    return (
+                                      <div
+                                        key={fid}
+                                        className="rounded-lg border border-slate-800/90 bg-slate-950/50 p-2 space-y-2"
+                                      >
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <input
+                                            type="text"
+                                            defaultValue={safeString(field.label)}
+                                            key={`lab-${tabPathKey}-${fid}-${safeString(field.label)}`}
+                                            onBlur={(e) =>
+                                              handleRenameTabTemplateFieldLabel?.(
+                                                tabLon.id,
+                                                tabNho.id,
+                                                fid,
+                                                e.target.value
+                                              )
+                                            }
+                                            className="flex-1 min-w-[140px] bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100 font-serif"
+                                            aria-label={`Nhãn trường ${fid}`}
+                                          />
+                                          <code className="text-[10px] text-slate-500 shrink-0">{fid}</code>
+                                          {!isWiki && (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setConfirmDialog({
+                                                  isOpen: true,
+                                                  title: 'Xóa trường',
+                                                  message: `Xóa trường <b>${safeString(field.label)}</b> khỏi tab này? Gợi ý gắn trường cũng sẽ xóa.`,
+                                                  onConfirm: () => handleRemoveTabTemplateField?.(tabLon.id, tabNho.id, fid),
+                                                })
+                                              }
+                                              className="shrink-0 rounded-lg border border-rose-800/50 bg-rose-950/25 px-2 py-1 text-[10px] font-bold text-rose-100 hover:bg-rose-900/35"
+                                            >
+                                              Xóa
+                                            </button>
+                                          )}
+                                        </div>
+                                        <div>
+                                          <div className="text-[10px] text-slate-500 mb-1">
+                                            Gợi ý (mỗi dòng một mục) — ô một dòng ở mốc timeline
+                                          </div>
+                                          <textarea
+                                            defaultValue={suggestionLines}
+                                            key={`sugg-${tabPathKey}-${fid}-${suggestionLines.length}`}
+                                            onBlur={(e) =>
+                                              handleMergeTabFieldSuggestionList?.(
+                                                tabLon.id,
+                                                tabNho.id,
+                                                fid,
+                                                e.target.value
+                                              )
+                                            }
+                                            rows={3}
+                                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono leading-relaxed"
+                                          />
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+
+                                {isMapTab && (
+                                  <div className="space-y-2 border-t border-amber-800/35 pt-3">
+                                    <div className="text-[11px] font-semibold text-amber-100">
+                                      Gợi ý thêm cho Bản đồ (Loại địa bàn / Hệ phân cấp)
+                                    </div>
+                                    <div className="grid gap-2 md:grid-cols-2">
+                                      <div>
+                                        <div className="text-[10px] text-slate-500 mb-1">Loại địa bàn</div>
+                                        <textarea
+                                          defaultValue={(tabNho.mapEntrySuggestions?.types || []).join('\n')}
+                                          key={`mapt-${tabPathKey}-${(tabNho.mapEntrySuggestions?.types || []).length}`}
+                                          onBlur={(e) =>
+                                            handleSetTabMapEntrySuggestions?.(
+                                              tabLon.id,
+                                              tabNho.id,
+                                              'types',
+                                              e.target.value
+                                            )
+                                          }
+                                          rows={4}
+                                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono"
+                                          placeholder="Mỗi dòng một loại (vd. Thành phố)"
+                                        />
+                                      </div>
+                                      <div>
+                                        <div className="text-[10px] text-slate-500 mb-1">Hệ phân cấp</div>
+                                        <textarea
+                                          defaultValue={(tabNho.mapEntrySuggestions?.hierarchy || []).join('\n')}
+                                          key={`maph-${tabPathKey}-${(tabNho.mapEntrySuggestions?.hierarchy || []).length}`}
+                                          onBlur={(e) =>
+                                            handleSetTabMapEntrySuggestions?.(
+                                              tabLon.id,
+                                              tabNho.id,
+                                              'hierarchy',
+                                              e.target.value
+                                            )
+                                          }
+                                          rows={4}
+                                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono"
+                                          placeholder="Mỗi dòng một hệ (vd. Cấp thành phố)"
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
                               {explicitRole !== 'khong-tu-dong' && (
                                 <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3 space-y-3">
                                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1132,6 +1454,68 @@ export function AppModalQuanLyTab({
                                       <div className="grid gap-2 md:grid-cols-2">
                                         {targetCandidates.map((candidate) => renderTargetCard(candidate))}
                                       </div>
+                                    </div>
+                                  )}
+
+                                  {supportsLink && (
+                                    <div className="rounded-xl border border-slate-800/80 bg-slate-950/45 p-3 space-y-2">
+                                      <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">
+                                        Tu them tab nhan AUTO
+                                      </div>
+                                      <div className="text-[12px] text-slate-400 font-serif">
+                                        Dung khi ban muon tu cau hinh tab nhan theo bo truyen, khong chi theo danh sach goi y.
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <select
+                                          value={manualPickerValue}
+                                          onChange={(e) => setManualTargetPickerValue(tabPathKey, e.target.value)}
+                                          className="min-w-[280px] flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-200 font-serif outline-none focus:border-amber-600/50"
+                                        >
+                                          <option value="">Chon 1 tab nhan bat ky trong cay...</option>
+                                          {addableManualOptions.map((option) => (
+                                            <option key={option.pathKey} value={option.pathKey}>
+                                              {option.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <button
+                                          type="button"
+                                          disabled={!manualPickerValue}
+                                          onClick={() => {
+                                            if (!manualPickerValue) return;
+                                            handleSetTabAutoSyncTargets(tabLon.id, tabNho.id, [
+                                              ...explicitTargetPaths,
+                                              manualPickerValue,
+                                            ]);
+                                            setManualTargetPickerValue(tabPathKey, '');
+                                          }}
+                                          className="rounded-lg border border-emerald-700/50 bg-emerald-950/25 px-3 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-900/25 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          <Plus size={12} className="inline mr-1" />
+                                          Them tab nhan
+                                        </button>
+                                      </div>
+                                      {selectedTargets.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {selectedTargets.map((target) => (
+                                            <button
+                                              key={`chip-${target.pathKey}`}
+                                              type="button"
+                                              onClick={() =>
+                                                handleSetTabAutoSyncTargets(
+                                                  tabLon.id,
+                                                  tabNho.id,
+                                                  explicitTargetPaths.filter((pathKey) => pathKey !== target.pathKey)
+                                                )
+                                              }
+                                              className="rounded-full border border-cyan-700/40 bg-cyan-950/25 px-2.5 py-1 text-[11px] text-cyan-100 font-semibold hover:bg-cyan-900/25"
+                                              title="Bam de go target nay"
+                                            >
+                                              {safeString(target.label)} <span className="text-cyan-300">×</span>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                 </div>

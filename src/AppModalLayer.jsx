@@ -139,9 +139,17 @@ export function AppModalLayer({
   handleAddTabCon,
   handleSetTabAutoSyncRole,
   handleSetTabAutoSyncTargets,
+  handleSetTabAutoSyncLevels,
   handleSetTabAutoSyncFieldMap,
+  handleSetTabListGroupStrategy,
+  handleSetTabMapEntrySuggestions,
+  handleMergeTabFieldSuggestionList,
+  handleAddTabTemplateField,
+  handleRemoveTabTemplateField,
+  handleRenameTabTemplateFieldLabel,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
+  handleSaveCurrentTabsAsGenreTemplate,
 }) {
   return (
     <Suspense fallback={null}>
@@ -331,9 +339,17 @@ export function AppModalLayer({
           handleAddTabCon={handleAddTabCon}
           handleSetTabAutoSyncRole={handleSetTabAutoSyncRole}
           handleSetTabAutoSyncTargets={handleSetTabAutoSyncTargets}
+          handleSetTabAutoSyncLevels={handleSetTabAutoSyncLevels}
           handleSetTabAutoSyncFieldMap={handleSetTabAutoSyncFieldMap}
+          handleSetTabListGroupStrategy={handleSetTabListGroupStrategy}
+          handleSetTabMapEntrySuggestions={handleSetTabMapEntrySuggestions}
+          handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
+          handleAddTabTemplateField={handleAddTabTemplateField}
+          handleRemoveTabTemplateField={handleRemoveTabTemplateField}
+          handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
           handleApplySuggestedAutoSyncSetup={handleApplySuggestedAutoSyncSetup}
           handleResyncAutoTabs={handleResyncAutoTabs}
+          handleSaveCurrentTabsAsGenreTemplate={handleSaveCurrentTabsAsGenreTemplate}
           setConfirmDialog={setConfirmDialog}
         />
       )}

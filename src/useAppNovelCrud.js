@@ -6,6 +6,7 @@
 // ==========================================
 
 import { useCallback, useState } from 'react';
+import { ensureCollectionListCardsForNovel } from './lib/collectionListCardSync.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 
 const DEFAULT_THEME = 'theme-tien-hiep';
@@ -119,6 +120,7 @@ export function useAppNovelCrud({
         chapterCrossRefs: [],
         readingJournal: [],
       };
+      ensureCollectionListCardsForNovel(newFullData, { createMissingTabBuckets: true });
       const newMetaList = [newMeta, ...novelsMetadata];
       const nextStats = {
         ...novelStatsByIdRef.current,

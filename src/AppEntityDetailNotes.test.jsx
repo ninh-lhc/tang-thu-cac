@@ -45,6 +45,11 @@ function createProps(overrides = {}) {
     memoizedEntityInfo: 'Linh Gioi Chau xuat hien giua troi.',
     onOpenAutoSyncGuide: null,
     onOpenEntityNotesGuide: null,
+    detailProfileMode: 'original',
+    onChangeDetailProfileMode: vi.fn(),
+    canViewTimelineCurrentProfile: false,
+    timelineCurrentProfileLabel: '',
+    onOpenTimelineCurrentEdit: vi.fn(),
     ...overrides,
   };
 }
@@ -130,6 +135,57 @@ describe('AppEntityDetailNotes', () => {
     fireEvent.click(screen.getByRole('button', { name: /Hướng dẫn/i }));
 
     expect(onOpenEntityNotesGuide).toHaveBeenCalledTimes(1);
+  });
+
+  it('switches between original and current profile modes from the header', () => {
+    const onChangeDetailProfileMode = vi.fn();
+    const props = createProps({
+      isEntityEditing: false,
+      onChangeDetailProfileMode,
+      canViewTimelineCurrentProfile: true,
+      timelineCurrentProfileLabel: 'Chuong 88 · Dot pha',
+    });
+    render(<AppEntityDetailNotes {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /^Hiện tại$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Ban đầu$/i }));
+
+    expect(onChangeDetailProfileMode).toHaveBeenNthCalledWith(1, 'current');
+    expect(onChangeDetailProfileMode).toHaveBeenNthCalledWith(2, 'original');
+  });
+
+  it('disables the current profile button when timeline has no snapshot view', () => {
+    const onChangeDetailProfileMode = vi.fn();
+    const props = createProps({
+      isEntityEditing: false,
+      onChangeDetailProfileMode,
+      canViewTimelineCurrentProfile: false,
+    });
+    render(<AppEntityDetailNotes {...props} />);
+
+    const currentButton = screen.getByRole('button', { name: /^Hiện tại$/i });
+    expect(currentButton.hasAttribute('disabled')).toBe(true);
+
+    fireEvent.click(currentButton);
+    expect(onChangeDetailProfileMode).not.toHaveBeenCalled();
+  });
+
+  it('opens timeline edit instead of entity notes edit while in current mode', () => {
+    const onOpenTimelineCurrentEdit = vi.fn();
+    const setIsEntityEditing = vi.fn();
+    const props = createProps({
+      isEntityEditing: false,
+      detailProfileMode: 'current',
+      canViewTimelineCurrentProfile: true,
+      onOpenTimelineCurrentEdit,
+      setIsEntityEditing,
+    });
+    render(<AppEntityDetailNotes {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Sửa timeline/i }));
+
+    expect(onOpenTimelineCurrentEdit).toHaveBeenCalledTimes(1);
+    expect(setIsEntityEditing).not.toHaveBeenCalled();
   });
 
   it('smart-wraps the current line with the bold pair button', () => {
