@@ -4,11 +4,11 @@
 // Mục tiêu: tách gọn code mà không đổi hành vi runtime.
 import { useCallback, useMemo } from 'react';
 import { lockFieldsTemplateIfFirstEntity, resolveFieldsTemplate } from './MasterEngines.js';
-import { generateId, safeString } from './MasterUtils.jsx';
+import { generateId, safeString, toDisplayTitleCase } from './MasterUtils.jsx';
 import { countEntitiesInNovel } from './deepSearchCore.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { applyAutoRelationNotesForEntity, isAutoRelationScopeLonId, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
-import { syncAllCollectionListCards } from './lib/collectionListCardSync.js';
+import { syncAllCollectionListCards, syncAllCollectionListCardsDetailed } from './lib/collectionListCardSync.js';
 import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
 import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
@@ -191,6 +191,11 @@ export function useAppEntityMilestoneActions({
   const handleSaveEntity = useCallback(
     (formData, dynamicData, opts = null) => {
       const copyRawToInfo = Boolean(opts && opts.copyRawToInfo);
+      const normalizedEntityName = toDisplayTitleCase(formData?.name);
+      if (!normalizedEntityName) {
+        showToast('Điền Danh xưng / Tên gọi trước khi lưu.', 'warning');
+        return;
+      }
       const prev = activeNovelData ? structuredClone(activeNovelData) : null;
       const isCreate = !formData.id;
       const newEntityId = isCreate ? generateId('ent') : formData.id;
@@ -239,7 +244,7 @@ export function useAppEntityMilestoneActions({
             });
             tabData.entities[idx] = {
               ...tabData.entities[idx],
-              name: formData.name,
+              name: normalizedEntityName,
               avatar: formData.avatar,
               rawText: formData.rawText,
               status: statusLine,
@@ -254,7 +259,7 @@ export function useAppEntityMilestoneActions({
               sourceParentLabel: currentTabConfig?._parentLabel || '',
               statusLine,
             });
-            const nextName = safeString(formData.name).trim();
+            const nextName = normalizedEntityName;
             if (activeTabLon !== 'nhan-vat' && prevName && nextName && prevName !== nextName) {
               ownerMilestoneRenameSynced = syncAutoOwnerMilestonesItemRename(nov, {
                 entityId: formData.id,
@@ -276,7 +281,7 @@ export function useAppEntityMilestoneActions({
             dynamicData: mergedNew,
             status: '',
           });
-          const canonicalName = safeString(formData.name).trim();
+          const canonicalName = normalizedEntityName;
           const matched = findEquivalentEntityByName(tabData.entities, canonicalName, {
             allowExactNameMatch: false,
           });
@@ -837,7 +842,21 @@ export function useAppEntityMilestoneActions({
           ) {
             mapHierarchyResynced = syncAllMapHierarchyAutoBlocks(updated) || mapHierarchyResynced;
           }
-          syncAllCollectionListCards(updated);
+          const listCardSyncResult = syncAllCollectionListCardsDetailed(updated);
+          if (listCardSyncResult.recreatedCount > 0) {
+            const firstTab = listCardSyncResult.recreatedTabs[0] || {};
+            const firstPath = [safeString(firstTab.lonLabel).trim(), safeString(firstTab.nhoLabel).trim()]
+              .filter(Boolean)
+              .join(' > ');
+            const remainingCount = Math.max(0, listCardSyncResult.recreatedCount - 1);
+            const tabHint = firstPath
+              ? ` (${firstPath}${remainingCount > 0 ? ` +${remainingCount} tab khác` : ''})`
+              : '';
+            showToast(
+              `Đã tự tạo lại ${listCardSyncResult.recreatedCount} thẻ Danh Sách${tabHint} để AUTO bậc 2 tiếp tục hoạt động.`,
+              'success'
+            );
+          }
           const nextStats = { ...novelStatsByIdRef.current, [updated.id]: countEntitiesInNovel(updated) };
           novelStatsByIdRef.current = nextStats;
           setNovelStatsById(nextStats);
@@ -858,18 +877,6 @@ export function useAppEntityMilestoneActions({
           });
           if (forceMapResynced) {
             showToast('Đã đồng bộ lại AUTO Thế Lực ↔ Bản đồ sau khi xóa thẻ.', 'success');
-          }
-          if (forceMapWarning === '__never__') {
-            showToast('ÄÃ£ Ä‘á»“ng bá»™ quan há»‡ Tháº¿ Lá»±c â†” Báº£n Ä‘á»“ (AUTO).', 'success');
-          }
-          if (forceMapWarning === '__never__') {
-            showToast(forceMapWarning, 'warning');
-          }
-          if (forceMapWarning === '__never__') {
-            showToast('ÄÃ£ Ä‘á»“ng bá»™ quan há»‡ Tháº¿ Lá»±c â†” Báº£n Ä‘á»“ (AUTO).', 'success');
-          }
-          if (forceMapWarning === '__never__') {
-            showToast(forceMapWarning, 'warning');
           }
           if (relationAutoResynced) {
             showToast('Đã dọn và đồng bộ lại liên kết AUTO trên các thẻ liên quan.', 'success');

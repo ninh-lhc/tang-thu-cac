@@ -30,6 +30,28 @@ export const safeString = (val) => {
   return String(val);
 };
 
+/**
+ * Chuẩn hóa tên hiển thị theo dạng viết hoa chữ cái đầu mỗi từ.
+ * Dùng cho tên truyện/thẻ/mục do người dùng nhập ở các màn hình khởi tạo.
+ */
+export const toDisplayTitleCase = (value) => {
+  const input = safeString(value).trim();
+  if (!input) return '';
+  return input
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => {
+      // Giữ nguyên các token dạng viết hoa toàn bộ (vd: AUTO, RPG, H2O).
+      if (token === token.toLocaleUpperCase('vi-VN') && token !== token.toLocaleLowerCase('vi-VN')) {
+        return token;
+      }
+      const first = token.slice(0, 1).toLocaleUpperCase('vi-VN');
+      const rest = token.slice(1).toLocaleLowerCase('vi-VN');
+      return `${first}${rest}`;
+    })
+    .join(' ');
+};
+
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 /** Giới hạn ký tự gửi Gemini (tránh quota / payload lớn). */

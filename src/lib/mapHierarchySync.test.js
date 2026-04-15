@@ -113,9 +113,9 @@ describe('mapHierarchySync', () => {
     const parent = mapEntities.find((ent) => ent.name === 'Việt Long Tinh Cầu');
 
     expect(parent).toBeTruthy();
-    expect(source.info).toContain('AUTO_MAP_HIERARCHY_META');
+    expect(source.info).toContain('## Phân tầng bản đồ (AUTO)');
     expect(source.info).toContain('Trực thuộc: [[Việt Long Tinh Cầu]]');
-    expect(parent.info).toContain('AUTO_MAP_CHILDREN_LIST');
+    expect(parent.info).toContain('## Bản đồ trực thuộc');
     expect(parent.info).toContain('[[Man Hoang Đại Lục]] (Đại Lục · Tiểu Thế Giới)');
   });
 
@@ -287,10 +287,10 @@ describe('mapHierarchySync', () => {
 
     expect(haGioiParent).toBeTruthy();
     expect(tienMaParent).toBeTruthy();
-    expect(String(haGioiChild?.info || '')).toContain('AUTO_MAP_HIERARCHY_META');
-    expect(String(tienMaChild?.info || '')).toContain('AUTO_MAP_HIERARCHY_META');
-    expect(String(haGioiParent?.info || '')).toContain('AUTO_MAP_CHILDREN_LIST');
-    expect(String(tienMaParent?.info || '')).toContain('AUTO_MAP_CHILDREN_LIST');
+    expect(String(haGioiChild?.info || '')).toContain('## Phân tầng bản đồ (AUTO)');
+    expect(String(tienMaChild?.info || '')).toContain('## Phân tầng bản đồ (AUTO)');
+    expect(String(haGioiParent?.info || '')).toContain('## Bản đồ trực thuộc');
+    expect(String(tienMaParent?.info || '')).toContain('## Bản đồ trực thuộc');
   });
 
   it('classifies "... Gioi" map names as Gioi level in AUTO meta', () => {
@@ -331,8 +331,8 @@ describe('mapHierarchySync', () => {
     expect(ok).toBe(true);
 
     const mapEntities = novel.data['tai-nguyen']['dia-danh'].entities;
-    expect(String(mapEntities.find((ent) => ent.id === 'm1')?.info || '')).not.toContain('AUTO_MAP_HIERARCHY_META');
-    expect(String(mapEntities.find((ent) => ent.name === 'Viet Long Tinh Cau')?.info || '')).not.toContain('AUTO_MAP_CHILDREN_LIST');
+    expect(String(mapEntities.find((ent) => ent.id === 'm1')?.info || '')).not.toContain('## Phân tầng bản đồ (AUTO)');
+    expect(String(mapEntities.find((ent) => ent.name === 'Viet Long Tinh Cau')?.info || '')).not.toContain('## Bản đồ trực thuộc');
   });
 
   it('keeps locked map entity blocks unchanged while the hierarchy around it moves on', () => {

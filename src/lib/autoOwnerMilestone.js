@@ -180,12 +180,12 @@ export function ownerMilestoneApplyReasonToMessage(result) {
   switch (result.reason) {
     case 'owner_ambiguous':
       return ownerName
-        ? `Khong tu tao moc AUTO: "${ownerName}" dang khop nhieu the nhan vat. Hay doi ten/alias ro hon.`
-        : 'Khong tu tao moc AUTO: ten nhan vat dang khop nhieu the.';
+        ? `Không tự tạo mốc AUTO: "${ownerName}" đang khớp nhiều thẻ nhân vật. Hãy đổi tên/alias rõ hơn.`
+        : 'Không tự tạo mốc AUTO: tên nhân vật đang khớp nhiều thẻ.';
     case 'owner_not_found':
       return ownerName
-        ? `Khong tu tao moc AUTO: khong tim thay the nhan vat "${ownerName}".`
-        : 'Khong tu tao moc AUTO: khong tim thay the nhan vat.';
+        ? `Không tự tạo mốc AUTO: không tìm thấy thẻ nhân vật "${ownerName}".`
+        : 'Không tự tạo mốc AUTO: không tìm thấy thẻ nhân vật.';
     default:
       return '';
   }

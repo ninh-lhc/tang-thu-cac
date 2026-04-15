@@ -13,8 +13,8 @@ export const AUTO_SYNC_LEVEL_ORDER = Object.freeze([
 const DEFAULT_LEVELS = Object.freeze({
   [AUTO_SYNC_LEVEL_1]: true,
   [AUTO_SYNC_LEVEL_2]: true,
-  [AUTO_SYNC_LEVEL_3]: true,
-  [AUTO_SYNC_LEVEL_4]: true,
+  [AUTO_SYNC_LEVEL_3]: false,
+  [AUTO_SYNC_LEVEL_4]: false,
 });
 
 export function normalizeTabAutoSyncLevelConfig(value) {

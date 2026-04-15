@@ -46,13 +46,7 @@ describe('mergeTabsByGenres', () => {
     const moonlight = getSubTab(tabsConfig, 'quan-chung-tuyen', 'bach-nguyet-quang');
 
     expect(mainLead.autoSyncRole).toBe('nhan-vat-chinh');
-    expect(mainLead.autoSyncTargetPaths).toEqual(expect.arrayContaining([
-      'quan-chung-tuyen::bach-nguyet-quang',
-      'quan-chung-tuyen::tra-xanh-bach-lien-hoa',
-      'quan-chung-tuyen::co-chap-cuong-benh-kieu',
-      'quan-chung-tuyen::tra-nam-tien-nu',
-      'quan-chung-tuyen::hao-mon-the-gia',
-    ]));
+    expect(Array.isArray(mainLead.autoSyncTargetPaths) ? mainLead.autoSyncTargetPaths : []).toHaveLength(0);
     expect(moonlight.autoSyncRole).toBe('nhan-vat-lien-quan');
   });
 
@@ -62,11 +56,7 @@ describe('mergeTabsByGenres', () => {
     const related = getSubTab(tabsConfig, 'do-thi-nhan-vat', 'ba-dao-tong-tai');
 
     expect(mainLead.autoSyncRole).toBe('nhan-vat-chinh');
-    expect(mainLead.autoSyncTargetPaths).toEqual(expect.arrayContaining([
-      'do-thi-nhan-vat::o-re-cao-thu-xuong-nui',
-      'do-thi-nhan-vat::ba-dao-tong-tai',
-      'do-thi-nhan-vat::bang-son-my-nu-hoa-khoi',
-    ]));
+    expect(Array.isArray(mainLead.autoSyncTargetPaths) ? mainLead.autoSyncTargetPaths : []).toHaveLength(0);
     expect(related.autoSyncRole).toBe('nhan-vat-lien-quan');
   });
 
@@ -74,19 +64,13 @@ describe('mergeTabsByGenres', () => {
     const fanficTabs = mergeTabsByGenres(['Đồng Nhân']);
     const canon = getSubTab(fanficTabs, 'nhom-nhan-vat-dong-nhan', 'canon-character');
     expect(canon.autoSyncRole).toBe('nhan-vat-chinh');
-    expect(canon.autoSyncTargetPaths).toEqual(expect.arrayContaining([
-      'nhom-nhan-vat-dong-nhan::original-character',
-      'nhom-nhan-vat-dong-nhan::bang-hoai-kich-tinh',
-    ]));
+    expect(Array.isArray(canon.autoSyncTargetPaths) ? canon.autoSyncTargetPaths : []).toHaveLength(0);
 
     const horrorTabs = mergeTabsByGenres(['Linh Dị']);
     const survivor = getSubTab(horrorTabs, 'linh-di-nhan-vat', 'nguoi-song');
     const villain = getSubTab(horrorTabs, 'linh-di-nhan-vat', 'phan-dien');
     expect(survivor.autoSyncRole).toBe('nhan-vat-chinh');
-    expect(survivor.autoSyncTargetPaths).toEqual(expect.arrayContaining([
-      'linh-di-nhan-vat::phan-dien',
-      'linh-di-nhan-vat::phu-tro',
-    ]));
+    expect(Array.isArray(survivor.autoSyncTargetPaths) ? survivor.autoSyncTargetPaths : []).toHaveLength(0);
     expect(villain.autoSyncRole).toBe('nhan-vat-lien-quan');
   });
 

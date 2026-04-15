@@ -1,5 +1,9 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { ensureCollectionListCardsForNovel, syncAllCollectionListCards } from './collectionListCardSync.js';
+import {
+  ensureCollectionListCardsForNovel,
+  syncAllCollectionListCards,
+  syncAllCollectionListCardsDetailed,
+} from './collectionListCardSync.js';
 
 function buildNovel() {
   return {
@@ -178,6 +182,39 @@ describe('collectionListCardSync', () => {
     expect(String(listCard.info || '')).not.toContain('[[Le Bao Tan Thu]]');
     expect(String(listCard.info || '')).toContain('## Chưa phân loại (0)');
     expect(String(listCard.info || '')).toContain('Chưa có thẻ nào trong tab này.');
+  });
+
+  it('recreates canonical list card during sync if user deleted it', () => {
+    const novel = buildNovel();
+    novel.data['he-thong']['goi-qua'].entities = novel.data['he-thong']['goi-qua'].entities.filter(
+      (entity) => !String(entity.name || '').toLowerCase().startsWith('danh sach')
+    );
+
+    const changed = syncAllCollectionListCards(novel);
+    const listCard = novel.data['he-thong']['goi-qua'].entities.find((entity) => entity.name === 'Danh Sách Goi Qua / Ruong');
+
+    expect(changed).toBe(true);
+    expect(listCard).toBeTruthy();
+    expect(String(listCard.info || '')).toContain('# Danh mục thẻ (AUTO)');
+    expect(String(listCard.info || '')).toContain('- Tổng số thẻ: 2');
+  });
+
+  it('returns recreated tab metadata when list card is restored', () => {
+    const novel = buildNovel();
+    novel.data['he-thong']['goi-qua'].entities = novel.data['he-thong']['goi-qua'].entities.filter(
+      (entity) => !String(entity.name || '').toLowerCase().startsWith('danh sach')
+    );
+
+    const result = syncAllCollectionListCardsDetailed(novel);
+
+    expect(result.changed).toBe(true);
+    expect(result.recreatedCount).toBeGreaterThanOrEqual(1);
+    const restoredTab = result.recreatedTabs.find((tab) => tab.nhoId === 'goi-qua');
+    expect(restoredTab).toMatchObject({
+      lonId: 'he-thong',
+      nhoId: 'goi-qua',
+      nhoLabel: 'Goi Qua / Ruong',
+    });
   });
 
   it('reads owner from detail note text when owner field is empty', () => {

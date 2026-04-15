@@ -8,6 +8,7 @@
 import { useCallback, useState } from 'react';
 import { ensureCollectionListCardsForNovel } from './lib/collectionListCardSync.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
+import { safeString, toDisplayTitleCase } from './MasterUtils.jsx';
 
 const DEFAULT_THEME = 'theme-tien-hiep';
 const DEFAULT_STATUS = 'Dang doc';
@@ -83,17 +84,19 @@ export function useAppNovelCrud({
   }, [activeNovelData]);
 
   const handleSaveNovelModal = useCallback(async () => {
-    if (!novelForm.title.trim()) return;
+    const normalizedTitle = toDisplayTitleCase(novelForm.title);
+    const normalizedAuthor = toDisplayTitleCase(novelForm.author || DEFAULT_AUTHOR);
+    if (!normalizedTitle) return;
 
     if (novelModalMode === 'create') {
       const newId = generateId('novel');
-      const safeTitle = novelForm.title.replace(/[\\/:*?"<>|]/g, '').trim() || newId;
+      const safeTitle = safeString(normalizedTitle).replace(/[\\/:*?"<>|]/g, '').trim() || newId;
       const folderName = safeTitle;
 
       const newMeta = {
         id: newId,
-        title: novelForm.title,
-        author: novelForm.author || DEFAULT_AUTHOR,
+        title: normalizedTitle,
+        author: normalizedAuthor,
         genres: novelForm.genres || [],
         theme: novelForm.theme || DEFAULT_THEME,
         tags: [],
@@ -154,8 +157,8 @@ export function useAppNovelCrud({
     }
 
     await updateActiveNovelData((novel) => {
-      novel.title = novelForm.title;
-      novel.author = novelForm.author;
+      novel.title = normalizedTitle;
+      novel.author = normalizedAuthor;
       novel.genres = novelForm.genres;
       novel.theme = novelForm.theme;
       novel.cover = novelForm.cover;

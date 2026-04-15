@@ -126,7 +126,6 @@ export function resolveEntityQuickSlots({
   tabConfig,
   fieldsTemplate,
   activeNovelData,
-  parentTabId: _parentTabId,
   parentLabel: tabLonLabel,
 }) {
   const templateList = Array.isArray(fieldsTemplate) ? fieldsTemplate : [];

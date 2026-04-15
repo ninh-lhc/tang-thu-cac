@@ -27,6 +27,9 @@ const AUTO_FORCE_BLOCK_START = '<!-- AUTO_THE_LUC_META:START -->';
 const AUTO_FORCE_BLOCK_END = '<!-- AUTO_THE_LUC_META:END -->';
 const AUTO_MAP_BLOCK_START = '<!-- AUTO_MAP_THE_LUC_LIST:START -->';
 const AUTO_MAP_BLOCK_END = '<!-- AUTO_MAP_THE_LUC_LIST:END -->';
+const FORCE_META_TITLE = '## Đồng bộ Thế Lực (AUTO)';
+const FORCE_MAP_LIST_TITLE = '## Thế lực theo vị trí (AUTO)';
+const FORCE_AUTO_END = '> (Tự động cập nhật theo Thế Lực ↔ Bản đồ)';
 const FORCE_SYNC_WARNING_LIMIT = 3;
 const FORCE_TYPE_GROUP_ORDER = ['Đế Quốc', 'Gia Tộc', 'Học Viện', 'Tông Môn', 'Thương Minh', 'Thế Lực Khác'];
 
@@ -37,6 +40,10 @@ function safeString(v) {
 
 function normalizeAscii(v) {
   return normalizeAsciiText(v);
+}
+
+function escapeRegExp(value) {
+  return safeString(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function buildAutoFieldContext(context = {}) {
@@ -69,23 +76,27 @@ export function isForceCollectionScope({
   return candidates.some((value) => isForceParentKey(value));
 }
 
-function mergeAutoBlock(baseText, start, end, blockBody) {
-  const text = safeString(baseText);
-  const sIdx = text.indexOf(start);
-  const eIdx = text.indexOf(end);
-  const payload = `${start}\n${blockBody}\n${end}`;
-  if (sIdx >= 0 && eIdx > sIdx) {
-    return `${text.slice(0, sIdx)}${payload}${text.slice(eIdx + end.length)}`.trim();
-  }
-  return `${text.trim()}\n\n${payload}`.trim();
-}
-
 function removeAutoBlock(baseText, start, end) {
   const text = safeString(baseText);
   const sIdx = text.indexOf(start);
   const eIdx = text.indexOf(end);
   if (sIdx < 0 || eIdx <= sIdx) return text.trim();
   return `${text.slice(0, sIdx)}${text.slice(eIdx + end.length)}`.trim();
+}
+
+function removeAutoSection(baseText, title, endLine) {
+  const text = safeString(baseText);
+  if (!title || !endLine) return text.trim();
+  const pattern = new RegExp(`${escapeRegExp(title)}[\\s\\S]*?${escapeRegExp(endLine)}\\s*`, 'g');
+  return text.replace(pattern, '').trim();
+}
+
+function mergeAutoSection(baseText, title, endLine, bodyLines = []) {
+  const body = (Array.isArray(bodyLines) ? bodyLines : [bodyLines]).filter(Boolean);
+  const cleaned = removeAutoSection(baseText, title, endLine);
+  if (body.length === 0) return cleaned;
+  const section = [title, ...body, endLine].join('\n');
+  return `${cleaned}${cleaned ? '\n\n' : ''}${section}`.trim();
 }
 
 function forEachCollectionEntity(nov, cb) {
@@ -111,8 +122,9 @@ function stripTheLucMapAutoBlocksFromNovel(nov) {
       AUTO_MAP_BLOCK_START,
       AUTO_MAP_BLOCK_END
     );
-    if (next !== original) {
-      entity.info = next;
+    const cleaned = removeAutoSection(removeAutoSection(next, FORCE_META_TITLE, FORCE_AUTO_END), FORCE_MAP_LIST_TITLE, FORCE_AUTO_END);
+    if (cleaned !== original) {
+      entity.info = cleaned;
       changed = true;
     }
   });
@@ -319,7 +331,6 @@ function buildMapAutoBlockLines(locationName, rows, { detailedLayout, duplicateN
 
 function buildForceMetaBlockLines(meta) {
   return [
-    '## Đồng bộ Thế Lực (AUTO)',
     `Loại Hình: ${meta.orgType}`,
     `Cấp Bậc: ${meta.rankText}`,
     'Vị Trí:',
@@ -637,7 +648,11 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
       const locked = isEntityAutoSyncLocked(entity, AUTO_SYNC_ENGINE_FORCE_MAP);
       let cleanedInfo = safeString(entity.info).trim();
       if (!locked) {
-        cleanedInfo = removeAutoBlock(entity.info, AUTO_FORCE_BLOCK_START, AUTO_FORCE_BLOCK_END);
+        cleanedInfo = removeAutoSection(
+          removeAutoBlock(entity.info, AUTO_FORCE_BLOCK_START, AUTO_FORCE_BLOCK_END),
+          FORCE_META_TITLE,
+          FORCE_AUTO_END
+        );
         if (cleanedInfo !== safeString(entity.info).trim()) {
           entity.info = cleanedInfo;
           changed = true;
@@ -655,12 +670,7 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
       if (!meta) return;
 
       if (!locked) {
-        const nextInfo = mergeAutoBlock(
-          cleanedInfo,
-          AUTO_FORCE_BLOCK_START,
-          AUTO_FORCE_BLOCK_END,
-          buildForceMetaBlockLines(meta).join('\n')
-        );
+        const nextInfo = mergeAutoSection(cleanedInfo, FORCE_META_TITLE, FORCE_AUTO_END, buildForceMetaBlockLines(meta));
         if (nextInfo !== cleanedInfo) {
           entity.info = nextInfo;
           changed = true;
@@ -698,7 +708,11 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
     const entities = Array.isArray(path.tabData?.entities) ? path.tabData.entities : [];
     entities.forEach((entity) => {
       if (isEntityAutoSyncLocked(entity, AUTO_SYNC_ENGINE_FORCE_MAP)) return;
-      const cleanedInfo = removeAutoBlock(entity.info, AUTO_MAP_BLOCK_START, AUTO_MAP_BLOCK_END);
+      const cleanedInfo = removeAutoSection(
+        removeAutoBlock(entity.info, AUTO_MAP_BLOCK_START, AUTO_MAP_BLOCK_END),
+        FORCE_MAP_LIST_TITLE,
+        FORCE_AUTO_END
+      );
       if (cleanedInfo !== safeString(entity.info).trim()) {
         entity.info = cleanedInfo;
         changed = true;
@@ -787,18 +801,13 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
     const nextBlock = buildMapAutoBlockLines(item.name, rows, {
       detailedLayout: isDetailedMapLayout(item.name),
       duplicateNameCounts,
-    }).join('\n');
+    });
 
     targetEntities.forEach((target) => {
       if (!target?.entity) return;
       if (isEntityAutoSyncDisabled(target.entity, AUTO_SYNC_ENGINE_FORCE_MAP)) return;
       if (isEntityAutoSyncLocked(target.entity, AUTO_SYNC_ENGINE_FORCE_MAP)) return;
-      const nextInfo = mergeAutoBlock(
-        target.entity.info,
-        AUTO_MAP_BLOCK_START,
-        AUTO_MAP_BLOCK_END,
-        nextBlock
-      );
+      const nextInfo = mergeAutoSection(target.entity.info, FORCE_MAP_LIST_TITLE, FORCE_AUTO_END, nextBlock);
       if (nextInfo !== safeString(target.entity.info).trim()) {
         target.entity.info = nextInfo;
         changed = true;

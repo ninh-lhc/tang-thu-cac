@@ -13,12 +13,15 @@ import {
   isEntityAutoSyncLocked,
 } from './autoSyncEntityPrefs.js';
 import { hasAutoSyncFeature, isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
+import {
+  buildLegacyRelatedBlockRegexGlobal,
+  isRelatedBlockTitleHeading,
+} from './autoRelationLegacy.js';
 
 const AUTO_REL_TITLE = '## Quan h\u1ec7 b\u1ea3n \u0111\u1ed3 - th\u1ebf l\u1ef1c (t\u1ef1 \u0111\u1ed9ng)';
 const AUTO_REL_END = '> (Kh\u1ed1i t\u1ef1 \u0111\u1ed9ng, kh\u00f4ng c\u1ea7n s\u1eeda tay)';
 const RELATED_TITLE = '## V\u1ecb tr\u00ed';
 const RELATED_END = '> (T\u1ef1 \u0111\u1ed9ng c\u1eadp nh\u1eadt t\u1eeb c\u00e1c th\u1ebb li\u00ean quan)';
-const LEGACY_RELATED_TITLE = '## Li\u00ean k\u1ebft li\u00ean quan (t\u1ef1 \u0111\u1ed9ng)';
 const CATEGORY_OTHER = 'Kh\u00e1c';
 const FALLBACK_STATUS_LABEL = 'chu\u1ed7i ph\u00e2n t\u1ea7ng';
 
@@ -55,11 +58,6 @@ function buildAutoRelationBlockRegexGlobal() {
 function buildRelatedBlockRegexGlobal() {
   const blockPattern = `#{1,3}\\s*${escapeRegExp(RELATED_TITLE.replace(/^##\s*/, ''))}[\\s\\S]*?${escapeRegExp(RELATED_END)}`;
   return new RegExp(blockPattern, 'g');
-}
-
-function buildLegacyRelatedBlockRegexGlobal() {
-  const legacyBlockPattern = `${escapeRegExp(LEGACY_RELATED_TITLE)}[\\s\\S]*?${escapeRegExp(RELATED_END)}`;
-  return new RegExp(legacyBlockPattern, 'g');
 }
 
 export function parseRelationHierarchyFromStatus(statusLine) {
@@ -209,13 +207,6 @@ function parseWikiHeadingLabel(headingText) {
   return raw;
 }
 
-function isRelatedBlockTitleHeading(headingText) {
-  const normalized = normalizeAsciiText(headingText);
-  const blockTitle = normalizeAsciiText(RELATED_TITLE.replace(/^#+\s*/, ''));
-  const legacyTitle = normalizeAsciiText(LEGACY_RELATED_TITLE.replace(/^#+\s*/, ''));
-  return normalized === blockTitle || normalized === legacyTitle;
-}
-
 function renderGroupedLocationBlock(entries, targetName) {
   const lines = [RELATED_TITLE];
   const groups = new Map();
@@ -353,7 +344,7 @@ function parseRelatedBlockEntries(blockText, targetName = '') {
     const hm = line.match(/^(\s*)(#{1,3})\s+(.+?)\s*$/);
     if (hm) {
       const heading = String(hm[3] || '').trim();
-      if (isRelatedBlockTitleHeading(heading)) {
+      if (isRelatedBlockTitleHeading(heading, RELATED_TITLE)) {
         currentCategory = '';
         currentParent = '';
         locationStack.length = 0;
@@ -425,7 +416,7 @@ function upsertRelatedBacklinkNote(infoText, targetName, sourceName, statusLine)
   const src = String(infoText || '').trimEnd();
   const nextEntry = buildRelatedEntry(source, statusLine);
   const blockReGlobal = buildRelatedBlockRegexGlobal();
-  const legacyBlockReGlobal = buildLegacyRelatedBlockRegexGlobal();
+  const legacyBlockReGlobal = buildLegacyRelatedBlockRegexGlobal(RELATED_END);
   const currentBlocks = src.match(blockReGlobal) || [];
   const legacyBlocks = src.match(legacyBlockReGlobal) || [];
 
@@ -468,7 +459,7 @@ export function cleanupAutoRelationLegacyInfoText(infoText, targetName = '') {
   }
 
   const blockReGlobal = buildRelatedBlockRegexGlobal();
-  const legacyBlockReGlobal = buildLegacyRelatedBlockRegexGlobal();
+  const legacyBlockReGlobal = buildLegacyRelatedBlockRegexGlobal(RELATED_END);
   const relatedBlocks = next.match(blockReGlobal) || [];
   const legacyRelatedBlocks = next.match(legacyBlockReGlobal) || [];
   if (relatedBlocks.length > 0 || legacyRelatedBlocks.length > 0) {
@@ -516,7 +507,7 @@ function stripAllAutoRelationBlocks(infoText) {
   return String(infoText || '')
     .replace(buildAutoRelationBlockRegexGlobal(), '')
     .replace(buildRelatedBlockRegexGlobal(), '')
-    .replace(buildLegacyRelatedBlockRegexGlobal(), '')
+    .replace(buildLegacyRelatedBlockRegexGlobal(RELATED_END), '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

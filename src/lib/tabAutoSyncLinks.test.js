@@ -60,7 +60,7 @@ describe('tabAutoSyncLinks', () => {
     expect(candidates.map((candidate) => candidate.pathKey)).toEqual(['ban-do::ha-gioi']);
   });
 
-  it('guesses all related character tabs for the main-character role', () => {
+  it('keeps main-character role local by default (no auto level-3 target)', () => {
     const tabs = createTabs();
     const guessed = guessAutoSyncTargetPathsForTab(tabs, {
       activeTabLon: 'nhan-vat',
@@ -69,7 +69,7 @@ describe('tabAutoSyncLinks', () => {
       parentLabel: 'Nhan Vat',
     });
 
-    expect(guessed).toEqual(['nhan-vat::dao-lu', 'nhan-vat::than-nhan']);
+    expect(guessed).toEqual([]);
   });
 
   it('collects only explicit linked sources', () => {

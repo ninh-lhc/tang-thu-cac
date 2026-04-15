@@ -26,6 +26,10 @@ function safeString(v) {
   return String(v);
 }
 
+function escapeRegExp(value) {
+  return safeString(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function normalizeAscii(v) {
   return normalizeAsciiText(v);
 }
@@ -39,23 +43,27 @@ function buildMapFieldContext(mapPath = {}) {
   };
 }
 
-function mergeAutoBlock(baseText, start, end, blockBody) {
-  const text = safeString(baseText);
-  const sIdx = text.indexOf(start);
-  const eIdx = text.indexOf(end);
-  const payload = `${start}\n${blockBody}\n${end}`;
-  if (sIdx >= 0 && eIdx > sIdx) {
-    return `${text.slice(0, sIdx)}${payload}${text.slice(eIdx + end.length)}`.trim();
-  }
-  return `${text.trim()}\n\n${payload}`.trim();
-}
-
 function removeAutoBlock(baseText, start, end) {
   const text = safeString(baseText);
   const sIdx = text.indexOf(start);
   const eIdx = text.indexOf(end);
   if (sIdx < 0 || eIdx <= sIdx) return text.trim();
   return `${text.slice(0, sIdx)}${text.slice(eIdx + end.length)}`.trim();
+}
+
+function removeAutoSection(baseText, title, endLine) {
+  const text = safeString(baseText);
+  if (!title || !endLine) return text.trim();
+  const pattern = new RegExp(`${escapeRegExp(title)}[\\s\\S]*?${escapeRegExp(endLine)}\\s*`, 'g');
+  return text.replace(pattern, '').trim();
+}
+
+function mergeAutoSection(baseText, title, endLine, bodyLines = []) {
+  const body = (Array.isArray(bodyLines) ? bodyLines : [bodyLines]).filter(Boolean);
+  const cleaned = removeAutoSection(baseText, title, endLine);
+  if (body.length === 0) return cleaned;
+  const section = [title, ...body, endLine].join('\n');
+  return `${cleaned}${cleaned ? '\n\n' : ''}${section}`.trim();
 }
 
 function forEachCollectionEntity(nov, cb) {
@@ -76,10 +84,18 @@ function stripMapHierarchyAutoBlocksFromNovel(nov) {
     if (!entity || typeof entity !== 'object') return;
     if (isEntityAutoSyncLocked(entity, AUTO_SYNC_ENGINE_MAP_HIERARCHY)) return;
     const original = safeString(entity.info || '');
-    const next = removeAutoBlock(
-      removeAutoBlock(original, AUTO_MAP_META_START, AUTO_MAP_META_END),
-      AUTO_MAP_CHILDREN_START,
-      AUTO_MAP_CHILDREN_END
+    const next = removeAutoSection(
+      removeAutoSection(
+        removeAutoBlock(
+          removeAutoBlock(original, AUTO_MAP_META_START, AUTO_MAP_META_END),
+          AUTO_MAP_CHILDREN_START,
+          AUTO_MAP_CHILDREN_END
+        ),
+        MAP_META_TITLE,
+        MAP_AUTO_END
+      ),
+      MAP_CHILDREN_TITLE,
+      MAP_AUTO_END
     );
     if (next !== original) {
       entity.info = next;
@@ -326,7 +342,7 @@ function hasMeaningfulMapMeta(record) {
 }
 
 function buildMapMetaBlock(record) {
-  const lines = [MAP_META_TITLE, `- Loại địa danh: ${record.levelLabel}`];
+  const lines = [`- Loại địa danh: ${record.levelLabel}`];
   const scaleLabel = safeString(record.scaleLabel).trim();
   if (scaleLabel && normalizeAscii(scaleLabel) !== normalizeAscii(record.levelLabel)) {
     lines.push(`- Quy mô / cấp: ${scaleLabel}`);
@@ -337,8 +353,7 @@ function buildMapMetaBlock(record) {
   record.fullChain.slice(1).forEach((name, idx) => {
     lines.push(`- Ngoại tầng ${idx + 1}: [[${name}]]`);
   });
-  lines.push(MAP_AUTO_END);
-  return lines.join('\n');
+  return lines;
 }
 
 function getMapRecordMeta(name, byName) {
@@ -364,7 +379,7 @@ function getOrCreateTreeNode(parent, label, byName) {
 }
 
 function buildMapChildrenBlock(targetRecord, allRecords, byName) {
-  if (!targetRecord) return '';
+  if (!targetRecord) return [];
   const root = { children: new Map() };
 
   allRecords.forEach((record) => {
@@ -380,9 +395,9 @@ function buildMapChildrenBlock(targetRecord, allRecords, byName) {
     getOrCreateTreeNode(cursor, record.name, byName);
   });
 
-  if (root.children.size === 0) return '';
+  if (root.children.size === 0) return [];
 
-  const lines = [MAP_CHILDREN_TITLE];
+  const lines = [];
   const renderNode = (node, depth) => {
     const indent = '  '.repeat(depth);
     lines.push(`${indent}- [[${node.label}]] (${formatMapMeta(node.meta)})`);
@@ -390,8 +405,7 @@ function buildMapChildrenBlock(targetRecord, allRecords, byName) {
   };
 
   [...root.children.values()].sort(compareMapNodes).forEach((child) => renderNode(child, 0));
-  lines.push(MAP_AUTO_END);
-  return lines.join('\n');
+  return lines;
 }
 
 function syncMapHierarchyInTab(mapTab, mapPath = {}) {
@@ -428,19 +442,27 @@ function syncMapHierarchyInTab(mapTab, mapPath = {}) {
   records.forEach((record) => {
     const original = safeString(record.entity?.info || '');
     if (isEntityAutoSyncLocked(record.entity, AUTO_SYNC_ENGINE_MAP_HIERARCHY)) return;
-    const base = removeAutoBlock(
-      removeAutoBlock(original, AUTO_MAP_META_START, AUTO_MAP_META_END),
-      AUTO_MAP_CHILDREN_START,
-      AUTO_MAP_CHILDREN_END
+    const base = removeAutoSection(
+      removeAutoSection(
+        removeAutoBlock(
+          removeAutoBlock(original, AUTO_MAP_META_START, AUTO_MAP_META_END),
+          AUTO_MAP_CHILDREN_START,
+          AUTO_MAP_CHILDREN_END
+        ),
+        MAP_META_TITLE,
+        MAP_AUTO_END
+      ),
+      MAP_CHILDREN_TITLE,
+      MAP_AUTO_END
     );
 
     let next = base;
     if (hasMeaningfulMapMeta(record)) {
-      next = mergeAutoBlock(next, AUTO_MAP_META_START, AUTO_MAP_META_END, buildMapMetaBlock(record));
+      next = mergeAutoSection(next, MAP_META_TITLE, MAP_AUTO_END, buildMapMetaBlock(record));
     }
     const childBlock = buildMapChildrenBlock(record, records, byName);
-    if (childBlock) {
-      next = mergeAutoBlock(next, AUTO_MAP_CHILDREN_START, AUTO_MAP_CHILDREN_END, childBlock);
+    if (Array.isArray(childBlock) && childBlock.length > 0) {
+      next = mergeAutoSection(next, MAP_CHILDREN_TITLE, MAP_AUTO_END, childBlock);
     }
 
     if (next !== original) {

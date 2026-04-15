@@ -216,7 +216,7 @@ describe('theLucBanDoSync', () => {
     });
     expect(ok).toBe(true);
     const ent = nov.data['the-luc']['gia-toc'].entities[0];
-    expect(ent.info).toContain('AUTO_THE_LUC_META');
+    expect(ent.info).toContain('## Đồng bộ Thế Lực (AUTO)');
     expect(ent.info).toContain('Vị Trí:');
     expect(ent.info).toContain('Đại Lục');
     expect(ent.info).toContain('Tinh Cầu');
@@ -277,7 +277,7 @@ describe('theLucBanDoSync', () => {
     nov.data['the-luc']['gia-toc'].entities = [];
     syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' });
     mapEntities.forEach((m) => {
-      expect(String(m.info || '')).not.toContain('AUTO_MAP_THE_LUC_LIST');
+      expect(String(m.info || '')).not.toContain('## Thế lực theo vị trí (AUTO)');
     });
   });
 
@@ -361,11 +361,11 @@ describe('theLucBanDoSync', () => {
 
     const forceInfo = nov.data['the-luc']['gia-toc'].entities[0].info;
     expect(forceInfo).toContain('Ghi chú tay đầu');
-    expect(forceInfo).toContain('AUTO_THE_LUC_META');
+    expect(forceInfo).toContain('## Đồng bộ Thế Lực (AUTO)');
 
     const mapEnt = nov.data['tai-nguyen']['dia-danh'].entities.find((x) => x.name === 'Băng Thiên Đại Lục');
     expect(mapEnt.info).toContain('Mô tả tay địa danh');
-    expect(mapEnt.info).toContain('AUTO_MAP_THE_LUC_LIST');
+    expect(mapEnt.info).toContain('## Thế lực theo vị trí (AUTO)');
     expect(mapEnt.info).not.toContain('old auto');
   });
 
@@ -419,10 +419,10 @@ describe('theLucBanDoSync', () => {
     const wrongTabCard = haGioiMap.find((x) => x.name === 'Huyet Hoang Dia');
 
     expect(String(huyetGioi?.info || '')).toContain('manual map note');
-    expect(String(huyetGioi?.info || '')).toContain('AUTO_MAP_THE_LUC_LIST');
+    expect(String(huyetGioi?.info || '')).toContain('## Thế lực theo vị trí (AUTO)');
     expect(String(huyetGioi?.info || '')).toContain('[[Huyet Linh Tong]]');
     expect(huyetHoangDia).toBeTruthy();
-    expect(String(huyetHoangDia?.info || '')).toContain('AUTO_MAP_THE_LUC_LIST');
+    expect(String(huyetHoangDia?.info || '')).toContain('## Thế lực theo vị trí (AUTO)');
     expect(String(huyetHoangDia?.info || '')).toContain('[[Huyet Linh Tong]]');
     expect(wrongTabCard).toBeFalsy();
   });
@@ -464,9 +464,9 @@ describe('theLucBanDoSync', () => {
     const huyetHoangDia = mapEntities.find((x) => x.name === 'Huyet Hoang Dia');
     expect(huyetGioi).toBeTruthy();
     expect(huyetHoangDia).toBeTruthy();
-    expect(String(huyetGioi?.info || '')).toContain('AUTO_MAP_THE_LUC_LIST');
+    expect(String(huyetGioi?.info || '')).toContain('## Thế lực theo vị trí (AUTO)');
     expect(String(huyetGioi?.info || '')).toContain('[[Huyet Linh Tong]]');
-    expect(String(huyetHoangDia?.info || '')).toContain('AUTO_MAP_THE_LUC_LIST');
+    expect(String(huyetHoangDia?.info || '')).toContain('## Thế lực theo vị trí (AUTO)');
   });
 
   it('detects force scope by parent label even when tab id is custom', () => {
@@ -497,7 +497,7 @@ describe('theLucBanDoSync', () => {
     const result = syncAllTheLucMapAutoBlocksDetailed(nov);
     expect(result.applied).toBe(true);
     expect(nov.data['ban-do']['ha-gioi'].entities.some((entity) => entity.name === 'Huyet Gioi')).toBe(true);
-    expect(String(nov.data['luc-luong-custom']['gia-toc'].entities[0].info || '')).toContain('AUTO_THE_LUC_META');
+    expect(String(nov.data['luc-luong-custom']['gia-toc'].entities[0].info || '')).toContain('## Đồng bộ Thế Lực (AUTO)');
   });
 
   it('warns and skips when a map location exists in multiple tabs', () => {
@@ -529,8 +529,8 @@ describe('theLucBanDoSync', () => {
 
     const result = syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId: 'the-luc' });
     expect(result.warnings.some((warning) => warning.type === 'ambiguous_existing_location')).toBe(true);
-    expect(String(nov.data['ban-do']['ha-gioi'].entities[0].info || '')).not.toContain('AUTO_MAP_THE_LUC_LIST');
-    expect(String(nov.data['ban-do']['tien-gioi'].entities[0].info || '')).not.toContain('AUTO_MAP_THE_LUC_LIST');
+    expect(String(nov.data['ban-do']['ha-gioi'].entities[0].info || '')).not.toContain('## Thế lực theo vị trí (AUTO)');
+    expect(String(nov.data['ban-do']['tien-gioi'].entities[0].info || '')).not.toContain('## Thế lực theo vị trí (AUTO)');
   });
 
   it('warns and skips auto-create when multiple map tabs could receive the new location', () => {
@@ -622,9 +622,9 @@ describe('theLucBanDoSync', () => {
     const result = syncAllTheLucMapAutoBlocksDetailed(nov);
     expect(result.changed).toBe(true);
     expect(result.applied).toBe(false);
-    expect(String(nov.data['the-luc']['gia-toc'].entities[0].info || '')).not.toContain('AUTO_THE_LUC_META');
+    expect(String(nov.data['the-luc']['gia-toc'].entities[0].info || '')).not.toContain('## Đồng bộ Thế Lực (AUTO)');
     expect(String(nov.data['ban-do']['ha-gioi'].entities[0].info || '')).toContain('Mo ta tay dia danh');
-    expect(String(nov.data['ban-do']['ha-gioi'].entities[0].info || '')).not.toContain('AUTO_MAP_THE_LUC_LIST');
+    expect(String(nov.data['ban-do']['ha-gioi'].entities[0].info || '')).not.toContain('## Thế lực theo vị trí (AUTO)');
   });
 
   it('preserves locked map targets while new force rows are added', () => {
@@ -662,7 +662,7 @@ describe('theLucBanDoSync', () => {
     const result = syncAllTheLucMapAutoBlocksDetailed(nov);
     expect(result.changed).toBe(true);
     expect(String(lockedTarget.info || '')).toBe(lockedSnapshot);
-    expect(String(nov.data['the-luc']['gia-toc'].entities[1].info || '')).toContain('AUTO_THE_LUC_META');
+    expect(String(nov.data['the-luc']['gia-toc'].entities[1].info || '')).toContain('## Đồng bộ Thế Lực (AUTO)');
   });
 });
 

@@ -50,7 +50,7 @@ describe('autoSyncManager', () => {
       currentTabConfig: { id: 'gia-toc', label: 'Gia Toc', viewType: 'collection-track', autoSyncRole: AUTO_SYNC_ROLE_FORCE },
       parentLabel: 'The Luc',
     });
-    expect(localPlan.engines).toEqual(['owner_timeline', 'collection_cards']);
+    expect(localPlan.engines).toEqual(['collection_cards']);
 
     const linkedPlan = buildAutoSyncPlanFromTabContext({
       activeTabLon: 'the-luc',
@@ -61,6 +61,13 @@ describe('autoSyncManager', () => {
         viewType: 'collection-track',
         autoSyncRole: AUTO_SYNC_ROLE_FORCE,
         autoSyncTargetPaths: ['ban-do::ha-gioi'],
+        autoSyncLevelConfig: {
+          enabled: true,
+          levels: {
+            level_3_linked: true,
+            level_4_timeline: true,
+          },
+        },
       },
       parentLabel: 'The Luc',
     });
@@ -106,7 +113,7 @@ describe('autoSyncManager', () => {
   it('builds a lightweight plan from tabs config for load-time sync', () => {
     const novel = createNovel();
     const plan = buildAutoSyncPlanFromTabsConfig(novel.tabsConfig);
-    expect(plan.engines).toEqual(['map_hierarchy', 'owner_timeline', 'collection_cards']);
+    expect(plan.engines).toEqual(['map_hierarchy', 'collection_cards']);
   });
 
   it('supports 4-level auto toggles per tab', () => {

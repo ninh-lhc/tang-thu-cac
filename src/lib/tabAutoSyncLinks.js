@@ -111,7 +111,7 @@ export function buildAutoSyncTabPathLabel(lonLabel = '', nhoLabel = '') {
   const left = safeString(lonLabel).trim();
   const right = safeString(nhoLabel).trim();
   if (left && right) return left === right ? left : `${left} > ${right}`;
-  return left || right || 'Muc chua dat ten';
+  return left || right || 'Mục chưa đặt tên';
 }
 
 function buildTabContext(lon, nho) {
@@ -123,41 +123,11 @@ function buildTabContext(lon, nho) {
   };
 }
 
-function buildAutoSyncCandidatesByRole(tabsConfig) {
-  const byRole = new Map();
-  const tabs = Array.isArray(tabsConfig) ? tabsConfig : [];
-  tabs.forEach((lon, lonIndex) => {
-    (lon?.subTabs || []).forEach((nho, nhoIndex) => {
-      if (nho?.viewType !== 'collection-track') return;
-      const pathKey = buildAutoSyncTargetPath(lon?.id, nho?.id);
-      if (!pathKey) return;
-      const ctx = buildTabContext(lon, nho);
-      const effectiveRole = getEffectiveAutoSyncRole(ctx);
-      if (!effectiveRole) return;
-      const item = {
-        pathKey,
-        lonId: lon?.id || '',
-        nhoId: nho?.id || '',
-        lonLabel: safeString(lon?.label || lon?.id),
-        nhoLabel: safeString(nho?.label || nho?.id),
-        label: buildAutoSyncTabPathLabel(lon?.label || lon?.id, nho?.label || nho?.id),
-        role: effectiveRole,
-        roleLabel: getAutoSyncRoleLabel(effectiveRole),
-        order: lonIndex * 1000 + nhoIndex,
-        currentTabConfig: nho,
-        parentLabel: safeString(lon?.label || ''),
-      };
-      if (!byRole.has(effectiveRole)) byRole.set(effectiveRole, []);
-      byRole.get(effectiveRole).push(item);
-    });
-  });
-  byRole.forEach((items, role) => {
-    byRole.set(
-      role,
-      items.sort((left, right) => left.order - right.order || left.label.localeCompare(right.label, 'vi'))
-    );
-  });
-  return byRole;
+function isCrossParentTarget(sourceContext = {}, candidate = {}) {
+  const sourceLonId = safeString(sourceContext.activeTabLon).trim();
+  const targetLonId = safeString(candidate.lonId).trim();
+  if (!sourceLonId || !targetLonId) return false;
+  return sourceLonId !== targetLonId;
 }
 
 export function listAutoSyncTargetCandidates(tabsConfig, sourceContext = {}) {
@@ -209,10 +179,15 @@ export function guessAutoSyncTargetPathsForTab(tabsConfig, sourceContext = {}) {
 
   switch (normalizeAutoSyncRole(sourceRole)) {
     case AUTO_SYNC_ROLE_MAIN_CHARACTER:
-      return candidates.map((candidate) => candidate.pathKey);
+      return [];
     case AUTO_SYNC_ROLE_FORCE:
-    case AUTO_SYNC_ROLE_CULTIVATION_SYSTEM:
       return candidates.length === 1 ? [candidates[0].pathKey] : [];
+    case AUTO_SYNC_ROLE_CULTIVATION_SYSTEM: {
+      const crossParentCandidates = candidates.filter((candidate) =>
+        isCrossParentTarget(sourceContext, candidate)
+      );
+      return crossParentCandidates.length === 1 ? [crossParentCandidates[0].pathKey] : [];
+    }
     default:
       return [];
   }
@@ -258,7 +233,6 @@ export function hydrateTabsAutoSyncLinkTargets(tabsConfig) {
 
   const nextTabs = typeof structuredClone === 'function' ? structuredClone(tabsConfig) : JSON.parse(JSON.stringify(tabsConfig));
   let changed = false;
-  const candidatesByRole = buildAutoSyncCandidatesByRole(nextTabs);
 
   nextTabs.forEach((lon) => {
     (lon?.subTabs || []).forEach((nho) => {
@@ -268,15 +242,7 @@ export function hydrateTabsAutoSyncLinkTargets(tabsConfig) {
       if (!supportsAutoSyncLinkRole(role)) return;
       const currentPaths = readExplicitAutoSyncTargetPaths(nho);
       if (currentPaths.length > 0) return;
-      const sourcePathKey = buildAutoSyncTargetPath(ctx.activeTabLon, ctx.activeTabNho);
-      const targetRoles = getAutoSyncLinkTargetRoles(role);
-      const guessedCandidates = targetRoles.flatMap((targetRole) => candidatesByRole.get(targetRole) || []);
-      let guessedPaths = guessedCandidates
-        .filter((candidate) => candidate.pathKey && candidate.pathKey !== sourcePathKey)
-        .map((candidate) => candidate.pathKey);
-      if (normalizeAutoSyncRole(role) !== AUTO_SYNC_ROLE_MAIN_CHARACTER) {
-        guessedPaths = guessedPaths.length === 1 ? guessedPaths : [];
-      }
+      const guessedPaths = guessAutoSyncTargetPathsForTab(nextTabs, ctx);
       if (guessedPaths.length === 0) return;
       nho.autoSyncTargetPaths = guessedPaths;
       changed = true;

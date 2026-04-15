@@ -14,6 +14,7 @@ import {
   mapGeminiErrorToUserMessage,
   generateId,
   safeString,
+  toDisplayTitleCase,
 } from './MasterUtils.jsx';
 import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
 import { mutateNovelJournalSelections } from './appNhatKyVaGoiThe.js';
@@ -59,22 +60,8 @@ export function useAppMotCuaCapNhat({
 }) {
   const openOverviewHub = useCallback(() => {
     if (!activeNovelData) return;
-    const forceMapAutoApplied = false;
-    const forceMapWarning = '';
     setOverviewHubOpen(true);
     setOverviewHubTab('create');
-    if (forceMapWarning === '__never__') {
-      showToast('ÄÃ£ Ä‘á»“ng bá»™ quan há»‡ Tháº¿ Lá»±c â†” Báº£n Ä‘á»“ (AUTO).', 'success');
-    }
-    if (forceMapWarning === '__never__') {
-      showToast(forceMapWarning, 'warning');
-    }
-    if (forceMapAutoApplied) {
-      showToast('ÄÃ£ Ä‘á»“ng bá»™ quan há»‡ Tháº¿ Lá»±c â†” Báº£n Ä‘á»“ (AUTO).', 'success');
-    }
-    if (forceMapWarning) {
-      showToast(forceMapWarning, 'warning');
-    }
     setHubCreatePreview(null);
     setHubUpdatePanel(null);
     setHubCreateInput('');
@@ -88,7 +75,7 @@ export function useAppMotCuaCapNhat({
       });
     });
     setHubCreatePath(firstPath);
-  }, [activeNovelData, activeTabs, showToast, setOverviewHubOpen, setOverviewHubTab, setHubCreatePreview, setHubUpdatePanel, setHubCreateInput, setHubUpdateChapter, setHubCreatePath]);
+  }, [activeNovelData, activeTabs, setOverviewHubOpen, setOverviewHubTab, setHubCreatePreview, setHubUpdatePanel, setHubCreateInput, setHubUpdateChapter, setHubCreatePath]);
 
   const hubRunCreateAi = useCallback(async () => {
     if (!hubCreatePath) {
@@ -159,7 +146,7 @@ export function useAppMotCuaCapNhat({
       currentTabConfig: nho || null,
       parentLabel: lon?.label || '',
     };
-    const name = safeString(hubCreatePreview.name).trim();
+    const name = toDisplayTitleCase(hubCreatePreview.name);
     if (!name || name === 'Chưa đặt tên') {
       showToast('Điền tên thẻ trước khi lưu.', 'warning');
       return;
@@ -252,7 +239,7 @@ export function useAppMotCuaCapNhat({
     });
     showToast(`Đã tạo «${name}». Ảnh avatar: mở đúng mục → thẻ để thêm.`, 'success');
     if (forceMapAutoApplied) {
-      showToast('ÄÃ£ Ä‘á»“ng bá»™ quan há»‡ Tháº¿ Lá»±c â†” Báº£n Ä‘á»“ (AUTO).', 'success');
+      showToast('Đã đồng bộ quan hệ Thế Lực ↔ Bản đồ (AUTO).', 'success');
     }
     if (forceMapWarning) {
       showToast(forceMapWarning, 'warning');

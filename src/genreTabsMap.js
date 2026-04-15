@@ -508,64 +508,20 @@ assignAutoRole(AUTO_SYNC_ROLE_MAP, 'boi-canh-kinh-di', ['dia-diem-ma-am']);
 assignAutoRole(AUTO_SYNC_ROLE_MAP, 'ky-nguyen-hac-am', ['bao-phat-nguy-co']);
 assignAutoRole(AUTO_SYNC_ROLE_FORCE, 'doanh-trai-sinh-ton', ['khu-an-toan-can-cu-dia']);
 
-assignAutoTargets('tu-si', 'thien-menh-chi-tu', [
-  'tu-si::dao-lu',
-  'tu-si::hong-nhan-tri-ky',
-  'tu-si::sinh-tu-giao',
-  'tu-si::dong-mon-su-de',
-]);
-assignAutoTargets('sinh-linh', 'khi-van-chi-tu', [
-  'sinh-linh::dong-bon-khe-uoc-gia',
-  'sinh-linh::su-ma-tinh-linh',
-]);
 assignAutoTargets('dinh-cap-the-luc', 'tong-mon-thanh-dia', [
   'chu-thien-van-gioi::tu-tien-gioi',
 ]);
 assignAutoTargets('van-toc-quan-dao', 'de-quoc-vuong-quoc', [
   'vi-dien-dai-luc::dai-luc',
 ]);
-assignAutoTargets('quan-chung-tuyen', 'nu-chu-nam-chu', [
-  'quan-chung-tuyen::bach-nguyet-quang',
-  'quan-chung-tuyen::tra-xanh-bach-lien-hoa',
-  'quan-chung-tuyen::co-chap-cuong-benh-kieu',
-  'quan-chung-tuyen::tra-nam-tien-nu',
-  'quan-chung-tuyen::hao-mon-the-gia',
-]);
-assignAutoTargets('do-thi-nhan-vat', 'long-ngao-thien', [
-  'do-thi-nhan-vat::o-re-cao-thu-xuong-nui',
-  'do-thi-nhan-vat::ba-dao-tong-tai',
-  'do-thi-nhan-vat::bang-son-my-nu-hoa-khoi',
-  'do-thi-nhan-vat::phu-nhi-dai-hoan-kho-di-tu',
-  'do-thi-nhan-vat::the-gia-lao-hu',
-]);
 assignAutoTargets('dinh-cap-vong-tron', 'tu-dai-co-toc', [
   'ban-do-su-nghiep::thuong-vi-khong-che-kinh-te',
-]);
-assignAutoTargets('luan-hoi-tieu-doi', 'luan-hoi-gia', [
-  'luan-hoi-tieu-doi::doi-truong',
-  'luan-hoi-tieu-doi::tri-gia',
-  'luan-hoi-tieu-doi::hoa-luc-thu',
-  'luan-hoi-tieu-doi::nai-ma',
 ]);
 assignAutoTargets('chu-than-khong-gian', 'chu-than-he-thong-mau', [
   'the-gioi-nhiem-vu::kich-ban-the-gioi',
 ]);
-assignAutoTargets('nhom-nhan-vat-dong-nhan', 'canon-character', [
-  'nhom-nhan-vat-dong-nhan::original-character',
-  'nhom-nhan-vat-dong-nhan::bang-hoai-kich-tinh',
-  'nhom-nhan-vat-dong-nhan::ke-xuyen-thu-trong-sinh',
-]);
-assignAutoTargets('vuong-hau-tuong-linh', 'chan-long-thien-tu', [
-  'vuong-hau-tuong-linh::hau-cung-phi-tan',
-  'vuong-hau-tuong-linh::muu-si-mon-khach',
-  'vuong-hau-tuong-linh::van-than-vo-tuong',
-]);
 assignAutoTargets('chung-dien-co-so', 'luyen-binh-tri-quan', [
   'thien-ha-dai-the::trieu-dai-ky-nguyen',
-]);
-assignAutoTargets('linh-di-nhan-vat', 'nguoi-song', [
-  'linh-di-nhan-vat::phan-dien',
-  'linh-di-nhan-vat::phu-tro',
 ]);
 assignAutoTargets('doanh-trai-sinh-ton', 'khu-an-toan-can-cu-dia', [
   'ky-nguyen-hac-am::bao-phat-nguy-co',

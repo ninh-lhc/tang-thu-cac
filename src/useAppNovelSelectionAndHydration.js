@@ -11,7 +11,7 @@ import {
 } from './MasterEngines.js';
 import { buildNovelSearchIndex, countEntitiesInNovel } from './deepSearchCore.js';
 import { cleanupAutoRelationLegacyInfoForNovel } from './lib/autoRelationDetailNote.js';
-import { syncAllCollectionListCards } from './lib/collectionListCardSync.js';
+import { syncAllCollectionListCardsDetailed } from './lib/collectionListCardSync.js';
 import { buildAutoSyncPlanFromTabsConfig, runNovelAutoSyncPlan } from './lib/autoSyncManager.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 
@@ -100,14 +100,29 @@ export function useAppNovelSelectionAndHydration({
           if (recoveredFromBackup) delete data.__recoveredFromBackup;
           setActiveNovelDirHandle(loaded.novelDir ?? null);
           if (!data.tabsConfig) data.tabsConfig = structuredClone(globalTabsConfig);
+          const partialListCardSync = data.__partialData ? syncAllCollectionListCardsDetailed(data) : null;
           const autoSyncResult = !data.__partialData
             ? runNovelAutoSyncPlan(data, buildAutoSyncPlanFromTabsConfig(data.tabsConfig || []), { recordLog: false })
-            : { changed: syncAllCollectionListCards(data), forceWarning: '' };
+            : { changed: partialListCardSync.changed, forceWarning: '' };
           const autoBlocksResynced = autoSyncResult.changed;
           const migrated = migrateTabsFieldTemplates(data);
           setActiveNovelData(migrated);
           if (autoSyncResult.forceWarning) {
             showToast(autoSyncResult.forceWarning, 'warning');
+          }
+          if ((partialListCardSync?.recreatedCount || 0) > 0) {
+            const firstTab = partialListCardSync.recreatedTabs[0] || {};
+            const firstPath = [String(firstTab.lonLabel || '').trim(), String(firstTab.nhoLabel || '').trim()]
+              .filter(Boolean)
+              .join(' > ');
+            const remainingCount = Math.max(0, partialListCardSync.recreatedCount - 1);
+            const tabHint = firstPath
+              ? ` (${firstPath}${remainingCount > 0 ? ` +${remainingCount} tab khác` : ''})`
+              : '';
+            showToast(
+              `Đã tự tạo lại ${partialListCardSync.recreatedCount} thẻ Danh Sách bị thiếu${tabHint} để AUTO bậc 2 tiếp tục hoạt động.`,
+              'success'
+            );
           }
           if (recoveredFromBackup) {
             showToast('Đã tự khôi phục dữ liệu truyện từ file backup.', 'warning');

@@ -35,7 +35,7 @@ import {
   resolveFieldsTemplate,
 } from './MasterEngines.js';
 import {
-  generateId, safeString, getTerms, sortTabsAlphabetically,
+  generateId, safeString, toDisplayTitleCase, getTerms, sortTabsAlphabetically,
   renderMarkdown,
   analyzeCrossRefNoteWithAI, mapGeminiErrorToUserMessage
 } from './MasterUtils.jsx';
@@ -1176,7 +1176,7 @@ export default function App() {
       const lon = activeTabs.find((tab) => tab.id === lonId);
       const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
       const autoCtx = buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '');
-      const quickName = safeString(name).trim();
+      const quickName = toDisplayTitleCase(name);
       if (!quickName) return;
       const newEntityId = generateId('ent');
       let targetExistingId = null;
@@ -1803,7 +1803,8 @@ export default function App() {
   };
 
   const handleSaveEditLabel = (path, label) => {
-    if (!label.trim()) return;
+    const normalizedLabel = toDisplayTitleCase(label);
+    if (!normalizedLabel) return;
     const current = structuredClone(getTabsToUpdate());
     let autoSyncPlan = null;
     let shouldResyncAuto = false;
@@ -1811,11 +1812,11 @@ export default function App() {
     if (path.length === 1) {
       const previousTabs = getTabsToUpdate();
       const t = current.find(t => t.id === path[0]);
-      if (t) t.label = label.trim();
+      if (t) t.label = normalizedLabel;
       shouldResyncAuto = true;
       autoSyncPlan = buildFullAutoSyncPlan();
       scopeLabel = safeString(
-        previousTabs.find((tab) => tab.id === path[0])?.label || label.trim()
+        previousTabs.find((tab) => tab.id === path[0])?.label || normalizedLabel
       ) || 'Cây thư mục';
     } else if (path.length === 2) {
       const previousTabs = getTabsToUpdate();
@@ -1824,10 +1825,10 @@ export default function App() {
       const lon = current.find(t => t.id === path[0]);
       const nho = lon?.subTabs?.find(s => s.id === path[1]);
       if (nho) {
-        nho.label = label.trim();
+        nho.label = normalizedLabel;
         // Tự sinh trường phù hợp khi đổi tên — chỉ áp nếu template chưa tùy chỉnh
         if (nho.viewType === 'collection-track' && isStockTemplate(nho.fieldsTemplate)) {
-          const guessed = guessFieldsByLabel(label.trim());
+          const guessed = guessFieldsByLabel(normalizedLabel);
           if (guessed) nho.fieldsTemplate = structuredClone(guessed);
         }
         shouldResyncAuto = true;
@@ -1841,7 +1842,7 @@ export default function App() {
       const lon = current.find(t => t.id === path[0]);
       const nho = lon?.subTabs?.find(s => s.id === path[1]);
       const con = nho?.tabCon?.find(c => c.id === path[2]);
-      if (con) con.label = label.trim();
+      if (con) con.label = normalizedLabel;
     }
     setTabsConfig(current, {
       resyncAuto: shouldResyncAuto,
@@ -1850,6 +1851,36 @@ export default function App() {
       autoSyncScopeLabel: scopeLabel,
     });
     setEditingTab(null);
+  };
+
+  const handleSaveTabIcon = (lonId, iconName) => {
+    if (!safeString(lonId).trim() || !safeString(iconName).trim()) return;
+    const current = structuredClone(getTabsToUpdate());
+    const tabLon = current.find((tab) => tab.id === lonId);
+    if (!tabLon || tabLon.iconName === iconName) return;
+    tabLon.iconName = iconName;
+    setTabsConfig(current, {
+      resyncAuto: false,
+    });
+  };
+
+  const handleSaveTabIconImage = (lonId, imageDataUrl) => {
+    if (!safeString(lonId).trim()) return;
+    const current = structuredClone(getTabsToUpdate());
+    const tabLon = current.find((tab) => tab.id === lonId);
+    if (!tabLon) return;
+    tabLon.iconImage = safeString(imageDataUrl).trim();
+    setTabsConfig(current, { resyncAuto: false });
+  };
+
+  const handleSaveSubTabIconImage = (lonId, nhoId, imageDataUrl) => {
+    if (!safeString(lonId).trim() || !safeString(nhoId).trim()) return;
+    const current = structuredClone(getTabsToUpdate());
+    const tabLon = current.find((tab) => tab.id === lonId);
+    const tabNho = tabLon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!tabNho) return;
+    tabNho.iconImage = safeString(imageDataUrl).trim();
+    setTabsConfig(current, { resyncAuto: false });
   };
 
   const handleToggleViewType = (path) => {
@@ -2480,6 +2511,9 @@ export default function App() {
     setEditingTab,
     handleAddTabLon,
     handleSaveEditLabel,
+    handleSaveTabIcon,
+    handleSaveTabIconImage,
+    handleSaveSubTabIconImage,
     handleToggleViewType,
     handleDeleteTab,
     handleAddTabNho,

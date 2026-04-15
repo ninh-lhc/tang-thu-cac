@@ -28,6 +28,13 @@ export function AppNovelTocRail({
   handleSelectTabCon,
   setIsManageTabsOpen,
 }) {
+  const renderTabIconNode = (iconImage, fallbackNode, sizeClass = 'w-4 h-4') => {
+    if (safeString(iconImage).trim()) {
+      return <img src={iconImage} alt="" className={`${sizeClass} object-cover rounded-sm`} />;
+    }
+    return fallbackNode;
+  };
+
   const renderSubTabChildren = (tab) => {
     if (!(activeTabLon === tab.id && tab.subTabs?.length > 0 && menu2Expanded)) return null;
     return (
@@ -50,8 +57,12 @@ export function AppNovelTocRail({
                 }`}
               >
                 <span className="flex items-center gap-2 truncate">
-                  {sub.viewType === 'collection-track' && (
-                    <LayoutGrid size={12} className="opacity-50 flex-shrink-0" />
+                  {renderTabIconNode(
+                    sub.iconImage,
+                    sub.viewType === 'collection-track' ? (
+                      <LayoutGrid size={12} className="opacity-50 flex-shrink-0" />
+                    ) : null,
+                    'w-3 h-3'
                   )}
                   <span className="truncate">{safeString(sub.label)}</span>
                 </span>
@@ -107,7 +118,9 @@ export function AppNovelTocRail({
               : 'text-slate-500 hover:bg-slate-800 border-l-2 border-transparent'
           }`}
         >
-          <div className="w-5 flex justify-center flex-shrink-0">{getIconComponent(tab.iconName)}</div>
+          <div className="w-5 flex justify-center flex-shrink-0">
+            {renderTabIconNode(tab.iconImage, getIconComponent(tab.iconName))}
+          </div>
           <span
             className={`font-serif text-sm transition-[opacity,max-width,margin-left] duration-200 ${
               menu2Expanded ? 'ml-3 opacity-100 max-w-[999px]' : 'ml-0 opacity-0 max-w-0 overflow-hidden'
@@ -137,14 +150,14 @@ export function AppNovelTocRail({
             menu2Expanded ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'
           }`}
         >
-          Muc Luc
+          Mục Lục
         </button>
         {!menu2Expanded && (
           <button
             type="button"
             onClick={() => setMenu2Expanded(true)}
             className="w-8 h-8 flex items-center justify-center text-amber-600 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors mx-auto"
-            title="Mo muc luc"
+            title="Mở mục lục"
           >
             <ChevronRight size={16} />
           </button>
@@ -159,7 +172,7 @@ export function AppNovelTocRail({
                   ? 'text-amber-500 bg-amber-900/30'
                   : 'text-slate-500 hover:text-amber-500 hover:bg-slate-800'
               }`}
-              title={sidebarGrouped ? 'Tat gom nhom' : 'Bat gom nhom'}
+              title={sidebarGrouped ? 'Tắt gom nhóm' : 'Bật gom nhóm'}
             >
               <Layers size={16} />
             </button>

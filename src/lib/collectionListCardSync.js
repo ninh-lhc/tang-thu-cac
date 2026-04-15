@@ -521,9 +521,13 @@ function clearListCardsAutoInTab(tabData) {
   return changed;
 }
 
-export function syncAllCollectionListCards(nov) {
-  if (!nov?.data || !Array.isArray(nov?.tabsConfig)) return false;
+export function syncAllCollectionListCardsDetailed(nov) {
+  if (!nov?.data || !Array.isArray(nov?.tabsConfig)) {
+    return { changed: false, recreatedCount: 0, recreatedTabs: [] };
+  }
   let changed = false;
+  let recreatedCount = 0;
+  const recreatedTabs = [];
   const ownerLookupEntities = [];
   for (const lonData of Object.values(nov.data || {})) {
     if (!lonData || typeof lonData !== 'object') continue;
@@ -538,6 +542,17 @@ export function syncAllCollectionListCards(nov) {
       if (!isCollectionTab(nho)) return;
       const tabData = nov?.data?.[lon.id]?.[nho.id];
       if (!tabData || typeof tabData !== 'object' || !Array.isArray(tabData.entities)) return;
+      const recreated = ensureListCardEntity(tabData, nho.label || nho.id);
+      if (recreated) {
+        recreatedCount += 1;
+        recreatedTabs.push({
+          lonId: safeString(lon.id).trim(),
+          nhoId: safeString(nho.id).trim(),
+          lonLabel: safeString(lon.label).trim(),
+          nhoLabel: safeString(nho.label || nho.id).trim(),
+        });
+      }
+      changed = recreated || changed;
       changed = seedAutoLevelsForCanonicalListCard(nho, tabData, nho.label || nho.id) || changed;
       if (isAutoSyncExplicitlyOff(nho)) {
         changed = clearListCardsAutoInTab(tabData) || changed;
@@ -557,7 +572,11 @@ export function syncAllCollectionListCards(nov) {
     });
   });
 
-  return changed;
+  return { changed, recreatedCount, recreatedTabs };
+}
+
+export function syncAllCollectionListCards(nov) {
+  return syncAllCollectionListCardsDetailed(nov).changed;
 }
 
 export function ensureCollectionListCardsForNovel(nov, { createMissingTabBuckets = false } = {}) {

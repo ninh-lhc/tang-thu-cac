@@ -38,7 +38,7 @@ function buildTabPathLabel(lonLabel, nhoLabel) {
   const left = safeString(lonLabel).trim();
   const right = safeString(nhoLabel).trim();
   if (left && right) return `${left} > ${right}`;
-  return left || right || 'Muc chua dat ten';
+  return left || right || 'Mục chưa đặt tên';
 }
 
 function collectTabWarnings(tabNho, fieldDefs, fieldMap) {
@@ -97,7 +97,7 @@ export function collectNovelAutoSyncDiagnostics(novelData) {
         pathLabel: buildTabPathLabel(tabLon.label, tabNho.label),
         explicitRole,
         effectiveRole,
-        roleLabel: effectiveRole ? getAutoSyncRoleLabel(effectiveRole) : 'AUTO noi bo',
+        roleLabel: effectiveRole ? getAutoSyncRoleLabel(effectiveRole) : 'AUTO nội bộ',
         isInferred: !explicitRole && Boolean(effectiveRole),
         entityCount: countTabEntities(novelData, tabLon.id, tabNho.id),
         engineIds,
@@ -120,7 +120,7 @@ export function collectNovelAutoSyncDiagnostics(novelData) {
   const disabledCount = tabReports.reduce((sum, report) => sum + report.disabledEntityCount, 0);
 
   if (tabReports.length > 0) {
-    wizardSteps.push('Moi tab Luoi se tu co AUTO noi bo cho the va Danh sach trong cung tab.');
+    wizardSteps.push('Mỗi tab Lưới sẽ tự có AUTO nội bộ cho thẻ và Danh Sách trong cùng tab.');
   }
   if (warningCount > 0) {
     wizardSteps.push(`Con ${warningCount} canh bao anh xa truong can xu ly.`);

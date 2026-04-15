@@ -133,6 +133,9 @@ export function AppModalLayer({
   setEditingTab,
   handleAddTabLon,
   handleSaveEditLabel,
+  handleSaveTabIcon,
+  handleSaveTabIconImage,
+  handleSaveSubTabIconImage,
   handleToggleViewType,
   handleDeleteTab,
   handleAddTabNho,
@@ -334,6 +337,9 @@ export function AppModalLayer({
           setEditingTab={setEditingTab}
           handleAddTabLon={handleAddTabLon}
           handleSaveEditLabel={handleSaveEditLabel}
+          handleSaveTabIcon={handleSaveTabIcon}
+          handleSaveTabIconImage={handleSaveTabIconImage}
+          handleSaveSubTabIconImage={handleSaveSubTabIconImage}
           handleToggleViewType={handleToggleViewType}
           handleDeleteTab={handleDeleteTab}
           handleAddTabNho={handleAddTabNho}

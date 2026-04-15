@@ -494,7 +494,11 @@ export function AppCollectionSection({
                   className="bg-slate-900/60 border border-slate-800 hover:border-amber-600/40 rounded-2xl p-6 flex items-center gap-5 transition-all hover:shadow-[0_8px_24px_rgba(217,119,6,0.06)] group text-left"
                 >
                   <div className="w-14 h-14 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 group-hover:text-amber-500 group-hover:border-amber-500/30 transition-all flex-shrink-0 shadow-inner group-hover:shadow-[0_0_12px_rgba(217,119,6,0.1)]">
-                    {isCollection ? <User size={26}/> : <BookOpen size={26}/>}
+                    {safeString(sub.iconImage).trim() ? (
+                      <img src={sub.iconImage} alt="" className="w-10 h-10 object-cover rounded-lg" />
+                    ) : (
+                      isCollection ? <User size={26}/> : <BookOpen size={26}/>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-heading text-lg text-slate-200 group-hover:text-amber-400 transition-colors truncate">{safeString(sub.label)}</div>

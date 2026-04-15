@@ -305,6 +305,7 @@ describe('AppEntityDetailNotes', () => {
     });
     render(<AppEntityDetailNotes {...props} />);
 
+    fireEvent.click(screen.getByRole('button', { name: /Xem tùy chỉnh AUTO/i }));
     fireEvent.click(screen.getAllByRole('button', { name: /Tắt riêng/i })[0]);
 
     expect(props.handleSetSelectedEntityAutoSyncState).toHaveBeenCalledTimes(1);
