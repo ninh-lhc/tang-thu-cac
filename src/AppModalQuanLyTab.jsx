@@ -23,6 +23,7 @@ import {
 import { safeString, getIconComponent } from './MasterUtils.jsx';
 import { WIKI_ALIAS_FIELD } from './MasterEngines.js';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
+import { pickDefaultQuickFieldIds } from './lib/entityQuickEntrySlots.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
 import {
   getEffectiveAutoSyncRole,
@@ -508,6 +509,7 @@ export function AppModalQuanLyTab({
   handleAddTabTemplateField,
   handleRemoveTabTemplateField,
   handleRenameTabTemplateFieldLabel,
+  handleSetTabEntityQuickEntry,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
   handleSaveCurrentTabsAsGenreTemplate,
@@ -1259,6 +1261,120 @@ export function AppModalQuanLyTab({
                                   </div>
                                 </div>
 
+                                {!isMapTab && (
+                                  <div className="rounded-lg border border-amber-700/40 bg-amber-950/25 p-2 space-y-2">
+                                    <div className="text-[10px] font-bold text-amber-200 uppercase tracking-wide">
+                                      3 ô gợi ý — Khởi tạo thẻ (không phải Bản đồ)
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 font-serif leading-relaxed">
+                                      Chọn trường dữ liệu cho từng ô và (tuỳ chọn) đổi nhãn hiển thị. Danh mục gợi ý sửa ở từng trường bên
+                                      dưới; app ghép thêm gợi ý theo thể loại và tên tab.
+                                    </p>
+                                    {(() => {
+                                      const selectable = templateFields.filter((f) => f && f.id && f.id !== 'f_alias');
+                                      const defaultSlots = pickDefaultQuickFieldIds(templateFields);
+                                      const configured =
+                                        Array.isArray(tabNho.entityQuickEntry?.slotFields) &&
+                                        tabNho.entityQuickEntry.slotFields.length === 3
+                                          ? tabNho.entityQuickEntry.slotFields
+                                          : defaultSlots;
+                                      const labelSlots = [0, 1, 2].map((i) =>
+                                        safeString(tabNho.entityQuickEntry?.slotLabels?.[i] ?? '').trim()
+                                      );
+                                      const optIds = new Set(selectable.map((f) => f.id));
+                                      if (selectable.length === 0) {
+                                        return (
+                                          <p className="text-[11px] text-amber-100/90 font-serif">
+                                            Thêm ít nhất một trường hồ sơ (ngoài wiki) để gán 3 ô gợi ý.
+                                          </p>
+                                        );
+                                      }
+                                      return (
+                                        <div className="space-y-3">
+                                          {[0, 1, 2].map((idx) => {
+                                            const qlabId = `ttc-quick-slot-label-${tabPathKey}-${idx}`;
+                                            return (
+                                              <div
+                                                key={`quick-slot-${tabPathKey}-${idx}`}
+                                                className="rounded-lg border border-amber-900/25 bg-slate-950/40 p-2 space-y-2"
+                                              >
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                  <span className="text-[10px] font-bold text-slate-500 w-8 shrink-0">
+                                                    Ô {idx + 1}
+                                                  </span>
+                                                  <select
+                                                    value={configured[idx]}
+                                                    onChange={(e) => {
+                                                      const v = safeString(e.target.value).trim();
+                                                      const next = [...configured];
+                                                      const twin = next.findIndex((x, j) => x === v && j !== idx);
+                                                      if (twin >= 0) {
+                                                        next[twin] = next[idx];
+                                                      }
+                                                      next[idx] = v;
+                                                      handleSetTabEntityQuickEntry?.(
+                                                        tabLon.id,
+                                                        tabNho.id,
+                                                        next,
+                                                        labelSlots
+                                                      );
+                                                    }}
+                                                    className="min-w-[160px] flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 font-mono outline-none focus:border-amber-600/50"
+                                                  >
+                                                    {!optIds.has(configured[idx]) && (
+                                                      <option value={configured[idx]}>
+                                                        {configured[idx]} (cần khớp template)
+                                                      </option>
+                                                    )}
+                                                    {selectable.map((f) => (
+                                                      <option key={f.id} value={f.id}>
+                                                        {safeString(f.label) || f.id} ({f.id})
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                </div>
+                                                <div className="space-y-1 pl-0 md:pl-10">
+                                                  <div className="flex flex-wrap items-center gap-2">
+                                                    <span className="text-[10px] font-bold uppercase tracking-wide text-amber-200/85">
+                                                      Nhãn hiển thị (chỉ modal Khởi tạo thẻ)
+                                                    </span>
+                                                    <button
+                                                      type="button"
+                                                      title="Sửa nhãn hiển thị cho ô gợi ý này"
+                                                      onClick={() => document.getElementById(qlabId)?.focus()}
+                                                      className="inline-flex items-center gap-1 rounded-md border border-amber-800/50 bg-amber-950/35 px-2 py-0.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/45"
+                                                    >
+                                                      <Edit2 size={12} /> Sửa nhãn
+                                                    </button>
+                                                  </div>
+                                                  <input
+                                                    id={qlabId}
+                                                    type="text"
+                                                    defaultValue={labelSlots[idx]}
+                                                    key={`qlab-${tabPathKey}-${idx}-${labelSlots[idx]}`}
+                                                    onBlur={(e) => {
+                                                      const nextLabels = [...labelSlots];
+                                                      nextLabels[idx] = e.target.value;
+                                                      handleSetTabEntityQuickEntry?.(
+                                                        tabLon.id,
+                                                        tabNho.id,
+                                                        configured,
+                                                        nextLabels
+                                                      );
+                                                    }}
+                                                    placeholder="Để trống = dùng tên trường trong hồ sơ tab"
+                                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-serif outline-none focus:border-amber-600/45"
+                                                  />
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+                                )}
+
                                 <div className="flex flex-wrap items-end gap-2">
                                   <input
                                     type="text"
@@ -1292,28 +1408,47 @@ export function AppModalQuanLyTab({
                                     if (!fid) return null;
                                     const isWiki = fid === WIKI_ALIAS_FIELD.id;
                                     const suggestionLines = (tabNho.fieldSuggestionLists?.[fid] || []).join('\n');
+                                    const labelDomId = `ttc-field-label-${tabPathKey}-${fid.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
                                     return (
                                       <div
                                         key={fid}
                                         className="rounded-lg border border-slate-800/90 bg-slate-950/50 p-2 space-y-2"
                                       >
                                         <div className="flex flex-wrap items-center gap-2">
-                                          <input
-                                            type="text"
-                                            defaultValue={safeString(field.label)}
-                                            key={`lab-${tabPathKey}-${fid}-${safeString(field.label)}`}
-                                            onBlur={(e) =>
-                                              handleRenameTabTemplateFieldLabel?.(
-                                                tabLon.id,
-                                                tabNho.id,
-                                                fid,
-                                                e.target.value
-                                              )
-                                            }
-                                            className="flex-1 min-w-[140px] bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100 font-serif"
-                                            aria-label={`Nhãn trường ${fid}`}
-                                          />
-                                          <code className="text-[10px] text-slate-500 shrink-0">{fid}</code>
+                                          <div className="min-w-0 flex-1 space-y-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                              <span className="text-[10px] font-bold uppercase tracking-wide text-amber-200/90">
+                                                Tên hiển thị (form / mốc)
+                                              </span>
+                                              <button
+                                                type="button"
+                                                title="Sửa tên hiển thị của trường này"
+                                                onClick={() => document.getElementById(labelDomId)?.focus()}
+                                                className="inline-flex items-center gap-1 rounded-md border border-amber-800/50 bg-amber-950/30 px-2 py-0.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/40"
+                                              >
+                                                <Edit2 size={12} /> Sửa tên
+                                              </button>
+                                            </div>
+                                            <input
+                                              id={labelDomId}
+                                              type="text"
+                                              defaultValue={safeString(field.label)}
+                                              key={`lab-${tabPathKey}-${fid}-${safeString(field.label)}`}
+                                              onBlur={(e) =>
+                                                handleRenameTabTemplateFieldLabel?.(
+                                                  tabLon.id,
+                                                  tabNho.id,
+                                                  fid,
+                                                  e.target.value
+                                                )
+                                              }
+                                              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100 font-serif"
+                                              aria-label={`Tên hiển thị trường ${fid}`}
+                                            />
+                                          </div>
+                                          <code className="text-[10px] text-slate-500 shrink-0 max-w-[8rem] truncate" title={fid}>
+                                            {fid}
+                                          </code>
                                           {!isWiki && (
                                             <button
                                               type="button"
@@ -1333,7 +1468,7 @@ export function AppModalQuanLyTab({
                                         </div>
                                         <div>
                                           <div className="text-[10px] text-slate-500 mb-1">
-                                            Gợi ý (mỗi dòng một mục) — ô một dòng ở mốc timeline
+                                            Danh sách gợi ý — mỗi dòng một mục (ô một dòng ở mốc timeline, khởi tạo thẻ)
                                           </div>
                                           <textarea
                                             defaultValue={suggestionLines}

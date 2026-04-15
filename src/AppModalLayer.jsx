@@ -147,6 +147,7 @@ export function AppModalLayer({
   handleAddTabTemplateField,
   handleRemoveTabTemplateField,
   handleRenameTabTemplateFieldLabel,
+  handleSetTabEntityQuickEntry,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
   handleSaveCurrentTabsAsGenreTemplate,
@@ -347,6 +348,7 @@ export function AppModalLayer({
           handleAddTabTemplateField={handleAddTabTemplateField}
           handleRemoveTabTemplateField={handleRemoveTabTemplateField}
           handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
+          handleSetTabEntityQuickEntry={handleSetTabEntityQuickEntry}
           handleApplySuggestedAutoSyncSetup={handleApplySuggestedAutoSyncSetup}
           handleResyncAutoTabs={handleResyncAutoTabs}
           handleSaveCurrentTabsAsGenreTemplate={handleSaveCurrentTabsAsGenreTemplate}

@@ -2119,6 +2119,20 @@ export default function App() {
     });
   };
 
+  const handleSetTabEntityQuickEntry = (lonId, nhoId, slotFields, slotLabels) => {
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const templateIds = new Set((nho.fieldsTemplate || []).map((f) => safeString(f?.id).trim()).filter(Boolean));
+    const ids = (Array.isArray(slotFields) ? slotFields : []).map((x) => safeString(x).trim()).slice(0, 3);
+    const labels = [0, 1, 2].map((i) => safeString(slotLabels?.[i] ?? '').trim());
+    if (ids.length !== 3 || new Set(ids).size !== 3) return;
+    if (!ids.every((id) => templateIds.has(id))) return;
+    nho.entityQuickEntry = { slotFields: ids, slotLabels: labels };
+    setTabsConfig(current, { resyncAuto: false });
+  };
+
   const handleSetTabAutoSyncLevels = (lonId, nhoId, updater) => {
     const current = structuredClone(getTabsToUpdate());
     const previousTabs = getTabsToUpdate();
@@ -2480,6 +2494,7 @@ export default function App() {
     handleAddTabTemplateField,
     handleRemoveTabTemplateField,
     handleRenameTabTemplateFieldLabel,
+    handleSetTabEntityQuickEntry,
     handleApplySuggestedAutoSyncSetup,
     handleResyncAutoTabs,
     handleSaveCurrentTabsAsGenreTemplate,

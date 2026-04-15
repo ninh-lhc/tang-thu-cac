@@ -56,6 +56,7 @@ import {
   getMapTypeSeedPresets,
   resolveMapFieldPresetFlavor,
 } from './lib/mapEntityFieldPresets.js';
+import { resolveEntityQuickSlots } from './lib/entityQuickEntrySlots.js';
 import { normalizeAsciiText, splitStatusHierarchyTokens } from './lib/statusHierarchyParser.js';
 import { mergeTabsByGenres } from './genreTabsMap.js';
 import { getGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
@@ -1242,6 +1243,26 @@ export const ModalEntity = ({
       }),
     [parentTabId, tabConfig]
   );
+  const showGenericQuickEntry = Boolean(
+    tabConfig?.viewType === 'collection-track' && !isMapScope && !isForceScope
+  );
+  const genericQuickResolved = useMemo(
+    () =>
+      showGenericQuickEntry
+        ? resolveEntityQuickSlots({
+            tabConfig: tabConfig || {},
+            fieldsTemplate,
+            activeNovelData,
+            parentTabId,
+            parentLabel: parentLabel || '',
+          })
+        : null,
+    [showGenericQuickEntry, tabConfig, fieldsTemplate, activeNovelData, parentTabId, parentLabel]
+  );
+  const genericQuickListPrefix = useId().replace(/:/g, '');
+  const hideLegacyStatusInput = Boolean(
+    showGenericQuickEntry && genericQuickResolved?.slotFields?.includes('f_status')
+  );
   const mapEntityHints = useMemo(
     () => collectMapEntityHints(activeNovelData, isMapScope ? tabConfig : null),
     [activeNovelData, tabConfig, isMapScope]
@@ -1473,6 +1494,62 @@ export const ModalEntity = ({
             </div>
           </div>
 
+          {showGenericQuickEntry && genericQuickResolved?.slots?.length === 3 && (
+            <div className="rounded-xl border border-amber-900/45 bg-amber-950/10 p-4 space-y-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
+                  Gợi ý nhanh (theo thể loại và tab)
+                </p>
+                <span className="text-[10px] text-slate-500 font-serif">
+                  Đổi 3 ô và nhãn trong Trận pháp → Quản lý tab
+                </span>
+              </div>
+              <div className="grid gap-4 md:grid-cols-1">
+                {genericQuickResolved.slots.map((slot, idx) => {
+                  const fid = slot.fieldId;
+                  const val = safeString(dynamicData[fid]);
+                  const listDomId = `${genericQuickListPrefix}-q-${idx}-${String(fid).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+                  const isLong = fid === 'f_desc';
+                  return (
+                    <div key={`${fid}-${idx}`} className="space-y-2">
+                      <label className="block text-[10px] font-bold text-amber-200 uppercase tracking-widest">
+                        {slot.label}
+                      </label>
+                      {isLong ? (
+                        <textarea
+                          aria-label={slot.label}
+                          value={val}
+                          onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
+                          rows={3}
+                          className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none resize-y min-h-[4.5rem]"
+                          placeholder="Ghi mô tả ngắn…"
+                        />
+                      ) : (
+                        <>
+                          <input
+                            aria-label={slot.label}
+                            list={slot.suggestions.length ? listDomId : undefined}
+                            value={val}
+                            onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
+                            className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
+                            placeholder={`Gõ hoặc chọn gợi ý — ${fid}`}
+                          />
+                          {slot.suggestions.length > 0 && (
+                            <datalist id={listDomId}>
+                              {slot.suggestions.map((item) => (
+                                <option key={item} value={item} />
+                              ))}
+                            </datalist>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {isMapScope && (
             <div className="rounded-xl border border-sky-900/40 bg-sky-950/10 p-4 space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
@@ -1556,7 +1633,8 @@ export const ModalEntity = ({
             </div>
           )}
 
-          <div className="space-y-2">
+          {!hideLegacyStatusInput && (
+            <div className="space-y-2">
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-snug">
                 {isMapScope || isForceScope ? 'Chuỗi hiển thị / dữ liệu auto' : safeString(fStatusLabel)}
               </label>
@@ -1567,8 +1645,9 @@ export const ModalEntity = ({
                 className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3 text-sm text-slate-200 font-serif focus:border-amber-600/60 outline-none"
                 placeholder={resolvedStatusFieldPlaceholder}
               />
-            <p className="text-[11px] text-slate-500 font-serif">{resolvedStatusFieldHint}</p>
-          </div>
+              <p className="text-[11px] text-slate-500 font-serif">{resolvedStatusFieldHint}</p>
+            </div>
+          )}
 
           <datalist id="ttc-map-type-options">
             {mapTypeSuggestions.map((item) => (
