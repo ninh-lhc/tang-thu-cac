@@ -1,7 +1,7 @@
 /**
  * Bố cục lưu truyện trên ổ đĩa: manifest (file .json gốc) + shard theo tab nhỏ data/<lon>/<nho>.json.
  * localStorage vẫn một blob — chỉ thư mục truyện (File System Access) dùng sharded.
- * Ai gọi: useAppPersistence.js. Test: novelDiskLayout.test.js
+ * Ai gọi: useAppPersistence.js, useAppNovelCrud (xóa thư mục đúng id). Test: novelDiskLayout.test.js
  */
 
 export const NOVEL_STORAGE_SHARDED = 'sharded';
@@ -299,4 +299,101 @@ export async function writeShardTree(novelDirHandle, novelData) {
       }
     }
   }
+}
+
+/** Đọc `id` từ nội dung file manifest JSON (không nạp shard). */
+export function parseManifestIdFromJsonText(text) {
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const id = parsed.id;
+    if (id == null) return null;
+    const s = String(id).trim();
+    return s || null;
+  } catch {
+    return null;
+  }
+}
+
+async function readManifestIdFromNovelDir(novelDirHandle, manifestBaseName) {
+  try {
+    const f = await novelDirHandle.getFileHandle(`${manifestBaseName}.json`);
+    const text = await (await f.getFile()).text();
+    return parseManifestIdFromJsonText(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Tìm tên thư mục con của root (Mệnh Bàn) chứa manifest trùng `meta.id`.
+ * Khớp thứ tự với load: candidates → rồi quét toàn bộ thư mục (trừ `novels`).
+ */
+export async function findNovelFolderEntryNameOnRoot(rootDir, meta) {
+  const wantId = String(meta?.id ?? '').trim();
+  if (!wantId || !rootDir) return null;
+  const candidates = novelManifestBaseNameCandidates(meta);
+
+  for (const dirName of candidates) {
+    try {
+      const novelDir = await rootDir.getDirectoryHandle(dirName);
+      const basesToTry = [...new Set([...candidates, dirName])];
+      for (const base of basesToTry) {
+        const pid = await readManifestIdFromNovelDir(novelDir, base);
+        if (pid === wantId) return dirName;
+      }
+    } catch {
+      /* thử candidate kế */
+    }
+  }
+
+  try {
+    for await (const [entryName, handle] of rootDir.entries()) {
+      if (handle.kind !== 'directory') continue;
+      if (entryName === 'novels') continue;
+      const basesToTry = [...new Set([entryName, ...candidates])];
+      for (const base of basesToTry) {
+        try {
+          const pid = await readManifestIdFromNovelDir(handle, base);
+          if (pid === wantId) return entryName;
+        } catch {
+          /* */
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[TTC] findNovelFolderEntryNameOnRoot scan', e);
+  }
+  return null;
+}
+
+/**
+ * Xóa dữ liệu truyện trên đĩa: thư mục manifest (đệ quy) hoặc file legacy `novels/<id>.json`.
+ * @returns {{ ok: true, removed: string, kind: 'folder'|'legacy_file' } | { ok: false, reason: string, attempted?: string, error?: unknown }}
+ */
+export async function removeNovelStorageFromRoot(rootDir, meta) {
+  const wantId = String(meta?.id ?? '').trim();
+  if (!rootDir || wantId === '') {
+    return { ok: false, reason: 'bad_args' };
+  }
+
+  const folderName = await findNovelFolderEntryNameOnRoot(rootDir, meta);
+  if (folderName) {
+    try {
+      await rootDir.removeEntry(folderName, { recursive: true });
+      return { ok: true, removed: folderName, kind: 'folder' };
+    } catch (error) {
+      return { ok: false, reason: 'remove_failed', attempted: folderName, error };
+    }
+  }
+
+  try {
+    const novelsDir = await rootDir.getDirectoryHandle('novels');
+    await novelsDir.removeEntry(`${wantId}.json`);
+    return { ok: true, removed: `novels/${wantId}.json`, kind: 'legacy_file' };
+  } catch {
+    /* */
+  }
+
+  return { ok: false, reason: 'not_found' };
 }

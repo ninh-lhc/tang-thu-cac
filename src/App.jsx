@@ -926,21 +926,22 @@ export default function App() {
     return () => clearTimeout(t);
   }, [livePreviewText, isSplitPreview, setDebouncedMarkdownPreview]);
 
+  // Chỉ đếm lại stats cho truyện chưa có mục trong novelStats (vd. sau import / migrate).
+  // Không quét lại cả thư viện khi đã đủ stats — tránh lag với hàng trăm bộ.
   useEffect(() => {
     if (!dirHandle || novelsMetadata.length === 0) return;
     let cancelled = false;
     const root = dirHandle;
     const run = async () => {
       const need = novelsMetadata.filter((m) => !novelStatsByIdRef.current[m.id]);
-      const toRecalc = need.length > 0 ? need : novelsMetadata;
-      if (toRecalc.length === 0 || cancelled) return;
+      if (need.length === 0 || cancelled) return;
       setIsStatsBackfilling(true);
       try {
         const acc = { ...novelStatsByIdRef.current };
         const chunk = 2;
-        for (let i = 0; i < toRecalc.length; i += chunk) {
+        for (let i = 0; i < need.length; i += chunk) {
           if (cancelled) return;
-          const batch = toRecalc.slice(i, i + chunk);
+          const batch = need.slice(i, i + chunk);
           await Promise.all(
             batch.map(async (meta) => {
               try {
@@ -977,7 +978,6 @@ export default function App() {
   }, [
     novelsMetadata,
     dirHandle,
-    activeNovelData?.id,
     globalTabsConfigRef,
     loadNovelData,
     novelStatsByIdRef,
@@ -986,6 +986,70 @@ export default function App() {
     setNovelStatsById,
     syncIndex,
   ]);
+
+  const runRecalculateAllLibraryStats = useCallback(async () => {
+    const root = dirHandleRef.current;
+    const metaList = novelsMetadataRef.current;
+    if (!root || !metaList?.length) {
+      showToast('Không thể tính lại — chưa kết nối lưu trữ hoặc thư viện trống.', 'warning');
+      return;
+    }
+    setIsStatsBackfilling(true);
+    try {
+      const acc = {};
+      const chunk = 2;
+      for (let i = 0; i < metaList.length; i += chunk) {
+        const batch = metaList.slice(i, i + chunk);
+        await Promise.all(
+          batch.map(async (meta) => {
+            try {
+              const loaded = await loadNovelData(meta, root);
+              acc[meta.id] = loaded?.novel
+                ? countEntitiesInNovel(loaded.novel)
+                : { entities: 0, milestones: 0, byTab: [] };
+            } catch {
+              acc[meta.id] = { entities: 0, milestones: 0, byTab: [] };
+            }
+          })
+        );
+        novelStatsByIdRef.current = { ...acc };
+        setNovelStatsById({ ...acc });
+      }
+      await syncIndex(metaList, globalTabsConfigRef.current, root, acc);
+      showToast('Đã tính lại thống kê (thẻ / mốc) cho toàn bộ thư viện.', 'success');
+    } catch (e) {
+      console.warn('[TTC] runRecalculateAllLibraryStats', e);
+      showToast('Lỗi khi tính lại thống kê.', 'error');
+    } finally {
+      setIsStatsBackfilling(false);
+    }
+  }, [
+    loadNovelData,
+    syncIndex,
+    showToast,
+    setIsStatsBackfilling,
+    setNovelStatsById,
+    dirHandleRef,
+    novelsMetadataRef,
+    novelStatsByIdRef,
+    globalTabsConfigRef,
+  ]);
+
+  const requestRecalculateLibraryStats = useCallback(() => {
+    if (!dirHandle || novelsMetadata.length === 0) {
+      showToast('Chưa có truyện hoặc chưa kết nối lưu trữ (Bộ nhớ đệm / thư mục).', 'warning');
+      return;
+    }
+    const n = novelsMetadata.length;
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Tính lại thống kê thư viện?',
+      message: `Sẽ đọc lại từng truyện và cập nhật số thẻ / mốc cho <b>${n}</b> bộ. Thao tác có thể lâu với thư viện lớn — trình duyệt vẫn dùng được.`,
+      onConfirm: () => {
+        void runRecalculateAllLibraryStats();
+      },
+    });
+  }, [dirHandle, novelsMetadata.length, setConfirmDialog, showToast, runRecalculateAllLibraryStats]);
 
   const performDeepSearch = useCallback(
     async (query, signal, onProgress) => {
@@ -2468,6 +2532,8 @@ export default function App() {
     handleSaveNovelModal,
     novelModalMode,
     handlePickCoverImage,
+    requestRecalculateLibraryStats,
+    isStatsBackfilling,
     novelsMetadata,
     isDeepSearchOpen,
     performDeepSearch,

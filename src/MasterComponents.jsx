@@ -2871,6 +2871,9 @@ export const ModalSettings = ({
   onExportBackup,
   onExportIndexOnly,
   onImportBackup,
+  onRequestRecalculateLibraryStats,
+  libraryNovelCount = 0,
+  isStatsBackfilling = false,
   geminiApiKeys,
   setGeminiApiKeys,
   aiMode = 'standard',
@@ -3022,6 +3025,33 @@ export const ModalSettings = ({
              </div>
 
              <div className="h-px bg-slate-800 w-full"></div>
+
+             {typeof onRequestRecalculateLibraryStats === 'function' && (
+             <div>
+               <h3 className="text-sm font-bold text-violet-400 mb-3 uppercase tracking-widest flex items-center gap-2"><BarChart2 size={16}/> Thống kê thư viện</h3>
+               <p className="text-slate-400 font-serif text-xs leading-relaxed mb-4">
+                 Đếm lại số thẻ và mốc cho <span className="text-slate-300 font-semibold">mọi truyện</span> trong index (dashboard, lọc nâng cao…). Dùng khi số liệu lệch sau sửa tay file hoặc đổi phiên bản app.
+               </p>
+               <button
+                 type="button"
+                 disabled={!dirHandle || libraryNovelCount === 0 || isStatsBackfilling}
+                 onClick={onRequestRecalculateLibraryStats}
+                 className="w-full py-3 bg-violet-950/50 hover:bg-violet-900/40 disabled:opacity-40 disabled:pointer-events-none text-violet-200 border border-violet-800/50 rounded-xl font-bold flex items-center justify-center gap-2 text-sm"
+               >
+                 <RefreshCw size={18} className={isStatsBackfilling ? 'animate-spin' : ''} />
+                 {isStatsBackfilling ? 'Đang tính lại…' : 'Tính lại toàn bộ thống kê'}
+               </button>
+               {libraryNovelCount > 0 && (
+                 <p className="mt-2 text-[11px] text-slate-500 font-serif text-center">
+                   Hiện có <span className="text-slate-400 font-semibold">{libraryNovelCount}</span> bộ trong danh mục.
+                 </p>
+               )}
+             </div>
+             )}
+
+             {typeof onRequestRecalculateLibraryStats === 'function' && (
+             <div className="h-px bg-slate-800 w-full"></div>
+             )}
 
              <div>
                <h3 className="text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest flex items-center gap-2"><Link2 size={16}/> Liên kết wiki & mạng lưới</h3>

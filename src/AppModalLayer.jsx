@@ -90,6 +90,8 @@ export function AppModalLayer({
   handleSaveNovelModal,
   novelModalMode,
   handlePickCoverImage,
+  requestRecalculateLibraryStats,
+  isStatsBackfilling,
   novelsMetadata,
   isDeepSearchOpen,
   performDeepSearch,
@@ -207,6 +209,9 @@ export function AppModalLayer({
         onExportBackup={handleExportBackup}
         onExportIndexOnly={handleExportIndexOnly}
         onImportBackup={handleImportBackup}
+        onRequestRecalculateLibraryStats={requestRecalculateLibraryStats}
+        libraryNovelCount={novelsMetadata?.length ?? 0}
+        isStatsBackfilling={isStatsBackfilling}
         geminiApiKeys={geminiApiKeys}
         setGeminiApiKeys={handleSaveApiKeys}
         aiMode={aiMode}

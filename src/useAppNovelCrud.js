@@ -7,6 +7,7 @@
 
 import { useCallback, useState } from 'react';
 import { ensureCollectionListCardsForNovel } from './lib/collectionListCardSync.js';
+import { removeNovelStorageFromRoot } from './lib/novelDiskLayout.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 import { safeString, toDisplayTitleCase } from './MasterUtils.jsx';
 
@@ -193,9 +194,6 @@ export function useAppNovelCrud({
 
   const handleDeleteNovel = useCallback(async (id) => {
     const meta = novelsMetadata.find((item) => item.id === id);
-    const folderName = meta
-      ? meta.folderName || (meta.title || '').replace(/[\\/:*?"<>|]/g, '').trim() || meta.id
-      : null;
     const newMetaList = novelsMetadata.filter((item) => item.id !== id);
     const nextStats = { ...novelStatsByIdRef.current };
 
@@ -208,13 +206,13 @@ export function useAppNovelCrud({
 
     if (dirHandle === 'LOCAL_STORAGE') {
       localStorage.removeItem(`tangthu_novel_${id}`);
-    } else if (dirHandle && folderName) {
-      try {
-        await dirHandle.removeEntry(folderName, { recursive: true });
-      } catch (error) {
-        console.warn('[TTC] Khong xoa duoc thu muc truyen:', folderName, error);
+    } else if (dirHandle && meta) {
+      const diskResult = await removeNovelStorageFromRoot(dirHandle, meta);
+      if (!diskResult.ok && diskResult.reason === 'remove_failed') {
+        const label = diskResult.attempted || meta.id;
+        console.warn('[TTC] Khong xoa duoc du lieu truyen tren dia:', label, diskResult.error);
         setTimeout(() => {
-          showToast(`Da xoa khoi so nhung khong xoa duoc thu muc "${folderName}".`, 'warning');
+          showToast(`Da xoa khoi so nhung khong xoa duoc du lieu «${label}» tren o (kiem tra quyen ghi).`, 'warning');
         }, 0);
       }
     }

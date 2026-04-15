@@ -7,6 +7,7 @@ import {
   buildShardWritePlan,
   NOVEL_STORAGE_SHARDED,
   novelManifestBaseNameCandidates,
+  parseManifestIdFromJsonText,
 } from './novelDiskLayout.js';
 
 describe('novelDiskLayout', () => {
@@ -25,6 +26,12 @@ describe('novelDiskLayout', () => {
       { lonId: 'a', nhoId: 'y' },
       { lonId: 'b', nhoId: 'z' },
     ]);
+  });
+
+  it('parseManifestIdFromJsonText reads id from manifest', () => {
+    expect(parseManifestIdFromJsonText('{"id":"abc-1","title":"T"}')).toBe('abc-1');
+    expect(parseManifestIdFromJsonText('{}')).toBe(null);
+    expect(parseManifestIdFromJsonText('not json')).toBe(null);
   });
 
   it('novelManifestBaseNameCandidates dedupes folderName, title slug, id', () => {
