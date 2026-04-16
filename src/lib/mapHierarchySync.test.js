@@ -311,6 +311,31 @@ describe('mapHierarchySync', () => {
     const normalizedInfo = normalizeAsciiText(String(source?.info || ''));
     expect(normalizedInfo).toContain('loai dia danh: gioi');
   });
+
+  it('parses slash-separated parent path and ignores generic level token', () => {
+    const novel = createNovelWithMapEntities([
+      {
+        id: 'm-slash',
+        name: 'Bang Thien Dai Luc',
+        info: '',
+        dynamicData: {
+          f_title: 'Dai Luc',
+          f_vi_tri: 'Viet Long Tinh / Dai Luc',
+        },
+      },
+    ]);
+
+    const ok = syncAllMapHierarchyAutoBlocks(novel);
+    expect(ok).toBe(true);
+    const mapEntities = novel.data['tai-nguyen']['dia-danh'].entities;
+    const child = mapEntities.find((ent) => ent.id === 'm-slash');
+    const parent = mapEntities.find((ent) => ent.name === 'Viet Long Tinh');
+    const generic = mapEntities.find((ent) => normalizeAsciiText(ent.name) === 'dai luc');
+
+    expect(String(child?.info || '')).toContain('Trực thuộc: [[Viet Long Tinh]]');
+    expect(parent).toBeTruthy();
+    expect(generic).toBeFalsy();
+  });
   it('cleans stale map hierarchy AUTO blocks when the tab role is turned off', () => {
     const novel = createNovelWithMapEntities([
       {

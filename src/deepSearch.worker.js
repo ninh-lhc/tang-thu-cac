@@ -1,4 +1,4 @@
-import { runDeepSearch, searchNovelIndex, dedupeDeepSearchResults } from './deepSearchCore.js';
+import { runDeepSearch, searchNovelIndex, dedupeDeepSearchResults, searchNovelPayloads } from './deepSearchCore.js';
 
 self.onmessage = (e) => {
   try {
@@ -11,6 +11,13 @@ self.onmessage = (e) => {
         searchNovelIndex(rows, q, out);
       });
       self.postMessage({ ok: true, reqId: msg.reqId, results: dedupeDeepSearchResults(out) });
+      return;
+    }
+
+    if (msg.type === 'searchPayloads') {
+      const q = String(msg.query || '').trim().toLowerCase();
+      const { results, cachedRowsByNovel } = searchNovelPayloads(msg.payloadsByNovel || {}, q);
+      self.postMessage({ ok: true, reqId: msg.reqId, results, cachedRowsByNovel });
       return;
     }
 

@@ -82,6 +82,18 @@ describe('entityCollectionQuery', () => {
       entitySearchIndexById: index,
       entitySortMode: 'milestones',
     });
-    expect(out.map((x) => x.id)).toEqual(['ls', 'a', 'b']);
+    expect(out.map((x) => x.id)).toEqual(['ls', 'b', 'a']);
+  });
+
+  it('supports name_desc sort mode', () => {
+    const index = buildEntitySearchIndexMap([e2, e1, listCard]);
+    const out = applyEntityCollectionFilters([e2, e1, listCard], {
+      entityFilterField: 'none',
+      entityFilterValue: '',
+      entitySearchQuery: '',
+      entitySearchIndexById: index,
+      entitySortMode: 'name_desc',
+    });
+    expect(out.map((x) => x.id)).toEqual(['ls', 'b', 'a']);
   });
 });

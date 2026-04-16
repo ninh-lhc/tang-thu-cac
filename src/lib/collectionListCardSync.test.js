@@ -4,6 +4,7 @@ import {
   syncAllCollectionListCards,
   syncAllCollectionListCardsDetailed,
 } from './collectionListCardSync.js';
+import { normalizeAsciiText } from './statusHierarchyParser.js';
 
 function buildNovel() {
   return {
@@ -432,5 +433,49 @@ describe('collectionListCardSync', () => {
     const info = String(novel.data['he-thong']['goi-qua'].entities[0].info || '');
     expect(info).toContain('## Lac Nam (37) ? (1)');
     expect(info).toContain('## Vân Y (12) ? (1)');
+  });
+
+  it('supports custom rank order from field suggestion lists', () => {
+    const novel = buildNovel();
+    novel.tabsConfig[1].subTabs[0].autoListGroupStrategy = 'rank';
+    novel.tabsConfig[1].subTabs[0].fieldSuggestionLists = {
+      f_cap: ['Thần Cấp', 'Thiên Cấp', 'Địa Cấp', 'Huyền Cấp'],
+    };
+    novel.data['he-thong']['goi-qua'].entities.push(
+      { id: 'r1', name: 'Item Than', info: '', dynamicData: { f_cap: 'Thần Cấp' }, milestones: [] },
+      { id: 'r2', name: 'Item Thien', info: '', dynamicData: { f_cap: 'Thiên Cấp' }, milestones: [] },
+      { id: 'r3', name: 'Item Dia', info: '', dynamicData: { f_cap: 'Địa Cấp' }, milestones: [] },
+      { id: 'r4', name: 'Item Huyen', info: '', dynamicData: { f_cap: 'Huyền Cấp' }, milestones: [] }
+    );
+
+    syncAllCollectionListCards(novel);
+    const info = normalizeAsciiText(String(novel.data['he-thong']['goi-qua'].entities[0].info || ''));
+    const iThan = info.indexOf('## than cap');
+    const iThien = info.indexOf('## thien cap');
+    const iDia = info.indexOf('## dia cap');
+    const iHuyen = info.indexOf('## huyen cap');
+
+    expect(iThan).toBeGreaterThan(-1);
+    expect(iThien).toBeGreaterThan(iThan);
+    expect(iDia).toBeGreaterThan(iThien);
+    expect(iHuyen).toBeGreaterThan(iDia);
+  });
+
+  it('supports custom AUTO group order from tab config list', () => {
+    const novel = buildNovel();
+    novel.tabsConfig[1].subTabs[0].autoListGroupStrategy = 'owner';
+    novel.tabsConfig[1].subTabs[0].autoListGroupOrder = ['Vân Y (12) ?', 'Lạc Nam (37) ?'];
+    novel.data['he-thong']['goi-qua'].entities[2].dynamicData = {
+      ...novel.data['he-thong']['goi-qua'].entities[2].dynamicData,
+      f_chu: 'Vân Y (12) ?',
+    };
+
+    syncAllCollectionListCards(novel);
+    const info = normalizeAsciiText(String(novel.data['he-thong']['goi-qua'].entities[0].info || ''));
+    const idxVanY = info.indexOf('## van y (12) ? (1)');
+    const idxLacNam = info.indexOf('## lac nam (37) ? (1)');
+
+    expect(idxVanY).toBeGreaterThan(-1);
+    expect(idxLacNam).toBeGreaterThan(idxVanY);
   });
 });

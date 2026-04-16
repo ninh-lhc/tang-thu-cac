@@ -367,6 +367,9 @@ export function AppCollectionSection({
                 aria-label="Sắp xếp danh sách thẻ"
               >
                 <option value="name_asc">Tên (A-Z)</option>
+                <option value="name_desc">Tên (Z-A)</option>
+                <option value="milestones">Nhiều mốc trước</option>
+                <option value="newest">Mới tạo trước</option>
               </select>
               <button
                 type="button"

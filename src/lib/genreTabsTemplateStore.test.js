@@ -27,6 +27,33 @@ describe('genreTabsTemplateStore', () => {
     expect(loaded?.genres).toEqual(['Hệ Thống', 'Tiên Hiệp']);
   });
 
+  it('preserves per-tab AUTO group rules in saved template', () => {
+    const tabsConfig = [
+      {
+        id: 'he-thong',
+        label: 'Hệ thống',
+        subTabs: [
+          {
+            id: 'goi-qua',
+            label: 'Gói quà',
+            viewType: 'collection-track',
+            autoListGroupStrategy: 'rank',
+            autoListGroupOrder: ['Thần Cấp', 'Thiên Cấp', 'Địa Cấp'],
+          },
+        ],
+      },
+    ];
+    saveGenreTabsTemplate(['Hệ Thống'], tabsConfig);
+
+    const loaded = getGenreTabsTemplate(['Hệ Thống']);
+    expect(loaded?.tabsConfig?.[0]?.subTabs?.[0]?.autoListGroupStrategy).toBe('rank');
+    expect(loaded?.tabsConfig?.[0]?.subTabs?.[0]?.autoListGroupOrder).toEqual([
+      'Thần Cấp',
+      'Thiên Cấp',
+      'Địa Cấp',
+    ]);
+  });
+
   it('deletes template by genre set', () => {
     saveGenreTabsTemplate(['Tiên Hiệp'], [{ id: 'x', subTabs: [] }]);
     expect(getGenreTabsTemplate(['Tiên Hiệp'])).toBeTruthy();

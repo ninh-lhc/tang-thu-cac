@@ -58,6 +58,7 @@ export function AppModalLayer({
   handleExportBackup,
   handleExportIndexOnly,
   handleImportBackup,
+  handleCleanupLegacyIndexFiles,
   handleSaveApiKeys,
   setAiMode,
   wikiExactMatchOnly,
@@ -147,6 +148,8 @@ export function AppModalLayer({
   handleSetTabAutoSyncLevels,
   handleSetTabAutoSyncFieldMap,
   handleSetTabListGroupStrategy,
+  handleSetTabListGroupOrder,
+  handleSaveTabListGroupOrderToGenreTemplate,
   handleSetTabMapEntrySuggestions,
   handleMergeTabFieldSuggestionList,
   handleAddTabTemplateField,
@@ -163,6 +166,9 @@ export function AppModalLayer({
         isOpen={isEntityModalOpen}
         onClose={() => setIsEntityModalOpen(false)}
         onOpenAutoSyncGuide={setIsAutoSyncGuideOpen ? () => setIsAutoSyncGuideOpen(true) : undefined}
+        onSetTabListGroupStrategy={handleSetTabListGroupStrategy}
+        onSetTabListGroupOrder={handleSetTabListGroupOrder}
+        onSaveTabListGroupOrderToGenreTemplate={handleSaveTabListGroupOrderToGenreTemplate}
         onSave={handleSaveEntity}
         initialData={editingEntityData}
         tabConfig={currentTabConfig}
@@ -209,6 +215,7 @@ export function AppModalLayer({
         onExportBackup={handleExportBackup}
         onExportIndexOnly={handleExportIndexOnly}
         onImportBackup={handleImportBackup}
+        onCleanupLegacyIndexFiles={handleCleanupLegacyIndexFiles}
         onRequestRecalculateLibraryStats={requestRecalculateLibraryStats}
         libraryNovelCount={novelsMetadata?.length ?? 0}
         isStatsBackfilling={isStatsBackfilling}
@@ -354,6 +361,7 @@ export function AppModalLayer({
           handleSetTabAutoSyncLevels={handleSetTabAutoSyncLevels}
           handleSetTabAutoSyncFieldMap={handleSetTabAutoSyncFieldMap}
           handleSetTabListGroupStrategy={handleSetTabListGroupStrategy}
+          handleSetTabListGroupOrder={handleSetTabListGroupOrder}
           handleSetTabMapEntrySuggestions={handleSetTabMapEntrySuggestions}
           handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
           handleAddTabTemplateField={handleAddTabTemplateField}

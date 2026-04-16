@@ -170,6 +170,16 @@ export function AppModalQuanLyTab({
     setShowAutoOverview((prev) => !prev);
   }, []);
 
+  const flushFocusedEditor = React.useCallback(() => {
+    const activeEl = document.activeElement;
+    const root = trapRef.current;
+    if (!root || !activeEl || !root.contains(activeEl)) return;
+    const tag = safeString(activeEl.tagName).toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+      activeEl.blur();
+    }
+  }, [trapRef]);
+
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
@@ -202,7 +212,10 @@ export function AppModalQuanLyTab({
             </button>
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => {
+                flushFocusedEditor();
+                onClose();
+              }}
               className="text-slate-400 hover:text-white p-2 bg-slate-800 rounded-lg"
             >
               <X size={20} />
@@ -457,14 +470,15 @@ export function AppModalQuanLyTab({
                       {!tabLon.isFixed && (
                         <button
                           type="button"
-                          onClick={() =>
+                          onClick={() => {
+                            flushFocusedEditor();
                             setConfirmDialog({
                               isOpen: true,
                               title: 'Hủy Diệt',
                               message: `Xóa vĩnh viễn <b>${safeString(tabLon.label)}</b> cùng mọi thứ bên trong?`,
                               onConfirm: () => handleDeleteTab([tabLon.id]),
-                            })
-                          }
+                            });
+                          }}
                           className="text-slate-400 hover:text-rose-400 p-1.5 bg-slate-900 rounded-lg"
                         >
                           <Trash2 size={14} />
@@ -786,14 +800,15 @@ export function AppModalQuanLyTab({
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() =>
+                                    onClick={() => {
+                                      flushFocusedEditor();
                                       setConfirmDialog({
                                         isOpen: true,
                                         title: 'Hủy Diệt',
                                         message: `Xóa <b>${safeString(tabNho.label)}</b>?`,
                                         onConfirm: () => handleDeleteTab([tabLon.id, tabNho.id]),
-                                      })
-                                    }
+                                      });
+                                    }}
                                     className="text-slate-400 p-1.5 bg-slate-800 rounded-lg hover:text-rose-400"
                                   >
                                     <Trash2 size={14} />
@@ -1132,41 +1147,59 @@ export function AppModalQuanLyTab({
 
                           {tabNho.viewType === 'collection-track' && isAutoPanelOpen && (
                             <div className="border-t border-amber-800/30 pt-3 space-y-3">
-                              <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3 space-y-2">
-                                <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">
-                                  Sắp xếp thẻ Danh Sách
-                                </div>
-                                <div className="text-[12px] text-slate-300 font-serif">
-                                  Chuẩn hoá cách gom nhóm dữ liệu cho tab này để dùng ổn định giữa các truyện.
-                                </div>
-                                <select
-                                  value={listGroupStrategy}
-                                  onChange={(e) => handleSetTabListGroupStrategy?.(tabLon.id, tabNho.id, e.target.value)}
-                                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-200 font-serif outline-none focus:border-amber-600/50"
-                                >
-                                  <option value="auto">Tự đoán theo tab/genre (khuyến nghị)</option>
-                                  <option value="title">Theo Loại / Tiêu đề (f_title)</option>
-                                  <option value="status">Theo Trạng thái (f_status)</option>
-                                  <option value="rank">Theo Cấp bậc (f_cap/f_status)</option>
-                                  <option value="location">Theo Địa bàn / Vị trí</option>
-                                  <option value="relation">Theo Quan hệ</option>
-                                  <option value="owner">Theo Chủ sở hữu</option>
-                                  <option value="text">Theo Text tổng quát</option>
-                                </select>
-                              </div>
-
-                              <div className="rounded-xl border border-amber-800/45 bg-amber-950/15 p-3 space-y-3">
-                                <div>
-                                  <div className="text-[10px] uppercase tracking-wide text-amber-400 font-bold">
-                                    Trường hồ sơ &amp; gợi ý nhập
+                              <details open className="rounded-xl border border-slate-800 bg-slate-950/45 p-3">
+                                <summary className="cursor-pointer list-none">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                      <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">
+                                        Sắp xếp thẻ Danh Sách
+                                      </div>
+                                      <div className="text-[12px] text-slate-300 font-serif mt-1">
+                                        Chọn kiểu gom nhóm. Muốn chỉnh list thứ tự riêng thì vào `Khởi tạo thẻ` và bấm nút `Nhóm AUTO`.
+                                      </div>
+                                    </div>
+                                    <div className="text-[11px] text-cyan-300 font-semibold">
+                                      Luôn hiện
+                                    </div>
                                   </div>
-                                  <div className="text-[12px] text-slate-300 font-serif mt-1">
-                                    Tách riêng khỏi AUTO để dễ thao tác. Đây là nơi thêm trường, đổi tên hiển thị và chỉnh list gợi ý.
-                                  </div>
+                                </summary>
+                                <div className="mt-3 space-y-2">
+                                  <select
+                                    value={listGroupStrategy}
+                                    onChange={(e) => handleSetTabListGroupStrategy?.(tabLon.id, tabNho.id, e.target.value)}
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-200 font-serif outline-none focus:border-amber-600/50"
+                                  >
+                                    <option value="auto">Tự đoán theo tab/genre (khuyến nghị)</option>
+                                    <option value="title">Theo Loại / Tiêu đề (f_title)</option>
+                                    <option value="status">Theo Trạng thái (f_status)</option>
+                                    <option value="rank">Theo Cấp bậc (f_cap/f_status)</option>
+                                    <option value="location">Theo Địa bàn / Vị trí</option>
+                                    <option value="relation">Theo Quan hệ</option>
+                                    <option value="owner">Theo Chủ sở hữu</option>
+                                    <option value="text">Theo Text tổng quát</option>
+                                  </select>
                                 </div>
+                              </details>
 
-                                {!isMapTab && (
-                                  <div className="rounded-lg border border-amber-700/40 bg-amber-950/25 p-2 space-y-2">
+                              <details className="rounded-xl border border-amber-800/45 bg-amber-950/15 p-3">
+                                <summary className="cursor-pointer list-none">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                      <div className="text-[10px] uppercase tracking-wide text-amber-400 font-bold">
+                                        Trường hồ sơ &amp; gợi ý nhập
+                                      </div>
+                                      <div className="text-[12px] text-slate-300 font-serif mt-1">
+                                        Phần nâng cao: thêm trường, đổi tên hiển thị và chỉnh list gợi ý.
+                                      </div>
+                                    </div>
+                                    <div className="text-[11px] text-amber-200/90 font-semibold">
+                                      Bấm để mở
+                                    </div>
+                                  </div>
+                                </summary>
+                                <div className="mt-3 space-y-3">
+                                  {!isMapTab && (
+                                    <div className="rounded-lg border border-amber-700/40 bg-amber-950/25 p-2 space-y-2">
                                     <div className="text-[10px] font-bold text-amber-200 uppercase tracking-wide">
                                       3 ô gợi ý — Khởi tạo thẻ (không phải Bản đồ)
                                     </div>
@@ -1276,10 +1309,10 @@ export function AppModalQuanLyTab({
                                         </div>
                                       );
                                     })()}
-                                  </div>
-                                )}
+                                    </div>
+                                  )}
 
-                                <div className="flex flex-wrap items-end gap-2">
+                                  <div className="flex flex-wrap items-end gap-2">
                                   <input
                                     type="text"
                                     value={extraFieldDraftByPath[tabPathKey] ?? ''}
@@ -1304,9 +1337,9 @@ export function AppModalQuanLyTab({
                                   >
                                     Thêm trường
                                   </button>
-                                </div>
+                                  </div>
 
-                                <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1 custom-scrollbar">
+                                  <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1 custom-scrollbar">
                                   {templateFields.map((field) => {
                                     const fid = safeString(field?.id).trim();
                                     if (!fid) return null;
@@ -1356,14 +1389,15 @@ export function AppModalQuanLyTab({
                                           {!isWiki && (
                                             <button
                                               type="button"
-                                              onClick={() =>
+                                              onClick={() => {
+                                                flushFocusedEditor();
                                                 setConfirmDialog({
                                                   isOpen: true,
                                                   title: 'Xóa trường',
                                                   message: `Xóa trường <b>${safeString(field.label)}</b> khỏi tab này? Gợi ý gắn trường cũng sẽ xóa.`,
                                                   onConfirm: () => handleRemoveTabTemplateField?.(tabLon.id, tabNho.id, fid),
-                                                })
-                                              }
+                                                });
+                                              }}
                                               className="shrink-0 rounded-lg border border-rose-800/50 bg-rose-950/25 px-2 py-1 text-[10px] font-bold text-rose-100 hover:bg-rose-900/35"
                                             >
                                               Xóa
@@ -1392,10 +1426,10 @@ export function AppModalQuanLyTab({
                                       </div>
                                     );
                                   })}
-                                </div>
+                                  </div>
 
-                                {isMapTab && (
-                                  <div className="space-y-2 border-t border-amber-800/35 pt-3">
+                                  {isMapTab && (
+                                    <div className="space-y-2 border-t border-amber-800/35 pt-3">
                                     <div className="text-[11px] font-semibold text-amber-100">
                                       Gợi ý thêm cho Bản đồ (Loại địa bàn / Hệ phân cấp)
                                     </div>
@@ -1437,9 +1471,10 @@ export function AppModalQuanLyTab({
                                         />
                                       </div>
                                     </div>
-                                  </div>
-                                )}
-                              </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </details>
                             </div>
                           )}
 
@@ -1489,14 +1524,15 @@ export function AppModalQuanLyTab({
                                         </button>
                                         <button
                                           type="button"
-                                          onClick={() =>
+                                          onClick={() => {
+                                            flushFocusedEditor();
                                             setConfirmDialog({
                                               isOpen: true,
                                               title: 'Hủy Diệt',
                                               message: `Xóa tiểu mục <b>${safeString(tabCon.label)}</b>?`,
                                               onConfirm: () => handleDeleteTab([tabLon.id, tabNho.id, tabCon.id]),
-                                            })
-                                          }
+                                            });
+                                          }}
                                           className="text-slate-500 hover:text-rose-400 p-1"
                                         >
                                           <Trash2 size={12} />
@@ -1533,7 +1569,10 @@ export function AppModalQuanLyTab({
             )}
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => {
+                flushFocusedEditor();
+                onClose();
+              }}
               className="px-8 py-3 bg-amber-700 hover:bg-amber-600 text-white rounded-xl font-bold shadow-lg"
             >
               Hoàn Tất Cải Tạo

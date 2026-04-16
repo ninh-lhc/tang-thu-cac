@@ -68,6 +68,11 @@ import {
   syncAllCollectionListCards,
 } from './lib/collectionListCardSync.js';
 import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
+import {
+  getDeepSearchCacheNamespace,
+  loadPersistedDeepSearchIndex,
+  savePersistedDeepSearchIndex,
+} from './lib/deepSearchCacheStore.js';
 import { useAppPersistence } from './useAppPersistence.js';
 import { useAppShellState } from './useAppShellState.js';
 import { AppShellOverlays } from './AppShellOverlays.jsx';
@@ -273,6 +278,7 @@ export default function App() {
     lazyFullHydrateInFlightRef,
     confirmDeleteEntityRef,
   } = useAppShellState();
+  const pendingNovelIndexRefreshRef = useRef(new Map());
 
   const {
     librarySearchInputRef,
@@ -300,7 +306,7 @@ export default function App() {
     clearHoveredNovel,
   } = useAppLibrarySidebarState({ novelsMetadata });
 
-  const { syncIndex, syncNovel, loadNovelData, syncNovelRef } = useAppPersistence({
+  const { syncIndex, syncNovel, awaitNovelDiskIdle, cleanupLegacyIndexFiles, loadNovelData, syncNovelRef } = useAppPersistence({
     novelStatsByIdRef,
     novelsMetadataRef,
     globalTabsConfigRef,
@@ -314,9 +320,12 @@ export default function App() {
     [globalTabsConfigRef]
   );
 
-  const searchRowsInWorker = useCallback((rowsByNovel, query, signal) => {
-    const hasRows = rowsByNovel && Object.keys(rowsByNovel).length > 0;
-    if (!hasRows) return Promise.resolve([]);
+  const searchRowsInWorker = useCallback((payload, query, signal) => {
+    const rowsByNovel = payload?.rowsByNovel || {};
+    const payloadsByNovel = payload?.payloadsByNovel || {};
+    const hasRows = Object.keys(rowsByNovel).length > 0;
+    const hasPayloads = Object.keys(payloadsByNovel).length > 0;
+    if (!hasRows && !hasPayloads) return Promise.resolve({ results: [], cachedRowsByNovel: {} });
     if (typeof Worker === 'undefined') return Promise.resolve(null);
     if (!deepSearchWorkerRef.current) {
       deepSearchWorkerRef.current = new Worker(new URL('./deepSearch.worker.js', import.meta.url), {
@@ -341,7 +350,7 @@ export default function App() {
       const onMessage = (evt) => {
         const msg = evt?.data || {};
         if (msg.reqId !== reqId) return;
-        done(resolve, msg.ok ? msg.results || [] : []);
+        done(resolve, msg.ok ? { results: msg.results || [], cachedRowsByNovel: msg.cachedRowsByNovel || {} } : { results: [], cachedRowsByNovel: {} });
       };
       const onError = (err) => done(reject, err);
       const onAbort = () => done(resolve, []);
@@ -349,7 +358,13 @@ export default function App() {
       worker.addEventListener('error', onError);
       if (signal) signal.addEventListener('abort', onAbort, { once: true });
       try {
-        worker.postMessage({ type: 'searchRows', reqId, query, rowsByNovel });
+        worker.postMessage({
+          type: hasPayloads ? 'searchPayloads' : 'searchRows',
+          reqId,
+          query,
+          rowsByNovel,
+          payloadsByNovel,
+        });
       } catch (err) {
         done(reject, err);
       }
@@ -1051,53 +1066,141 @@ export default function App() {
     });
   }, [dirHandle, novelsMetadata.length, setConfirmDialog, showToast, runRecalculateAllLibraryStats]);
 
+  const handleCleanupLegacyIndexFiles = useCallback(async () => {
+    if (!dirHandle || dirHandle === 'LOCAL_STORAGE') {
+      showToast('Chỉ dùng được khi đang kết nối thư mục lưu trữ.', 'warning');
+      return;
+    }
+    try {
+      await cleanupLegacyIndexFiles(dirHandle);
+      showToast('Đã dọn các file index/backup legacy.');
+    } catch (e) {
+      console.warn('[TTC] cleanup legacy index files', e);
+      showToast('Không dọn được file legacy. Kiểm tra quyền ghi thư mục.', 'warning');
+    }
+  }, [cleanupLegacyIndexFiles, dirHandle, showToast]);
+
   const performDeepSearch = useCallback(
     async (query, signal, onProgress) => {
       const q = String(query || '').trim().toLowerCase();
       if (!q) return [];
       const res = [...metadataSearchHits(novelsMetadata, q)];
       const tick = () => onProgress?.(dedupeDeepSearchResults([...res]));
+      const yieldToBrowser = async (timeout = 120) => {
+        if (signal?.aborted) return;
+        await new Promise((resolve) => {
+          if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(() => resolve(), { timeout });
+            return;
+          }
+          setTimeout(resolve, 0);
+        });
+      };
       tick();
       if (!dirHandle) return dedupeDeepSearchResults(res);
-      const chunk = 2;
+      const cacheNamespace = getDeepSearchCacheNamespace(dirHandle);
+      const chunk = 1;
       for (let i = 0; i < novelsMetadata.length; i += chunk) {
         if (signal?.aborted) return dedupeDeepSearchResults(res);
         const batch = novelsMetadata.slice(i, i + chunk);
         const rowsByNovel = {};
-        await Promise.all(
-          batch.map(async (meta) => {
-            if (signal?.aborted) return;
-            let indexRows = deepSearchIndexByNovelIdRef.current.get(meta.id) || null;
-            if (!indexRows) {
-              let d = null;
-              const activeIsPartial = activeNovelData?.id === meta.id && activeNovelData?.__partialData;
-              if (activeNovelData?.id === meta.id && !activeIsPartial) d = activeNovelData;
-              else d = (await loadNovelData(meta, dirHandle))?.novel;
-              if (!d || typeof d !== 'object') return;
-              indexRows = buildNovelSearchIndex({ ...d, id: meta.id, title: d.title || meta.title });
+        const payloadsByNovel = {};
+        for (const meta of batch) {
+          if (signal?.aborted) return dedupeDeepSearchResults(res);
+          let indexRows = deepSearchIndexByNovelIdRef.current.get(meta.id) || null;
+          if (!indexRows) {
+            indexRows = await loadPersistedDeepSearchIndex(cacheNamespace, meta.id);
+            if (Array.isArray(indexRows)) {
               deepSearchIndexByNovelIdRef.current.set(meta.id, indexRows);
             }
+          }
+          if (indexRows) {
             rowsByNovel[meta.id] = indexRows;
-          })
-        );
+            continue;
+          }
+          let d = null;
+          const activeIsPartial = activeNovelData?.id === meta.id && activeNovelData?.__partialData;
+          if (activeNovelData?.id === meta.id && !activeIsPartial) d = activeNovelData;
+          else d = (await loadNovelData(meta, dirHandle))?.novel;
+          if (!d || typeof d !== 'object') continue;
+          payloadsByNovel[meta.id] = {
+            novel: { ...d, id: meta.id, title: d.title || meta.title },
+          };
+          await yieldToBrowser();
+        }
         let batchResults = [];
+        let workerProvidedCacheOrResults = false;
         try {
-          const workerResults = await searchRowsInWorker(rowsByNovel, q, signal);
-          if (Array.isArray(workerResults)) batchResults = workerResults;
+          const workerResults = await searchRowsInWorker({ rowsByNovel, payloadsByNovel }, q, signal);
+          if (workerResults?.cachedRowsByNovel && typeof workerResults.cachedRowsByNovel === 'object') {
+            Object.entries(workerResults.cachedRowsByNovel).forEach(([novelId, rows]) => {
+              if (Array.isArray(rows)) {
+                deepSearchIndexByNovelIdRef.current.set(novelId, rows);
+                void savePersistedDeepSearchIndex(cacheNamespace, novelId, rows);
+              }
+            });
+            workerProvidedCacheOrResults = true;
+          }
+          if (Array.isArray(workerResults?.results)) batchResults = workerResults.results;
+          if (Array.isArray(workerResults?.results)) workerProvidedCacheOrResults = true;
         } catch {
           batchResults = [];
         }
-        if (batchResults.length === 0) {
+        // Chỉ fallback khi worker không trả về gì (lỗi/không hỗ trợ).
+        // Trường hợp query không match (batchResults rỗng) vẫn KHÔNG cần rebuild index trên main thread.
+        if (!workerProvidedCacheOrResults) {
           Object.values(rowsByNovel).forEach((rows) => searchNovelIndex(rows, q, batchResults));
+          Object.values(payloadsByNovel).forEach((payload) => {
+            const novel = payload?.novel;
+            if (!novel) return;
+            let rows = deepSearchIndexByNovelIdRef.current.get(novel.id);
+            if (!rows) {
+              rows = buildNovelSearchIndex(novel);
+              deepSearchIndexByNovelIdRef.current.set(novel.id, rows);
+              void savePersistedDeepSearchIndex(cacheNamespace, novel.id, rows);
+            }
+            searchNovelIndex(rows, q, batchResults);
+          });
           batchResults = dedupeDeepSearchResults(batchResults);
         }
         res.push(...batchResults);
         tick();
+        await yieldToBrowser(80);
       }
       return dedupeDeepSearchResults(res);
     },
     [novelsMetadata, activeNovelData, deepSearchIndexByNovelIdRef, dirHandle, loadNovelData, searchRowsInWorker]
   );
+
+  const scheduleActiveNovelSearchIndexRefresh = useCallback((novel) => {
+    if (!novel?.id) return;
+    const key = novel.id;
+    const cacheNamespace = getDeepSearchCacheNamespace(dirHandleRef.current);
+    const pending = pendingNovelIndexRefreshRef.current.get(key);
+    if (pending) {
+      if (typeof window !== 'undefined' && typeof window.cancelIdleCallback === 'function' && pending.kind === 'idle') {
+        window.cancelIdleCallback(pending.id);
+      } else {
+        clearTimeout(pending.id);
+      }
+    }
+
+    const run = () => {
+      pendingNovelIndexRefreshRef.current.delete(key);
+      const rows = buildNovelSearchIndex(novel);
+      deepSearchIndexByNovelIdRef.current.set(key, rows);
+      void savePersistedDeepSearchIndex(cacheNamespace, key, rows);
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(run, { timeout: 1200 });
+      pendingNovelIndexRefreshRef.current.set(key, { id, kind: 'idle' });
+      return;
+    }
+
+    const id = setTimeout(run, 0);
+    pendingNovelIndexRefreshRef.current.set(key, { id, kind: 'timeout' });
+  }, [deepSearchIndexByNovelIdRef, dirHandleRef]);
 
   const updateActiveNovelData = useCallback(
     (updateFn) => {
@@ -1113,10 +1216,7 @@ export default function App() {
       setNovelStatsById(nextStats);
       activeNovelDataRef.current = updatedData;
       setActiveNovelData(updatedData);
-      deepSearchIndexByNovelIdRef.current.set(
-        updatedData.id,
-        buildNovelSearchIndex(updatedData)
-      );
+      scheduleActiveNovelSearchIndexRefresh(updatedData);
       const syncPromise = syncNovel(updatedData, dirHandle);
 
       const newMetaStr = JSON.stringify({
@@ -1143,7 +1243,8 @@ export default function App() {
       });
 
       if (oldMetaStr !== newMetaStr) {
-        const newMetaList = novelsMetadata.map((m) =>
+        const currentMetaList = novelsMetadataRef.current;
+        const newMetaList = currentMetaList.map((m) =>
           m.id === updatedData.id
             ? {
                 ...m,
@@ -1167,13 +1268,12 @@ export default function App() {
       return syncPromise;
     },
     [
-      deepSearchIndexByNovelIdRef,
       dirHandle,
       globalTabsConfig,
       novelStatsByIdRef,
-      novelsMetadata,
       activeNovelDataRef,
       novelsMetadataRef,
+      scheduleActiveNovelSearchIndexRefresh,
       setActiveNovelData,
       setNovelStatsById,
       setNovelsMetadata,
@@ -1338,6 +1438,7 @@ export default function App() {
     globalTabsConfig,
     syncIndex,
     syncNovel,
+    awaitNovelDiskIdle,
     showToast,
     updateActiveNovelData,
     setNovelStatsById,
@@ -1351,6 +1452,7 @@ export default function App() {
     setConfirmDialog,
     novelsMetadataRef,
     novelStatsByIdRef,
+    activeNovelDataRef,
   });
 
   const {
@@ -1694,7 +1796,7 @@ export default function App() {
       showToast('Lưu mẫu thất bại.', 'error');
       return;
     }
-    showToast(`Đã lưu cây mẫu cho: ${genres.join(', ')}.`, 'success');
+    showToast(`Đã lưu cây mẫu cho: ${genres.join(', ')} (kèm quy chuẩn nhóm và cấu hình tab).`, 'success');
   }, [activeNovelData, showToast]);
   const buildAutoSyncContext = (lonId, nhoId, nho, parentLabel = '') => ({
     activeTabLon: lonId,
@@ -2113,6 +2215,54 @@ export default function App() {
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
   };
+  const handleSetTabListGroupOrder = (lonId, nhoId, text) => {
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const parsed = linesToSuggestionArray(text);
+    if (parsed.length === 0) delete nho.autoListGroupOrder;
+    else nho.autoListGroupOrder = parsed;
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: 'set_list_group_order',
+      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+    });
+  };
+  const handleSaveTabListGroupOrderToGenreTemplate = (lonId, nhoId, text) => {
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const parsed = linesToSuggestionArray(text);
+    if (parsed.length === 0) delete nho.autoListGroupOrder;
+    else nho.autoListGroupOrder = parsed;
+
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: 'set_list_group_order_and_save_template',
+      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+    });
+
+    const genres = Array.isArray(activeNovelData?.genres)
+      ? activeNovelData.genres.filter(Boolean)
+      : typeof activeNovelData?.genres === 'string'
+        ? [activeNovelData.genres]
+        : activeNovelData?.genre
+          ? [activeNovelData.genre]
+          : [];
+    if (genres.length === 0) {
+      showToast('Đã lưu list cho tab hiện tại, nhưng truyện chưa có thể loại để cập nhật mẫu.', 'warning');
+      return;
+    }
+    if (!saveGenreTabsTemplate(genres, current)) {
+      showToast('Đã lưu list cho tab hiện tại, nhưng cập nhật mẫu thể loại thất bại.', 'error');
+      return;
+    }
+    showToast(`Đã lưu list cho tab này và cập nhật luôn mẫu thể loại: ${genres.join(', ')}.`, 'success');
+  };
 
   const handleSetTabMapEntrySuggestions = (lonId, nhoId, which, text) => {
     const current = structuredClone(getTabsToUpdate());
@@ -2500,6 +2650,7 @@ export default function App() {
     handleExportBackup,
     handleExportIndexOnly,
     handleImportBackup,
+    handleCleanupLegacyIndexFiles,
     handleSaveApiKeys,
     setAiMode,
     wikiExactMatchOnly,
@@ -2589,6 +2740,8 @@ export default function App() {
     handleSetTabAutoSyncLevels,
     handleSetTabAutoSyncFieldMap,
     handleSetTabListGroupStrategy,
+    handleSetTabListGroupOrder,
+    handleSaveTabListGroupOrderToGenreTemplate,
     handleSetTabMapEntrySuggestions,
     handleMergeTabFieldSuggestionList,
     handleAddTabTemplateField,

@@ -24,6 +24,7 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
   currentContextDirHandle,
 }) {
   const [lightboxZoom, setLightboxZoom] = React.useState(1);
+  const [dismissBootstrapOverlay, setDismissBootstrapOverlay] = React.useState(false);
   const lightboxTrapRef = useFocusTrap(Boolean(lightboxSrc));
   const clampZoom = React.useCallback((z) => Math.min(5, Math.max(0.25, z)), []);
 
@@ -31,6 +32,17 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
     if (!lightboxSrc) return;
     setLightboxZoom(1);
   }, [lightboxSrc]);
+
+  React.useEffect(() => {
+    if (!isDirectoryConnectionBootstrapping) {
+      setDismissBootstrapOverlay(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      setDismissBootstrapOverlay(true);
+    }, 6500);
+    return () => clearTimeout(timer);
+  }, [isDirectoryConnectionBootstrapping]);
 
   const handleLightboxWheel = React.useCallback((e) => {
     e.preventDefault();
@@ -40,7 +52,7 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
 
   return (
     <>
-      {isDirectoryConnectionBootstrapping && (
+      {isDirectoryConnectionBootstrapping && !dismissBootstrapOverlay && (
         <div
           className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/95 backdrop-blur-md px-4"
           role="status"
@@ -62,6 +74,13 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
             <p className="font-serif text-sm leading-relaxed text-slate-400">
               Tàng Thư Các đang đọc lại thư mục từ lần trước. Nếu còn hợp lệ, giao diện sẽ giữ nguyên trạng thái làm việc sau khi khôi phục xong.
             </p>
+            <button
+              type="button"
+              onClick={() => setDismissBootstrapOverlay(true)}
+              className="mt-5 inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-[11px] font-semibold text-slate-300 hover:border-slate-600 hover:text-slate-100"
+            >
+              Bỏ qua khôi phục (vào app ngay)
+            </button>
           </div>
         </div>
       )}

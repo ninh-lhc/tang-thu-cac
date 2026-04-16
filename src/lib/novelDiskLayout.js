@@ -166,6 +166,21 @@ export async function loadShardSubsetFromNovelDir(novelDirHandle, shardKeys) {
   return data;
 }
 
+function pickShardSubsetFromData(data, shardKeys) {
+  const subset = {};
+  const keys = Array.isArray(shardKeys) ? shardKeys : [];
+  for (const key of keys) {
+    const lonId = key?.lonId;
+    const nhoId = key?.nhoId;
+    if (!lonId || !nhoId) continue;
+    const tab = data?.[lonId]?.[nhoId];
+    if (tab === undefined) continue;
+    if (!subset[lonId]) subset[lonId] = {};
+    subset[lonId][nhoId] = tab;
+  }
+  return subset;
+}
+
 async function hasAnyShardData(novelDirHandle) {
   try {
     const dataDir = await novelDirHandle.getDirectoryHandle(DATA_DIR_NAME);
@@ -212,9 +227,12 @@ export async function readRawNovelPackageFromDir(novelDirHandle, manifestBaseNam
         const bText = await (await bf.getFile()).text();
         const backupParsed = JSON.parse(bText);
         if (backupParsed && typeof backupParsed === 'object') {
-          const backupKeys = listShardKeysFromData(backupParsed.data || {});
+          const backupData = shardKeys
+            ? pickShardSubsetFromData(backupParsed.data || {}, shardKeys)
+            : backupParsed.data || {};
+          const backupKeys = listShardKeysFromData(backupData);
           if (backupKeys.length > 0) {
-            parsed.data = backupParsed.data;
+            parsed.data = backupData;
             if (!parsed.tabsConfig || parsed.tabsConfig.length === 0) {
               parsed.tabsConfig = backupParsed.tabsConfig || parsed.tabsConfig;
             }
@@ -315,6 +333,25 @@ export function parseManifestIdFromJsonText(text) {
   }
 }
 
+/** Giống useAppPersistence — xóa thư mục con cần quyền readwrite trên thư mục cha. */
+export async function ensureFsDirectoryWritePermission(dirHandle) {
+  if (!dirHandle || dirHandle === 'LOCAL_STORAGE') return { ok: true };
+  if (typeof dirHandle.queryPermission !== 'function' || typeof dirHandle.requestPermission !== 'function') {
+    return { ok: true };
+  }
+  try {
+    let status = await dirHandle.queryPermission({ mode: 'readwrite' });
+    if (status === 'denied') return { ok: false, status: 'denied' };
+    if (status === 'prompt') {
+      status = await dirHandle.requestPermission({ mode: 'readwrite' });
+    }
+    if (status !== 'granted') return { ok: false, status: status || 'not_granted' };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, status: 'error', error: e };
+  }
+}
+
 async function readManifestIdFromNovelDir(novelDirHandle, manifestBaseName) {
   try {
     const f = await novelDirHandle.getFileHandle(`${manifestBaseName}.json`);
@@ -323,6 +360,41 @@ async function readManifestIdFromNovelDir(novelDirHandle, manifestBaseName) {
   } catch {
     return null;
   }
+}
+
+async function removeDirectoryTreeManual(dirHandle) {
+  for await (const [entryName, entryHandle] of dirHandle.entries()) {
+    if (entryHandle.kind === 'file') {
+      try {
+        await dirHandle.removeEntry(entryName);
+      } catch {
+        /* keep going; caller will surface final failure */
+      }
+      continue;
+    }
+    if (entryHandle.kind === 'directory') {
+      await removeDirectoryTreeManual(entryHandle);
+      try {
+        await dirHandle.removeEntry(entryName, { recursive: true });
+      } catch {
+        /* keep going; caller will surface final failure */
+      }
+    }
+  }
+}
+
+async function tryRemoveFolderByName(rootDir, meta) {
+  const names = novelManifestBaseNameCandidates(meta);
+  for (const name of names) {
+    if (!name) continue;
+    try {
+      await rootDir.removeEntry(name, { recursive: true });
+      return { ok: true, removed: name, kind: 'folder_by_name' };
+    } catch {
+      /* try next candidate */
+    }
+  }
+  return null;
 }
 
 /**
@@ -377,15 +449,38 @@ export async function removeNovelStorageFromRoot(rootDir, meta) {
     return { ok: false, reason: 'bad_args' };
   }
 
+  const perm = await ensureFsDirectoryWritePermission(rootDir);
+  if (!perm.ok) {
+    return { ok: false, reason: 'permission_denied', permission: perm };
+  }
+
   const folderName = await findNovelFolderEntryNameOnRoot(rootDir, meta);
   if (folderName) {
+    let lastErr;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      try {
+        await rootDir.removeEntry(folderName, { recursive: true });
+        return { ok: true, removed: folderName, kind: 'folder' };
+      } catch (error) {
+        lastErr = error;
+      }
+    }
     try {
+      const folderHandle = await rootDir.getDirectoryHandle(folderName);
+      await removeDirectoryTreeManual(folderHandle);
       await rootDir.removeEntry(folderName, { recursive: true });
       return { ok: true, removed: folderName, kind: 'folder' };
     } catch (error) {
-      return { ok: false, reason: 'remove_failed', attempted: folderName, error };
+      lastErr = error || lastErr;
     }
+    return { ok: false, reason: 'remove_failed', attempted: folderName, error: lastErr };
   }
+
+  const byName = await tryRemoveFolderByName(rootDir, meta);
+  if (byName?.ok) return byName;
 
   try {
     const novelsDir = await rootDir.getDirectoryHandle('novels');

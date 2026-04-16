@@ -38,6 +38,7 @@ export function useAppNovelCrud({
   globalTabsConfig,
   syncIndex,
   syncNovel,
+  awaitNovelDiskIdle,
   showToast,
   updateActiveNovelData,
   setNovelStatsById,
@@ -51,6 +52,7 @@ export function useAppNovelCrud({
   setConfirmDialog,
   novelsMetadataRef,
   novelStatsByIdRef,
+  activeNovelDataRef,
 }) {
   const [isAddNovelOpen, setIsAddNovelOpen] = useState(false);
   const [novelModalMode, setNovelModalMode] = useState('create');
@@ -194,6 +196,15 @@ export function useAppNovelCrud({
 
   const handleDeleteNovel = useCallback(async (id) => {
     const meta = novelsMetadata.find((item) => item.id === id);
+
+    // Nhả FileSystemHandle trỏ vào thư mục truyện trước khi removeEntry — nếu không Chromium/Windows có thể khóa thư mục.
+    if (activeNovelData?.id === id) {
+      if (activeNovelDataRef) activeNovelDataRef.current = null;
+      setActiveNovelData(null);
+      setActiveNovelDirHandle(null);
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
     const newMetaList = novelsMetadata.filter((item) => item.id !== id);
     const nextStats = { ...novelStatsByIdRef.current };
 
@@ -202,23 +213,32 @@ export function useAppNovelCrud({
     setNovelStatsById(nextStats);
     setNovelsMetadata(newMetaList);
     novelsMetadataRef.current = newMetaList;
-    syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
 
     if (dirHandle === 'LOCAL_STORAGE') {
       localStorage.removeItem(`tangthu_novel_${id}`);
     } else if (dirHandle && meta) {
+      await awaitNovelDiskIdle?.();
+      await new Promise((r) => setTimeout(r, 50));
       const diskResult = await removeNovelStorageFromRoot(dirHandle, meta);
       if (!diskResult.ok && diskResult.reason === 'remove_failed') {
         const label = diskResult.attempted || meta.id;
         console.warn('[TTC] Khong xoa duoc du lieu truyen tren dia:', label, diskResult.error);
+        const reason = diskResult?.error?.name || String(diskResult?.error?.message || '').slice(0, 80) || 'unknown';
         setTimeout(() => {
-          showToast(`Da xoa khoi so nhung khong xoa duoc du lieu «${label}» tren o (kiem tra quyen ghi).`, 'warning');
+          showToast(`Da xoa khoi so nhung khong xoa duoc du lieu «${label}» tren o (${reason}).`, 'warning');
+        }, 0);
+      } else if (!diskResult.ok && diskResult.reason === 'permission_denied') {
+        setTimeout(() => {
+          showToast(
+            'Khong xoa duoc tren o: thieu quyen ghi thu muc — mo Cai dat va ket noi lai thu muc, chap nhan quyen chinh sua.',
+            'warning'
+          );
         }, 0);
       }
     }
 
-    setActiveNovelData(null);
-    setActiveNovelDirHandle(null);
+    await syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
+
     setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
     showToast('Da huy diet thu tich!');
   }, [
@@ -227,6 +247,7 @@ export function useAppNovelCrud({
     globalTabsConfig,
     syncIndex,
     showToast,
+    awaitNovelDiskIdle,
     setNovelStatsById,
     setNovelsMetadata,
     setActiveNovelData,
@@ -234,6 +255,8 @@ export function useAppNovelCrud({
     setConfirmDialog,
     novelsMetadataRef,
     novelStatsByIdRef,
+    activeNovelData,
+    activeNovelDataRef,
   ]);
 
   return {

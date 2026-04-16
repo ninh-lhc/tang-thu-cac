@@ -7,6 +7,7 @@
 
 import { useCallback, useState } from 'react';
 import { migrateIndex, migrateBackup, migrateNovel } from './dataMigration.js';
+import { clearPersistedDirectoryHandle, savePersistedDirectoryHandle } from './lib/directoryHandleStore.js';
 
 function downloadJsonFile(filename, payload) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -46,6 +47,7 @@ export function useAppDirectoryBackup({
 
   const handleConnectFolder = useCallback(async () => {
     if (window.self !== window.top) {
+      await clearPersistedDirectoryHandle();
       setDirHandle('LOCAL_STORAGE');
       setShowConnectReminder(true);
       showToast('Preview: da chuyen sang Local Storage.');
@@ -131,6 +133,7 @@ export function useAppDirectoryBackup({
             setNovelsMetadata(newMeta);
             setGlobalTabsConfig(safeConfig);
             setDirHandle(pickedDirHandle);
+            await savePersistedDirectoryHandle(pickedDirHandle);
             setShowConnectReminder(true);
             setActiveNovelData(null);
             setActiveNovelDirHandle(null);
@@ -170,6 +173,7 @@ export function useAppDirectoryBackup({
         }
 
         setDirHandle(pickedDirHandle);
+        await savePersistedDirectoryHandle(pickedDirHandle);
         setShowConnectReminder(true);
         setActiveNovelData(null);
         setActiveNovelDirHandle(null);
@@ -256,16 +260,15 @@ export function useAppDirectoryBackup({
         }
 
         const safeConfig = resolveSafeTabsConfig(backup.config);
-        setGlobalTabsConfig(safeConfig);
-        setNovelsMetadata(backup.metadata);
-        novelsMetadataRef.current = backup.metadata;
-
         const stats = backup.novelStats && typeof backup.novelStats === 'object' ? backup.novelStats : {};
-        novelStatsByIdRef.current = stats;
-        setNovelStatsById(stats);
 
         setImportProgress({ stage: 'Dang ghi danh muc...', current: 0, total: 1 });
-        await syncIndex(backup.metadata, safeConfig, dirHandle, stats);
+        const indexResult = await syncIndex(backup.metadata, safeConfig, dirHandle, stats);
+        if (!indexResult?.ok) {
+          setImportProgress(null);
+          showToast('Khôi phục thất bại: không ghi được danh mục vào thư mục lưu.', 'error');
+          return;
+        }
 
         const novelEntries =
           backup.novels && typeof backup.novels === 'object' ? Object.entries(backup.novels) : [];
@@ -275,8 +278,22 @@ export function useAppDirectoryBackup({
             current: i + 1,
             total: novelEntries.length,
           });
-          await syncNovel(novelEntries[i][1], dirHandle);
+          const novelResult = await syncNovel(novelEntries[i][1], dirHandle);
+          if (!novelResult?.ok) {
+            setImportProgress(null);
+            showToast(
+              `Khôi phục thất bại ở truyện ${i + 1}/${novelEntries.length}. Dữ liệu trên đĩa chưa hoàn chỉnh, chưa áp dụng import vào app.`,
+              'error'
+            );
+            return;
+          }
         }
+
+        setGlobalTabsConfig(safeConfig);
+        setNovelsMetadata(backup.metadata);
+        novelsMetadataRef.current = backup.metadata;
+        novelStatsByIdRef.current = stats;
+        setNovelStatsById(stats);
 
         setImportProgress(null);
         showToast('Khoi phuc thanh cong! Tai lai trang...');

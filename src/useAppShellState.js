@@ -143,9 +143,10 @@ export function useAppShellState() {
 
   const [dirHandle, setDirHandle] = useState(embeddedPreviewBootstrap ? 'LOCAL_STORAGE' : null);
   const [activeNovelDirHandle, setActiveNovelDirHandle] = useState(null);
-  const isDirectoryConnectionBootstrapping = false;
-  const setIsDirectoryConnectionBootstrapping = () => {};
-  const shouldAutoRestoreDirectory = false;
+  const [isDirectoryConnectionBootstrapping, setIsDirectoryConnectionBootstrapping] = useState(
+    () => !embeddedPreviewBootstrap && !isEmbeddedPreview()
+  );
+  const shouldAutoRestoreDirectory = !embeddedPreviewBootstrap && !isEmbeddedPreview();
 
   const { toastMessage, setToastMessage, toastTimerRef, showToast } = useToast();
 
@@ -203,20 +204,31 @@ export function useAppShellState() {
   useEffect(() => {
     if (directoryRestoreAttemptedRef.current) return;
     directoryRestoreAttemptedRef.current = true;
-    if (shouldAutoRestoreDirectory) {
+    if (!shouldAutoRestoreDirectory) {
+      setIsDirectoryConnectionBootstrapping(false);
+      return;
+    }
     if (isEmbeddedPreview()) {
-      directoryRestoreAttemptedRef.current = true;
       setIsDirectoryConnectionBootstrapping(false);
       return;
     }
     if (dirHandle) {
-      directoryRestoreAttemptedRef.current = true;
       setIsDirectoryConnectionBootstrapping(false);
       return;
     }
 
-    directoryRestoreAttemptedRef.current = true;
     let cancelled = false;
+    const forceStopOverlayTimer = setTimeout(() => {
+      if (!cancelled) {
+        setIsDirectoryConnectionBootstrapping(false);
+      }
+    }, 5000);
+
+    const withTimeout = async (promise, timeoutMs = 2500) =>
+      Promise.race([
+        promise,
+        new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+      ]);
 
     const applySnapshot = (snapshot) => {
       if (!snapshot || typeof snapshot !== 'object') return false;
@@ -272,16 +284,16 @@ export function useAppShellState() {
       let hydratedFromDisk = false;
 
       try {
-        storedHandle = await loadPersistedDirectoryHandle();
+        storedHandle = await withTimeout(loadPersistedDirectoryHandle(), 2500);
         if (cancelled) return;
 
         if (storedHandle) {
-          const usable = await isPersistedDirectoryHandleUsable(storedHandle);
+          const usable = await withTimeout(isPersistedDirectoryHandleUsable(storedHandle), 1500);
           if (cancelled) return;
           if (usable) {
             restoredConnection = true;
             setDirHandle(storedHandle);
-            hydratedFromDisk = await loadSnapshotFromHandle(storedHandle);
+            hydratedFromDisk = await withTimeout(loadSnapshotFromHandle(storedHandle), 2200);
             if (cancelled) return;
           } else {
             await clearPersistedDirectoryHandle();
@@ -295,6 +307,7 @@ export function useAppShellState() {
         console.warn('[TTC] Failed to restore directory connection:', error);
         if (!cancelled) loadShadowSnapshot();
       } finally {
+        clearTimeout(forceStopOverlayTimer);
         if (!cancelled) {
           setIsDirectoryConnectionBootstrapping(false);
           if (restoredConnection) {
@@ -314,8 +327,8 @@ export function useAppShellState() {
 
     return () => {
       cancelled = true;
+      clearTimeout(forceStopOverlayTimer);
     };
-    }
   }, [
     dirHandle,
     globalTabsConfigRef,

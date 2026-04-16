@@ -221,6 +221,11 @@ function splitHierarchyLikeTokens(value) {
   return splitStatusHierarchyTokens(raw);
 }
 
+function getMapDirectParent(entity) {
+  const tokens = splitHierarchyLikeTokens(pickFirstFilled(entity, ['f_vi_tri', 'f_dia_ban', 'f_status']));
+  return safeString(tokens[0]).trim();
+}
+
 function getForceRankLabel(entity) {
   const rawStatus = pickFirstFilled(entity, ['f_status']);
   const parsedStatus = parseStatusHierarchy(rawStatus);
@@ -237,6 +242,76 @@ function getForceLeafLocation(entity) {
   const statusChain = Array.isArray(parsedStatus?.chain) ? parsedStatus.chain : [];
   if (statusChain.length > 0) return safeString(statusChain[statusChain.length - 1]).trim();
   return '';
+}
+
+function buildTierSuggestionOrder(tabConfig = null) {
+  const customOrder = Array.isArray(tabConfig?.autoListGroupOrder) ? tabConfig.autoListGroupOrder : [];
+  const customRaw = customOrder.map((v) => safeString(v).trim()).filter(Boolean);
+  if (customRaw.length > 0) {
+    const ordered = [];
+    const seen = new Set();
+    customRaw.forEach((item) => {
+      const key = normalize(item);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      ordered.push({ raw: item, key });
+    });
+    if (ordered.length > 0) {
+      return (label) => {
+        const n = normalize(label);
+        if (!n) return null;
+        const idx = ordered.findIndex((item) => n === item.key || n.includes(item.key));
+        return idx >= 0 ? idx : null;
+      };
+    }
+  }
+
+  const lists = tabConfig?.fieldSuggestionLists;
+  if (!lists || typeof lists !== 'object') return null;
+  const raw = [
+    ...(Array.isArray(lists.f_cap) ? lists.f_cap : []),
+    ...(Array.isArray(lists.f_status) ? lists.f_status : []),
+  ]
+    .map((v) => safeString(v).trim())
+    .filter(Boolean);
+  if (raw.length === 0) return null;
+  const ordered = [];
+  const seen = new Set();
+  raw.forEach((item) => {
+    const key = normalize(item);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    ordered.push({ raw: item, key });
+  });
+  if (ordered.length === 0) return null;
+  return (label) => {
+    const n = normalize(label);
+    if (!n) return null;
+    const idx = ordered.findIndex((item) => n === item.key || n.includes(item.key));
+    return idx >= 0 ? idx : null;
+  };
+}
+
+function buildCustomGroupOrder(tabConfig = null) {
+  const raw = Array.isArray(tabConfig?.autoListGroupOrder) ? tabConfig.autoListGroupOrder : [];
+  const ordered = [];
+  const seen = new Set();
+  raw
+    .map((v) => safeString(v).trim())
+    .filter(Boolean)
+    .forEach((item) => {
+      const key = normalize(item);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      ordered.push(key);
+    });
+  if (ordered.length === 0) return null;
+  return (label) => {
+    const n = normalize(label);
+    if (!n) return null;
+    const idx = ordered.findIndex((key) => n === key || n.includes(key));
+    return idx >= 0 ? idx : null;
+  };
 }
 
 function compareForceEntries(a, b) {
@@ -309,24 +384,36 @@ function resolveOwnerLabel(entity, ownerLookupEntities = []) {
 }
 
 function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentLabel = '', tabConfig = null } = {}) {
+  const customTierOrder = buildTierSuggestionOrder(tabConfig);
+  const customGroupOrder = buildCustomGroupOrder(tabConfig);
+  const buildTierStrategy = (getGroupLabel) => ({
+    kind: 'tier',
+    getGroupLabel,
+    getTierOrder: customTierOrder || undefined,
+  });
+  const buildTextStrategy = (getGroupLabel, kind = 'text') => ({
+    kind,
+    getGroupLabel,
+    getGroupOrder: customGroupOrder || undefined,
+  });
   const strategyOverride = normalizeListGroupStrategy(tabConfig?.autoListGroupStrategy || '');
   if (strategyOverride !== 'auto') {
     switch (strategyOverride) {
       case 'title':
-        return { kind: 'text', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_title']) };
+        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title']));
       case 'status':
-        return { kind: 'text', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_status']) };
+        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_status']));
       case 'rank':
-        return { kind: 'tier', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_cap', 'f_status']) };
+        return buildTierStrategy((entity) => pickFirstFilled(entity, ['f_cap', 'f_status']));
       case 'location':
         return { kind: 'force-location', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri', 'f_status']) };
       case 'relation':
-        return { kind: 'text', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_quan_he', 'f_title', 'f_status']) };
+        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_quan_he', 'f_title', 'f_status']));
       case 'owner':
-        return { kind: 'text', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_chu', 'f_owner', 'f_nguoi_so_huu']) };
+        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_chu', 'f_owner', 'f_nguoi_so_huu']));
       case 'text':
       default:
-        return { kind: 'text', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']) };
+        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']));
     }
   }
 
@@ -334,8 +421,7 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
 
   if (scope.includes('di thuoc tinh')) {
     return {
-      kind: 'attribute',
-      getGroupLabel: (entity) => pickFirstFilled(entity, ['f_title', 'f_loai', 'f_status']),
+      ...buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title', 'f_loai', 'f_status']), 'attribute'),
     };
   }
 
@@ -349,32 +435,28 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
     scope.includes('dan duoc') ||
     scope.includes('tran phap') ||
     scope.includes('goi qua') ||
-    scope.includes('cua hang')
+    scope.includes('cua hang') ||
+    scope.includes('thien tai dia bao') ||
+    scope.includes('tai nguyen')
   ) {
-    return {
-      kind: 'tier',
-      getGroupLabel: (entity) => pickFirstFilled(entity, ['f_cap', 'f_status', 'f_title']),
-    };
+    return buildTierStrategy((entity) => pickFirstFilled(entity, ['f_cap', 'f_status', 'f_title']));
   }
 
   if (scope.includes('canh gioi')) {
     return {
-      kind: 'text',
-      getGroupLabel: (entity) => pickFirstFilled(entity, ['f_status', 'f_title']),
+      ...buildTextStrategy((entity) => pickFirstFilled(entity, ['f_status', 'f_title'])),
     };
   }
 
   if (scope.includes('he thong tu luyen')) {
     return {
-      kind: 'text',
-      getGroupLabel: (entity) => pickFirstFilled(entity, ['f_title', 'f_status']),
+      ...buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title', 'f_status'])),
     };
   }
 
   if (scope.includes('nhan vat')) {
     return {
-      kind: 'text',
-      getGroupLabel: (entity) => pickFirstFilled(entity, ['f_quan_he', 'f_title', 'f_status']),
+      ...buildTextStrategy((entity) => pickFirstFilled(entity, ['f_quan_he', 'f_title', 'f_status'])),
     };
   }
 
@@ -387,25 +469,32 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
         pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']),
       compareEntries: compareForceEntries,
       renderEntry: renderForceEntry,
+      getGroupOrder: customGroupOrder || undefined,
     };
   }
 
   if (scope.includes('ban do') || scope.includes('dia danh') || scope.includes('bi canh')) {
     return {
-      kind: 'text',
-      getGroupLabel: (entity) => pickFirstFilled(entity, ['f_title', 'f_status']),
+      ...buildTextStrategy((entity) => getMapDirectParent(entity) || pickFirstFilled(entity, ['f_title', 'f_status'])),
     };
   }
 
-  return {
-    kind: 'text',
-    getGroupLabel: (entity) => pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']),
-  };
+  return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']));
 }
 
-function computeGroupOrder(kind, label) {
+function computeGroupOrder(kind, label, strategy = null) {
   const normalized = normalize(label);
   if (!normalized) return 10_000;
+
+  if (typeof strategy?.getGroupOrder === 'function') {
+    const custom = strategy.getGroupOrder(label);
+    if (Number.isFinite(custom)) return custom;
+  }
+
+  if (kind === 'tier' && typeof strategy?.getTierOrder === 'function') {
+    const custom = strategy.getTierOrder(label);
+    if (Number.isFinite(custom)) return custom;
+  }
 
   const anyTierOrder = computeTierOrder(label);
   if (anyTierOrder != null) return anyTierOrder;
@@ -462,7 +551,8 @@ function buildAutoLines(records, strategy, ownerLookupEntities = []) {
   });
 
   const groupEntries = Array.from(grouped.values()).sort((a, b) => {
-    const orderDiff = computeGroupOrder(strategy.kind, a.label) - computeGroupOrder(strategy.kind, b.label);
+    const orderDiff =
+      computeGroupOrder(strategy.kind, a.label, strategy) - computeGroupOrder(strategy.kind, b.label, strategy);
     if (orderDiff !== 0) return orderDiff;
     return a.label.localeCompare(b.label, 'vi');
   });

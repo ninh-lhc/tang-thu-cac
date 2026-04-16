@@ -58,6 +58,7 @@ import {
 } from './lib/mapEntityFieldPresets.js';
 import { resolveEntityQuickSlots } from './lib/entityQuickEntrySlots.js';
 import { normalizeAsciiText, splitStatusHierarchyTokens } from './lib/statusHierarchyParser.js';
+import { normalizeListGroupStrategy } from './lib/collectionListCardSync.js';
 import { mergeTabsByGenres } from './genreTabsMap.js';
 import { getGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
 import { searchNovelData, dedupeDeepSearchResults, metadataSearchHits } from './deepSearchCore.js';
@@ -1201,6 +1202,9 @@ export const ModalEntity = ({
   geminiApiKey,
   geminiMode = 'standard',
   onOpenAutoSyncGuide,
+  onSetTabListGroupStrategy,
+  onSetTabListGroupOrder,
+  onSaveTabListGroupOrderToGenreTemplate,
 }) => {
   void onUpdateTemplate;
   void geminiApiKey;
@@ -1263,6 +1267,11 @@ export const ModalEntity = ({
   const hideLegacyStatusInput = Boolean(
     showGenericQuickEntry && genericQuickResolved?.slotFields?.includes('f_status')
   );
+  const listGroupStrategy = normalizeListGroupStrategy(tabConfig?.autoListGroupStrategy || '');
+  const listGroupOrderLines = Array.isArray(tabConfig?.autoListGroupOrder) ? tabConfig.autoListGroupOrder.join('\n') : '';
+  const [isGroupConfigOpen, setIsGroupConfigOpen] = useState(false);
+  const [isGroupOrderDirty, setIsGroupOrderDirty] = useState(false);
+  const groupOrderInputRef = useRef(null);
   const mapEntityHints = useMemo(
     () => collectMapEntityHints(activeNovelData, isMapScope ? tabConfig : null),
     [activeNovelData, tabConfig, isMapScope]
@@ -1430,6 +1439,21 @@ export const ModalEntity = ({
                 <BookOpen size={14} /> Quy chuẩn
               </button>
             )}
+            {tabConfig?.viewType === 'collection-track' && (
+              <button
+                type="button"
+                  onClick={() =>
+                    setIsGroupConfigOpen((prev) => {
+                      const next = !prev;
+                      if (next) setIsGroupOrderDirty(false);
+                      return next;
+                    })
+                  }
+                className="inline-flex items-center gap-2 rounded-xl border border-violet-800/40 bg-violet-950/20 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-violet-300 transition-colors hover:border-violet-500/60 hover:bg-violet-900/30 hover:text-violet-200"
+              >
+                <ListIcon size={14} /> Quy chuẩn nhóm
+              </button>
+            )}
             <button type="button" onClick={onClose} className="text-slate-500 hover:text-white">
               <X size={20}/>
             </button>
@@ -1437,6 +1461,104 @@ export const ModalEntity = ({
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 custom-scrollbar space-y-5 bg-slate-900">
+          {tabConfig?.viewType === 'collection-track' && isGroupConfigOpen && (
+            <div className="rounded-2xl border border-violet-800/35 bg-violet-950/10 p-4 space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest font-bold text-violet-300">
+                    Quy chuẩn nhóm AUTO cho tab này
+                  </div>
+                  <div className="mt-1 text-[12px] text-slate-300 font-serif">
+                    Chỉ cấu hình khi tab này cần thứ tự nhóm riêng. Cấu hình này chỉ áp dụng cho tab hiện tại, không áp dụng toàn app.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsGroupConfigOpen(false)}
+                  className="rounded-lg border border-slate-700 bg-slate-900/70 px-2.5 py-1 text-[11px] font-semibold text-slate-300 hover:border-slate-600 hover:text-slate-100"
+                >
+                  Thu gọn
+                </button>
+              </div>
+              <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_1fr]">
+                <label className="space-y-1">
+                  <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Kiểu gom nhóm
+                  </span>
+                  <select
+                    value={listGroupStrategy}
+                    onChange={(e) => onSetTabListGroupStrategy?.(parentTabId, tabConfig?.id, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-200 font-serif outline-none focus:border-violet-500/50"
+                  >
+                    <option value="auto">Tự đoán theo tab/genre</option>
+                    <option value="title">Theo Loại / Tiêu đề (f_title)</option>
+                    <option value="status">Theo Trạng thái (f_status)</option>
+                    <option value="rank">Theo Cấp bậc (f_cap/f_status)</option>
+                    <option value="location">Theo Địa bàn / Vị trí</option>
+                    <option value="relation">Theo Quan hệ</option>
+                    <option value="owner">Theo Chủ sở hữu</option>
+                    <option value="text">Theo Text tổng quát</option>
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    List thứ tự / nhóm
+                  </span>
+                  <textarea
+                    ref={groupOrderInputRef}
+                    defaultValue={listGroupOrderLines}
+                    key={`entity-group-order-${safeString(parentTabId)}-${safeString(tabConfig?.id)}-${listGroupOrderLines}`}
+                    onChange={(e) => {
+                      setIsGroupOrderDirty(e.target.value !== listGroupOrderLines);
+                    }}
+                    rows={4}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono leading-relaxed"
+                    placeholder={'Ví dụ:\nThần Cấp\nThiên Cấp\nĐịa Cấp\nHuyền Cấp'}
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-[11px] text-slate-500 font-serif">
+                  Mỗi dòng là một nhóm ưu tiên. Để trống nếu muốn dùng mặc định hoặc list gợi ý của trường hồ sơ.
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextText = safeString(groupOrderInputRef.current?.value ?? '');
+                      onSetTabListGroupOrder?.(parentTabId, tabConfig?.id, nextText);
+                      setIsGroupOrderDirty(false);
+                    }}
+                    disabled={!isGroupOrderDirty}
+                    className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
+                      isGroupOrderDirty
+                        ? 'border-violet-600/55 bg-violet-900/35 text-violet-100 hover:bg-violet-900/50'
+                        : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
+                    Lưu list
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextText = safeString(groupOrderInputRef.current?.value ?? '');
+                      onSaveTabListGroupOrderToGenreTemplate?.(parentTabId, tabConfig?.id, nextText);
+                      setIsGroupOrderDirty(false);
+                    }}
+                    disabled={!isGroupOrderDirty}
+                    className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
+                      isGroupOrderDirty
+                        ? 'border-cyan-600/55 bg-cyan-900/30 text-cyan-100 hover:bg-cyan-900/45'
+                        : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
+                    Lưu list + cập nhật mẫu thể loại
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-bold text-amber-500 mb-1 uppercase tracking-widest">Danh xưng / Tên gọi *</label>
             <input
@@ -2871,6 +2993,7 @@ export const ModalSettings = ({
   onExportBackup,
   onExportIndexOnly,
   onImportBackup,
+  onCleanupLegacyIndexFiles,
   onRequestRecalculateLibraryStats,
   libraryNovelCount = 0,
   isStatsBackfilling = false,
@@ -3175,6 +3298,15 @@ export const ModalSettings = ({
                      <Upload size={16} /> Nhập khôi phục (JSON)
                      <input type="file" accept=".json,application/json" className="hidden" onChange={onImportBackup} />
                   </label>
+                  {typeof onCleanupLegacyIndexFiles === 'function' && (
+                    <button
+                      type="button"
+                      onClick={onCleanupLegacyIndexFiles}
+                      className="w-full py-3 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-600/50 rounded-xl font-bold flex items-center justify-center gap-2 text-sm"
+                    >
+                      <Trash2 size={16} /> Dọn index/backup legacy
+                    </button>
+                  )}
                </div>
              </div>
           </div>
@@ -3348,7 +3480,7 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
                        </button>
                       {hasSavedGenreTemplate && (
                         <span className="text-xs text-cyan-300 font-serif">
-                          ✓ Đã có cây mẫu cá nhân cho tổ hợp thể loại này
+                          ✓ Đã có cây mẫu cá nhân cho tổ hợp thể loại này, gồm cả quy chuẩn nhóm theo tab
                         </span>
                       )}
                        {formData.tabsConfig && (

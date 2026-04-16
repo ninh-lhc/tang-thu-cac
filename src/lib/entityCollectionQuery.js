@@ -20,6 +20,30 @@ function comparePinnedListThenNameAsc(a, b) {
   return safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
 }
 
+function comparePinnedListThenNameDesc(a, b) {
+  const aPinned = isListCardEntity(a);
+  const bPinned = isListCardEntity(b);
+  if (aPinned !== bPinned) return aPinned ? -1 : 1;
+  return safeString(b?.name).localeCompare(safeString(a?.name), 'vi');
+}
+
+function comparePinnedListThenNewest(a, b) {
+  const aPinned = isListCardEntity(a);
+  const bPinned = isListCardEntity(b);
+  if (aPinned !== bPinned) return aPinned ? -1 : 1;
+  return safeString(b?.id).localeCompare(safeString(a?.id), 'vi');
+}
+
+function comparePinnedListThenMilestones(a, b) {
+  const aPinned = isListCardEntity(a);
+  const bPinned = isListCardEntity(b);
+  if (aPinned !== bPinned) return aPinned ? -1 : 1;
+  const am = Array.isArray(a?.milestones) ? a.milestones.length : 0;
+  const bm = Array.isArray(b?.milestones) ? b.milestones.length : 0;
+  if (am !== bm) return bm - am;
+  return safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
+}
+
 export function buildEntitySearchIndexMap(collectionEntitiesRaw) {
   const map = new Map();
   collectionEntitiesRaw.forEach((e) => {
@@ -50,7 +74,6 @@ export function applyEntityCollectionFilters(listIn, opts) {
     entitySearchIndexById,
     entitySortMode,
   } = opts;
-  void entitySortMode;
   let list = [...listIn];
   if (entityFilterField !== 'none' && entityFilterValue.trim()) {
     const q = normalizeSearchText(entityFilterValue);
@@ -65,6 +88,9 @@ export function applyEntityCollectionFilters(listIn, opts) {
       return haystack.includes(q);
     });
   }
-  list.sort(comparePinnedListThenNameAsc);
+  if (entitySortMode === 'name_desc') list.sort(comparePinnedListThenNameDesc);
+  else if (entitySortMode === 'newest') list.sort(comparePinnedListThenNewest);
+  else if (entitySortMode === 'milestones') list.sort(comparePinnedListThenMilestones);
+  else list.sort(comparePinnedListThenNameAsc);
   return list;
 }

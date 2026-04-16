@@ -221,6 +221,24 @@ export function searchNovelIndex(rows, q, res) {
   }
 }
 
+export function searchNovelPayloads(payloadsByNovel, q) {
+  const normalizedQuery = normalizeSearchQuery(q);
+  const results = [];
+  const cachedRowsByNovel = {};
+  if (!payloadsByNovel || !normalizedQuery) {
+    return { results, cachedRowsByNovel };
+  }
+  Object.entries(payloadsByNovel).forEach(([novelId, payload]) => {
+    if (!payload || typeof payload !== 'object') return;
+    const novel = payload.novel;
+    if (!novel || typeof novel !== 'object') return;
+    const rows = buildNovelSearchIndex(novel);
+    cachedRowsByNovel[novelId] = rows;
+    searchNovelIndex(rows, normalizedQuery, results);
+  });
+  return { results: dedupeDeepSearchResults(results), cachedRowsByNovel };
+}
+
 export function runDeepSearch({ novelsMetadata, allNovelsCache, activeNovelData, query }) {
   const q = normalizeSearchQuery(query);
   if (!q) return [];
