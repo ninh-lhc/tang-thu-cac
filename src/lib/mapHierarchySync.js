@@ -20,6 +20,21 @@ const MAP_META_TITLE = '## Phân tầng bản đồ (AUTO)';
 const MAP_CHILDREN_TITLE = '## Bản đồ trực thuộc';
 const MAP_AUTO_END = '> (Tự động cập nhật theo cây bản đồ)';
 const DEFAULT_LEVEL = { label: 'Địa Danh', rank: 40 };
+const GENERIC_MAP_PARENT_KEYS = new Set([
+  'dia danh',
+  'ban do',
+  'bi canh',
+  'khu vuc',
+  'thanh/tran',
+  'thanh',
+  'tran',
+  'chau',
+  'de quoc',
+  'gioi',
+  'tinh cau',
+  'vi dien',
+  'dai luc',
+]);
 
 function safeString(v) {
   if (v == null || v === 'null' || v === 'undefined') return '';
@@ -133,11 +148,19 @@ function formatMapMeta(record) {
 
 function splitMapParentTokens(pathText) {
   const raw = safeString(pathText)
-    .replace(/[>→»|]+/g, ' - ')
+    .replace(/[>→»|/\\]+/g, ' - ')
+    .replace(/[•·●]+/g, ' - ')
+    .replace(/[;,]+/g, ' - ')
     .replace(/\r?\n+/g, ' - ')
     .trim();
   if (!raw) return [];
   return splitStatusHierarchyTokens(raw);
+}
+
+function isGenericMapParentToken(token) {
+  const key = normalizeAscii(token);
+  if (!key) return true;
+  return GENERIC_MAP_PARENT_KEYS.has(key);
 }
 
 function replaceMapPathNames(pathText, oldName, newName) {
@@ -293,7 +316,7 @@ function buildMapRecords(entities, mapContext = {}) {
         levelLabel: levelInfo.label,
         levelRank: levelInfo.rank,
         scaleLabel,
-        parentTokens: splitMapParentTokens(parentSource.raw),
+      parentTokens: splitMapParentTokens(parentSource.raw).filter((token) => !isGenericMapParentToken(token)),
         fullChain: [],
         fullChainKeys: [],
       };
@@ -378,13 +401,27 @@ function getOrCreateTreeNode(parent, label, byName) {
   return parent.children.get(key);
 }
 
-function buildMapChildrenBlock(targetRecord, allRecords, byName) {
+function buildMapDescendantsIndex(records) {
+  const byAncestor = new Map();
+  (records || []).forEach((record) => {
+    if (!record) return;
+    const keys = Array.isArray(record.fullChainKeys) ? record.fullChainKeys : [];
+    keys.forEach((ancestorKey, targetIndex) => {
+      if (!ancestorKey) return;
+      if (!byAncestor.has(ancestorKey)) byAncestor.set(ancestorKey, []);
+      byAncestor.get(ancestorKey).push({ record, targetIndex });
+    });
+  });
+  return byAncestor;
+}
+
+function buildMapChildrenBlock(targetRecord, byName, descendantsIndex) {
   if (!targetRecord) return [];
   const root = { children: new Map() };
+  const descendants = descendantsIndex?.get(targetRecord.nameKey) || [];
 
-  allRecords.forEach((record) => {
+  descendants.forEach(({ record, targetIndex }) => {
     if (!record || record.entityId === targetRecord.entityId) return;
-    const targetIndex = record.fullChainKeys.findIndex((key) => key === targetRecord.nameKey);
     if (targetIndex < 0) return;
 
     const descendants = record.fullChain.slice(0, targetIndex).reverse();
@@ -419,6 +456,7 @@ function syncMapHierarchyInTab(mapTab, mapPath = {}) {
       getEntityAutoFieldValue(ent, mapContext, 'parent_path') ||
       ent?.dynamicData?.f_vi_tri;
     splitMapParentTokens(parentPath).forEach((name) => {
+      if (isGenericMapParentToken(name)) return;
       const key = normalizeAscii(name);
       if (key) referencedParents.add(name);
     });
@@ -438,6 +476,7 @@ function syncMapHierarchyInTab(mapTab, mapPath = {}) {
     record.fullChain = resolveFullChain(record, byName);
     record.fullChainKeys = record.fullChain.map((name) => normalizeAscii(name)).filter(Boolean);
   });
+  const descendantsIndex = buildMapDescendantsIndex(records);
 
   records.forEach((record) => {
     const original = safeString(record.entity?.info || '');
@@ -460,7 +499,7 @@ function syncMapHierarchyInTab(mapTab, mapPath = {}) {
     if (hasMeaningfulMapMeta(record)) {
       next = mergeAutoSection(next, MAP_META_TITLE, MAP_AUTO_END, buildMapMetaBlock(record));
     }
-    const childBlock = buildMapChildrenBlock(record, records, byName);
+    const childBlock = buildMapChildrenBlock(record, byName, descendantsIndex);
     if (Array.isArray(childBlock) && childBlock.length > 0) {
       next = mergeAutoSection(next, MAP_CHILDREN_TITLE, MAP_AUTO_END, childBlock);
     }

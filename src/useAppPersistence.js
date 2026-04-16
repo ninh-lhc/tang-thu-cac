@@ -100,6 +100,26 @@ function persistIndexShadow(payload) {
   }
 }
 
+async function pruneLegacyIndexVariantFiles(dirHandle) {
+  if (!dirHandle || dirHandle === 'LOCAL_STORAGE') return;
+  try {
+    for await (const [entryName, handle] of dirHandle.entries()) {
+      if (handle.kind !== 'file') continue;
+      const lower = String(entryName || '').toLowerCase();
+      if (lower === 'index.json' || lower === 'index.backup.json') continue;
+      // Dọn bản index legacy theo máy: index-*.json, index.backup-*.json...
+      if (!/^index(?:[.-].+)?\.json$/i.test(lower)) continue;
+      try {
+        await dirHandle.removeEntry(entryName);
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
+  } catch {
+    /* ignore cleanup errors */
+  }
+}
+
 export function useAppPersistence({
   novelStatsByIdRef,
   novelsMetadataRef,
@@ -113,6 +133,10 @@ export function useAppPersistence({
   const recoveredNovelToastIdsRef = useRef(new Set());
   /** Tránh nhiều lần ghi truyện ra đĩa song song (xóa liên tiếp → lỗi khóa file / createWritable). */
   const novelDiskWriteChainRef = useRef(Promise.resolve());
+  /** Cache JSON cuối cùng để bỏ qua ghi index khi nội dung không đổi. */
+  const lastIndexJsonByDirRef = useRef(new WeakMap());
+  /** Cache JSON manifest cuối cùng theo id truyện để bỏ qua ghi đĩa khi không đổi. */
+  const lastNovelManifestJsonByIdRef = useRef(new Map());
 
   useEffect(
     () => () => {
@@ -136,7 +160,7 @@ export function useAppPersistence({
           }, 500);
         }
         persistIndexShadow(payload);
-        return;
+        return { ok: Boolean(writeRes.ok), mode: 'local', error: writeRes.error || null };
       }
       const indexPerm = await ensureDirectoryWritePermission(dir);
       if (!indexPerm.ok) {
@@ -147,26 +171,35 @@ export function useAppPersistence({
           );
         }, 0);
         persistIndexShadow(payload);
-        return;
+        return { ok: false, mode: 'directory', reason: 'permission_denied' };
       }
       try {
+        const payloadJson = JSON.stringify(payload, null, 2);
+        const lastPayloadJson = lastIndexJsonByDirRef.current.get(dir) || '';
+        if (lastPayloadJson === payloadJson) {
+          return { ok: true, mode: 'directory', skipped: 'unchanged' };
+        }
         const f = await dir.getFileHandle('index.json', { create: true });
         const w = await f.createWritable();
-        await w.write(JSON.stringify(payload, null, 2));
+        await w.write(payloadJson);
         await w.close();
         // Lớp an toàn bổ sung: giữ bản dự phòng index gần nhất.
         try {
           const fb = await dir.getFileHandle('index.backup.json', { create: true });
           const wb = await fb.createWritable();
-          await wb.write(JSON.stringify(payload, null, 2));
+          await wb.write(payloadJson);
           await wb.close();
         } catch {
           /* backup là best-effort */
         }
+        await pruneLegacyIndexVariantFiles(dir);
+        lastIndexJsonByDirRef.current.set(dir, payloadJson);
+        return { ok: true, mode: 'directory' };
       } catch {
         setTimeout(() => {
           showToast('Lỗi đồng bộ danh mục!', 'error');
         }, 0);
+        return { ok: false, mode: 'directory', reason: 'write_failed' };
       } finally {
         persistIndexShadow(payload);
       }
@@ -183,6 +216,11 @@ export function useAppPersistence({
       syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, d, { ...novelStatsByIdRef.current });
     }, 500);
   }, [dirHandleRef, globalTabsConfigRef, novelsMetadataRef, novelStatsByIdRef, syncIndex]);
+
+  const cleanupLegacyIndexFiles = useCallback(async (dir) => {
+    if (!dir || dir === 'LOCAL_STORAGE') return;
+    await pruneLegacyIndexVariantFiles(dir);
+  }, []);
 
   const bumpNovelStatsAfterWrite = useCallback(
     (novelData) => {
@@ -209,7 +247,7 @@ export function useAppPersistence({
             showToast('CẢNH BÁO: Tràn bộ nhớ! Hãy dùng Thư Mục Máy Tính!', 'warning');
           }, 500);
         }
-        return Promise.resolve();
+        return Promise.resolve({ ok: Boolean(writeRes.ok), mode: 'local', error: writeRes.error || null });
       }
 
       const runFolderSync = async () => {
@@ -222,7 +260,7 @@ export function useAppPersistence({
             'warning'
           );
         }, 0);
-        return;
+        return { ok: false, mode: 'directory', reason: 'permission_denied' };
       }
 
       const folderName = novelData.folderName || novelData.title.replace(/[\\/:*?"<>|]/g, '').trim() || novelData.id;
@@ -250,7 +288,7 @@ export function useAppPersistence({
           setTimeout(() => {
             showToast('Lỗi đọc dữ liệu trên đĩa — đã hủy lưu để tránh mất nội dung tab khác.', 'error');
           }, 0);
-          return;
+          return { ok: false, mode: 'directory', reason: 'partial_merge_failed', error: e };
         }
       }
       // Chống wipe toàn bộ shard: object trong memory không có tab nào nhưng thư mục data/ vẫn có file
@@ -285,15 +323,21 @@ export function useAppPersistence({
             'error'
           );
         }, 0);
-        return;
+        return { ok: false, mode: 'directory', reason: 'manifest_build_failed', error: e };
       }
       const mainFile = `${folderName}.json`;
       const tmpFile = `${folderName}.json.tmp`;
+      let cachedBackupJson = null;
+      const getBackupJson = () => {
+        if (cachedBackupJson != null) return cachedBackupJson;
+        cachedBackupJson = JSON.stringify(novelToWrite, null, 2);
+        return cachedBackupJson;
+      };
       const writeNovelBackup = async (novelDir) => {
         try {
           const bf = await novelDir.getFileHandle(`${folderName}.backup.json`, { create: true });
           const bw = await bf.createWritable();
-          await bw.write(JSON.stringify(novelToWrite, null, 2));
+          await bw.write(getBackupJson());
           await bw.close();
         } catch {
           /* backup is best-effort */
@@ -337,13 +381,21 @@ export function useAppPersistence({
         await writeNovelBackup(novelDir);
       };
       try {
+        const lastManifestJson = lastNovelManifestJsonByIdRef.current.get(novelToWrite.id);
+        if (lastManifestJson === jsonStr) {
+          return { ok: true, mode: 'directory', skipped: 'unchanged' };
+        }
         await tryAtomic();
+        lastNovelManifestJsonByIdRef.current.set(novelToWrite.id, jsonStr);
         bumpNovelStatsAfterWrite(novelToWrite);
+        return { ok: true, mode: 'directory' };
       } catch (e1) {
         console.warn('[TTC] syncNovel tryAtomic failed:', e1);
         try {
           await tryDirect();
+          lastNovelManifestJsonByIdRef.current.set(novelToWrite.id, jsonStr);
           bumpNovelStatsAfterWrite(novelToWrite);
+          return { ok: true, mode: 'directory', recoveredFrom: 'tryDirect' };
         } catch (e2) {
           console.error('[TTC] syncNovel tryDirect failed:', e2);
           setTimeout(() => {
@@ -352,6 +404,7 @@ export function useAppPersistence({
               'error'
             );
           }, 0);
+          return { ok: false, mode: 'directory', reason: 'write_failed', error: e2 };
         }
       }
       };
@@ -367,6 +420,10 @@ export function useAppPersistence({
   useEffect(() => {
     syncNovelRef.current = syncNovel;
   }, [syncNovel]);
+
+  const awaitNovelDiskIdle = useCallback(async () => {
+    await novelDiskWriteChainRef.current.catch(() => {});
+  }, []);
 
   const loadNovelData = useCallback(async (meta, rootDir, options = {}) => {
     const raw = Array.isArray(options.shardKeys) ? options.shardKeys : null;
@@ -459,6 +516,8 @@ export function useAppPersistence({
   return {
     syncIndex,
     syncNovel,
+    awaitNovelDiskIdle,
+    cleanupLegacyIndexFiles,
     loadNovelData,
     queuePersistNovelStatsToIndex,
     bumpNovelStatsAfterWrite,

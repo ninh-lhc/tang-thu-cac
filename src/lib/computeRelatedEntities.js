@@ -41,6 +41,7 @@ function buildNovelSearchIndex(activeNovelData, tabMetaMap) {
       if (!bySub.has(nhoId)) continue;
       const tabMeta = bySub.get(nhoId);
       const tabLabel = tabMeta?.label || lonId;
+      const fieldLabelById = tabMeta?.fields || new Map();
       const entities = Array.isArray(nhoData?.entities) ? nhoData.entities : [];
       for (const ent of entities) {
         const dynamicStrings = [];
@@ -59,6 +60,7 @@ function buildNovelSearchIndex(activeNovelData, tabMetaMap) {
           lonId,
           nhoId,
           tabLabel,
+          fieldLabelById,
           dynamicStrings,
           info: infoString,
         };
@@ -117,6 +119,7 @@ export function computeRelatedEntities({
   if (selectedEntity.dynamicData?.f_alias) extractNames(selectedEntity.dynamicData.f_alias);
 
   if (namesToMatch.size > 0) {
+    const names = [...namesToMatch];
     for (const rec of novelIndex.records) {
       if (!rec?.entity || rec.entityId === selectedEntity.id) continue;
       if (scopeLonId && rec.lonId !== scopeLonId) continue;
@@ -126,9 +129,9 @@ export function computeRelatedEntities({
       let contextInfo = '';
       for (const f of rec.dynamicStrings) {
         if (!f?.text) continue;
-        for (const name of namesToMatch) {
+        for (const name of names) {
           if (containsWikiNameWordStartSurface(f.text, name)) {
-            const fieldLabel = novelIndex.tabMetaMap.get(rec.lonId)?.get(rec.nhoId)?.fields?.get(f.fieldId);
+            const fieldLabel = rec.fieldLabelById.get(f.fieldId);
             contextInfo = fieldLabel || 'Thuộc tính';
             mentioned = true;
             break;
@@ -137,7 +140,7 @@ export function computeRelatedEntities({
         if (mentioned) break;
       }
       if (!mentioned && rec.info) {
-        for (const name of namesToMatch) {
+        for (const name of names) {
           if (containsWikiNameWordStartSurface(rec.info, name)) {
             contextInfo = 'Trong ghi chép';
             mentioned = true;
