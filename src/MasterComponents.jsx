@@ -1624,50 +1624,143 @@ export const ModalEntity = ({
                 </p>
                 <span className="text-[10px] text-slate-500 font-serif">
                   Đổi 3 ô và nhãn trong Trận pháp → Quản lý tab
+                  {genericQuickResolved.dualFirstRow ? ' · Hai ô đầu đang xếp song song' : ''}
                 </span>
               </div>
-              <div className="grid gap-4 md:grid-cols-1">
-                {genericQuickResolved.slots.map((slot, idx) => {
-                  const fid = slot.fieldId;
-                  const val = safeString(dynamicData[fid]);
-                  const listDomId = `${genericQuickListPrefix}-q-${idx}-${String(fid).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-                  const isLong = fid === 'f_desc';
-                  return (
-                    <div key={`${fid}-${idx}`} className="space-y-2">
-                      <label className="block text-[10px] font-bold text-amber-200 uppercase tracking-widest">
-                        {slot.label}
-                      </label>
-                      {isLong ? (
-                        <textarea
-                          aria-label={slot.label}
-                          value={val}
-                          onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-                          rows={3}
-                          className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none resize-y min-h-[4.5rem]"
-                          placeholder="Ghi mô tả ngắn…"
-                        />
-                      ) : (
-                        <>
-                          <input
-                            aria-label={slot.label}
-                            list={slot.suggestions.length ? listDomId : undefined}
-                            value={val}
-                            onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-                            className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
-                            placeholder={`Gõ hoặc chọn gợi ý — ${fid}`}
-                          />
-                          {slot.suggestions.length > 0 && (
-                            <datalist id={listDomId}>
-                              {slot.suggestions.map((item) => (
-                                <option key={item} value={item} />
-                              ))}
-                            </datalist>
-                          )}
-                        </>
-                      )}
+              <div className="space-y-4">
+                {genericQuickResolved.dualFirstRow ? (
+                  <>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {genericQuickResolved.slots.slice(0, 2).map((slot, idx) => {
+                        const fid = slot.fieldId;
+                        const val = safeString(dynamicData[fid]);
+                        const listDomId = `${genericQuickListPrefix}-q-${idx}-${String(fid).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+                        const isLong = fid === 'f_desc';
+                        return (
+                          <div key={`${fid}-${idx}`} className="space-y-2 min-w-0">
+                            <label className="block text-[10px] font-bold text-amber-200 uppercase tracking-widest">
+                              {slot.label}
+                            </label>
+                            {isLong ? (
+                              <textarea
+                                aria-label={slot.label}
+                                value={val}
+                                onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
+                                rows={3}
+                                className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none resize-y min-h-[4.5rem]"
+                                placeholder="Ghi mô tả ngắn…"
+                              />
+                            ) : (
+                              <>
+                                <input
+                                  aria-label={slot.label}
+                                  list={slot.suggestions.length ? listDomId : undefined}
+                                  value={val}
+                                  onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
+                                  className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
+                                  placeholder={`Gõ hoặc chọn gợi ý — ${fid}`}
+                                />
+                                {slot.suggestions.length > 0 && (
+                                  <datalist id={listDomId}>
+                                    {slot.suggestions.map((item) => (
+                                      <option key={item} value={item} />
+                                    ))}
+                                  </datalist>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+                    {genericQuickResolved.slots.slice(2).map((slot, idx) => {
+                      const realIdx = idx + 2;
+                      const fid = slot.fieldId;
+                      const val = safeString(dynamicData[fid]);
+                      const listDomId = `${genericQuickListPrefix}-q-${realIdx}-${String(fid).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+                      const isLong = fid === 'f_desc';
+                      return (
+                        <div key={`${fid}-${realIdx}`} className="space-y-2">
+                          <label className="block text-[10px] font-bold text-amber-200 uppercase tracking-widest">
+                            {slot.label}
+                          </label>
+                          {isLong ? (
+                            <textarea
+                              aria-label={slot.label}
+                              value={val}
+                              onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
+                              rows={3}
+                              className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none resize-y min-h-[4.5rem]"
+                              placeholder="Ghi mô tả ngắn…"
+                            />
+                          ) : (
+                            <>
+                              <input
+                                aria-label={slot.label}
+                                list={slot.suggestions.length ? listDomId : undefined}
+                                value={val}
+                                onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
+                                className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
+                                placeholder={`Gõ hoặc chọn gợi ý — ${fid}`}
+                              />
+                              {slot.suggestions.length > 0 && (
+                                <datalist id={listDomId}>
+                                  {slot.suggestions.map((item) => (
+                                    <option key={item} value={item} />
+                                  ))}
+                                </datalist>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-1">
+                    {genericQuickResolved.slots.map((slot, idx) => {
+                      const fid = slot.fieldId;
+                      const val = safeString(dynamicData[fid]);
+                      const listDomId = `${genericQuickListPrefix}-q-${idx}-${String(fid).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+                      const isLong = fid === 'f_desc';
+                      return (
+                        <div key={`${fid}-${idx}`} className="space-y-2">
+                          <label className="block text-[10px] font-bold text-amber-200 uppercase tracking-widest">
+                            {slot.label}
+                          </label>
+                          {isLong ? (
+                            <textarea
+                              aria-label={slot.label}
+                              value={val}
+                              onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
+                              rows={3}
+                              className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none resize-y min-h-[4.5rem]"
+                              placeholder="Ghi mô tả ngắn…"
+                            />
+                          ) : (
+                            <>
+                              <input
+                                aria-label={slot.label}
+                                list={slot.suggestions.length ? listDomId : undefined}
+                                value={val}
+                                onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
+                                className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
+                                placeholder={`Gõ hoặc chọn gợi ý — ${fid}`}
+                              />
+                              {slot.suggestions.length > 0 && (
+                                <datalist id={listDomId}>
+                                  {slot.suggestions.map((item) => (
+                                    <option key={item} value={item} />
+                                  ))}
+                                </datalist>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}

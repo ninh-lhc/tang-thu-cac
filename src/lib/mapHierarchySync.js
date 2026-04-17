@@ -11,6 +11,7 @@ import {
   isEntityAutoSyncLocked,
 } from './autoSyncEntityPrefs.js';
 import { hasAutoSyncFeature, isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
+import { isListCardEntity } from './collectionListCardSync.js';
 
 const AUTO_MAP_META_START = '<!-- AUTO_MAP_HIERARCHY_META:START -->';
 const AUTO_MAP_META_END = '<!-- AUTO_MAP_HIERARCHY_META:END -->';
@@ -81,6 +82,15 @@ function mergeAutoSection(baseText, title, endLine, bodyLines = []) {
   return `${cleaned}${cleaned ? '\n\n' : ''}${section}`.trim();
 }
 
+/** Dòng footer AUTO map còn sót (không còn tiêu đề ##) — hay gặp trên thẻ Danh Sách do đồng bộ cũ. */
+function removeOrphanMapAutoFooterLines(baseText) {
+  const footer = MAP_AUTO_END.trim();
+  const filtered = safeString(baseText)
+    .split('\n')
+    .filter((line) => line.trim() !== footer);
+  return filtered.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function forEachCollectionEntity(nov, cb) {
   const data = nov?.data;
   if (!data || typeof data !== 'object') return;
@@ -99,7 +109,7 @@ function stripMapHierarchyAutoBlocksFromNovel(nov) {
     if (!entity || typeof entity !== 'object') return;
     if (isEntityAutoSyncLocked(entity, AUTO_SYNC_ENGINE_MAP_HIERARCHY)) return;
     const original = safeString(entity.info || '');
-    const next = removeAutoSection(
+    let next = removeAutoSection(
       removeAutoSection(
         removeAutoBlock(
           removeAutoBlock(original, AUTO_MAP_META_START, AUTO_MAP_META_END),
@@ -112,6 +122,9 @@ function stripMapHierarchyAutoBlocksFromNovel(nov) {
       MAP_CHILDREN_TITLE,
       MAP_AUTO_END
     );
+    if (isListCardEntity(entity)) {
+      next = removeOrphanMapAutoFooterLines(next);
+    }
     if (next !== original) {
       entity.info = next;
       changed = true;
@@ -480,6 +493,7 @@ function syncMapHierarchyInTab(mapTab, mapPath = {}) {
 
   records.forEach((record) => {
     const original = safeString(record.entity?.info || '');
+    if (isListCardEntity(record.entity)) return;
     if (isEntityAutoSyncLocked(record.entity, AUTO_SYNC_ENGINE_MAP_HIERARCHY)) return;
     const base = removeAutoSection(
       removeAutoSection(

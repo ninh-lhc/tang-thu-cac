@@ -1,6 +1,7 @@
 /**
  * Ba ô gợi ý nhanh khi Khởi tạo thẻ (tab không phải Bản đồ / Thế lực).
  * Kết hợp entityQuickEntry trên tab + fieldSuggestionLists + seed theo thể loại & tên tab.
+ * `entityQuickEntry.dualFirstRow`: hai ô đầu hiển thị song song (vd. f_cap = cấp bậc, f_status = phẩm chất).
  */
 import { resolveMapFieldPresetFlavor, MAP_FIELD_PRESET_FLAVOR } from './mapEntityFieldPresets.js';
 import { normalizeAsciiText } from './statusHierarchyParser.js';
@@ -120,7 +121,7 @@ export function getQuickEntrySeedLines(fieldId, flavor, tabLonLabel, tabNhoLabel
 }
 
 /**
- * @returns {{ slotFields: string[], slotLabels: string[], slots: { fieldId: string, label: string, suggestions: string[] }[] }}
+ * @returns {{ slotFields: string[], slotLabels: string[], dualFirstRow: boolean, slots: { fieldId: string, label: string, suggestions: string[] }[] }}
  */
 export function resolveEntityQuickSlots({
   tabConfig,
@@ -157,9 +158,12 @@ export function resolveEntityQuickSlots({
     return { fieldId, label, suggestions };
   });
 
+  const dualFirstRow = eq.dualFirstRow === true;
+
   return {
     slotFields,
     slotLabels,
+    dualFirstRow,
     slots,
   };
 }

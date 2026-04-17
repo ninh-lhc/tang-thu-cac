@@ -661,6 +661,63 @@ export const sortTabsAlphabetically = (tabs) => {
 };
 
 const localImageUrlCache = new WeakMap();
+const localImageLookupCache = new WeakMap();
+
+const getLocalImageLookupMap = (handle) => {
+  if (!handle || typeof handle !== 'object') return null;
+  let byName = localImageLookupCache.get(handle);
+  if (!byName) {
+    byName = new Map();
+    localImageLookupCache.set(handle, byName);
+  }
+  return byName;
+};
+
+async function resolveImageFileHandle(dirHandle, filename) {
+  if (!dirHandle || dirHandle === 'LOCAL_STORAGE') return null;
+  const key = safeString(filename).trim();
+  if (!key) return null;
+
+  const lookupMap = getLocalImageLookupMap(dirHandle);
+  if (lookupMap && lookupMap.has(key)) {
+    const cached = lookupMap.get(key);
+    return cached || null;
+  }
+
+  const cacheResolved = (handle) => {
+    if (lookupMap) lookupMap.set(key, handle || false);
+    return handle || null;
+  };
+
+  try {
+    const imagesDir = await dirHandle.getDirectoryHandle('images');
+    const fileHandle = await imagesDir.getFileHandle(key);
+    return cacheResolved(fileHandle);
+  } catch {
+    // fallback below
+  }
+
+  if (typeof dirHandle.entries !== 'function') {
+    return cacheResolved(null);
+  }
+
+  try {
+    for await (const [, childHandle] of dirHandle.entries()) {
+      if (!childHandle || childHandle.kind !== 'directory') continue;
+      try {
+        const childImagesDir = await childHandle.getDirectoryHandle('images');
+        const fileHandle = await childImagesDir.getFileHandle(key);
+        return cacheResolved(fileHandle);
+      } catch {
+        // no image in this child dir
+      }
+    }
+  } catch {
+    // ignore scan errors and mark as not found
+  }
+
+  return cacheResolved(null);
+}
 
 export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className, style }) => {
   const [src, setSrc] = useState(null);
@@ -690,8 +747,8 @@ export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className, styl
       }
       const fetchImage = async () => {
         try {
-          const dir = await dirHandle.getDirectoryHandle('images');
-          const fileH = await dir.getFileHandle(filename);
+          const fileH = await resolveImageFileHandle(dirHandle, filename);
+          if (!fileH) throw new Error('File not found');
           const file = await fileH.getFile();
           objectUrl = URL.createObjectURL(file);
           byName.set(filename, objectUrl);

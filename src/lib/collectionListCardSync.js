@@ -157,7 +157,8 @@ function isCollectionTab(tabConfig) {
   return tabConfig?.viewType === 'collection-track';
 }
 
-function isListCardEntity(entity) {
+/** Thẻ chỉ mục AUTO trong tab — không phải thẻ bản đồ; dùng chung với mapHierarchySync. */
+export function isListCardEntity(entity) {
   return normalize(entity?.name).startsWith('danh sach');
 }
 

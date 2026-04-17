@@ -34,7 +34,32 @@ describe('entityQuickEntrySlots', () => {
       parentLabel: 'Tab lớn',
     });
     expect(r.slots).toHaveLength(3);
+    expect(r.dualFirstRow).toBe(false);
     expect(r.slots[0].suggestions).toContain('Tùy chỉnh A');
     expect(r.slots[0].suggestions.some((x) => /Luyện Khí|Kim Đan/.test(x))).toBe(true);
+  });
+
+  it('resolveEntityQuickSlots bật dualFirstRow khi tab cấu hình', () => {
+    const r = resolveEntityQuickSlots({
+      tabConfig: {
+        entityQuickEntry: {
+          slotFields: ['f_cap', 'f_status', 'f_desc'],
+          slotLabels: ['Cấp bậc', 'Phẩm chất', ''],
+          dualFirstRow: true,
+        },
+        fieldSuggestionLists: {},
+      },
+      fieldsTemplate: [
+        { id: 'f_cap', label: 'Cấp' },
+        { id: 'f_status', label: 'Phẩm' },
+        { id: 'f_desc', label: 'Mô tả' },
+      ],
+      activeNovelData: { genres: ['Tiên Hiệp'] },
+      parentTabId: 'x',
+      parentLabel: 'y',
+    });
+    expect(r.dualFirstRow).toBe(true);
+    expect(r.slotFields[0]).toBe('f_cap');
+    expect(r.slotFields[1]).toBe('f_status');
   });
 });

@@ -2364,7 +2364,7 @@ export default function App() {
     });
   };
 
-  const handleSetTabEntityQuickEntry = (lonId, nhoId, slotFields, slotLabels) => {
+  const handleSetTabEntityQuickEntry = (lonId, nhoId, slotFields, slotLabels, options = {}) => {
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
@@ -2374,7 +2374,15 @@ export default function App() {
     const labels = [0, 1, 2].map((i) => safeString(slotLabels?.[i] ?? '').trim());
     if (ids.length !== 3 || new Set(ids).size !== 3) return;
     if (!ids.every((id) => templateIds.has(id))) return;
-    nho.entityQuickEntry = { slotFields: ids, slotLabels: labels };
+    const prev = nho.entityQuickEntry && typeof nho.entityQuickEntry === 'object' ? { ...nho.entityQuickEntry } : {};
+    nho.entityQuickEntry = {
+      ...prev,
+      slotFields: ids,
+      slotLabels: labels,
+    };
+    if (options && typeof options === 'object' && 'dualFirstRow' in options) {
+      nho.entityQuickEntry.dualFirstRow = Boolean(options.dualFirstRow);
+    }
     setTabsConfig(current, { resyncAuto: false });
   };
 

@@ -119,6 +119,47 @@ describe('mapHierarchySync', () => {
     expect(parent.info).toContain('[[Man Hoang Đại Lục]] (Đại Lục · Tiểu Thế Giới)');
   });
 
+  it('does not write map AUTO sections onto the Danh Sach list card', () => {
+    const novel = createNovelWithMapEntities([
+      {
+        id: 'list-1',
+        name: 'Danh Sách Bản đồ / Bí cảnh',
+        info: '',
+        dynamicData: {},
+      },
+      {
+        id: 'm1',
+        name: 'Man Hoang Dai Luc',
+        info: '',
+        dynamicData: {
+          f_title: 'Dai Luc',
+          f_vi_tri: 'Viet Long Tinh Cau',
+        },
+      },
+    ]);
+
+    expect(syncAllMapHierarchyAutoBlocks(novel)).toBe(true);
+
+    const listCard = novel.data['tai-nguyen']['dia-danh'].entities.find((e) => e.id === 'list-1');
+    expect(String(listCard?.info || '')).not.toContain('## Phân tầng bản đồ (AUTO)');
+    expect(String(listCard?.info || '')).not.toContain('> (Tự động cập nhật theo cây bản đồ)');
+  });
+
+  it('strips orphan map footer lines left on list card info', () => {
+    const novel = createNovelWithMapEntities([
+      {
+        id: 'list-1',
+        name: 'Danh Sách X',
+        info: '\n> (Tự động cập nhật theo cây bản đồ)\n\n> (Tự động cập nhật theo cây bản đồ)\n',
+        dynamicData: {},
+      },
+    ]);
+
+    expect(syncAllMapHierarchyAutoBlocks(novel)).toBe(true);
+    const listCard = novel.data['tai-nguyen']['dia-danh'].entities.find((e) => e.id === 'list-1');
+    expect(String(listCard?.info || '')).not.toContain('Tự động cập nhật theo cây bản đồ');
+  });
+
   it('updates full ancestor tree when a parent map later gets a larger outer map', () => {
     const novel = createNovelWithMapEntities([
       {
