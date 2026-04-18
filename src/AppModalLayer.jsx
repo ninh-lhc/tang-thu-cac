@@ -149,6 +149,7 @@ export function AppModalLayer({
   handleSetTabAutoSyncFieldMap,
   handleSetTabListGroupStrategy,
   handleSetTabListGroupOrder,
+  handleSetTabListGroupFieldOrder,
   handleSaveTabListGroupOrderToGenreTemplate,
   handleSetTabMapEntrySuggestions,
   handleMergeTabFieldSuggestionList,
@@ -168,6 +169,7 @@ export function AppModalLayer({
         onOpenAutoSyncGuide={setIsAutoSyncGuideOpen ? () => setIsAutoSyncGuideOpen(true) : undefined}
         onSetTabListGroupStrategy={handleSetTabListGroupStrategy}
         onSetTabListGroupOrder={handleSetTabListGroupOrder}
+        onSetTabListGroupFieldOrder={handleSetTabListGroupFieldOrder}
         onSaveTabListGroupOrderToGenreTemplate={handleSaveTabListGroupOrderToGenreTemplate}
         onSetTabMapEntrySuggestions={handleSetTabMapEntrySuggestions}
         handleAddTabTemplateField={handleAddTabTemplateField}
@@ -368,6 +370,7 @@ export function AppModalLayer({
           handleSetTabAutoSyncFieldMap={handleSetTabAutoSyncFieldMap}
           handleSetTabListGroupStrategy={handleSetTabListGroupStrategy}
           handleSetTabListGroupOrder={handleSetTabListGroupOrder}
+          handleSetTabListGroupFieldOrder={handleSetTabListGroupFieldOrder}
           handleSetTabMapEntrySuggestions={handleSetTabMapEntrySuggestions}
           handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
           handleAddTabTemplateField={handleAddTabTemplateField}

@@ -1292,6 +1292,7 @@ export const ModalEntity = ({
   onOpenAutoSyncGuide,
   onSetTabListGroupStrategy,
   onSetTabListGroupOrder,
+  onSetTabListGroupFieldOrder,
   onSaveTabListGroupOrderToGenreTemplate,
   onSetTabMapEntrySuggestions,
   handleAddTabTemplateField,
@@ -1366,10 +1367,14 @@ export const ModalEntity = ({
   );
   const listGroupStrategy = normalizeListGroupStrategy(tabConfig?.autoListGroupStrategy || '');
   const listGroupOrderLines = Array.isArray(tabConfig?.autoListGroupOrder) ? tabConfig.autoListGroupOrder.join('\n') : '';
+  const listGroupFieldOrderLines = Array.isArray(tabConfig?.autoListGroupFieldOrder)
+    ? tabConfig.autoListGroupFieldOrder.join('\n')
+    : '';
   const [isGroupConfigOpen, setIsGroupConfigOpen] = useState(false);
   const [isTabFieldsCustomizerOpen, setIsTabFieldsCustomizerOpen] = useState(false);
   const [tabFieldSaveScope, setTabFieldSaveScope] = useState('local');
   const [isGroupOrderDirty, setIsGroupOrderDirty] = useState(false);
+  const [isGroupFieldOrderDirty, setIsGroupFieldOrderDirty] = useState(false);
   const tabLonCollectionMeta = useMemo(() => {
     const lon = activeNovelData?.tabsConfig?.find((t) => t.id === parentTabId);
     const lbl = safeString(lon?.label || parentTabId);
@@ -1377,6 +1382,7 @@ export const ModalEntity = ({
     return { parentLonLabel: lbl, collectionTabCount: Math.max(n, 1) };
   }, [activeNovelData, parentTabId]);
   const groupOrderInputRef = useRef(null);
+  const groupFieldOrderInputRef = useRef(null);
   const mapEntityHints = useMemo(
     () => collectMapEntityHints(activeNovelData, isMapScope ? tabConfig : null),
     [activeNovelData, tabConfig, isMapScope]
@@ -1699,7 +1705,10 @@ export const ModalEntity = ({
                   onClick={() =>
                     setIsGroupConfigOpen((prev) => {
                       const next = !prev;
-                      if (next) setIsGroupOrderDirty(false);
+                      if (next) {
+                        setIsGroupOrderDirty(false);
+                        setIsGroupFieldOrderDirty(false);
+                      }
                       return next;
                     })
                   }
@@ -1771,7 +1780,10 @@ export const ModalEntity = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsGroupConfigOpen(false)}
+                  onClick={() => {
+                    setIsGroupConfigOpen(false);
+                    setIsGroupFieldOrderDirty(false);
+                  }}
                   className="rounded-lg border border-slate-700 bg-slate-900/70 px-2.5 py-1 text-[11px] font-semibold text-slate-300 hover:border-slate-600 hover:text-slate-100"
                 >
                   Thu gọn
@@ -1814,9 +1826,30 @@ export const ModalEntity = ({
                   />
                 </label>
               </div>
+              <label className="space-y-1 block">
+                <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  Thứ tự trường (id) — quy chuẩn gộp list AUTO
+                </span>
+                <textarea
+                  ref={groupFieldOrderInputRef}
+                  defaultValue={listGroupFieldOrderLines}
+                  key={`entity-group-field-order-${safeString(parentTabId)}-${safeString(tabConfig?.id)}-${listGroupFieldOrderLines}`}
+                  onChange={(e) => {
+                    setIsGroupFieldOrderDirty(e.target.value !== listGroupFieldOrderLines);
+                  }}
+                  rows={3}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono leading-relaxed"
+                  placeholder={'f_title\nf_status\nf_vi_tri'}
+                />
+              </label>
+              <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
+                Mỗi dòng một id trường. Thứ tự = ưu tiên lấy nhãn nhóm (ô đầu tiên có dữ liệu) và thứ tự gộp các{' '}
+                <strong className="text-slate-400">list gợi ý</strong> trong «Chỉnh trường hồ sơ» để sắp nhóm trên thẻ Danh sách.
+                Trường không có list gợi ý: bỏ qua khi gộp. Để trống: app dùng mặc định theo kiểu tab / thể loại.
+              </p>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-[11px] text-slate-500 font-serif">
-                  Mỗi dòng là một nhóm ưu tiên. Để trống nếu muốn dùng mặc định hoặc list gợi ý của trường hồ sơ.
+                  List nhóm tĩnh (tùy chọn): mỗi dòng một nhãn. Để trống để chỉ dùng list theo trường hoặc mặc định.
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -1850,6 +1883,22 @@ export const ModalEntity = ({
                     }`}
                   >
                     Lưu list + cập nhật mẫu thể loại
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextText = safeString(groupFieldOrderInputRef.current?.value ?? '');
+                      onSetTabListGroupFieldOrder?.(parentTabId, tabConfig?.id, nextText);
+                      setIsGroupFieldOrderDirty(false);
+                    }}
+                    disabled={!isGroupFieldOrderDirty || typeof onSetTabListGroupFieldOrder !== 'function'}
+                    className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
+                      isGroupFieldOrderDirty && typeof onSetTabListGroupFieldOrder === 'function'
+                        ? 'border-emerald-600/55 bg-emerald-900/30 text-emerald-100 hover:bg-emerald-900/45'
+                        : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
+                    Lưu thứ tự trường
                   </button>
                 </div>
               </div>

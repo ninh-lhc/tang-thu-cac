@@ -1,6 +1,7 @@
 ﻿import { describe, expect, it } from 'vitest';
 import {
   ensureCollectionListCardsForNovel,
+  normalizeAutoListGroupFieldOrder,
   syncAllCollectionListCards,
   syncAllCollectionListCardsDetailed,
 } from './collectionListCardSync.js';
@@ -80,6 +81,14 @@ function buildNovel() {
 }
 
 describe('collectionListCardSync', () => {
+  it('normalizeAutoListGroupFieldOrder trims và bỏ dòng rỗng', () => {
+    expect(normalizeAutoListGroupFieldOrder({ autoListGroupFieldOrder: [' f_title ', '', 'f_status'] })).toEqual([
+      'f_title',
+      'f_status',
+    ]);
+    expect(normalizeAutoListGroupFieldOrder({})).toEqual([]);
+  });
+
   it('ensures each collection tab has a list card named by sub-tab label', () => {
     const novel = {
       tabsConfig: [
@@ -492,6 +501,31 @@ describe('collectionListCardSync', () => {
     expect(iThien).toBeGreaterThan(iThan);
     expect(iDia).toBeGreaterThan(iThien);
     expect(iHuyen).toBeGreaterThan(iDia);
+  });
+
+  it('uses autoListGroupFieldOrder to merge suggestion lists and pick group label', () => {
+    const novel = buildNovel();
+    novel.tabsConfig[1].subTabs[0].autoListGroupStrategy = 'text';
+    novel.tabsConfig[1].subTabs[0].autoListGroupFieldOrder = ['f_status', 'f_title'];
+    novel.tabsConfig[1].subTabs[0].fieldSuggestionLists = {
+      f_status: ['S2', 'S1'],
+      f_title: ['T1'],
+    };
+    novel.data['he-thong']['goi-qua'].entities = [
+      { id: 'list-1', name: 'Danh sach goi qua', info: '', dynamicData: {}, milestones: [] },
+      { id: 'a', name: 'Item A', info: '', dynamicData: { f_status: 'S1' }, milestones: [] },
+      { id: 'b', name: 'Item B', info: '', dynamicData: { f_status: 'S2' }, milestones: [] },
+      { id: 'c', name: 'Item C', info: '', dynamicData: { f_title: 'T1' }, milestones: [] },
+    ];
+
+    syncAllCollectionListCards(novel);
+    const info = normalizeAsciiText(String(novel.data['he-thong']['goi-qua'].entities[0].info || ''));
+    const iS2 = info.indexOf('## s2');
+    const iS1 = info.indexOf('## s1');
+    const iT1 = info.indexOf('## t1');
+    expect(iS2).toBeGreaterThan(-1);
+    expect(iS1).toBeGreaterThan(iS2);
+    expect(iT1).toBeGreaterThan(iS1);
   });
 
   it('supports custom AUTO group order from tab config list', () => {

@@ -2230,6 +2230,21 @@ export default function App() {
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
   };
+  const handleSetTabListGroupFieldOrder = (lonId, nhoId, text) => {
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const parsed = linesToSuggestionArray(text).map((line) => String(line || '').trim()).filter(Boolean);
+    if (parsed.length === 0) delete nho.autoListGroupFieldOrder;
+    else nho.autoListGroupFieldOrder = parsed;
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: 'set_list_group_field_order',
+      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+    });
+  };
   const handleSaveTabListGroupOrderToGenreTemplate = (lonId, nhoId, text) => {
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
@@ -2821,6 +2836,7 @@ export default function App() {
     handleSetTabAutoSyncFieldMap,
     handleSetTabListGroupStrategy,
     handleSetTabListGroupOrder,
+    handleSetTabListGroupFieldOrder,
     handleSaveTabListGroupOrderToGenreTemplate,
     handleSetTabMapEntrySuggestions,
     handleMergeTabFieldSuggestionList,

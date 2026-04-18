@@ -68,6 +68,19 @@ export function normalizeListGroupStrategy(value = '') {
   return LIST_GROUP_STRATEGY_VALUES.has(raw) ? raw : 'auto';
 }
 
+/** Thứ tự id trường dùng chung: gom nhóm (ô đầu tiên có giá trị) + gộp list gợi ý cho thứ tự AUTO. Trường không có list gợi ý thì bỏ qua khi gộp. */
+export function normalizeAutoListGroupFieldOrder(tabConfig) {
+  const raw = tabConfig?.autoListGroupFieldOrder;
+  if (!Array.isArray(raw)) return [];
+  return raw.map((x) => safeString(x).trim()).filter(Boolean);
+}
+
+function pickMergeFieldIds(tabConfig, fallbackIds = []) {
+  const custom = normalizeAutoListGroupFieldOrder(tabConfig);
+  if (custom.length > 0) return custom;
+  return Array.isArray(fallbackIds) ? fallbackIds.map((x) => safeString(x).trim()).filter(Boolean) : [];
+}
+
 function computeTierOrder(label) {
   const normalized = normalize(label);
   if (!normalized) return null;
@@ -252,7 +265,7 @@ function getForceLeafLocation(entity) {
   return '';
 }
 
-/** Ghép thứ tự gợi ý từ nhiều fieldId (theo thứ tự ưu tiên), dùng khi chưa khai báo autoListGroupOrder. */
+/** Ghép thứ tự gợi ý từ nhiều fieldId (đúng thứ tự mảng). Trường không có list hoặc list rỗng: bỏ qua. */
 function buildMergedSuggestionOrder(tabConfig = null, fieldIds = []) {
   const lists = tabConfig?.fieldSuggestionLists;
   if (!lists || typeof lists !== 'object') return null;
@@ -262,6 +275,7 @@ function buildMergedSuggestionOrder(tabConfig = null, fieldIds = []) {
   const seen = new Set();
   ids.forEach((fid) => {
     const arr = Array.isArray(lists[fid]) ? lists[fid] : [];
+    if (arr.length === 0) return;
     arr.forEach((item) => {
       const key = normalize(safeString(item).trim());
       if (!key || seen.has(key)) return;
@@ -402,19 +416,29 @@ function resolveOwnerLabel(entity, ownerLookupEntities = []) {
 
 function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentLabel = '', tabConfig = null } = {}) {
   const customGroupOrder = buildCustomGroupOrder(tabConfig);
-  const buildTierStrategy = (getGroupLabel, tierFieldIds = ['f_cap', 'f_status', 'f_title']) => ({
-    kind: 'tier',
-    getGroupLabel,
-    getTierOrder: buildTierSuggestionOrder(tabConfig, tierFieldIds) || undefined,
-  });
-  const buildTextStrategy = (getGroupLabel, kind = 'text', suggestionFieldIds = []) => ({
-    kind,
-    getGroupLabel,
-    getGroupOrder:
-      customGroupOrder ||
-      (suggestionFieldIds.length > 0 ? buildMergedSuggestionOrder(tabConfig, suggestionFieldIds) : null) ||
-      undefined,
-  });
+  const configuredFields = normalizeAutoListGroupFieldOrder(tabConfig);
+  const hasConfiguredFields = configuredFields.length > 0;
+  const labelFromConfigured = (entity) => pickFirstFilled(entity, configuredFields);
+
+  const buildTierStrategy = (getGroupLabel, tierFieldIds = ['f_cap', 'f_status', 'f_title']) => {
+    const mergeIds = pickMergeFieldIds(tabConfig, tierFieldIds);
+    return {
+      kind: 'tier',
+      getGroupLabel: hasConfiguredFields ? labelFromConfigured : getGroupLabel,
+      getTierOrder: buildTierSuggestionOrder(tabConfig, mergeIds) || undefined,
+    };
+  };
+  const buildTextStrategy = (getGroupLabel, kind = 'text', suggestionFieldIds = []) => {
+    const mergeIds = pickMergeFieldIds(tabConfig, suggestionFieldIds);
+    return {
+      kind,
+      getGroupLabel: hasConfiguredFields ? labelFromConfigured : getGroupLabel,
+      getGroupOrder:
+        customGroupOrder ||
+        (mergeIds.length > 0 ? buildMergedSuggestionOrder(tabConfig, mergeIds) : null) ||
+        undefined,
+    };
+  };
   const strategyOverride = normalizeListGroupStrategy(tabConfig?.autoListGroupStrategy || '');
   if (strategyOverride !== 'auto') {
     switch (strategyOverride) {
@@ -427,10 +451,12 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
       case 'location':
         return {
           kind: 'force-location',
-          getGroupLabel: (entity) => pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri', 'f_status']),
+          getGroupLabel: hasConfiguredFields
+            ? labelFromConfigured
+            : (entity) => pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri', 'f_status']),
           getGroupOrder:
             customGroupOrder ||
-            buildMergedSuggestionOrder(tabConfig, ['f_dia_ban', 'f_vi_tri', 'f_status']) ||
+            buildMergedSuggestionOrder(tabConfig, pickMergeFieldIds(tabConfig, ['f_dia_ban', 'f_vi_tri', 'f_status'])) ||
             undefined,
         };
       case 'relation':
@@ -511,31 +537,32 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
   }
 
   if (scope.includes('the luc')) {
+    const mergeIds = pickMergeFieldIds(tabConfig, [
+      'f_loai_to_chuc',
+      'f_to_chuc',
+      'f_loai',
+      'f_title',
+      'f_he_cap_the_luc',
+      'f_he_phan_cap',
+      'f_dia_ban',
+      'f_vi_tri',
+      'f_cap',
+      'f_status',
+    ]);
     return {
       kind: 'force-location',
-      getGroupLabel: (entity) =>
-        pickFirstFilled(entity, ['f_loai_to_chuc', 'f_to_chuc', 'f_loai', 'f_title']) ||
-        getForceRankSystemLabel(entity) ||
-        getForceLeafLocation(entity) ||
-        getForceRankLabel(entity) ||
-        pickFirstFilled(entity, ['f_cap', 'f_status']),
+      getGroupLabel: hasConfiguredFields
+        ? labelFromConfigured
+        : (entity) =>
+            pickFirstFilled(entity, ['f_loai_to_chuc', 'f_to_chuc', 'f_loai', 'f_title']) ||
+            getForceRankSystemLabel(entity) ||
+            getForceLeafLocation(entity) ||
+            getForceRankLabel(entity) ||
+            pickFirstFilled(entity, ['f_cap', 'f_status']),
       compareEntries: compareForceEntries,
       renderEntry: renderForceEntry,
       getGroupOrder:
-        customGroupOrder ||
-        buildMergedSuggestionOrder(tabConfig, [
-          'f_loai_to_chuc',
-          'f_to_chuc',
-          'f_loai',
-          'f_title',
-          'f_he_cap_the_luc',
-          'f_he_phan_cap',
-          'f_dia_ban',
-          'f_vi_tri',
-          'f_cap',
-          'f_status',
-        ]) ||
-        undefined,
+        customGroupOrder || (mergeIds.length > 0 ? buildMergedSuggestionOrder(tabConfig, mergeIds) : null) || undefined,
     };
   }
 

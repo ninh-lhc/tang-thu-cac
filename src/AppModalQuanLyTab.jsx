@@ -80,6 +80,7 @@ export function AppModalQuanLyTab({
   handleSetTabAutoSyncLevels,
   handleSetTabAutoSyncFieldMap,
   handleSetTabListGroupStrategy,
+  handleSetTabListGroupFieldOrder,
   handleSetTabMapEntrySuggestions,
   handleMergeTabFieldSuggestionList,
   handleAddTabTemplateField,
@@ -1156,7 +1157,8 @@ export function AppModalQuanLyTab({
                                         Sắp xếp thẻ Danh Sách
                                       </div>
                                       <div className="text-[12px] text-slate-300 font-serif mt-1">
-                                        Chọn kiểu gom nhóm. Muốn chỉnh list thứ tự riêng thì vào `Khởi tạo thẻ` và bấm nút `Nhóm AUTO`.
+                                        Chọn kiểu gom nhóm; có thể khai báo thứ tự trường (id) gộp list bên dưới. Chi tiết list nhóm
+                                        tĩnh: `Khởi tạo thẻ` → Quy chuẩn nhóm.
                                       </div>
                                     </div>
                                     <div className="text-[11px] text-cyan-300 font-semibold">
@@ -1179,6 +1181,24 @@ export function AppModalQuanLyTab({
                                     <option value="owner">Theo Chủ sở hữu</option>
                                     <option value="text">Theo Text tổng quát</option>
                                   </select>
+                                  <label className="block space-y-1 mt-2">
+                                    <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                      Thứ tự trường (id) — gộp list gợi ý AUTO
+                                    </span>
+                                    <textarea
+                                      key={`ql-field-order-${tabNho.id}-${(tabNho.autoListGroupFieldOrder || []).join('|')}`}
+                                      defaultValue={(tabNho.autoListGroupFieldOrder || []).join('\n')}
+                                      onBlur={(e) =>
+                                        handleSetTabListGroupFieldOrder?.(tabLon.id, tabNho.id, e.target.value)
+                                      }
+                                      rows={3}
+                                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-[11px] text-slate-200 font-mono outline-none focus:border-amber-600/50"
+                                      placeholder={'f_title\nf_status'}
+                                    />
+                                    <span className="text-[10px] text-slate-500 font-serif leading-snug block">
+                                      Mỗi dòng một id. Trường không có list gợi ý: bỏ qua. Để trống = mặc định theo tab.
+                                    </span>
+                                  </label>
                                 </div>
                               </details>
 
