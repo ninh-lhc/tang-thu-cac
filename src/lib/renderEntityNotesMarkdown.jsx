@@ -18,6 +18,7 @@ const IMAGE_LINE_RE = /^!\[(.*?)\]\((.*?)\)$/;
 const QUOTE_LINE_RE = /^\s*>\s?(.*)$/;
 const CALLOUT_MARKER_RE = /^\[!([A-Z_-]+)\](?:\s+(.*))?$/i;
 const LEAD_BOLD_LABEL_RE = /^\*\*((?:(?!\*\*).)+?[:：])\*\*(?:\s+|$)([\s\S]*)$/u;
+const AUTO_SYNC_FOOTER_RE = /^\(?\s*(?:Tự động cập nhật theo|Tu dong cap nhat theo)\b/i;
 
 const CALLOUT_STYLES = {
   violet: {
@@ -296,6 +297,25 @@ function renderBlocksFromLines(lines, context, options = {}) {
         if (!match) break;
         quoteLines.push(match[1]);
         lineIndex += 1;
+      }
+
+      const singleQuoteText = safeString(quoteLines[0]).trim();
+      if (quoteLines.length === 1 && AUTO_SYNC_FOOTER_RE.test(singleQuoteText)) {
+        const jumpProps = buildJumpProps(startIndex + 1);
+        blocks.push(
+          <p
+            key={`${baseKey}-auto-footer-${startIndex}`}
+            data-auto-sync-footer="true"
+            {...jumpProps}
+            className={mergeClassName(
+              jumpProps,
+              'my-3 rounded-xl border border-slate-800/80 bg-slate-950/50 px-3 py-2 text-[11px] italic text-slate-500 font-serif'
+            )}
+          >
+            {processInline(singleQuoteText, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+          </p>
+        );
+        continue;
       }
 
       const markerMatch = safeString(quoteLines[0]).trim().match(CALLOUT_MARKER_RE);

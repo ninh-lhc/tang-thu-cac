@@ -16,6 +16,7 @@ import { parseOwnerTimelineHint } from './autoOwnerMilestone.js';
 import { findEquivalentEntityByName } from './entityNameIdentity.js';
 import { isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
 import { normalizeTabAutoSyncLevelConfig } from './tabAutoSyncLevels.js';
+import { inferForceSystemLabel } from './forceRankLadder.js';
 
 const LEGACY_AUTO_LIST_START = '<!-- AUTO_COLLECTION_LIST:START -->';
 const LEGACY_AUTO_LIST_END = '<!-- AUTO_COLLECTION_LIST:END -->';
@@ -235,6 +236,12 @@ function getForceRankLabel(entity) {
   return safeString(rawRank).trim();
 }
 
+function getForceRankSystemLabel(entity) {
+  const direct = pickFirstFilled(entity, ['f_he_cap_the_luc', 'f_he_phan_cap']);
+  if (safeString(direct).trim()) return safeString(direct).trim();
+  return inferForceSystemLabel(getForceRankLabel(entity));
+}
+
 function getForceLeafLocation(entity) {
   const explicitLocations = splitHierarchyLikeTokens(pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri']));
   if (explicitLocations.length > 0) return safeString(explicitLocations[explicitLocations.length - 1]).trim();
@@ -245,7 +252,33 @@ function getForceLeafLocation(entity) {
   return '';
 }
 
-function buildTierSuggestionOrder(tabConfig = null) {
+/** Ghép thứ tự gợi ý từ nhiều fieldId (theo thứ tự ưu tiên), dùng khi chưa khai báo autoListGroupOrder. */
+function buildMergedSuggestionOrder(tabConfig = null, fieldIds = []) {
+  const lists = tabConfig?.fieldSuggestionLists;
+  if (!lists || typeof lists !== 'object') return null;
+  const ids = Array.isArray(fieldIds) ? fieldIds.map((x) => safeString(x).trim()).filter(Boolean) : [];
+  if (ids.length === 0) return null;
+  const ordered = [];
+  const seen = new Set();
+  ids.forEach((fid) => {
+    const arr = Array.isArray(lists[fid]) ? lists[fid] : [];
+    arr.forEach((item) => {
+      const key = normalize(safeString(item).trim());
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      ordered.push({ raw: item, key });
+    });
+  });
+  if (ordered.length === 0) return null;
+  return (label) => {
+    const n = normalize(label);
+    if (!n) return null;
+    const idx = ordered.findIndex((item) => n === item.key || n.includes(item.key));
+    return idx >= 0 ? idx : null;
+  };
+}
+
+function buildTierSuggestionOrder(tabConfig = null, fieldIds = ['f_cap', 'f_status']) {
   const customOrder = Array.isArray(tabConfig?.autoListGroupOrder) ? tabConfig.autoListGroupOrder : [];
   const customRaw = customOrder.map((v) => safeString(v).trim()).filter(Boolean);
   if (customRaw.length > 0) {
@@ -267,30 +300,7 @@ function buildTierSuggestionOrder(tabConfig = null) {
     }
   }
 
-  const lists = tabConfig?.fieldSuggestionLists;
-  if (!lists || typeof lists !== 'object') return null;
-  const raw = [
-    ...(Array.isArray(lists.f_cap) ? lists.f_cap : []),
-    ...(Array.isArray(lists.f_status) ? lists.f_status : []),
-  ]
-    .map((v) => safeString(v).trim())
-    .filter(Boolean);
-  if (raw.length === 0) return null;
-  const ordered = [];
-  const seen = new Set();
-  raw.forEach((item) => {
-    const key = normalize(item);
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    ordered.push({ raw: item, key });
-  });
-  if (ordered.length === 0) return null;
-  return (label) => {
-    const n = normalize(label);
-    if (!n) return null;
-    const idx = ordered.findIndex((item) => n === item.key || n.includes(item.key));
-    return idx >= 0 ? idx : null;
-  };
+  return buildMergedSuggestionOrder(tabConfig, fieldIds);
 }
 
 function buildCustomGroupOrder(tabConfig = null) {
@@ -316,6 +326,9 @@ function buildCustomGroupOrder(tabConfig = null) {
 }
 
 function compareForceEntries(a, b) {
+  const as = normalize(getForceRankSystemLabel(a));
+  const bs = normalize(getForceRankSystemLabel(b));
+  if (as !== bs) return as.localeCompare(bs, 'vi');
   const ar = parseRankNumber(getForceRankLabel(a));
   const br = parseRankNumber(getForceRankLabel(b));
   const aHasRank = Number.isFinite(ar);
@@ -329,7 +342,10 @@ function renderForceEntry(entity) {
   const name = safeString(entity?.name).trim();
   if (!name) return '';
   const rank = getForceRankLabel(entity);
-  return rank ? `[[${name}]] - ${rank}` : `[[${name}]]`;
+  const system = getForceRankSystemLabel(entity);
+  const location = getForceLeafLocation(entity);
+  const parts = [rank, system, location].filter((item) => safeString(item).trim());
+  return parts.length > 0 ? `[[${name}]] - ${parts.join(' · ')}` : `[[${name}]]`;
 }
 
 function extractOwnerName(rawValue) {
@@ -385,36 +401,57 @@ function resolveOwnerLabel(entity, ownerLookupEntities = []) {
 }
 
 function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentLabel = '', tabConfig = null } = {}) {
-  const customTierOrder = buildTierSuggestionOrder(tabConfig);
   const customGroupOrder = buildCustomGroupOrder(tabConfig);
-  const buildTierStrategy = (getGroupLabel) => ({
+  const buildTierStrategy = (getGroupLabel, tierFieldIds = ['f_cap', 'f_status', 'f_title']) => ({
     kind: 'tier',
     getGroupLabel,
-    getTierOrder: customTierOrder || undefined,
+    getTierOrder: buildTierSuggestionOrder(tabConfig, tierFieldIds) || undefined,
   });
-  const buildTextStrategy = (getGroupLabel, kind = 'text') => ({
+  const buildTextStrategy = (getGroupLabel, kind = 'text', suggestionFieldIds = []) => ({
     kind,
     getGroupLabel,
-    getGroupOrder: customGroupOrder || undefined,
+    getGroupOrder:
+      customGroupOrder ||
+      (suggestionFieldIds.length > 0 ? buildMergedSuggestionOrder(tabConfig, suggestionFieldIds) : null) ||
+      undefined,
   });
   const strategyOverride = normalizeListGroupStrategy(tabConfig?.autoListGroupStrategy || '');
   if (strategyOverride !== 'auto') {
     switch (strategyOverride) {
       case 'title':
-        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title']));
+        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title']), 'text', ['f_title']);
       case 'status':
-        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_status']));
+        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_status']), 'text', ['f_status']);
       case 'rank':
-        return buildTierStrategy((entity) => pickFirstFilled(entity, ['f_cap', 'f_status']));
+        return buildTierStrategy((entity) => pickFirstFilled(entity, ['f_cap', 'f_status']), ['f_cap', 'f_status', 'f_title']);
       case 'location':
-        return { kind: 'force-location', getGroupLabel: (entity) => pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri', 'f_status']) };
+        return {
+          kind: 'force-location',
+          getGroupLabel: (entity) => pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri', 'f_status']),
+          getGroupOrder:
+            customGroupOrder ||
+            buildMergedSuggestionOrder(tabConfig, ['f_dia_ban', 'f_vi_tri', 'f_status']) ||
+            undefined,
+        };
       case 'relation':
-        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_quan_he', 'f_title', 'f_status']));
+        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_quan_he', 'f_title', 'f_status']), 'text', [
+          'f_quan_he',
+          'f_title',
+          'f_status',
+        ]);
       case 'owner':
-        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_chu', 'f_owner', 'f_nguoi_so_huu']));
+        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_chu', 'f_owner', 'f_nguoi_so_huu']), 'text', [
+          'f_chu',
+          'f_owner',
+          'f_nguoi_so_huu',
+        ]);
       case 'text':
       default:
-        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']));
+        return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']), 'text', [
+          'f_title',
+          'f_cap',
+          'f_status',
+        ]);
     }
   }
 
@@ -422,7 +459,11 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
 
   if (scope.includes('di thuoc tinh')) {
     return {
-      ...buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title', 'f_loai', 'f_status']), 'attribute'),
+      ...buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title', 'f_loai', 'f_status']), 'attribute', [
+        'f_title',
+        'f_loai',
+        'f_status',
+      ]),
     };
   }
 
@@ -440,24 +481,32 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
     scope.includes('thien tai dia bao') ||
     scope.includes('tai nguyen')
   ) {
-    return buildTierStrategy((entity) => pickFirstFilled(entity, ['f_cap', 'f_status', 'f_title']));
+    return buildTierStrategy((entity) => pickFirstFilled(entity, ['f_cap', 'f_status', 'f_title']), [
+      'f_cap',
+      'f_status',
+      'f_title',
+    ]);
   }
 
   if (scope.includes('canh gioi')) {
     return {
-      ...buildTextStrategy((entity) => pickFirstFilled(entity, ['f_status', 'f_title'])),
+      ...buildTextStrategy((entity) => pickFirstFilled(entity, ['f_status', 'f_title']), 'text', ['f_status', 'f_title']),
     };
   }
 
   if (scope.includes('he thong tu luyen')) {
     return {
-      ...buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title', 'f_status'])),
+      ...buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title', 'f_status']), 'text', ['f_title', 'f_status']),
     };
   }
 
   if (scope.includes('nhan vat')) {
     return {
-      ...buildTextStrategy((entity) => pickFirstFilled(entity, ['f_quan_he', 'f_title', 'f_status'])),
+      ...buildTextStrategy((entity) => pickFirstFilled(entity, ['f_quan_he', 'f_title', 'f_status']), 'text', [
+        'f_quan_he',
+        'f_title',
+        'f_status',
+      ]),
     };
   }
 
@@ -465,22 +514,46 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
     return {
       kind: 'force-location',
       getGroupLabel: (entity) =>
+        pickFirstFilled(entity, ['f_loai_to_chuc', 'f_to_chuc', 'f_loai', 'f_title']) ||
+        getForceRankSystemLabel(entity) ||
         getForceLeafLocation(entity) ||
         getForceRankLabel(entity) ||
-        pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']),
+        pickFirstFilled(entity, ['f_cap', 'f_status']),
       compareEntries: compareForceEntries,
       renderEntry: renderForceEntry,
-      getGroupOrder: customGroupOrder || undefined,
+      getGroupOrder:
+        customGroupOrder ||
+        buildMergedSuggestionOrder(tabConfig, [
+          'f_loai_to_chuc',
+          'f_to_chuc',
+          'f_loai',
+          'f_title',
+          'f_he_cap_the_luc',
+          'f_he_phan_cap',
+          'f_dia_ban',
+          'f_vi_tri',
+          'f_cap',
+          'f_status',
+        ]) ||
+        undefined,
     };
   }
 
   if (scope.includes('ban do') || scope.includes('dia danh') || scope.includes('bi canh')) {
     return {
-      ...buildTextStrategy((entity) => getMapDirectParent(entity) || pickFirstFilled(entity, ['f_title', 'f_status'])),
+      ...buildTextStrategy(
+        (entity) => getMapDirectParent(entity) || pickFirstFilled(entity, ['f_title', 'f_status']),
+        'text',
+        ['f_title', 'f_status', 'f_vi_tri', 'f_he_gioi_ban_do']
+      ),
     };
   }
 
-  return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']));
+  return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']), 'text', [
+    'f_title',
+    'f_cap',
+    'f_status',
+  ]);
 }
 
 function computeGroupOrder(kind, label, strategy = null) {

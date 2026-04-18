@@ -25,6 +25,9 @@ export function normalizeTabAutoSyncLevelConfig(value) {
     const hasExplicit = Object.prototype.hasOwnProperty.call(rawLevels, levelKey);
     levels[levelKey] = hasExplicit ? Boolean(rawLevels[levelKey]) : DEFAULT_LEVELS[levelKey];
   });
+  // Bậc 1–2 luôn bật: AUTO trong thẻ + thẻ Danh sách cùng tab — không cho tắt qua levels.
+  levels[AUTO_SYNC_LEVEL_1] = true;
+  levels[AUTO_SYNC_LEVEL_2] = true;
   return {
     enabled: raw.enabled !== false,
     levels,

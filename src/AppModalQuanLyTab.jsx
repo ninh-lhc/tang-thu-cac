@@ -898,8 +898,8 @@ export function AppModalQuanLyTab({
                                       AUTO nâng cao (bậc 3-4)
                                     </div>
                                     <div className="text-[12px] text-slate-300 font-serif mt-1">
-                                      Bậc 1-2 mặc định giữ AUTO nội bộ cho chính thẻ và thẻ Danh Sách cùng tab.
-                                      Chỉ cần chỉnh bậc 3-4 khi muốn lan truyền dữ liệu liên tab/timeline.
+                                      Bậc 1–2 <strong className="text-emerald-200/90">luôn bật</strong> (AUTO trong thẻ + thẻ Danh sách
+                                      cùng tab), không tắt được. Chỉ chỉnh bậc 3–4 khi cần liên tab / timeline.
                                     </div>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2">
@@ -1310,35 +1310,54 @@ export function AppModalQuanLyTab({
                                               </div>
                                             );
                                           })}
-                                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-900/35 bg-slate-950/55 px-2.5 py-2">
+                                          <div className="space-y-2 rounded-lg border border-amber-900/35 bg-slate-950/55 px-2.5 py-2">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                              <label className="inline-flex cursor-pointer items-start gap-2 text-[11px] text-slate-300 font-serif leading-snug">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={tabNho.entityQuickEntry?.dualFirstRow === true}
+                                                  onChange={(e) =>
+                                                    handleSetTabEntityQuickEntry?.(tabLon.id, tabNho.id, configured, labelSlots, {
+                                                      dualFirstRow: e.target.checked,
+                                                    })
+                                                  }
+                                                  className="mt-0.5 rounded border-slate-600"
+                                                />
+                                                <span>
+                                                  Hai ô đầu <strong className="text-amber-200">song song</strong> (hai ô đầu hiển thị cạnh
+                                                  nhau).
+                                                </span>
+                                              </label>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  const next = [configured[1], configured[0], configured[2]];
+                                                  const nextLabels = [labelSlots[1], labelSlots[0], labelSlots[2]];
+                                                  handleSetTabEntityQuickEntry?.(tabLon.id, tabNho.id, next, nextLabels);
+                                                }}
+                                                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-800/50 bg-amber-950/40 px-2.5 py-1.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/50"
+                                                title="Hoán đổi trường và nhãn của ô 1 và ô 2"
+                                              >
+                                                <ArrowLeftRight size={14} /> Đổi chỗ ô 1 ↔ 2
+                                              </button>
+                                            </div>
                                             <label className="inline-flex cursor-pointer items-start gap-2 text-[11px] text-slate-300 font-serif leading-snug">
                                               <input
                                                 type="checkbox"
-                                                checked={tabNho.entityQuickEntry?.dualFirstRow === true}
+                                                checked={tabNho.entityQuickEntry?.useSelectUi === true}
                                                 onChange={(e) =>
                                                   handleSetTabEntityQuickEntry?.(tabLon.id, tabNho.id, configured, labelSlots, {
-                                                    dualFirstRow: e.target.checked,
+                                                    dualFirstRow: tabNho.entityQuickEntry?.dualFirstRow === true,
+                                                    useSelectUi: e.target.checked,
                                                   })
                                                 }
                                                 className="mt-0.5 rounded border-slate-600"
                                               />
                                               <span>
-                                                Hai ô đầu <strong className="text-amber-200">song song</strong> (hai list gợi ý cạnh
-                                                nhau — vẫn gõ tay / datalist như cũ).
+                                                Dùng <strong className="text-amber-200">menu chọn (select)</strong> cho 3 ô (kèm ô gõ tay
+                                                dưới mỗi ô); tắt = gõ + gợi ý datalist như mặc định.
                                               </span>
                                             </label>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                const next = [configured[1], configured[0], configured[2]];
-                                                const nextLabels = [labelSlots[1], labelSlots[0], labelSlots[2]];
-                                                handleSetTabEntityQuickEntry?.(tabLon.id, tabNho.id, next, nextLabels);
-                                              }}
-                                              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-800/50 bg-amber-950/40 px-2.5 py-1.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/50"
-                                              title="Hoán đổi trường và nhãn của ô 1 và ô 2"
-                                            >
-                                              <ArrowLeftRight size={14} /> Đổi chỗ ô 1 ↔ 2
-                                            </button>
                                           </div>
                                         </div>
                                       );

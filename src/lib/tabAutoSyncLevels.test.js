@@ -13,18 +13,19 @@ describe('tabAutoSyncLevels', () => {
     });
   });
 
-  it('normalizes partial config safely', () => {
+  it('always keeps AUTO 1–2 on even when legacy config tried to turn them off', () => {
     const cfg = getEffectiveTabAutoSyncLevelConfig({
       autoSyncLevelConfig: {
         enabled: false,
         levels: {
+          level_1_card: false,
           level_2_list: false,
         },
       },
     });
     expect(cfg.enabled).toBe(false);
     expect(cfg.levels.level_1_card).toBe(true);
-    expect(cfg.levels.level_2_list).toBe(false);
+    expect(cfg.levels.level_2_list).toBe(true);
     expect(cfg.levels.level_3_linked).toBe(false);
     expect(cfg.levels.level_4_timeline).toBe(false);
   });

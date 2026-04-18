@@ -377,6 +377,8 @@ describe('collectionListCardSync', () => {
                 name: 'A Lang Điện',
                 info: '',
                 dynamicData: {
+                  f_loai_to_chuc: 'Tông Môn',
+                  f_he_cap_the_luc: 'Tiên Ma giới',
                   f_status: 'Địa Tôn cấp thế lực',
                   f_dia_ban: 'Tiên giới - Trung Tiên giới - Hoang Thú giới',
                 },
@@ -387,6 +389,8 @@ describe('collectionListCardSync', () => {
                 name: 'Z Bách Cung',
                 info: '',
                 dynamicData: {
+                  f_loai_to_chuc: 'Tông Môn',
+                  f_he_cap_the_luc: 'Tiên Ma giới',
                   f_status: 'Thiên Tôn cấp thế lực',
                   f_dia_ban: 'Tiên giới - Trung Tiên giới - Hoang Thú giới',
                 },
@@ -397,6 +401,8 @@ describe('collectionListCardSync', () => {
                 name: 'Thanh Vân Các',
                 info: '',
                 dynamicData: {
+                  f_loai_to_chuc: 'Tông Môn',
+                  f_he_cap_the_luc: 'Tiên Ma giới',
                   f_status: 'Thiên Vương cấp thế lực',
                   f_dia_ban: 'Tiên giới - Trung Tiên giới - Dạ Lang Tiên Tinh',
                 },
@@ -410,16 +416,14 @@ describe('collectionListCardSync', () => {
 
     syncAllCollectionListCards(novel);
     const info = String(novel.data['the-luc']['tong-mon'].entities[0].info || '');
-    const idxHoangThu = info.indexOf('## Hoang Thú giới (2)');
-    const idxDaLang = info.indexOf('## Dạ Lang Tiên Tinh (1)');
-    const idxThienTon = info.indexOf('1. [[Z Bách Cung]] - Thiên Tôn cấp thế lực');
-    const idxDiaTon = info.indexOf('2. [[A Lang Điện]] - Địa Tôn cấp thế lực');
+    const idxTongMon = info.indexOf('## Tông Môn (3)');
+    const idxThienTon = info.indexOf('1. [[Z Bách Cung]] - Thiên Tôn cấp thế lực · Tiên Ma giới · Hoang Thú giới');
+    const idxDiaTon = info.indexOf('2. [[A Lang Điện]] - Địa Tôn cấp thế lực · Tiên Ma giới · Hoang Thú giới');
 
-    expect(idxHoangThu).toBeGreaterThan(-1);
-    expect(idxDaLang).toBeGreaterThan(-1);
-    expect(idxThienTon).toBeGreaterThan(idxHoangThu);
+    expect(idxTongMon).toBeGreaterThan(-1);
+    expect(idxThienTon).toBeGreaterThan(idxTongMon);
     expect(idxDiaTon).toBeGreaterThan(idxThienTon);
-    expect(info).toContain('1. [[Thanh Vân Các]] - Thiên Vương cấp thế lực');
+    expect(info).toContain('3. [[Thanh Vân Các]] - Thiên Vương cấp thế lực · Tiên Ma giới · Dạ Lang Tiên Tinh');
   });
 
   it('supports explicit list grouping strategy override per tab', () => {
@@ -433,6 +437,35 @@ describe('collectionListCardSync', () => {
     const info = String(novel.data['he-thong']['goi-qua'].entities[0].info || '');
     expect(info).toContain('## Lac Nam (37) ? (1)');
     expect(info).toContain('## Vân Y (12) ? (1)');
+  });
+
+  it('orders title groups by fieldSuggestionLists when strategy is title', () => {
+    const novel = buildNovel();
+    novel.tabsConfig[1].subTabs[0].autoListGroupStrategy = 'title';
+    novel.tabsConfig[1].subTabs[0].fieldSuggestionLists = {
+      f_title: ['Loại Z', 'Loại A', 'Loại M'],
+    };
+    novel.data['he-thong']['goi-qua'].entities = [
+      {
+        id: 'list-1',
+        name: 'Danh sach goi qua',
+        info: 'Ghi chu tay',
+        dynamicData: {},
+        milestones: [],
+      },
+      { id: 'g-a', name: 'Item A', info: '', dynamicData: { f_title: 'Loại A' }, milestones: [] },
+      { id: 'g-z', name: 'Item Z', info: '', dynamicData: { f_title: 'Loại Z' }, milestones: [] },
+      { id: 'g-m', name: 'Item M', info: '', dynamicData: { f_title: 'Loại M' }, milestones: [] },
+    ];
+
+    syncAllCollectionListCards(novel);
+    const info = normalizeAsciiText(String(novel.data['he-thong']['goi-qua'].entities[0].info || ''));
+    const iZ = info.indexOf('## loai z');
+    const iA = info.indexOf('## loai a');
+    const iM = info.indexOf('## loai m');
+    expect(iZ).toBeGreaterThan(-1);
+    expect(iA).toBeGreaterThan(iZ);
+    expect(iM).toBeGreaterThan(iA);
   });
 
   it('supports custom rank order from field suggestion lists', () => {

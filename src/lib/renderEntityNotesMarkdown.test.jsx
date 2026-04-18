@@ -187,4 +187,26 @@ describe('renderEntityNotesMarkdown', () => {
     expect(container.textContent).toContain('Canh bao');
     expect(container.textContent).toContain('Dieu can nho');
   });
+
+  it('renders auto-sync footer quote as subtle footer note', () => {
+    const sample = [
+      '## AUTO',
+      '',
+      '> (Tự động cập nhật theo Thế Lực ↔ Bản đồ)',
+    ].join('\n');
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(
+          sample,
+          null,
+          [],
+          null,
+          vi.fn(),
+        )}
+      </div>
+    );
+
+    expect(container.querySelector('[data-auto-sync-footer="true"]')).not.toBeNull();
+    expect(container.querySelector('blockquote')).toBeNull();
+  });
 });

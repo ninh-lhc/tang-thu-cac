@@ -1,7 +1,7 @@
 /**
  * Ba ô gợi ý nhanh khi Khởi tạo thẻ (tab không phải Bản đồ / Thế lực).
  * Kết hợp entityQuickEntry trên tab + fieldSuggestionLists + seed theo thể loại & tên tab.
- * `entityQuickEntry.dualFirstRow`: hai ô đầu hiển thị song song (vd. f_cap = cấp bậc, f_status = phẩm chất).
+ * `entityQuickEntry.dualFirstRow`: cờ lịch sử; modal Khởi tạo thẻ luôn bố cục 3 cột giống tab Bản đồ (Quản lý tab vẫn có thể bật để ghi nhớ).
  */
 import { resolveMapFieldPresetFlavor, MAP_FIELD_PRESET_FLAVOR } from './mapEntityFieldPresets.js';
 import { normalizeAsciiText } from './statusHierarchyParser.js';

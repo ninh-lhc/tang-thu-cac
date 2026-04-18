@@ -238,6 +238,41 @@ describe('theLucBanDoSync', () => {
     expect(planetInfo).toContain('1. [[Lạc Gia]] - Bát Cấp Thế Lực - Băng Thiên Đại Lục > Việt Long Tinh Cầu');
   });
 
+  it('includes explicit rank-system field in force AUTO block and map list lines', () => {
+    const nov = {
+      tabsConfig: [
+        { id: 'the-luc', label: 'Thế Lực', subTabs: [{ id: 'tong-mon', label: 'Tông Môn', viewType: 'collection-track' }] },
+        { id: 'tai-nguyen', label: 'Tài Nguyên', subTabs: [{ id: 'dia-danh', label: 'Bản đồ / Bí cảnh', viewType: 'collection-track' }] },
+      ],
+      data: {
+        'the-luc': {
+          'tong-mon': {
+            overview: '',
+            entities: [
+              {
+                id: 'tl1',
+                name: 'Bá Việt Tông',
+                dynamicData: {
+                  f_loai_to_chuc: 'Tông Môn',
+                  f_he_cap_the_luc: 'Nguyên giới',
+                  f_status: 'Thiên Đế cấp thế lực',
+                  f_dia_ban: 'Tây Châu - Nguyên Giới',
+                },
+                info: '',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    expect(syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' })).toBe(true);
+    const forceInfo = String(nov.data['the-luc']['tong-mon'].entities[0].info || '');
+    expect(forceInfo).toContain('Hệ Cấp Bậc: Nguyên giới');
+    const mapEntity = nov.data['tai-nguyen']['dia-danh'].entities.find((item) => item.name === 'Tây Châu');
+    expect(String(mapEntity?.info || '')).toContain('[[Bá Việt Tông]] - Thiên Đế cấp thế lực (Nguyên giới)');
+  });
+
   it('rebuilds map auto blocks when location changes or force deleted', () => {
     const nov = {
       tabsConfig: [

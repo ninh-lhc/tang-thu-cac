@@ -163,13 +163,15 @@ function dedupeNameList(list) {
   return out;
 }
 
-function buildForceMeta(orgType, rankText, locations) {
+function buildForceMeta(orgType, rankText, locations, realmSystem = '') {
   const org = safeString(orgType).trim();
   const rank = safeString(rankText).trim();
+  const system = safeString(realmSystem).trim();
   const locs = dedupeNameList(locations);
   if (!org || !rank || locs.length === 0) return null;
   return {
     orgType: org,
+    realmSystem: system,
     rankText: rank,
     rankNum: parseRankNumber(rank),
     locations: locs,
@@ -216,19 +218,19 @@ function splitLocationTokens(locationText) {
   return dedupeNameList(splitStatusParts(raw));
 }
 
-function parseForceStatus(statusText, { fallbackOrgType = '' } = {}) {
+function parseForceStatus(statusText, { fallbackOrgType = '', fallbackRealmSystem = '' } = {}) {
   const parts = splitStatusParts(statusText);
   const fallbackType = safeString(fallbackOrgType).trim();
   if (parts.length === 0) return null;
 
   if (parts.length >= 3 && !isLikelyRankText(parts[0])) {
-    return buildForceMeta(parts[0], parts[1], parts.slice(2));
+    return buildForceMeta(parts[0], parts[1], parts.slice(2), fallbackRealmSystem);
   }
   if (fallbackType && parts.length >= 2 && isLikelyRankText(parts[0])) {
-    return buildForceMeta(fallbackType, parts[0], parts.slice(1));
+    return buildForceMeta(fallbackType, parts[0], parts.slice(1), fallbackRealmSystem);
   }
   if (parts.length >= 3) {
-    return buildForceMeta(parts[0], parts[1], parts.slice(2));
+    return buildForceMeta(parts[0], parts[1], parts.slice(2), fallbackRealmSystem);
   }
   return null;
 }
@@ -242,11 +244,14 @@ function parseForceMetaFromEntity(entity, context = {}) {
     sourceNhoLabel: context.sourceNhoLabel,
     typeFieldValue: getEntityAutoFieldValue(entity, autoCtx, 'type'),
   });
+  const fallbackRealmSystem =
+    getEntityAutoFieldValue(entity, autoCtx, 'rank_system') ||
+    safeString(dyn.f_he_cap_the_luc || dyn.f_he_phan_cap).trim();
 
   const statusLine =
     getEntityAutoFieldValue(entity, autoCtx, 'status', { fallbackToStatus: true }) ||
     safeString(dyn.f_status || entity?.status).trim();
-  const statusMeta = parseForceStatus(statusLine, { fallbackOrgType });
+  const statusMeta = parseForceStatus(statusLine, { fallbackOrgType, fallbackRealmSystem });
   if (statusMeta) return statusMeta;
 
   const rankFromStatus =
@@ -261,7 +266,7 @@ function parseForceMetaFromEntity(entity, context = {}) {
     safeString(dyn.f_dia_ban || dyn.f_vi_tri).trim();
   const locations = splitLocationTokens(locationText);
   if (!rankText || locations.length === 0) return null;
-  return buildForceMeta(fallbackOrgType, rankText, locations);
+  return buildForceMeta(fallbackOrgType, rankText, locations, fallbackRealmSystem);
 }
 
 function detectLocationLevelName(loc) {
@@ -316,13 +321,15 @@ function buildMapAutoBlockLines(locationName, rows, { detailedLayout, duplicateN
       sectionLines.push('');
       sectionLines.push(`## ${g}`);
       list.forEach((r) => {
-        sectionLines.push(`- [[${buildForceWikiLabel(r, duplicateNameCounts)}]] - ${r.meta.rankText}`);
+        const realmSuffix = safeString(r?.meta?.realmSystem).trim() ? ` (${r.meta.realmSystem})` : '';
+        sectionLines.push(`- [[${buildForceWikiLabel(r, duplicateNameCounts)}]] - ${r.meta.rankText}${realmSuffix}`);
       });
       return;
     }
     sectionLines.push(`### ${g}`);
     list.forEach((r, idx) => {
-      sectionLines.push(`${idx + 1}. [[${buildForceWikiLabel(r, duplicateNameCounts)}]] - ${r.meta.rankText} - ${r.meta.tailPath}`);
+      const realmSuffix = safeString(r?.meta?.realmSystem).trim() ? ` (${r.meta.realmSystem})` : '';
+      sectionLines.push(`${idx + 1}. [[${buildForceWikiLabel(r, duplicateNameCounts)}]] - ${r.meta.rankText}${realmSuffix} - ${r.meta.tailPath}`);
     });
   });
 
@@ -332,6 +339,7 @@ function buildMapAutoBlockLines(locationName, rows, { detailedLayout, duplicateN
 function buildForceMetaBlockLines(meta) {
   return [
     `Loại Hình: ${meta.orgType}`,
+    ...(safeString(meta.realmSystem).trim() ? [`Hệ Cấp Bậc: ${meta.realmSystem}`] : []),
     `Cấp Bậc: ${meta.rankText}`,
     'Vị Trí:',
     ...buildLocationHierarchyLines(meta.locations),

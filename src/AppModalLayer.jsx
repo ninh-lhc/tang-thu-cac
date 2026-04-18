@@ -169,6 +169,11 @@ export function AppModalLayer({
         onSetTabListGroupStrategy={handleSetTabListGroupStrategy}
         onSetTabListGroupOrder={handleSetTabListGroupOrder}
         onSaveTabListGroupOrderToGenreTemplate={handleSaveTabListGroupOrderToGenreTemplate}
+        onSetTabMapEntrySuggestions={handleSetTabMapEntrySuggestions}
+        handleAddTabTemplateField={handleAddTabTemplateField}
+        handleRemoveTabTemplateField={handleRemoveTabTemplateField}
+        handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
+        handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
         onSave={handleSaveEntity}
         initialData={editingEntityData}
         tabConfig={currentTabConfig}
@@ -179,6 +184,7 @@ export function AppModalLayer({
         dirHandle={currentContextDirHandle}
         parentTabId={activeTabLon}
         parentLabel={currentTabConfig?._parentLabel}
+        showToast={showToast}
         geminiApiKey={geminiApiKeys}
         geminiMode={aiMode}
       />

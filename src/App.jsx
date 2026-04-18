@@ -2264,31 +2264,50 @@ export default function App() {
     showToast(`Đã lưu list cho tab này và cập nhật luôn mẫu thể loại: ${genres.join(', ')}.`, 'success');
   };
 
-  const handleSetTabMapEntrySuggestions = (lonId, nhoId, which, text) => {
+  const handleSetTabMapEntrySuggestions = (lonId, nhoId, which, text, options = {}) => {
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
     if (!nho || nho.viewType !== 'collection-track') return;
-    const prev = nho.mapEntrySuggestions && typeof nho.mapEntrySuggestions === 'object' ? nho.mapEntrySuggestions : {};
-    const prevTypes = Array.isArray(prev.types) ? prev.types : [];
-    const prevHierarchy = Array.isArray(prev.hierarchy) ? prev.hierarchy : [];
-    const types = which === 'types' ? linesToSuggestionArray(text) : prevTypes;
-    const hierarchy = which === 'hierarchy' ? linesToSuggestionArray(text) : prevHierarchy;
-    const next = {};
-    if (types.length) next.types = types;
-    if (hierarchy.length) next.hierarchy = hierarchy;
-    if (Object.keys(next).length === 0) delete nho.mapEntrySuggestions;
-    else nho.mapEntrySuggestions = next;
+    const applyToOne = (targetNho) => {
+      const prev =
+        targetNho.mapEntrySuggestions && typeof targetNho.mapEntrySuggestions === 'object' ? targetNho.mapEntrySuggestions : {};
+      const prevTypes = Array.isArray(prev.types) ? prev.types : [];
+      const prevHierarchy = Array.isArray(prev.hierarchy) ? prev.hierarchy : [];
+      const types = which === 'types' ? linesToSuggestionArray(text) : prevTypes;
+      const hierarchy = which === 'hierarchy' ? linesToSuggestionArray(text) : prevHierarchy;
+      const next = {};
+      if (types.length) next.types = types;
+      if (hierarchy.length) next.hierarchy = hierarchy;
+      if (Object.keys(next).length === 0) delete targetNho.mapEntrySuggestions;
+      else targetNho.mapEntrySuggestions = next;
+    };
+    applyToOne(nho);
+    if (options?.propagateWithinMapLon) {
+      (lon?.subTabs || []).forEach((sub) => {
+        if (!sub || sub.id === nhoId || sub.viewType !== 'collection-track') return;
+        if (!isMapCollectionScope({ activeTabLon: lonId, activeTabNho: sub.id, currentTabConfig: sub, parentLabel: lon?.label || '' })) return;
+        applyToOne(sub);
+      });
+    }
     setTabsConfig(current, { resyncAuto: false });
+    if (options?.saveToGenreTemplate) {
+      const genres = Array.isArray(activeNovelData?.genres)
+        ? activeNovelData.genres.filter(Boolean)
+        : typeof activeNovelData?.genres === 'string'
+          ? [activeNovelData.genres]
+          : activeNovelData?.genre
+            ? [activeNovelData.genre]
+            : [];
+      if (genres.length > 0) {
+        saveGenreTabsTemplate(genres, current);
+      }
+    }
   };
 
-  const handleMergeTabFieldSuggestionList = (lonId, nhoId, fieldId, text) => {
-    const current = structuredClone(getTabsToUpdate());
-    const lon = current.find((tab) => tab.id === lonId);
-    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
-    if (!nho || nho.viewType !== 'collection-track') return;
+  const applyFieldSuggestionMergeToNho = (nho, fieldId, text) => {
     const fid = safeString(fieldId).trim();
-    if (!fid) return;
+    if (!fid || !nho || nho.viewType !== 'collection-track') return;
     const parsed = linesToSuggestionArray(text);
     const base = {
       ...(nho.fieldSuggestionLists && typeof nho.fieldSuggestionLists === 'object' ? nho.fieldSuggestionLists : {}),
@@ -2298,55 +2317,95 @@ export default function App() {
     const normalized = normalizeFieldSuggestionLists(base);
     if (Object.keys(normalized).length === 0) delete nho.fieldSuggestionLists;
     else nho.fieldSuggestionLists = normalized;
-    setTabsConfig(current, { resyncAuto: false });
   };
 
-  const handleAddTabTemplateField = (lonId, nhoId, label) => {
+  const handleMergeTabFieldSuggestionList = (lonId, nhoId, fieldId, text, options = {}) => {
+    const propagate = Boolean(options?.propagateWithinLon);
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const fid = safeString(fieldId).trim();
+    if (!fid) return;
+    const targets = propagate
+      ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
+      : [nho];
+    targets.forEach((sub) => applyFieldSuggestionMergeToNho(sub, fid, text));
+    setTabsConfig(current, {
+      resyncAuto: false,
+    });
+  };
+
+  const handleAddTabTemplateField = (lonId, nhoId, label, options = {}) => {
+    const propagate = Boolean(options?.propagateWithinLon);
     const L = safeString(label).trim();
     if (!L) return;
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
     if (!nho || nho.viewType !== 'collection-track') return;
-    const fields = ensureWikiAliasInFieldsTemplate(nho.fieldsTemplate || []);
     const newId = `f_tc_${generateId('tc')}`;
-    const idx = fields.findIndex((f) => f.id === 'f_alias');
     const newField = { id: newId, label: L };
-    const nextFields = idx === -1 ? [...fields, newField] : [...fields.slice(0, idx), newField, ...fields.slice(idx)];
-    nho.fieldsTemplate = nextFields;
+    const targets = propagate
+      ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
+      : [nho];
+    targets.forEach((sub) => {
+      const fields = ensureWikiAliasInFieldsTemplate(sub.fieldsTemplate || []);
+      if (fields.some((f) => f.id === newId)) return;
+      const idx = fields.findIndex((f) => f.id === 'f_alias');
+      const nextFields = idx === -1 ? [...fields, newField] : [...fields.slice(0, idx), newField, ...fields.slice(idx)];
+      sub.fieldsTemplate = nextFields;
+    });
     setTabsConfig(current, {
       resyncAuto: true,
-      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
-      autoSyncReason: 'tab_add_field',
-      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+      autoSyncPlan: propagate ? buildFullAutoSyncPlan() : buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: propagate ? 'tab_propagate_add_field' : 'tab_add_field',
+      autoSyncScopeLabel: propagate ? safeString(lon?.label || lonId) : buildTabScopeLabel(lonId, nhoId, current),
     });
+    if (propagate) {
+      showToast(`Đã thêm trường vào mọi tab thu thập trong «${safeString(lon?.label || lonId)}».`, 'success');
+    }
   };
 
-  const handleRemoveTabTemplateField = (lonId, nhoId, fieldId) => {
+  const handleRemoveTabTemplateField = (lonId, nhoId, fieldId, options = {}) => {
+    const propagate = Boolean(options?.propagateWithinLon);
     const fid = safeString(fieldId).trim();
     if (!fid || fid === 'f_alias') return;
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
     if (!nho || nho.viewType !== 'collection-track') return;
-    const filtered = sanitizeFieldsTemplate((nho.fieldsTemplate || []).filter((f) => f.id !== fid));
-    nho.fieldsTemplate = ensureWikiAliasInFieldsTemplate(filtered);
-    if (nho.fieldSuggestionLists?.[fid]) {
-      const nextLists = { ...nho.fieldSuggestionLists };
-      delete nextLists[fid];
-      const normalized = normalizeFieldSuggestionLists(nextLists);
-      if (Object.keys(normalized).length === 0) delete nho.fieldSuggestionLists;
-      else nho.fieldSuggestionLists = normalized;
-    }
+    const targets = propagate
+      ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
+      : [nho];
+    targets.forEach((sub) => {
+      const filtered = sanitizeFieldsTemplate((sub.fieldsTemplate || []).filter((f) => f.id !== fid));
+      sub.fieldsTemplate = ensureWikiAliasInFieldsTemplate(filtered);
+      if (sub.fieldSuggestionLists?.[fid]) {
+        const nextLists = { ...sub.fieldSuggestionLists };
+        delete nextLists[fid];
+        const normalized = normalizeFieldSuggestionLists(nextLists);
+        if (Object.keys(normalized).length === 0) delete sub.fieldSuggestionLists;
+        else sub.fieldSuggestionLists = normalized;
+      }
+      const eq = sub.entityQuickEntry;
+      if (eq && Array.isArray(eq.slotFields) && eq.slotFields.includes(fid)) {
+        delete sub.entityQuickEntry;
+      }
+    });
     setTabsConfig(current, {
       resyncAuto: true,
-      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
-      autoSyncReason: 'tab_remove_field',
-      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+      autoSyncPlan: propagate ? buildFullAutoSyncPlan() : buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: propagate ? 'tab_propagate_remove_field' : 'tab_remove_field',
+      autoSyncScopeLabel: propagate ? safeString(lon?.label || lonId) : buildTabScopeLabel(lonId, nhoId, current),
     });
+    if (propagate) {
+      showToast(`Đã xóa trường khỏi mọi tab thu thập trong «${safeString(lon?.label || lonId)}».`, 'success');
+    }
   };
 
-  const handleRenameTabTemplateFieldLabel = (lonId, nhoId, fieldId, nextLabel) => {
+  const handleRenameTabTemplateFieldLabel = (lonId, nhoId, fieldId, nextLabel, options = {}) => {
+    const propagate = Boolean(options?.propagateWithinLon);
     const fid = safeString(fieldId).trim();
     if (!fid) return;
     const current = structuredClone(getTabsToUpdate());
@@ -2354,14 +2413,24 @@ export default function App() {
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
     if (!nho || nho.viewType !== 'collection-track') return;
     const L = safeString(nextLabel).trim();
-    const nextFields = (nho.fieldsTemplate || []).map((f) => (f.id === fid ? { ...f, label: L || f.id } : f));
-    nho.fieldsTemplate = ensureWikiAliasInFieldsTemplate(nextFields);
+    const targets = propagate
+      ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
+      : [nho];
+    targets.forEach((sub) => {
+      const hasField = (sub.fieldsTemplate || []).some((f) => f.id === fid);
+      if (!hasField) return;
+      const nextFields = (sub.fieldsTemplate || []).map((f) => (f.id === fid ? { ...f, label: L || f.id } : f));
+      sub.fieldsTemplate = ensureWikiAliasInFieldsTemplate(nextFields);
+    });
     setTabsConfig(current, {
       resyncAuto: true,
-      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
-      autoSyncReason: 'tab_rename_field',
-      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+      autoSyncPlan: propagate ? buildFullAutoSyncPlan() : buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: propagate ? 'tab_propagate_rename_field' : 'tab_rename_field',
+      autoSyncScopeLabel: propagate ? safeString(lon?.label || lonId) : buildTabScopeLabel(lonId, nhoId, current),
     });
+    if (propagate) {
+      showToast(`Đã đổi nhãn trường trên mọi tab thu thập trong «${safeString(lon?.label || lonId)}».`, 'success');
+    }
   };
 
   const handleSetTabEntityQuickEntry = (lonId, nhoId, slotFields, slotLabels, options = {}) => {
@@ -2382,6 +2451,9 @@ export default function App() {
     };
     if (options && typeof options === 'object' && 'dualFirstRow' in options) {
       nho.entityQuickEntry.dualFirstRow = Boolean(options.dualFirstRow);
+    }
+    if (options && typeof options === 'object' && 'useSelectUi' in options) {
+      nho.entityQuickEntry.useSelectUi = Boolean(options.useSelectUi);
     }
     setTabsConfig(current, { resyncAuto: false });
   };

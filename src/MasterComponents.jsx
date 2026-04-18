@@ -6,7 +6,7 @@
 
 import React, { useState, useMemo, useEffect, useRef, memo, useSyncExternalStore, useCallback, useId } from 'react';
 import {
-  Menu, Search, BookOpen, Filter, ChevronRight, ChevronDown,
+  Menu, Search, BookOpen, Filter, ChevronRight, ChevronDown, ChevronUp,
   Settings, Network, Plus, Trash2, X, Save,
   Check, Library, Sparkles, Bold, Italic, Heading1, Heading2, List as ListIcon,
   FolderOpen, Cloud, Upload, HardDrive, Clock, Shield, Download, UploadCloud,
@@ -63,6 +63,7 @@ import { mergeTabsByGenres } from './genreTabsMap.js';
 import { getGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
 import { searchNovelData, dedupeDeepSearchResults, metadataSearchHits } from './deepSearchCore.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
+import { EntityTabFieldsCustomizerPanel } from './EntityTabFieldsCustomizerPanel.jsx';
 import {
   ENTITY_NOTES_FONT_OPTIONS,
   ENTITY_NOTES_FONT_SIZE_OPTIONS,
@@ -1101,19 +1102,105 @@ function composeMapStatusLine(mapType, forceSystem) {
 
 function parseMapQuickState(dynamicData) {
   const statusTokens = splitDotMetaTokens(dynamicData?.f_status);
+  const mapSystem = statusTokens.length > 1 ? statusTokens.slice(1).join(' · ') : '';
   return {
     mapType: safeString(dynamicData?.f_title).trim() || statusTokens[0] || '',
-    mapSystem: statusTokens.length > 1 ? statusTokens.slice(1).join(' · ') : '',
+    mapSystem,
+    realmSystem: safeString(dynamicData?.f_he_gioi_ban_do || dynamicData?.f_he_phan_cap).trim() || inferForceSystemLabel(mapSystem),
     parentPath: safeString(dynamicData?.f_vi_tri).trim(),
   };
 }
 
 function parseForceQuickState(dynamicData) {
+  const orgType = safeString(
+    dynamicData?.f_loai_to_chuc || dynamicData?.f_loai || dynamicData?.f_to_chuc || dynamicData?.f_title
+  ).trim();
+  const realmSystem = safeString(dynamicData?.f_he_cap_the_luc || dynamicData?.f_he_phan_cap).trim();
   const rankLabel = safeString(dynamicData?.f_status || dynamicData?.f_cap).trim();
   const locationLine = safeString(dynamicData?.f_dia_ban || dynamicData?.f_vi_tri).trim();
   return {
+    orgType,
+    realmSystem,
     rankLabel,
     locationLine,
+  };
+}
+
+const FORCE_TYPE_SEED_OPTIONS = [
+  'Tông Môn',
+  'Gia Tộc',
+  'Chủng Tộc',
+  'Đế Quốc',
+  'Liên Minh',
+  'Tổ Chức',
+  'Học Viện',
+  'Thương Minh',
+  'Quốc Gia',
+];
+
+const FORCE_REALM_SYSTEM_OPTIONS = ['Hạ giới', 'Tiên Ma giới', 'Nguyên giới', 'Cửu cấp', 'Vương giới', 'Tôn giới', 'Đế giới'];
+const MAP_REALM_SYSTEM_OPTIONS = ['Hạ giới', 'Tiên Ma giới', 'Nguyên giới'];
+
+function normalizeRealmSystemKey(value = '') {
+  const n = normalizeAsciiText(value);
+  if (n.includes('ha gioi')) return 'ha-gioi';
+  if (n.includes('tien ma gioi')) return 'tien-ma-gioi';
+  if (n.includes('nguyen gioi')) return 'nguyen-gioi';
+  return '';
+}
+
+function getMapHierarchyOptionsByRealm(realmSystem = '', baseOptions = []) {
+  const key = normalizeRealmSystemKey(realmSystem);
+  if (!key) return dedupeCaseInsensitive(baseOptions);
+  if (key === 'ha-gioi') return dedupeCaseInsensitive(['Cửu cấp']);
+  if (key === 'tien-ma-gioi') return dedupeCaseInsensitive(['Vương giới', 'Tôn giới']);
+  if (key === 'nguyen-gioi') return dedupeCaseInsensitive(['Đế giới']);
+  return dedupeCaseInsensitive(baseOptions);
+}
+
+function resolveForceRankSeedSystem(selectedRealmSystem, inferredSystem, rankLabel) {
+  const normalizedRealm = normalizeAsciiText(selectedRealmSystem);
+  if (normalizedRealm.includes('ha gioi')) return 'Cửu cấp';
+  if (normalizedRealm.includes('tien ma gioi')) return 'Tôn giới';
+  if (normalizedRealm.includes('nguyen gioi')) return 'Đế giới';
+  return selectedRealmSystem || inferredSystem || rankLabel;
+}
+
+function collectForceQuickHints(activeNovelData) {
+  const typeList = [...FORCE_TYPE_SEED_OPTIONS];
+  const locationList = [];
+  for (const lon of activeNovelData?.tabsConfig || []) {
+    for (const nho of lon?.subTabs || []) {
+      if (
+        !isForceCollectionScope({
+          activeTabLon: lon.id,
+          activeTabNho: nho.id,
+          currentTabConfig: nho,
+          parentLabel: lon.label || '',
+        })
+      ) {
+        continue;
+      }
+      const entities = activeNovelData?.data?.[lon.id]?.[nho.id]?.entities || [];
+      entities.forEach((entity) => {
+        const dyn = entity?.dynamicData || {};
+        const orgType = safeString(dyn.f_loai_to_chuc || dyn.f_loai || dyn.f_to_chuc || dyn.f_title).trim();
+        if (orgType) typeList.push(orgType);
+
+        const locationRaw = safeString(dyn.f_dia_ban || dyn.f_vi_tri).trim();
+        if (locationRaw) locationList.push(locationRaw);
+        splitStatusHierarchyTokens(locationRaw).forEach((token) => locationList.push(token));
+
+        const statusTokens = splitStatusHierarchyTokens(dyn.f_status || entity?.status || '');
+        if (statusTokens.length > 2) {
+          locationList.push(statusTokens.slice(2).join(' - '));
+        }
+      });
+    }
+  }
+  return {
+    typeSuggestions: dedupeCaseInsensitive(typeList),
+    locationSuggestions: dedupeCaseInsensitive(locationList),
   };
 }
 
@@ -1199,12 +1286,18 @@ export const ModalEntity = ({
   dirHandle,
   parentTabId,
   parentLabel,
+  showToast,
   geminiApiKey,
   geminiMode = 'standard',
   onOpenAutoSyncGuide,
   onSetTabListGroupStrategy,
   onSetTabListGroupOrder,
   onSaveTabListGroupOrderToGenreTemplate,
+  onSetTabMapEntrySuggestions,
+  handleAddTabTemplateField,
+  handleRemoveTabTemplateField,
+  handleRenameTabTemplateFieldLabel,
+  handleMergeTabFieldSuggestionList,
 }) => {
   void onUpdateTemplate;
   void geminiApiKey;
@@ -1238,6 +1331,10 @@ export const ModalEntity = ({
       }),
     [parentTabId, parentLabel, tabConfig]
   );
+  // Một tab chỉ nên render 1 khối "quick domain" để tránh trùng nội dung.
+  // Với tab lai (match cả map + thế lực), ưu tiên form Thế lực vì dữ liệu đầu vào là rank + địa bàn.
+  const showForceQuickSection = isForceScope;
+  const showMapQuickSection = isMapScope && !isForceScope;
   const isCultivationScope = useMemo(
     () =>
       isCultivationRelationScope({
@@ -1270,7 +1367,15 @@ export const ModalEntity = ({
   const listGroupStrategy = normalizeListGroupStrategy(tabConfig?.autoListGroupStrategy || '');
   const listGroupOrderLines = Array.isArray(tabConfig?.autoListGroupOrder) ? tabConfig.autoListGroupOrder.join('\n') : '';
   const [isGroupConfigOpen, setIsGroupConfigOpen] = useState(false);
+  const [isTabFieldsCustomizerOpen, setIsTabFieldsCustomizerOpen] = useState(false);
+  const [tabFieldSaveScope, setTabFieldSaveScope] = useState('local');
   const [isGroupOrderDirty, setIsGroupOrderDirty] = useState(false);
+  const tabLonCollectionMeta = useMemo(() => {
+    const lon = activeNovelData?.tabsConfig?.find((t) => t.id === parentTabId);
+    const lbl = safeString(lon?.label || parentTabId);
+    const n = (lon?.subTabs || []).filter((s) => s?.viewType === 'collection-track').length;
+    return { parentLonLabel: lbl, collectionTabCount: Math.max(n, 1) };
+  }, [activeNovelData, parentTabId]);
   const groupOrderInputRef = useRef(null);
   const mapEntityHints = useMemo(
     () => collectMapEntityHints(activeNovelData, isMapScope ? tabConfig : null),
@@ -1283,6 +1388,7 @@ export const ModalEntity = ({
   const mapNameSuggestions = mapEntityHints.mapNames;
   const mapTypeSuggestions = mapEntityHints.mapTypes;
   const forceSystemSuggestions = mapEntityHints.forceSystems;
+  const mapRealmSystemOptions = MAP_REALM_SYSTEM_OPTIONS;
   const statusFieldPlaceholder = isMapScope
     ? mapFieldPlaceholders.quickLine
     : 'Ví dụ: Kim Đan kỳ · Đang hoạt động · UI hệ thống... (một dòng, hiện dưới tên ở Hồ sơ)';
@@ -1292,13 +1398,20 @@ export const ModalEntity = ({
   const [formData, setFormData] = useState({ id: null, name: '', avatar: '', rawText: '' });
   const [dynamicData, setDynamicData] = useState({});
   const [mapQuickType, setMapQuickType] = useState('');
+  const [mapQuickRealmSystem, setMapQuickRealmSystem] = useState('');
   const [mapQuickSystem, setMapQuickSystem] = useState('');
   const [mapQuickParentPath, setMapQuickParentPath] = useState('');
+  const [forceQuickType, setForceQuickType] = useState('');
+  const [forceQuickRealmSystem, setForceQuickRealmSystem] = useState('');
   const [forceQuickRank, setForceQuickRank] = useState('');
   const [forceQuickLocation, setForceQuickLocation] = useState('');
   const suggestedMapSystem = useMemo(
     () => inferSystemFromMapLocation(mapQuickParentPath, mapEntityHints.recordsByName),
     [mapQuickParentPath, mapEntityHints.recordsByName]
+  );
+  const mapHierarchyOptions = useMemo(
+    () => getMapHierarchyOptionsByRealm(mapQuickRealmSystem, forceSystemSuggestions),
+    [mapQuickRealmSystem, forceSystemSuggestions]
   );
   const inferredForceSystem = useMemo(
     () =>
@@ -1306,16 +1419,46 @@ export const ModalEntity = ({
       inferForceSystemLabel(forceQuickRank),
     [forceQuickLocation, forceQuickRank, mapEntityHints.recordsByName]
   );
-  const forceRankOptions = useMemo(
-    () => getForceRankOptionsForSystem(inferredForceSystem || forceQuickRank),
-    [forceQuickRank, inferredForceSystem]
+  const forceRankSeed = useMemo(
+    () => resolveForceRankSeedSystem(forceQuickRealmSystem, inferredForceSystem, forceQuickRank),
+    [forceQuickRealmSystem, inferredForceSystem, forceQuickRank]
   );
-  const resolvedStatusFieldPlaceholder = isMapScope
+  const forceRankOptions = useMemo(() => getForceRankOptionsForSystem(forceRankSeed), [forceRankSeed]);
+  const forceRealmSystemOptions = useMemo(
+    () => dedupeCaseInsensitive([...FORCE_REALM_SYSTEM_OPTIONS, ...forceSystemSuggestions]),
+    [forceSystemSuggestions]
+  );
+  const forceQuickHints = useMemo(() => collectForceQuickHints(activeNovelData), [activeNovelData]);
+  const forceTypeOptions = forceQuickHints.typeSuggestions;
+  const forceLocationOptions = useMemo(
+    () => dedupeCaseInsensitive([...forceQuickHints.locationSuggestions, ...mapNameSuggestions]),
+    [forceQuickHints.locationSuggestions, mapNameSuggestions]
+  );
+  const mapSuggestTypeLines = useMemo(
+    () => (Array.isArray(tabConfig?.mapEntrySuggestions?.types) ? tabConfig.mapEntrySuggestions.types.join('\n') : ''),
+    [tabConfig]
+  );
+  const mapSuggestHierarchyLines = useMemo(
+    () =>
+      Array.isArray(tabConfig?.mapEntrySuggestions?.hierarchy) ? tabConfig.mapEntrySuggestions.hierarchy.join('\n') : '',
+    [tabConfig]
+  );
+  const handleSaveMapSuggestionQuick = (which, value) => {
+    onSetTabMapEntrySuggestions?.(parentTabId, tabConfig?.id, which, value, {
+      propagateWithinMapLon: true,
+      saveToGenreTemplate: true,
+    });
+    if (typeof showToast === 'function') {
+      const label = which === 'types' ? 'Loại địa bàn' : 'Hệ phân cấp';
+      showToast(`Đã lưu gợi ý ${label} cho tab hiện tại.`, 'success');
+    }
+  };
+  const resolvedStatusFieldPlaceholder = showMapQuickSection
     ? mapFieldPlaceholders.quickLine
-    : isForceScope
+    : showForceQuickSection
       ? 'Ví dụ: Thiên Tôn cấp thế lực / Địa Vương cấp thế lực'
       : statusFieldPlaceholder;
-  const resolvedStatusFieldHint = isForceScope
+  const resolvedStatusFieldHint = showForceQuickSection
     ? 'Ở thẻ Thế lực, nên để ô này là cấp thế lực; địa bàn nhập riêng ở ô phía trên để AUTO đẩy sang Bản đồ.'
     : statusFieldHint;
   const trapRef = useFocusTrap(isOpen);
@@ -1329,6 +1472,80 @@ export const ModalEntity = ({
       const nextPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
       return { ...(prev || {}), ...nextPatch };
     });
+  const quickUseSelect = Boolean(tabConfig?.entityQuickEntry?.useSelectUi);
+  const entityModalQuickSurface = 'rounded-xl border border-amber-900/45 bg-amber-950/10 p-4 space-y-4';
+  const entityModalQuickLabel = 'block text-[10px] font-bold text-amber-200 uppercase tracking-widest';
+  const entityModalQuickInput =
+    'w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none';
+  const entityModalHintCallout = 'rounded-xl border border-slate-800/70 bg-slate-950/35 px-3 py-2';
+  const entityModalHintTitle = 'text-[10px] font-bold uppercase tracking-widest text-amber-300/95 mb-1';
+  const fieldsCustomizerToggleClass =
+    'inline-flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-700/45 bg-cyan-950/25 px-4 py-2.5 text-xs font-bold font-serif text-cyan-100 transition-colors hover:border-cyan-500/55 hover:bg-cyan-900/35 md:w-auto md:justify-start';
+
+  const renderGenericQuickValueEditors = (slot, idx) => {
+    const fid = slot.fieldId;
+    const val = safeString(dynamicData[fid]);
+    const listDomId = `${genericQuickListPrefix}-q-${idx}-${String(fid).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const isLong = fid === 'f_desc';
+    if (isLong) {
+      return (
+        <textarea
+          aria-label={slot.label}
+          value={val}
+          onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
+          rows={3}
+          className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none resize-y min-h-[4.5rem]"
+          placeholder="Ghi mô tả ngắn…"
+        />
+      );
+    }
+    if (quickUseSelect) {
+      return (
+        <div className="space-y-2">
+          <select
+            aria-label={`${slot.label} — chọn nhanh`}
+            value={slot.suggestions.includes(val) ? val : ''}
+            onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
+            className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
+          >
+            <option value="">— Chọn từ list (hoặc gõ ở ô dưới) —</option>
+            {slot.suggestions.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+          <input
+            aria-label={slot.label}
+            type="text"
+            value={val}
+            onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
+            className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
+            placeholder="Gõ tay / giá trị ngoài list (cùng trường dữ liệu)"
+          />
+        </div>
+      );
+    }
+    return (
+      <>
+        <input
+          aria-label={slot.label}
+          list={slot.suggestions.length ? listDomId : undefined}
+          value={val}
+          onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
+          className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
+          placeholder={`Gõ hoặc chọn gợi ý — ${fid}`}
+        />
+        {slot.suggestions.length > 0 && (
+          <datalist id={listDomId}>
+            {slot.suggestions.map((item) => (
+              <option key={item} value={item} />
+            ))}
+          </datalist>
+        )}
+      </>
+    );
+  };
 
   /* Reset form khi mở modal (đồng bộ từ initialData) */
   const handleMapTypeChange = (value) => {
@@ -1344,6 +1561,16 @@ export const ModalEntity = ({
       f_status: composeMapStatusLine(mapQuickType, value),
     });
   };
+  const handleMapRealmSystemChange = (value) => {
+    setMapQuickRealmSystem(value);
+    const scoped = getMapHierarchyOptionsByRealm(value, forceSystemSuggestions);
+    const nextSystem = scoped.includes(mapQuickSystem) ? mapQuickSystem : (scoped[0] || '');
+    setMapQuickSystem(nextSystem);
+    patchDynamicData({
+      f_he_gioi_ban_do: value,
+      f_status: composeMapStatusLine(mapQuickType, nextSystem),
+    });
+  };
   const handleMapParentPathChange = (value) => {
     setMapQuickParentPath(value);
     patchDynamicData({ f_vi_tri: value });
@@ -1351,6 +1578,19 @@ export const ModalEntity = ({
   const handleForceLocationChange = (value) => {
     setForceQuickLocation(value);
     patchDynamicData({ f_dia_ban: value });
+  };
+  const handleForceTypeChange = (value) => {
+    setForceQuickType(value);
+    patchDynamicData({
+      f_loai_to_chuc: value,
+      f_title: value,
+    });
+  };
+  const handleForceRealmSystemChange = (value) => {
+    setForceQuickRealmSystem(value);
+    patchDynamicData({
+      f_he_cap_the_luc: value,
+    });
   };
   const handleForceRankChange = (value) => {
     setForceQuickRank(value);
@@ -1361,6 +1601,7 @@ export const ModalEntity = ({
     if (isMapScope) {
       const parsed = parseMapQuickState({ ...dynamicData, f_status: value });
       setMapQuickType(parsed.mapType);
+      setMapQuickRealmSystem(parsed.realmSystem);
       setMapQuickSystem(parsed.mapSystem);
       return;
     }
@@ -1386,22 +1627,35 @@ export const ModalEntity = ({
       setDynamicData(initialDyn);
       const mapQuickState = parseMapQuickState(initialDyn);
       setMapQuickType(mapQuickState.mapType);
+      setMapQuickRealmSystem(mapQuickState.realmSystem);
       setMapQuickSystem(mapQuickState.mapSystem);
       setMapQuickParentPath(mapQuickState.parentPath);
       const forceQuickState = parseForceQuickState(initialDyn);
+      setForceQuickType(forceQuickState.orgType);
+      setForceQuickRealmSystem(forceQuickState.realmSystem || inferForceSystemLabel(forceQuickState.rankLabel));
       setForceQuickRank(forceQuickState.rankLabel);
       setForceQuickLocation(forceQuickState.locationLine);
     } else {
       setFormData({ id: null, name: '', avatar: '', rawText: '' });
       setDynamicData({});
       setMapQuickType('');
+      setMapQuickRealmSystem('');
       setMapQuickSystem('');
       setMapQuickParentPath('');
+      setForceQuickType('');
+      setForceQuickRealmSystem('');
       setForceQuickRank('');
       setForceQuickLocation('');
     }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [isOpen, initialData]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsTabFieldsCustomizerOpen(false);
+      setTabFieldSaveScope('local');
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     const handler = (event) => {
@@ -1461,6 +1715,49 @@ export const ModalEntity = ({
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 custom-scrollbar space-y-5 bg-slate-900">
+          {tabConfig?.viewType === 'collection-track' && typeof handleAddTabTemplateField === 'function' && (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setIsTabFieldsCustomizerOpen((v) => !v)}
+                className={fieldsCustomizerToggleClass}
+              >
+                {isTabFieldsCustomizerOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                {isTabFieldsCustomizerOpen
+                  ? 'Thu gọn — chỉnh trường & list'
+                  : 'Chỉnh trường hồ sơ & list gợi ý (tab này)'}
+              </button>
+              {isTabFieldsCustomizerOpen && (
+                <EntityTabFieldsCustomizerPanel
+                  lonId={parentTabId}
+                  tabNho={tabConfig}
+                  parentLonLabel={tabLonCollectionMeta.parentLonLabel}
+                  collectionTabCount={tabLonCollectionMeta.collectionTabCount}
+                  saveScope={tabFieldSaveScope}
+                  onSaveScopeChange={setTabFieldSaveScope}
+                  onAddField={(label, opts) => handleAddTabTemplateField(parentTabId, tabConfig.id, label, opts)}
+                  onRemoveField={(fid, opts) => handleRemoveTabTemplateField(parentTabId, tabConfig.id, fid, opts)}
+                  onRenameField={(fid, L, opts) =>
+                    handleRenameTabTemplateFieldLabel(parentTabId, tabConfig.id, fid, L, opts)
+                  }
+                  onMergeSuggestionList={(fid, text, opts) =>
+                    handleMergeTabFieldSuggestionList(parentTabId, tabConfig.id, fid, text, opts)
+                  }
+                  mapQuickEntryLists={
+                    showMapQuickSection || showForceQuickSection
+                      ? {
+                          typesLines: mapSuggestTypeLines,
+                          hierarchyLines: mapSuggestHierarchyLines,
+                          onSaveTypes: (t) => handleSaveMapSuggestionQuick('types', t),
+                          onSaveHierarchy: (t) => handleSaveMapSuggestionQuick('hierarchy', t),
+                        }
+                      : null
+                  }
+                />
+              )}
+            </div>
+          )}
+
           {tabConfig?.viewType === 'collection-track' && isGroupConfigOpen && (
             <div className="rounded-2xl border border-violet-800/35 bg-violet-950/10 p-4 space-y-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1617,234 +1914,159 @@ export const ModalEntity = ({
           </div>
 
           {showGenericQuickEntry && genericQuickResolved?.slots?.length === 3 && (
-            <div className="rounded-xl border border-amber-900/45 bg-amber-950/10 p-4 space-y-4">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
-                  Gợi ý nhanh (theo thể loại và tab)
-                </p>
-                <span className="text-[10px] text-slate-500 font-serif">
-                  Đổi 3 ô và nhãn trong Trận pháp → Quản lý tab
-                  {genericQuickResolved.dualFirstRow ? ' · Hai ô đầu đang xếp song song' : ''}
-                </span>
-              </div>
-              <div className="space-y-4">
-                {genericQuickResolved.dualFirstRow ? (
-                  <>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {genericQuickResolved.slots.slice(0, 2).map((slot, idx) => {
-                        const fid = slot.fieldId;
-                        const val = safeString(dynamicData[fid]);
-                        const listDomId = `${genericQuickListPrefix}-q-${idx}-${String(fid).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-                        const isLong = fid === 'f_desc';
-                        return (
-                          <div key={`${fid}-${idx}`} className="space-y-2 min-w-0">
-                            <label className="block text-[10px] font-bold text-amber-200 uppercase tracking-widest">
-                              {slot.label}
-                            </label>
-                            {isLong ? (
-                              <textarea
-                                aria-label={slot.label}
-                                value={val}
-                                onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-                                rows={3}
-                                className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none resize-y min-h-[4.5rem]"
-                                placeholder="Ghi mô tả ngắn…"
-                              />
-                            ) : (
-                              <>
-                                <input
-                                  aria-label={slot.label}
-                                  list={slot.suggestions.length ? listDomId : undefined}
-                                  value={val}
-                                  onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-                                  className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
-                                  placeholder={`Gõ hoặc chọn gợi ý — ${fid}`}
-                                />
-                                {slot.suggestions.length > 0 && (
-                                  <datalist id={listDomId}>
-                                    {slot.suggestions.map((item) => (
-                                      <option key={item} value={item} />
-                                    ))}
-                                  </datalist>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        );
-                      })}
+            <div className={entityModalQuickSurface}>
+              <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
+                Gợi ý nhanh ({safeString(tabConfig?.label).trim() || 'tab con'})
+              </p>
+              <div className="grid gap-4 md:grid-cols-3">
+                {genericQuickResolved.slots.map((slot, idx) => {
+                  const fid = slot.fieldId;
+                  return (
+                    <div key={`${fid}-${idx}`} className="space-y-2 min-w-0">
+                      <label className={entityModalQuickLabel}>{slot.label}</label>
+                      {renderGenericQuickValueEditors(slot, idx)}
                     </div>
-                    {genericQuickResolved.slots.slice(2).map((slot, idx) => {
-                      const realIdx = idx + 2;
-                      const fid = slot.fieldId;
-                      const val = safeString(dynamicData[fid]);
-                      const listDomId = `${genericQuickListPrefix}-q-${realIdx}-${String(fid).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-                      const isLong = fid === 'f_desc';
-                      return (
-                        <div key={`${fid}-${realIdx}`} className="space-y-2">
-                          <label className="block text-[10px] font-bold text-amber-200 uppercase tracking-widest">
-                            {slot.label}
-                          </label>
-                          {isLong ? (
-                            <textarea
-                              aria-label={slot.label}
-                              value={val}
-                              onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-                              rows={3}
-                              className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none resize-y min-h-[4.5rem]"
-                              placeholder="Ghi mô tả ngắn…"
-                            />
-                          ) : (
-                            <>
-                              <input
-                                aria-label={slot.label}
-                                list={slot.suggestions.length ? listDomId : undefined}
-                                value={val}
-                                onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-                                className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
-                                placeholder={`Gõ hoặc chọn gợi ý — ${fid}`}
-                              />
-                              {slot.suggestions.length > 0 && (
-                                <datalist id={listDomId}>
-                                  {slot.suggestions.map((item) => (
-                                    <option key={item} value={item} />
-                                  ))}
-                                </datalist>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </>
-                ) : (
-                  <div className="grid gap-4 md:grid-cols-1">
-                    {genericQuickResolved.slots.map((slot, idx) => {
-                      const fid = slot.fieldId;
-                      const val = safeString(dynamicData[fid]);
-                      const listDomId = `${genericQuickListPrefix}-q-${idx}-${String(fid).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-                      const isLong = fid === 'f_desc';
-                      return (
-                        <div key={`${fid}-${idx}`} className="space-y-2">
-                          <label className="block text-[10px] font-bold text-amber-200 uppercase tracking-widest">
-                            {slot.label}
-                          </label>
-                          {isLong ? (
-                            <textarea
-                              aria-label={slot.label}
-                              value={val}
-                              onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-                              rows={3}
-                              className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none resize-y min-h-[4.5rem]"
-                              placeholder="Ghi mô tả ngắn…"
-                            />
-                          ) : (
-                            <>
-                              <input
-                                aria-label={slot.label}
-                                list={slot.suggestions.length ? listDomId : undefined}
-                                value={val}
-                                onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-                                className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
-                                placeholder={`Gõ hoặc chọn gợi ý — ${fid}`}
-                              />
-                              {slot.suggestions.length > 0 && (
-                                <datalist id={listDomId}>
-                                  {slot.suggestions.map((item) => (
-                                    <option key={item} value={item} />
-                                  ))}
-                                </datalist>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                  );
+                })}
               </div>
+              <p className="text-[11px] text-slate-400 font-serif">
+                Chuỗi auto sẽ lưu:{' '}
+                <code className="text-amber-200">
+                  {genericQuickResolved.slots
+                    .map((s) => safeString(dynamicData[s.fieldId]).trim())
+                    .filter(Boolean)
+                    .join(' · ') || 'Chưa đủ dữ liệu'}
+                </code>
+              </p>
+              <p className="text-[11px] text-slate-500 font-serif">
+                Đổi 3 ô, nhãn hoặc menu select: Trận pháp → Quản lý tab.
+                {quickUseSelect ? ' Đang bật chế độ select.' : ''} Sửa list gợi ý từng trường: mở «Chỉnh trường hồ sơ & list gợi ý (tab
+                này)» phía trên.
+              </p>
             </div>
           )}
 
-          {isMapScope && (
-            <div className="rounded-xl border border-sky-900/40 bg-sky-950/10 p-4 space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
+          {showMapQuickSection && (
+            <div className={entityModalQuickSurface}>
+              <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
+                Gợi ý nhanh ({safeString(tabConfig?.label).trim() || 'Bản đồ'})
+              </p>
+              <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
-                  <label className="block text-[10px] font-bold text-sky-300 uppercase tracking-widest">Loại địa bàn</label>
+                  <label className={entityModalQuickLabel}>Loại địa bàn</label>
                   <input
                     aria-label="Loại địa bàn"
                     list="ttc-map-type-options"
                     value={mapQuickType}
                     onChange={(e) => handleMapTypeChange(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-sky-800/50 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-sky-500 outline-none"
+                    className={entityModalQuickInput}
                     placeholder={mapFieldPlaceholders.mapType}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="block text-[10px] font-bold text-sky-300 uppercase tracking-widest">Hệ phân cấp</label>
+                  <label className={entityModalQuickLabel}>Hệ giới</label>
+                  <input
+                    aria-label="Hệ giới bản đồ"
+                    list="ttc-map-realm-options"
+                    value={mapQuickRealmSystem}
+                    onChange={(e) => handleMapRealmSystemChange(e.target.value)}
+                    className={entityModalQuickInput}
+                    placeholder={mapRealmSystemOptions[0] || 'Ví dụ: Hạ giới'}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className={entityModalQuickLabel}>Hệ phân cấp</label>
                   <input
                     aria-label="Hệ phân cấp bản đồ"
                     list="ttc-force-system-options"
                     value={mapQuickSystem}
                     onChange={(e) => handleMapSystemChange(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-sky-800/50 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-sky-500 outline-none"
+                    className={entityModalQuickInput}
                     placeholder={mapFieldPlaceholders.mapHierarchy}
                   />
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="block text-[10px] font-bold text-sky-300 uppercase tracking-widest">Trực thuộc</label>
+                <label className={entityModalQuickLabel}>Trực thuộc</label>
                 <input
                   aria-label="Trực thuộc bản đồ"
                   list="ttc-map-name-options"
                   value={mapQuickParentPath}
                   onChange={(e) => handleMapParentPathChange(e.target.value)}
-                  className="w-full bg-slate-950/80 border border-sky-800/50 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-sky-500 outline-none"
+                  className={entityModalQuickInput}
                   placeholder="Có thể bỏ trống nếu là tầng cao nhất"
                 />
                 {!mapQuickSystem && suggestedMapSystem && (
-                  <p className="text-[11px] text-sky-200 font-serif">
+                  <p className="text-[11px] text-amber-200/90 font-serif">
                     Gợi ý theo địa bàn cha: <strong>{suggestedMapSystem}</strong>
                   </p>
                 )}
               </div>
               <p className="text-[11px] text-slate-400 font-serif">
-                Chuỗi auto sẽ lưu: <code className="text-sky-200">{composeMapStatusLine(mapQuickType, mapQuickSystem) || 'Chưa đủ dữ liệu'}</code>
+                Chuỗi auto sẽ lưu:{' '}
+                <code className="text-amber-200">{composeMapStatusLine(mapQuickType, mapQuickSystem) || 'Chưa đủ dữ liệu'}</code>
               </p>
             </div>
           )}
 
-          {isForceScope && (
-            <div className="rounded-xl border border-fuchsia-900/40 bg-fuchsia-950/10 p-4 space-y-4">
-              <div className="space-y-2">
-                <label className="block text-[10px] font-bold text-fuchsia-300 uppercase tracking-widest">Địa bàn</label>
-                <input
-                  aria-label="Địa bàn thế lực"
-                  list="ttc-map-name-options"
-                  value={forceQuickLocation}
-                  onChange={(e) => handleForceLocationChange(e.target.value)}
-                  className="w-full bg-slate-950/80 border border-fuchsia-800/50 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-fuchsia-500 outline-none"
-                  placeholder="Ví dụ: Hoang Thú giới / Tiên giới - Trung Tiên giới - Hoang Thú giới"
-                />
-              </div>
-              <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(220px,1fr)]">
+          {showForceQuickSection && (
+            <div className={entityModalQuickSurface}>
+              <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
+                Gợi ý nhanh ({safeString(tabConfig?.label).trim() || 'Thế lực'})
+              </p>
+              <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
-                  <label className="block text-[10px] font-bold text-fuchsia-300 uppercase tracking-widest">Cấp thế lực</label>
+                  <label className={entityModalQuickLabel}>Loại hình</label>
                   <input
-                    aria-label="Cấp thế lực"
-                    list="ttc-force-rank-options"
-                    value={forceQuickRank}
-                    onChange={(e) => handleForceRankChange(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-fuchsia-800/50 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-fuchsia-500 outline-none"
-                    placeholder={forceRankOptions[0] || 'Ví dụ: Thiên Tôn cấp thế lực'}
+                    aria-label="Loại hình thế lực"
+                    list="ttc-force-type-options"
+                    value={forceQuickType}
+                    onChange={(e) => handleForceTypeChange(e.target.value)}
+                    className={entityModalQuickInput}
+                    placeholder={forceTypeOptions[0] || 'Ví dụ: Tông Môn'}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="block text-[10px] font-bold text-fuchsia-300 uppercase tracking-widest">Hệ dò được</label>
-                  <div className="rounded-xl border border-fuchsia-900/40 bg-slate-950/70 px-3 py-3 text-sm text-slate-200 font-serif min-h-[50px] flex items-center">
-                    {inferredForceSystem || 'Chưa dò được, vẫn có thể gõ tay cấp thế lực'}
-                  </div>
+                  <label className={entityModalQuickLabel}>Hệ cấp bậc</label>
+                  <input
+                    aria-label="Hệ cấp bậc thế lực"
+                    list="ttc-force-realm-system-options"
+                    value={forceQuickRealmSystem}
+                    onChange={(e) => handleForceRealmSystemChange(e.target.value)}
+                    className={entityModalQuickInput}
+                    placeholder={forceRealmSystemOptions[0] || 'Ví dụ: Hạ giới'}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className={entityModalQuickLabel}>Cấp bậc</label>
+                  <input
+                    aria-label="Cấp bậc thế lực"
+                    list="ttc-force-rank-options"
+                    value={forceQuickRank}
+                    onChange={(e) => handleForceRankChange(e.target.value)}
+                    className={entityModalQuickInput}
+                    placeholder={forceRankOptions[0] || 'Ví dụ: Thiên Tôn cấp thế lực'}
+                  />
                 </div>
               </div>
+              <div className="space-y-2">
+                <label className={entityModalQuickLabel}>Địa chỉ</label>
+                <input
+                  aria-label="Địa chỉ thế lực"
+                  list="ttc-force-location-options"
+                  value={forceQuickLocation}
+                  onChange={(e) => handleForceLocationChange(e.target.value)}
+                  className={entityModalQuickInput}
+                  placeholder="Ví dụ: Tây Châu - Nguyên Giới"
+                />
+              </div>
+              <p className="text-[11px] text-slate-400 font-serif">
+                Chuỗi auto sẽ lưu:{' '}
+                <code className="text-amber-200">
+                  {[forceQuickType, forceQuickRealmSystem, forceQuickRank, forceQuickLocation].filter(Boolean).join(' · ') ||
+                    'Chưa đủ dữ liệu'}
+                </code>
+              </p>
             </div>
           )}
 
@@ -1870,7 +2092,12 @@ export const ModalEntity = ({
             ))}
           </datalist>
           <datalist id="ttc-force-system-options">
-            {forceSystemSuggestions.map((item) => (
+            {mapHierarchyOptions.map((item) => (
+              <option key={item} value={item} />
+            ))}
+          </datalist>
+          <datalist id="ttc-map-realm-options">
+            {mapRealmSystemOptions.map((item) => (
               <option key={item} value={item} />
             ))}
           </datalist>
@@ -1881,6 +2108,21 @@ export const ModalEntity = ({
           </datalist>
           <datalist id="ttc-force-rank-options">
             {forceRankOptions.map((item) => (
+              <option key={item} value={item} />
+            ))}
+          </datalist>
+          <datalist id="ttc-force-type-options">
+            {forceTypeOptions.map((item) => (
+              <option key={item} value={item} />
+            ))}
+          </datalist>
+          <datalist id="ttc-force-location-options">
+            {forceLocationOptions.map((item) => (
+              <option key={item} value={item} />
+            ))}
+          </datalist>
+          <datalist id="ttc-force-realm-system-options">
+            {forceRealmSystemOptions.map((item) => (
               <option key={item} value={item} />
             ))}
           </datalist>
@@ -1915,47 +2157,50 @@ export const ModalEntity = ({
             </div>
           )}
 
-          {isMapScope && !initialData && (
-            <div className="rounded-xl border border-sky-800/40 bg-sky-950/10 px-3 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-sky-300 mb-1">Ghi nhanh cho thẻ Bản Đồ</p>
+          {showMapQuickSection && !initialData && (
+            <div className={entityModalHintCallout}>
+              <p className={entityModalHintTitle}>Ghi nhanh cho thẻ Bản Đồ</p>
               <p className="text-[11px] text-slate-300 font-serif leading-relaxed">
-                Thẻ bản đồ chỉ ghi nơi chốn: tên địa bàn + <strong className="text-sky-200">{safeString(fStatusLabel)}</strong> theo mẫu{' '}
-                <code className="text-sky-200">Loại địa bàn · Hệ phân cấp</code>.
+                Thẻ bản đồ chỉ ghi nơi chốn: tên địa bàn + <strong className="text-amber-200/95">{safeString(fStatusLabel)}</strong> theo mẫu{' '}
+                <code className="text-amber-200">Loại địa bàn · Hệ phân cấp</code>.
               </p>
               <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
-                Gợi ý điền nhanh: <code className="text-sky-200">{statusFieldPlaceholder}</code>
+                Gợi ý điền nhanh: <code className="text-amber-200">{statusFieldPlaceholder}</code>
               </p>
               <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
-                Ví dụ: <code className="text-sky-200">{mapFieldPlaceholders.exampleA}</code>,{' '}
-                <code className="text-sky-200">{mapFieldPlaceholders.exampleB}</code>.
+                Ví dụ: <code className="text-amber-200">{mapFieldPlaceholders.exampleA}</code>,{' '}
+                <code className="text-amber-200">{mapFieldPlaceholders.exampleB}</code>.
               </p>
               <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
-                {statusFieldHint} Các nhãn như <code className="text-sky-200">Thiên Tôn cấp thế lực</code> không ghi ở đây; chúng thuộc thẻ{' '}
-                <strong className="text-sky-200">Thế lực</strong>, ví dụ{' '}
-                <code className="text-sky-200">Bách Thú Cung = Tông môn · Thiên Tôn cấp thế lực · Hoang Thú giới</code>.
+                {statusFieldHint} Các nhãn như <code className="text-amber-200">Thiên Tôn cấp thế lực</code> không ghi ở đây; chúng thuộc thẻ{' '}
+                <strong className="text-amber-200/95">Thế lực</strong>, ví dụ{' '}
+                <code className="text-amber-200">Bách Thú Cung = Tông môn · Thiên Tôn cấp thế lực · Hoang Thú giới</code>.
               </p>
             </div>
           )}
 
-          {isForceScope && (
-            <div className="rounded-xl border border-fuchsia-800/40 bg-fuchsia-950/10 px-3 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-fuchsia-300 mb-1">Chuẩn AUTO Thế Lực ↔ Bản Đồ</p>
+          {showForceQuickSection && (
+            <div className={entityModalHintCallout}>
+              <p className={entityModalHintTitle}>Chuẩn AUTO thế lực ↔ bản đồ</p>
               <p className="text-[11px] text-slate-300 font-serif leading-relaxed">
-                Nhập trong <strong>{safeString(fStatusLabel)}</strong> theo mẫu{' '}
-                <code className="text-fuchsia-200">Loai - Cap bac - Dia diem 1 - Dia diem 2</code>.
+                Khởi tạo nhanh theo 4 ô: <code className="text-amber-200">Loại hình</code> -{' '}
+                <code className="text-amber-200">Hệ cấp bậc</code> - <code className="text-amber-200">Cấp bậc</code> -{' '}
+                <code className="text-amber-200">Địa chỉ</code>.
               </p>
               <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
-                Nếu đang dùng mẫu tách trường, hệ thống vẫn đọc từ <code className="text-fuchsia-200">f_status</code> (cấp bậc) + <code className="text-fuchsia-200">f_dia_ban</code> (địa bàn).
+                AUTO đọc dữ liệu tách trường: <code className="text-amber-200">f_loai_to_chuc</code> (loại hình),{' '}
+                <code className="text-amber-200">f_he_cap_the_luc</code> (hệ cấp bậc),{' '}
+                <code className="text-amber-200">f_status</code> (cấp bậc), <code className="text-amber-200">f_dia_ban</code> (địa chỉ).
               </p>
             </div>
           )}
 
           {isCultivationScope && (
-            <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/10 px-3 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-300 mb-1">Chuẩn AUTO Hệ Thống ↔ Cảnh Giới</p>
+            <div className={entityModalHintCallout}>
+              <p className={entityModalHintTitle}>Chuẩn AUTO hệ thống ↔ cảnh giới</p>
               <p className="text-[11px] text-slate-300 font-serif leading-relaxed">
-                Ở tab Cảnh Giới, nhập <code className="text-emerald-200">f_status</code> theo mẫu{' '}
-                <code className="text-emerald-200">De Nhat - Linh Canh Bat Bo</code> để app tự ghép sang Hệ Thống Tu Luyện.
+                Ở tab Cảnh Giới, nhập <code className="text-amber-200">f_status</code> theo mẫu{' '}
+                <code className="text-amber-200">De Nhat - Linh Canh Bat Bo</code> để app tự ghép sang Hệ Thống Tu Luyện.
               </p>
             </div>
           )}
