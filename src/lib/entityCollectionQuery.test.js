@@ -73,7 +73,7 @@ describe('entityCollectionQuery', () => {
     expect(filtered.map((x) => x.id)).toEqual(['c']);
   });
 
-  it('always pins list card first then sorts others by A-Z', () => {
+  it('pins list card first when sorting by milestones (not when sorting by name)', () => {
     const index = buildEntitySearchIndexMap([e2, e1, listCard]);
     const out = applyEntityCollectionFilters([e2, e1, listCard], {
       entityFilterField: 'none',
@@ -85,7 +85,19 @@ describe('entityCollectionQuery', () => {
     expect(out.map((x) => x.id)).toEqual(['ls', 'b', 'a']);
   });
 
-  it('supports name_desc sort mode', () => {
+  it('pins list card first then sorts the rest A-Z (name_asc)', () => {
+    const index = buildEntitySearchIndexMap([listCard, e2, e1]);
+    const out = applyEntityCollectionFilters([listCard, e2, e1], {
+      entityFilterField: 'none',
+      entityFilterValue: '',
+      entitySearchQuery: '',
+      entitySearchIndexById: index,
+      entitySortMode: 'name_asc',
+    });
+    expect(out.map((x) => x.id)).toEqual(['ls', 'a', 'b']);
+  });
+
+  it('supports name_desc sort mode (list card pinned first)', () => {
     const index = buildEntitySearchIndexMap([e2, e1, listCard]);
     const out = applyEntityCollectionFilters([e2, e1, listCard], {
       entityFilterField: 'none',

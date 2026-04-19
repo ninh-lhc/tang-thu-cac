@@ -8,6 +8,10 @@ import { useAppPhimTatToanCuc } from './useAppPhimTatToanCuc.js';
 
 export function useAppModalShortcutOrchestration({
   activeNovelData,
+  activeTabLon,
+  activeTabNho,
+  sortedTabs,
+  setActiveTabNho,
   isEntityModalOpen,
   setIsCommandPaletteOpen,
   setCommandPaletteQuery,
@@ -37,6 +41,10 @@ export function useAppModalShortcutOrchestration({
 }) {
   useAppPhimTatToanCuc({
     activeNovelData,
+    activeTabLon,
+    activeTabNho,
+    sortedTabs,
+    setActiveTabNho,
     isEntityModalOpen,
     setIsCommandPaletteOpen,
     setCommandPaletteQuery,

@@ -15,10 +15,14 @@ export function linesToSuggestionArray(text) {
 export function sanitizeFieldsTemplate(fields) {
   return (Array.isArray(fields) ? fields : [])
     .filter((f) => f && safeString(f.id).trim())
-    .map((f) => ({
-      id: safeString(f.id).trim(),
-      label: safeString(f.label).trim() || safeString(f.id).trim(),
-    }));
+    .map((f) => {
+      const id = safeString(f.id).trim();
+      const label = safeString(f.label).trim() || id;
+      const out = { id, label };
+      const o = f.listMergeOrder;
+      if (typeof o === 'number' && Number.isFinite(o)) out.listMergeOrder = Math.trunc(o);
+      return out;
+    });
 }
 
 /** Luôn giữ f_alias (wiki) ở cuối danh sách trường. */

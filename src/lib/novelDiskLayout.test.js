@@ -80,4 +80,31 @@ describe('novelDiskLayout', () => {
     expect(plan.writes.map((w) => w.rel)).toEqual(['L/N.json']);
     expect(plan.removed).toEqual(['L/OLD.json']);
   });
+
+  it('entity edits change shard plan even when sharded disk manifest JSON is unchanged', () => {
+    const baseNovel = {
+      id: 'id1',
+      title: 'Same Title',
+      tabsConfig: [
+        { id: 'L', label: 'Lon', subTabs: [{ id: 'S', label: 'Tab', viewType: 'collection-track' }] },
+      ],
+      data: {
+        L: {
+          S: { overview: '', entities: [{ id: 'e1', name: 'A' }] },
+        },
+      },
+    };
+    const edited = structuredClone(baseNovel);
+    edited.data.L.S.entities[0].name = 'B';
+
+    expect(JSON.stringify(buildDiskManifest(baseNovel), null, 2)).toBe(
+      JSON.stringify(buildDiskManifest(edited), null, 2)
+    );
+
+    const hashes = new Map();
+    const planBase = buildShardWritePlan(baseNovel.data, hashes);
+    for (const w of planBase.writes) hashes.set(w.rel, w.jsonStr);
+    const planAfterEdit = buildShardWritePlan(edited.data, hashes);
+    expect(planAfterEdit.writes.length).toBe(1);
+  });
 });

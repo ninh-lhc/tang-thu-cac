@@ -9,6 +9,10 @@ import { useEffect } from 'react';
 
 export function useAppPhimTatToanCuc({
   activeNovelData,
+  activeTabLon,
+  activeTabNho,
+  sortedTabs,
+  setActiveTabNho,
   isEntityModalOpen,
   setIsCommandPaletteOpen,
   setCommandPaletteQuery,
@@ -52,6 +56,14 @@ export function useAppPhimTatToanCuc({
       if (primaryMod && e.shiftKey && (e.key === 'N' || e.key === 'n')) {
         e.preventDefault();
         if (activeNovelData && !isEntityModalOpen) {
+          if (typeof setActiveTabNho === 'function' && Array.isArray(sortedTabs) && activeTabLon) {
+            const parent = sortedTabs.find((t) => t.id === activeTabLon);
+            if (!activeTabNho && parent?.subTabs?.length > 0) {
+              const first =
+                parent.subTabs.find((s) => s.viewType === 'collection-track') || parent.subTabs[0];
+              if (first?.id) setActiveTabNho(first.id);
+            }
+          }
           setEditingEntityData(null);
           setIsEntityModalOpen(true);
         }
@@ -91,6 +103,10 @@ export function useAppPhimTatToanCuc({
     return () => window.removeEventListener('keydown', onKey);
   }, [
     activeNovelData,
+    activeTabLon,
+    activeTabNho,
+    sortedTabs,
+    setActiveTabNho,
     isEntityModalOpen,
     setIsCommandPaletteOpen,
     setCommandPaletteQuery,

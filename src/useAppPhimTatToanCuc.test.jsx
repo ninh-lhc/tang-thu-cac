@@ -152,6 +152,32 @@ describe('useAppPhimTatToanCuc', () => {
     expect(props.setIsEntityModalOpen).toHaveBeenCalledTimes(2);
   });
 
+  it('Ctrl+Shift+N chọn tab con sưu tập đầu tiên khi chưa có activeTabNho', () => {
+    const setActiveTabNho = vi.fn();
+    const sortedTabs = [
+      {
+        id: 'van-toc-quan-dao',
+        label: 'Vạn Tộc',
+        subTabs: [
+          { id: 'chung-toc', label: 'Chủng Tộc', viewType: 'collection-track' },
+          { id: 'de-quoc-vuong-quoc', label: 'Đế Quốc', viewType: 'collection-track' },
+        ],
+      },
+    ];
+    const props = createProps({
+      activeTabLon: 'van-toc-quan-dao',
+      activeTabNho: null,
+      sortedTabs,
+      setActiveTabNho,
+    });
+    render(<HookHarness {...props} />);
+
+    pressKey('N', { ctrlKey: true, shiftKey: true });
+
+    expect(setActiveTabNho).toHaveBeenCalledWith('chung-toc');
+    expect(props.setIsEntityModalOpen).toHaveBeenCalledWith(true);
+  });
+
   it('opens library sidebar and focuses search input on slash shortcut', () => {
     vi.useFakeTimers();
     const focus = vi.fn();

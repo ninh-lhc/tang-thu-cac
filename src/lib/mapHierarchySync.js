@@ -268,9 +268,11 @@ function ensureCollectionTabData(nov, lonId, nhoId) {
 }
 
 function ensureMapEntityByName(tabData, name, mapContext = {}) {
+  if (!tabData || typeof tabData !== 'object') return null;
+  if (!Array.isArray(tabData.entities)) tabData.entities = [];
   const cleanName = safeString(name).trim();
   const key = normalizeAscii(cleanName);
-  let ent = (tabData.entities || []).find((item) => normalizeAscii(item?.name) === key);
+  let ent = tabData.entities.find((item) => normalizeAscii(item?.name) === key);
   if (!ent) {
     const detected = detectMapLevelInfo(cleanName);
     ent = {
@@ -382,6 +384,10 @@ function buildMapMetaBlock(record) {
   const scaleLabel = safeString(record.scaleLabel).trim();
   if (scaleLabel && normalizeAscii(scaleLabel) !== normalizeAscii(record.levelLabel)) {
     lines.push(`- Quy mô / cấp: ${scaleLabel}`);
+  }
+  if (Array.isArray(record.fullChain) && record.fullChain.length > 0) {
+    const chain = [...record.fullChain, safeString(record.name).trim()].filter(Boolean);
+    lines.push(`- Địa chỉ (chuỗi địa lý): ${chain.join(' → ')}`);
   }
   if (record.fullChain[0]) {
     lines.push(`- Trực thuộc: [[${record.fullChain[0]}]]`);

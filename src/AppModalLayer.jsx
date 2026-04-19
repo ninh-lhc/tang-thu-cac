@@ -149,13 +149,13 @@ export function AppModalLayer({
   handleSetTabAutoSyncFieldMap,
   handleSetTabListGroupStrategy,
   handleSetTabListGroupOrder,
-  handleSetTabListGroupFieldOrder,
   handleSaveTabListGroupOrderToGenreTemplate,
   handleSetTabMapEntrySuggestions,
   handleMergeTabFieldSuggestionList,
   handleAddTabTemplateField,
   handleRemoveTabTemplateField,
   handleRenameTabTemplateFieldLabel,
+  handleSetTabTemplateFieldListMergeOrder,
   handleSetTabEntityQuickEntry,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
@@ -169,12 +169,12 @@ export function AppModalLayer({
         onOpenAutoSyncGuide={setIsAutoSyncGuideOpen ? () => setIsAutoSyncGuideOpen(true) : undefined}
         onSetTabListGroupStrategy={handleSetTabListGroupStrategy}
         onSetTabListGroupOrder={handleSetTabListGroupOrder}
-        onSetTabListGroupFieldOrder={handleSetTabListGroupFieldOrder}
         onSaveTabListGroupOrderToGenreTemplate={handleSaveTabListGroupOrderToGenreTemplate}
         onSetTabMapEntrySuggestions={handleSetTabMapEntrySuggestions}
         handleAddTabTemplateField={handleAddTabTemplateField}
         handleRemoveTabTemplateField={handleRemoveTabTemplateField}
         handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
+        handleSetTabTemplateFieldListMergeOrder={handleSetTabTemplateFieldListMergeOrder}
         handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
         onSave={handleSaveEntity}
         initialData={editingEntityData}
@@ -368,9 +368,7 @@ export function AppModalLayer({
           handleSetTabAutoSyncTargets={handleSetTabAutoSyncTargets}
           handleSetTabAutoSyncLevels={handleSetTabAutoSyncLevels}
           handleSetTabAutoSyncFieldMap={handleSetTabAutoSyncFieldMap}
-          handleSetTabListGroupStrategy={handleSetTabListGroupStrategy}
           handleSetTabListGroupOrder={handleSetTabListGroupOrder}
-          handleSetTabListGroupFieldOrder={handleSetTabListGroupFieldOrder}
           handleSetTabMapEntrySuggestions={handleSetTabMapEntrySuggestions}
           handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
           handleAddTabTemplateField={handleAddTabTemplateField}

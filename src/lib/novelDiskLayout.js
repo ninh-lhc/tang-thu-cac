@@ -68,7 +68,7 @@ function shardKeyPath(lonId, nhoId) {
   return `${encodePathSegment(lonId)}/${encodePathSegment(nhoId)}.json`;
 }
 
-function getShardState(dirHandle) {
+export function getShardState(dirHandle) {
   const cur = shardWriteStateByDir.get(dirHandle);
   if (cur && cur.hashes instanceof Map) return cur;
   const next = { hashes: new Map() };
@@ -220,8 +220,18 @@ export async function readRawNovelPackageFromDir(novelDirHandle, manifestBaseNam
       parsed.storageLayout = NOVEL_STORAGE_SHARDED;
       if (shardKeys) parsed.__partialData = true;
     }
-    const hasMainData = listShardKeysFromData(parsed.data || {}).length > 0;
-    if (!hasMainData) {
+    let hasMainData = listShardKeysFromData(parsed.data || {}).length > 0;
+    // Đọc đủ shard (không phải preload subset): nếu vẫn rỗng nhưng thư mục data/ còn file — thử đọc lại một lần (race FS hiếm gặp).
+    if (!hasMainData && shouldUseShardedRead && !shardKeys) {
+      const anyShards = await hasAnyShardData(novelDirHandle);
+      if (anyShards) {
+        parsed.data = await loadShardsFromNovelDir(novelDirHandle);
+        hasMainData = listShardKeysFromData(parsed.data || {}).length > 0;
+      }
+    }
+    // KHÔNG nạp `<manifest>.backup.json` khi đang preload một phần tab (`shardKeys`): subset rỗng (sai id tạm, shard chưa kịp ghi…)
+    // từng bị coi là “mất data” → nạp backup cũ → syncNovel ghi đè shard mới (mất thẻ vừa tạo sau khi kết nối lại / reload dev).
+    if (!hasMainData && !shardKeys) {
       try {
         const bf = await novelDirHandle.getFileHandle(`${manifestBaseName}.backup.json`);
         const bText = await (await bf.getFile()).text();

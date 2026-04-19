@@ -16,6 +16,15 @@ describe('tabFieldSuggestions', () => {
     expect(out.some((f) => f.id === 'f_alias')).toBe(true);
   });
 
+  it('ensureWikiAliasInFieldsTemplate giữ listMergeOrder hợp lệ', () => {
+    const out = ensureWikiAliasInFieldsTemplate([
+      { id: 'f_status', label: 'X', listMergeOrder: 2 },
+      { id: 'f_title', label: 'Y', listMergeOrder: 1.8 },
+    ]);
+    expect(out.find((f) => f.id === 'f_status')?.listMergeOrder).toBe(2);
+    expect(out.find((f) => f.id === 'f_title')?.listMergeOrder).toBe(1);
+  });
+
   it('pruneFieldSuggestionLists lọc theo field id', () => {
     const pruned = pruneFieldSuggestionLists(
       { f_status: ['A'], f_removed: ['B'] },

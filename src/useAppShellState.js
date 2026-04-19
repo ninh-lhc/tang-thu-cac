@@ -248,6 +248,18 @@ export function useAppShellState() {
         novelsMetadataRef.current = nextMetadata;
         globalTabsConfigRef.current = nextConfig;
         novelStatsByIdRef.current = nextStats;
+        try {
+          localStorage.setItem(
+            'tangthu_index_shadow',
+            JSON.stringify({
+              metadata: nextMetadata,
+              config: nextConfig,
+              novelStats: nextStats,
+            })
+          );
+        } catch {
+          /* best-effort — cùng shape với useAppPersistence.persistIndexShadow */
+        }
         return true;
       } catch {
         return false;
@@ -268,6 +280,15 @@ export function useAppShellState() {
       return false;
     };
 
+    /** Đọc index từ đĩa; timeout chỉ “mềm” — luôn chờ promise gốc xong để không ghi đè bằng tangthu_index_shadow cũ khi đĩa chậm. */
+    const INDEX_SNAPSHOT_SOFT_DEADLINE_MS = 4000;
+    const awaitIndexSnapshotFromHandle = async (handle) => {
+      const snapshotPromise = loadSnapshotFromHandle(handle);
+      const quick = await withTimeout(snapshotPromise, INDEX_SNAPSHOT_SOFT_DEADLINE_MS);
+      if (quick !== null) return quick;
+      return await snapshotPromise;
+    };
+
     const loadShadowSnapshot = () => {
       try {
         const raw = localStorage.getItem('tangthu_index_shadow');
@@ -284,16 +305,21 @@ export function useAppShellState() {
       let hydratedFromDisk = false;
 
       try {
-        storedHandle = await withTimeout(loadPersistedDirectoryHandle(), 2500);
+        const handleLoadPromise = loadPersistedDirectoryHandle();
+        let handleMaybe = await withTimeout(handleLoadPromise, 2500);
+        if (handleMaybe === null) handleMaybe = await handleLoadPromise;
+        storedHandle = handleMaybe;
         if (cancelled) return;
 
         if (storedHandle) {
-          const usable = await withTimeout(isPersistedDirectoryHandleUsable(storedHandle), 1500);
+          const usablePromise = isPersistedDirectoryHandleUsable(storedHandle);
+          let usable = await withTimeout(usablePromise, 1500);
+          if (usable === null) usable = await usablePromise;
           if (cancelled) return;
           if (usable) {
             restoredConnection = true;
             setDirHandle(storedHandle);
-            hydratedFromDisk = await withTimeout(loadSnapshotFromHandle(storedHandle), 2200);
+            hydratedFromDisk = await awaitIndexSnapshotFromHandle(storedHandle);
             if (cancelled) return;
           } else {
             await clearPersistedDirectoryHandle();

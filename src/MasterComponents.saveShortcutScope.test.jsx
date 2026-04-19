@@ -164,7 +164,7 @@ describe('modal ttc-save scope', () => {
 
     fireEvent.change(getByRole('textbox', { name: /danh xưng/i }), { target: { value: 'Bach Thu Cung' } });
     fireEvent.change(getByLabelText('Loại hình thế lực'), { target: { value: 'Tông Môn' } });
-    fireEvent.change(getByLabelText('Hệ cấp bậc thế lực'), { target: { value: 'Nguyên giới' } });
+    fireEvent.change(getByLabelText('Hệ cấp bậc thế lực'), { target: { value: 'Tien gioi' } });
     fireEvent.change(getByLabelText('Địa chỉ thế lực'), { target: { value: 'Hoang Thú giới - Tây Châu' } });
     fireEvent.change(getByLabelText('Cấp bậc thế lực'), { target: { value: 'Thiên Tôn cấp thế lực' } });
     fireEvent.click(getByRole('button', { name: /lưu thông tin/i }));
@@ -173,7 +173,7 @@ describe('modal ttc-save scope', () => {
     const [, dynamicData] = onEntitySave.mock.calls[0];
     expect(dynamicData).toMatchObject({
       f_loai_to_chuc: 'Tông Môn',
-      f_he_cap_the_luc: 'Nguyên giới',
+      f_he_cap_the_luc: 'Tien gioi',
       f_dia_ban: 'Hoang Thú giới - Tây Châu',
       f_status: 'Thiên Tôn cấp thế lực',
     });

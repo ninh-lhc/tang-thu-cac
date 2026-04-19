@@ -49,7 +49,13 @@ import {
 import { isCultivationRelationScope } from './lib/cultivationRelationSync.js';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
 import { isForceCollectionScope } from './lib/theLucBanDoSync.js';
-import { getForceRankOptionsForSystem, inferForceSystemLabel } from './lib/forceRankLadder.js';
+import { inferForceSystemLabel } from './lib/forceRankLadder.js';
+import {
+  collectMapSubTabsForForceUi,
+  getMapSubTabForceRankSuggestions,
+  listMapTabEntityNames,
+  matchMapSubTabByRealmInput,
+} from './lib/mapTabForceBridge.js';
 import {
   getMapFieldPlaceholders,
   getMapHierarchySeedLabels,
@@ -58,6 +64,7 @@ import {
 } from './lib/mapEntityFieldPresets.js';
 import { resolveEntityQuickSlots } from './lib/entityQuickEntrySlots.js';
 import { normalizeAsciiText, splitStatusHierarchyTokens } from './lib/statusHierarchyParser.js';
+import { inferOrgTypeFromContext, inferOrgTypeFromTabSlug } from './lib/forceOrgTypeInfer.js';
 import { normalizeListGroupStrategy } from './lib/collectionListCardSync.js';
 import { mergeTabsByGenres } from './genreTabsMap.js';
 import { getGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
@@ -1029,6 +1036,31 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
   const f2 = safeString(fields[1] ? getFieldValue(fields[1].id, entity) : '');
   const f3 = safeString(fields[2] ? getFieldValue(fields[2].id, entity) : '');
 
+  const isListCardEntity = normalizeAsciiText(safeString(entity.name)).startsWith('danh sach');
+  const listCardTabHint = safeString(tabConfig?.label || '').trim();
+  const listCardOrgGuess = isListCardEntity
+    ? inferOrgTypeFromContext({
+        dynamicData: entity.dynamicData || {},
+        sourceNhoId: tabConfig?.id || '',
+        sourceNhoLabel: tabConfig?.label || '',
+        typeFieldValue: '',
+      })
+    : '';
+  const listCardOrgDisplay =
+    listCardOrgGuess && listCardOrgGuess !== 'Thế Lực Khác'
+      ? listCardOrgGuess
+      : inferOrgTypeFromTabSlug(tabConfig?.id || '');
+  const f1Display =
+    isListCardEntity && !f1.trim()
+      ? (listCardTabHint
+          ? `CHỈ MỤC · ${listCardTabHint.toLocaleUpperCase('vi-VN')}`
+          : 'CHỈ MỤC DANH SÁCH')
+      : f1;
+  const f2Display =
+    isListCardEntity && fields[1] && !f2.trim() && listCardOrgDisplay
+      ? listCardOrgDisplay
+      : f2;
+
   const avatarColors = ['bg-amber-900/50','bg-indigo-900/50','bg-emerald-900/50','bg-rose-900/50','bg-purple-900/50','bg-sky-900/50','bg-orange-900/50','bg-teal-900/50'];
   const avatarTextColors = ['text-amber-400','text-indigo-400','text-emerald-400','text-rose-400','text-purple-400','text-sky-400','text-orange-400','text-teal-400'];
   const colorIdx = safeString(entity.name).charCodeAt(0) % avatarColors.length;
@@ -1049,11 +1081,11 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
          </div>
          <div className="flex-1 min-w-0 pr-6">
             <h4 className="text-amber-100 font-bold font-serif text-base leading-snug break-words" title={safeString(entity.name)}>{safeString(entity.name)}</h4>
-            {fields[0] && <p className="text-[11px] text-amber-600 font-bold uppercase tracking-widest mt-0.5 break-words">{f1 || '---'}</p>}
+            {fields[0] && <p className="text-[11px] text-amber-600 font-bold uppercase tracking-widest mt-0.5 break-words">{f1Display || '---'}</p>}
          </div>
       </div>
       <div className="mb-4 space-y-1">
-        {fields[1] && <div className="text-xs text-slate-400 font-serif line-clamp-2 italic"><Shield size={10} className="inline mr-1 opacity-50"/> {safeString(fields[1].label)}: {f2 || '---'}</div>}
+        {fields[1] && <div className="text-xs text-slate-400 font-serif line-clamp-2 italic"><Shield size={10} className="inline mr-1 opacity-50"/> {safeString(fields[1].label)}: {f2Display || '---'}</div>}
         {fields[2] && <p className="text-sm text-slate-300 font-serif line-clamp-3 leading-relaxed mt-1">{f3 || '...'}</p>}
       </div>
       <div className="w-full pt-3 border-t border-slate-800/80 flex justify-between items-center text-[10px] text-slate-500 uppercase tracking-widest font-bold">
@@ -1138,7 +1170,6 @@ const FORCE_TYPE_SEED_OPTIONS = [
   'Quốc Gia',
 ];
 
-const FORCE_REALM_SYSTEM_OPTIONS = ['Hạ giới', 'Tiên Ma giới', 'Nguyên giới', 'Cửu cấp', 'Vương giới', 'Tôn giới', 'Đế giới'];
 const MAP_REALM_SYSTEM_OPTIONS = ['Hạ giới', 'Tiên Ma giới', 'Nguyên giới'];
 
 function normalizeRealmSystemKey(value = '') {
@@ -1156,14 +1187,6 @@ function getMapHierarchyOptionsByRealm(realmSystem = '', baseOptions = []) {
   if (key === 'tien-ma-gioi') return dedupeCaseInsensitive(['Vương giới', 'Tôn giới']);
   if (key === 'nguyen-gioi') return dedupeCaseInsensitive(['Đế giới']);
   return dedupeCaseInsensitive(baseOptions);
-}
-
-function resolveForceRankSeedSystem(selectedRealmSystem, inferredSystem, rankLabel) {
-  const normalizedRealm = normalizeAsciiText(selectedRealmSystem);
-  if (normalizedRealm.includes('ha gioi')) return 'Cửu cấp';
-  if (normalizedRealm.includes('tien ma gioi')) return 'Tôn giới';
-  if (normalizedRealm.includes('nguyen gioi')) return 'Đế giới';
-  return selectedRealmSystem || inferredSystem || rankLabel;
 }
 
 function collectForceQuickHints(activeNovelData) {
@@ -1292,12 +1315,12 @@ export const ModalEntity = ({
   onOpenAutoSyncGuide,
   onSetTabListGroupStrategy,
   onSetTabListGroupOrder,
-  onSetTabListGroupFieldOrder,
   onSaveTabListGroupOrderToGenreTemplate,
   onSetTabMapEntrySuggestions,
   handleAddTabTemplateField,
   handleRemoveTabTemplateField,
   handleRenameTabTemplateFieldLabel,
+  handleSetTabTemplateFieldListMergeOrder,
   handleMergeTabFieldSuggestionList,
 }) => {
   void onUpdateTemplate;
@@ -1367,14 +1390,12 @@ export const ModalEntity = ({
   );
   const listGroupStrategy = normalizeListGroupStrategy(tabConfig?.autoListGroupStrategy || '');
   const listGroupOrderLines = Array.isArray(tabConfig?.autoListGroupOrder) ? tabConfig.autoListGroupOrder.join('\n') : '';
-  const listGroupFieldOrderLines = Array.isArray(tabConfig?.autoListGroupFieldOrder)
-    ? tabConfig.autoListGroupFieldOrder.join('\n')
-    : '';
   const [isGroupConfigOpen, setIsGroupConfigOpen] = useState(false);
   const [isTabFieldsCustomizerOpen, setIsTabFieldsCustomizerOpen] = useState(false);
   const [tabFieldSaveScope, setTabFieldSaveScope] = useState('local');
   const [isGroupOrderDirty, setIsGroupOrderDirty] = useState(false);
-  const [isGroupFieldOrderDirty, setIsGroupFieldOrderDirty] = useState(false);
+  const [forceLadderRealmLabel, setForceLadderRealmLabel] = useState('');
+  const [isForceRankLadderDirty, setIsForceRankLadderDirty] = useState(false);
   const tabLonCollectionMeta = useMemo(() => {
     const lon = activeNovelData?.tabsConfig?.find((t) => t.id === parentTabId);
     const lbl = safeString(lon?.label || parentTabId);
@@ -1382,7 +1403,7 @@ export const ModalEntity = ({
     return { parentLonLabel: lbl, collectionTabCount: Math.max(n, 1) };
   }, [activeNovelData, parentTabId]);
   const groupOrderInputRef = useRef(null);
-  const groupFieldOrderInputRef = useRef(null);
+  const forceRankLadderTextRef = useRef(null);
   const mapEntityHints = useMemo(
     () => collectMapEntityHints(activeNovelData, isMapScope ? tabConfig : null),
     [activeNovelData, tabConfig, isMapScope]
@@ -1419,27 +1440,62 @@ export const ModalEntity = ({
     () => getMapHierarchyOptionsByRealm(mapQuickRealmSystem, forceSystemSuggestions),
     [mapQuickRealmSystem, forceSystemSuggestions]
   );
-  const inferredForceSystem = useMemo(
-    () =>
-      inferSystemFromMapLocation(forceQuickLocation, mapEntityHints.recordsByName) ||
-      inferForceSystemLabel(forceQuickRank),
-    [forceQuickLocation, forceQuickRank, mapEntityHints.recordsByName]
-  );
-  const forceRankSeed = useMemo(
-    () => resolveForceRankSeedSystem(forceQuickRealmSystem, inferredForceSystem, forceQuickRank),
-    [forceQuickRealmSystem, inferredForceSystem, forceQuickRank]
-  );
-  const forceRankOptions = useMemo(() => getForceRankOptionsForSystem(forceRankSeed), [forceRankSeed]);
-  const forceRealmSystemOptions = useMemo(
-    () => dedupeCaseInsensitive([...FORCE_REALM_SYSTEM_OPTIONS, ...forceSystemSuggestions]),
-    [forceSystemSuggestions]
-  );
   const forceQuickHints = useMemo(() => collectForceQuickHints(activeNovelData), [activeNovelData]);
-  const forceTypeOptions = forceQuickHints.typeSuggestions;
-  const forceLocationOptions = useMemo(
-    () => dedupeCaseInsensitive([...forceQuickHints.locationSuggestions, ...mapNameSuggestions]),
-    [forceQuickHints.locationSuggestions, mapNameSuggestions]
+  const mapSubTabsForForce = useMemo(
+    () => collectMapSubTabsForForceUi(activeNovelData),
+    [activeNovelData]
   );
+  const selectedMapPairForLadder = useMemo(() => {
+    const label =
+      forceLadderRealmLabel && mapSubTabsForForce.some((t) => t.label === forceLadderRealmLabel)
+        ? forceLadderRealmLabel
+        : mapSubTabsForForce[0]?.label || '';
+    if (!label) return null;
+    return mapSubTabsForForce.find((t) => t.label === label) || null;
+  }, [mapSubTabsForForce, forceLadderRealmLabel]);
+  const forceLadderLinesFromData = useMemo(() => {
+    if (!selectedMapPairForLadder) return '';
+    return getMapSubTabForceRankSuggestions(
+      activeNovelData,
+      selectedMapPairForLadder.lonId,
+      selectedMapPairForLadder.nhoId
+    ).join('\n');
+  }, [selectedMapPairForLadder, activeNovelData]);
+  const matchedMapSubTab = useMemo(() => {
+    const m = matchMapSubTabByRealmInput(forceQuickRealmSystem, mapSubTabsForForce);
+    if (m) return m;
+    const cur = safeString(forceQuickRealmSystem).trim();
+    if (!cur) return null;
+    return mapSubTabsForForce.find((t) => t.label === cur) || null;
+  }, [forceQuickRealmSystem, mapSubTabsForForce]);
+  const customMapForceRanks = useMemo(() => {
+    if (!matchedMapSubTab) return [];
+    return dedupeCaseInsensitive(
+      getMapSubTabForceRankSuggestions(activeNovelData, matchedMapSubTab.lonId, matchedMapSubTab.nhoId)
+    );
+  }, [matchedMapSubTab, activeNovelData]);
+  const forceRankOptions = useMemo(() => customMapForceRanks, [customMapForceRanks]);
+  const forceRealmSystemOptions = useMemo(
+    () => dedupeCaseInsensitive(mapSubTabsForForce.map((t) => t.label)),
+    [mapSubTabsForForce]
+  );
+  const forceRealmSelectValue = useMemo(() => {
+    const cur = safeString(forceQuickRealmSystem).trim();
+    return cur && forceRealmSystemOptions.includes(cur) ? cur : '';
+  }, [forceRealmSystemOptions, forceQuickRealmSystem]);
+  const mapTabNamesForForceLocation = useMemo(() => {
+    if (matchedMapSubTab == null) return [];
+    return dedupeCaseInsensitive(
+      listMapTabEntityNames(activeNovelData, matchedMapSubTab.lonId, matchedMapSubTab.nhoId)
+    );
+  }, [matchedMapSubTab, activeNovelData]);
+  const forceLocationOptions = useMemo(() => {
+    if (matchedMapSubTab != null) {
+      return mapTabNamesForForceLocation;
+    }
+    return dedupeCaseInsensitive([...forceQuickHints.locationSuggestions, ...mapNameSuggestions]);
+  }, [matchedMapSubTab, mapTabNamesForForceLocation, forceQuickHints.locationSuggestions, mapNameSuggestions]);
+  const forceTypeOptions = forceQuickHints.typeSuggestions;
   const mapSuggestTypeLines = useMemo(
     () => (Array.isArray(tabConfig?.mapEntrySuggestions?.types) ? tabConfig.mapEntrySuggestions.types.join('\n') : ''),
     [tabConfig]
@@ -1587,9 +1643,9 @@ export const ModalEntity = ({
   };
   const handleForceTypeChange = (value) => {
     setForceQuickType(value);
+    // Chỉ ghi f_loai_to_chuc: preset fantasyRace/v.v. dùng f_title cho «phân nhánh», không trùng loại hình.
     patchDynamicData({
       f_loai_to_chuc: value,
-      f_title: value,
     });
   };
   const handleForceRealmSystemChange = (value) => {
@@ -1617,6 +1673,13 @@ export const ModalEntity = ({
   };
 
   useEffect(() => {
+    if (!isGroupConfigOpen || mapSubTabsForForce.length === 0) return;
+    if (!forceLadderRealmLabel || !mapSubTabsForForce.some((t) => t.label === forceLadderRealmLabel)) {
+      setForceLadderRealmLabel(mapSubTabsForForce[0].label);
+    }
+  }, [isGroupConfigOpen, mapSubTabsForForce, forceLadderRealmLabel]);
+
+  useEffect(() => {
     if (!isOpen) return;
     /* eslint-disable react-hooks/set-state-in-effect -- dialog cần hydrate state khi mở */
     if (initialData) {
@@ -1630,15 +1693,23 @@ export const ModalEntity = ({
       if (!initialDyn.f_status && initialData.status) initialDyn.f_status = initialData.status;
       if (!initialDyn.f_title && initialData.title) initialDyn.f_title = initialData.title;
       if (!initialDyn.f_desc && initialData.description) initialDyn.f_desc = initialData.description;
-      setDynamicData(initialDyn);
       const mapQuickState = parseMapQuickState(initialDyn);
+      const forceQuickState = parseForceQuickState(initialDyn);
+      const mapBanDoLabels = dedupeCaseInsensitive(
+        collectMapSubTabsForForceUi(activeNovelData).map((t) => t.label)
+      );
+      const rawRealm = safeString(forceQuickState.realmSystem).trim();
+      if (rawRealm && !mapBanDoLabels.includes(rawRealm)) {
+        delete initialDyn.f_he_cap_the_luc;
+        delete initialDyn.f_he_phan_cap;
+      }
+      setDynamicData(initialDyn);
       setMapQuickType(mapQuickState.mapType);
       setMapQuickRealmSystem(mapQuickState.realmSystem);
       setMapQuickSystem(mapQuickState.mapSystem);
       setMapQuickParentPath(mapQuickState.parentPath);
-      const forceQuickState = parseForceQuickState(initialDyn);
       setForceQuickType(forceQuickState.orgType);
-      setForceQuickRealmSystem(forceQuickState.realmSystem || inferForceSystemLabel(forceQuickState.rankLabel));
+      setForceQuickRealmSystem(rawRealm && mapBanDoLabels.includes(rawRealm) ? rawRealm : '');
       setForceQuickRank(forceQuickState.rankLabel);
       setForceQuickLocation(forceQuickState.locationLine);
     } else {
@@ -1654,7 +1725,7 @@ export const ModalEntity = ({
       setForceQuickLocation('');
     }
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [isOpen, initialData]);
+  }, [isOpen, initialData, activeNovelData]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -1705,10 +1776,7 @@ export const ModalEntity = ({
                   onClick={() =>
                     setIsGroupConfigOpen((prev) => {
                       const next = !prev;
-                      if (next) {
-                        setIsGroupOrderDirty(false);
-                        setIsGroupFieldOrderDirty(false);
-                      }
+                      if (next) setIsGroupOrderDirty(false);
                       return next;
                     })
                   }
@@ -1752,6 +1820,9 @@ export const ModalEntity = ({
                   onMergeSuggestionList={(fid, text, opts) =>
                     handleMergeTabFieldSuggestionList(parentTabId, tabConfig.id, fid, text, opts)
                   }
+                  onSetFieldListMergeOrder={(fid, raw, opts) =>
+                    handleSetTabTemplateFieldListMergeOrder?.(parentTabId, tabConfig.id, fid, raw, opts)
+                  }
                   mapQuickEntryLists={
                     showMapQuickSection || showForceQuickSection
                       ? {
@@ -1775,133 +1846,207 @@ export const ModalEntity = ({
                     Quy chuẩn nhóm AUTO cho tab này
                   </div>
                   <div className="mt-1 text-[12px] text-slate-300 font-serif">
-                    Chỉ cấu hình khi tab này cần thứ tự nhóm riêng. Cấu hình này chỉ áp dụng cho tab hiện tại, không áp dụng toàn app.
+                    Cấp bậc Thế lực theo từng thẻ Bản đồ (lưu từng mục trước khi chọn thẻ khác). Gom nhóm thẻ Danh sách nằm ở mục
+                    mở rộng bên dưới.
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => {
                     setIsGroupConfigOpen(false);
-                    setIsGroupFieldOrderDirty(false);
                   }}
                   className="rounded-lg border border-slate-700 bg-slate-900/70 px-2.5 py-1 text-[11px] font-semibold text-slate-300 hover:border-slate-600 hover:text-slate-100"
                 >
                   Thu gọn
                 </button>
               </div>
-              <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_1fr]">
-                <label className="space-y-1">
-                  <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                    Kiểu gom nhóm
-                  </span>
-                  <select
-                    value={listGroupStrategy}
-                    onChange={(e) => onSetTabListGroupStrategy?.(parentTabId, tabConfig?.id, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-200 font-serif outline-none focus:border-violet-500/50"
-                  >
-                    <option value="auto">Tự đoán theo tab/genre</option>
-                    <option value="title">Theo Loại / Tiêu đề (f_title)</option>
-                    <option value="status">Theo Trạng thái (f_status)</option>
-                    <option value="rank">Theo Cấp bậc (f_cap/f_status)</option>
-                    <option value="location">Theo Địa bàn / Vị trí</option>
-                    <option value="relation">Theo Quan hệ</option>
-                    <option value="owner">Theo Chủ sở hữu</option>
-                    <option value="text">Theo Text tổng quát</option>
-                  </select>
-                </label>
-                <label className="space-y-1">
-                  <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                    List thứ tự / nhóm
-                  </span>
-                  <textarea
-                    ref={groupOrderInputRef}
-                    defaultValue={listGroupOrderLines}
-                    key={`entity-group-order-${safeString(parentTabId)}-${safeString(tabConfig?.id)}-${listGroupOrderLines}`}
-                    onChange={(e) => {
-                      setIsGroupOrderDirty(e.target.value !== listGroupOrderLines);
-                    }}
-                    rows={4}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono leading-relaxed"
-                    placeholder={'Ví dụ:\nThần Cấp\nThiên Cấp\nĐịa Cấp\nHuyền Cấp'}
-                  />
-                </label>
-              </div>
-              <label className="space-y-1 block">
-                <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                  Thứ tự trường (id) — quy chuẩn gộp list AUTO
-                </span>
-                <textarea
-                  ref={groupFieldOrderInputRef}
-                  defaultValue={listGroupFieldOrderLines}
-                  key={`entity-group-field-order-${safeString(parentTabId)}-${safeString(tabConfig?.id)}-${listGroupFieldOrderLines}`}
-                  onChange={(e) => {
-                    setIsGroupFieldOrderDirty(e.target.value !== listGroupFieldOrderLines);
-                  }}
-                  rows={3}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono leading-relaxed"
-                  placeholder={'f_title\nf_status\nf_vi_tri'}
-                />
-              </label>
-              <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
-                Mỗi dòng một id trường. Thứ tự = ưu tiên lấy nhãn nhóm (ô đầu tiên có dữ liệu) và thứ tự gộp các{' '}
-                <strong className="text-slate-400">list gợi ý</strong> trong «Chỉnh trường hồ sơ» để sắp nhóm trên thẻ Danh sách.
-                Trường không có list gợi ý: bỏ qua khi gộp. Để trống: app dùng mặc định theo kiểu tab / thể loại.
-              </p>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-[11px] text-slate-500 font-serif">
-                  List nhóm tĩnh (tùy chọn): mỗi dòng một nhãn. Để trống để chỉ dùng list theo trường hoặc mặc định.
+
+              {mapSubTabsForForce.length === 0 ? (
+                <p className="text-[11px] text-amber-200/90 font-serif">
+                  Chưa có tab con dưới lon Bản đồ — thêm trong Quản lý tab trước khi nhập cấp bậc.
+                </p>
+              ) : (
+                <>
+                  <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_1fr]">
+                    <label className="space-y-1">
+                      <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Hệ cấp bậc (thẻ Bản đồ)
+                      </span>
+                      <select
+                        value={
+                          forceLadderRealmLabel &&
+                          mapSubTabsForForce.some((t) => t.label === forceLadderRealmLabel)
+                            ? forceLadderRealmLabel
+                            : mapSubTabsForForce[0]?.label || ''
+                        }
+                        onChange={(e) => {
+                          setForceLadderRealmLabel(e.target.value);
+                          setIsForceRankLadderDirty(false);
+                        }}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-200 font-serif outline-none focus:border-violet-500/50 cursor-pointer"
+                      >
+                        {mapSubTabsForForce.map((t) => (
+                          <option key={`${t.lonId}::${t.nhoId}`} value={t.label}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1">
+                      <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">Cấp bậc</span>
+                      <textarea
+                        ref={forceRankLadderTextRef}
+                        key={`frl-${forceLadderRealmLabel}-${forceLadderLinesFromData}`}
+                        defaultValue={forceLadderLinesFromData}
+                        onChange={(e) => {
+                          setIsForceRankLadderDirty(e.target.value !== forceLadderLinesFromData);
+                        }}
+                        rows={5}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono leading-relaxed"
+                        placeholder={'Mỗi dòng một cấp (vd. Nhất Cấp thế lực)\nLưu trước khi chọn thẻ Bản đồ khác.'}
+                      />
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!selectedMapPairForLadder) return;
+                        const text = safeString(forceRankLadderTextRef.current?.value ?? '');
+                        onSetTabMapEntrySuggestions?.(
+                          selectedMapPairForLadder.lonId,
+                          selectedMapPairForLadder.nhoId,
+                          'forceRanks',
+                          text,
+                          { propagateWithinMapLon: false, saveToGenreTemplate: false }
+                        );
+                        setIsForceRankLadderDirty(false);
+                        showToast?.('Đã lưu list cấp bậc cho thẻ Bản đồ này.', 'success');
+                      }}
+                      disabled={!isForceRankLadderDirty || !selectedMapPairForLadder}
+                      className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
+                        isForceRankLadderDirty && selectedMapPairForLadder
+                          ? 'border-violet-600/55 bg-violet-900/35 text-violet-100 hover:bg-violet-900/50'
+                          : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
+                      }`}
+                    >
+                      Lưu cấp bậc
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!selectedMapPairForLadder) return;
+                        const text = safeString(forceRankLadderTextRef.current?.value ?? '');
+                        onSetTabMapEntrySuggestions?.(
+                          selectedMapPairForLadder.lonId,
+                          selectedMapPairForLadder.nhoId,
+                          'forceRanks',
+                          text,
+                          { propagateWithinMapLon: false, saveToGenreTemplate: true }
+                        );
+                        setIsForceRankLadderDirty(false);
+                        showToast?.('Đã lưu cấp bậc và cập nhật mẫu thể loại.', 'success');
+                      }}
+                      disabled={!isForceRankLadderDirty || !selectedMapPairForLadder}
+                      className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
+                        isForceRankLadderDirty && selectedMapPairForLadder
+                          ? 'border-cyan-600/55 bg-cyan-900/30 text-cyan-100 hover:bg-cyan-900/45'
+                          : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
+                      }`}
+                    >
+                      Lưu cấp bậc + cập nhật mẫu thể loại
+                    </button>
+                  </div>
+                </>
+              )}
+
+              <details className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3 space-y-3 open:border-violet-800/40">
+                <summary className="cursor-pointer text-[11px] font-bold text-violet-300/95 font-serif">
+                  Gom nhóm thẻ Danh sách (AUTO) — kiểu gom nhóm &amp; list thứ tự tĩnh
+                </summary>
+                <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_1fr] pt-2">
+                  <label className="space-y-1">
+                    <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      Kiểu gom nhóm
+                    </span>
+                    <select
+                      value={listGroupStrategy}
+                      onChange={(e) => onSetTabListGroupStrategy?.(parentTabId, tabConfig?.id, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-200 font-serif outline-none focus:border-violet-500/50"
+                    >
+                      <option value="auto">Tự đoán theo tab/genre</option>
+                      <option value="title">Theo Loại / Tiêu đề (f_title)</option>
+                      <option value="status">Theo Trạng thái (f_status)</option>
+                      <option value="rank">Theo Cấp bậc (f_cap/f_status)</option>
+                      <option value="location">Theo Địa bàn / Vị trí</option>
+                      <option value="relation">Theo Quan hệ</option>
+                      <option value="owner">Theo Chủ sở hữu</option>
+                      <option value="text">Theo Text tổng quát</option>
+                    </select>
+                  </label>
+                  <label className="space-y-1">
+                    <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      List thứ tự / nhóm
+                    </span>
+                    <textarea
+                      ref={groupOrderInputRef}
+                      defaultValue={listGroupOrderLines}
+                      key={`entity-group-order-${safeString(parentTabId)}-${safeString(tabConfig?.id)}-${listGroupOrderLines}`}
+                      onChange={(e) => {
+                        setIsGroupOrderDirty(e.target.value !== listGroupOrderLines);
+                      }}
+                      rows={4}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono leading-relaxed"
+                      placeholder={'Ví dụ:\nThần Cấp\nThiên Cấp\nĐịa Cấp\nHuyền Cấp'}
+                    />
+                  </label>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextText = safeString(groupOrderInputRef.current?.value ?? '');
-                      onSetTabListGroupOrder?.(parentTabId, tabConfig?.id, nextText);
-                      setIsGroupOrderDirty(false);
-                    }}
-                    disabled={!isGroupOrderDirty}
-                    className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
-                      isGroupOrderDirty
-                        ? 'border-violet-600/55 bg-violet-900/35 text-violet-100 hover:bg-violet-900/50'
-                        : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
-                    }`}
-                  >
-                    Lưu list
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextText = safeString(groupOrderInputRef.current?.value ?? '');
-                      onSaveTabListGroupOrderToGenreTemplate?.(parentTabId, tabConfig?.id, nextText);
-                      setIsGroupOrderDirty(false);
-                    }}
-                    disabled={!isGroupOrderDirty}
-                    className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
-                      isGroupOrderDirty
-                        ? 'border-cyan-600/55 bg-cyan-900/30 text-cyan-100 hover:bg-cyan-900/45'
-                        : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
-                    }`}
-                  >
-                    Lưu list + cập nhật mẫu thể loại
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextText = safeString(groupFieldOrderInputRef.current?.value ?? '');
-                      onSetTabListGroupFieldOrder?.(parentTabId, tabConfig?.id, nextText);
-                      setIsGroupFieldOrderDirty(false);
-                    }}
-                    disabled={!isGroupFieldOrderDirty || typeof onSetTabListGroupFieldOrder !== 'function'}
-                    className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
-                      isGroupFieldOrderDirty && typeof onSetTabListGroupFieldOrder === 'function'
-                        ? 'border-emerald-600/55 bg-emerald-900/30 text-emerald-100 hover:bg-emerald-900/45'
-                        : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
-                    }`}
-                  >
-                    Lưu thứ tự trường
-                  </button>
+                <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
+                  Thứ tự gộp các <strong className="text-slate-400">list gợi ý</strong> và nhãn nhóm (ô đầu tiên có dữ liệu theo thứ tự
+                  đó): mở «Chỉnh trường hồ sơ &amp; list», đặt <strong className="text-slate-400">STT gộp list AUTO</strong> cho từng
+                  trường (số nhỏ trước; trường chưa đánh số xếp sau). Chỉ khi có ít nhất một trường được đánh số thì quy ước này mới
+                  thay mặc định theo tab. Trường không có list gợi ý vẫn tham gia thứ tự nhãn nhóm nhưng bị bỏ qua khi gộp list.
+                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] text-slate-500 font-serif">
+                    List nhóm tĩnh (tùy chọn): mỗi dòng một nhãn. Để trống để chỉ dùng list theo trường hoặc mặc định.
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextText = safeString(groupOrderInputRef.current?.value ?? '');
+                        onSetTabListGroupOrder?.(parentTabId, tabConfig?.id, nextText);
+                        setIsGroupOrderDirty(false);
+                      }}
+                      disabled={!isGroupOrderDirty}
+                      className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
+                        isGroupOrderDirty
+                          ? 'border-violet-600/55 bg-violet-900/35 text-violet-100 hover:bg-violet-900/50'
+                          : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
+                      }`}
+                    >
+                      Lưu list
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextText = safeString(groupOrderInputRef.current?.value ?? '');
+                        onSaveTabListGroupOrderToGenreTemplate?.(parentTabId, tabConfig?.id, nextText);
+                        setIsGroupOrderDirty(false);
+                      }}
+                      disabled={!isGroupOrderDirty}
+                      className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
+                        isGroupOrderDirty
+                          ? 'border-cyan-600/55 bg-cyan-900/30 text-cyan-100 hover:bg-cyan-900/45'
+                          : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
+                      }`}
+                    >
+                      Lưu list + cập nhật mẫu thể loại
+                    </button>
+                  </div>
                 </div>
-              </div>
+              </details>
             </div>
           )}
 
@@ -2077,14 +2222,19 @@ export const ModalEntity = ({
                 </div>
                 <div className="space-y-2">
                   <label className={entityModalQuickLabel}>Hệ cấp bậc</label>
-                  <input
+                  <select
                     aria-label="Hệ cấp bậc thế lực"
-                    list="ttc-force-realm-system-options"
-                    value={forceQuickRealmSystem}
+                    value={forceRealmSelectValue}
                     onChange={(e) => handleForceRealmSystemChange(e.target.value)}
-                    className={entityModalQuickInput}
-                    placeholder={forceRealmSystemOptions[0] || 'Ví dụ: Hạ giới'}
-                  />
+                    className={`${entityModalQuickInput} cursor-pointer`}
+                  >
+                    <option value="">— Chọn tên thẻ Bản đồ —</option>
+                    {forceRealmSystemOptions.map((label) => (
+                      <option key={label} value={label}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="space-y-2">
                   <label className={entityModalQuickLabel}>Cấp bậc</label>
@@ -2094,7 +2244,10 @@ export const ModalEntity = ({
                     value={forceQuickRank}
                     onChange={(e) => handleForceRankChange(e.target.value)}
                     className={entityModalQuickInput}
-                    placeholder={forceRankOptions[0] || 'Ví dụ: Thiên Tôn cấp thế lực'}
+                    placeholder={
+                      forceRankOptions[0] ||
+                      'Thêm list trong «Quy chuẩn nhóm» (mở rộng) → Hệ cấp bậc / Cấp bậc → Lưu cấp bậc'
+                    }
                   />
                 </div>
               </div>
@@ -2106,8 +2259,23 @@ export const ModalEntity = ({
                   value={forceQuickLocation}
                   onChange={(e) => handleForceLocationChange(e.target.value)}
                   className={entityModalQuickInput}
-                  placeholder="Ví dụ: Tây Châu - Nguyên Giới"
+                  placeholder={
+                    matchedMapSubTab
+                      ? mapTabNamesForForceLocation.length > 0
+                        ? 'Chọn hoặc gõ — gợi ý = tên thẻ trong tab Bản đồ đã chọn'
+                        : 'Tab Bản đồ này chưa có thẻ (thực thể) — có thể gõ tay'
+                      : 'Chọn «Hệ cấp bậc» trước để gợi ý đúng thẻ trong tab đó'
+                  }
                 />
+                {matchedMapSubTab && mapTabNamesForForceLocation.length > 0 && (
+                  <p className="text-[11px] text-slate-400 font-serif leading-relaxed">
+                    <span className="text-amber-200/90 font-semibold">Thẻ trong tab «{matchedMapSubTab.label}»:</span>{' '}
+                    {mapTabNamesForForceLocation.join(' · ')}
+                  </p>
+                )}
+                {matchedMapSubTab && mapTabNamesForForceLocation.length === 0 && (
+                  <p className="text-[11px] text-slate-500 font-serif">Chưa có thẻ nào trong tab Bản đồ này (ngoài thẻ Danh sách).</p>
+                )}
               </div>
               <p className="text-[11px] text-slate-400 font-serif">
                 Chuỗi auto sẽ lưu:{' '}
@@ -2170,12 +2338,6 @@ export const ModalEntity = ({
               <option key={item} value={item} />
             ))}
           </datalist>
-          <datalist id="ttc-force-realm-system-options">
-            {forceRealmSystemOptions.map((item) => (
-              <option key={item} value={item} />
-            ))}
-          </datalist>
-
           <div className="pt-2 border-t border-slate-800/80 space-y-2">
             <label className="block text-[10px] font-bold text-indigo-400 uppercase tracking-widest leading-snug">{WIKI_ALIAS_FIELD.label}</label>
             <textarea

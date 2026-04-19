@@ -1,9 +1,11 @@
 ﻿import { describe, expect, it } from 'vitest';
 import {
   ensureCollectionListCardsForNovel,
+  getAutoListFieldIdsFromTemplate,
   normalizeAutoListGroupFieldOrder,
   syncAllCollectionListCards,
   syncAllCollectionListCardsDetailed,
+  templateHasListMergeOrder,
 } from './collectionListCardSync.js';
 import { normalizeAsciiText } from './statusHierarchyParser.js';
 
@@ -87,6 +89,19 @@ describe('collectionListCardSync', () => {
       'f_status',
     ]);
     expect(normalizeAutoListGroupFieldOrder({})).toEqual([]);
+  });
+
+  it('getAutoListFieldIdsFromTemplate sorts numbered fields first, then template order', () => {
+    const tab = {
+      fieldsTemplate: [
+        { id: 'f_a', label: 'A', listMergeOrder: 2 },
+        { id: 'f_b', label: 'B', listMergeOrder: 1 },
+        { id: 'f_c', label: 'C' },
+        { id: 'f_alias', label: 'Wiki' },
+      ],
+    };
+    expect(templateHasListMergeOrder(tab)).toBe(true);
+    expect(getAutoListFieldIdsFromTemplate(tab)).toEqual(['f_b', 'f_a', 'f_c']);
   });
 
   it('ensures each collection tab has a list card named by sub-tab label', () => {
@@ -425,14 +440,454 @@ describe('collectionListCardSync', () => {
 
     syncAllCollectionListCards(novel);
     const info = String(novel.data['the-luc']['tong-mon'].entities[0].info || '');
-    const idxTongMon = info.indexOf('## Tông Môn (3)');
-    const idxThienTon = info.indexOf('1. [[Z Bách Cung]] - Thiên Tôn cấp thế lực · Tiên Ma giới · Hoang Thú giới');
-    const idxDiaTon = info.indexOf('2. [[A Lang Điện]] - Địa Tôn cấp thế lực · Tiên Ma giới · Hoang Thú giới');
+    // Nhãn nhóm mới: <địa bàn parent> · <loại> · <cấp>. A Lang Điện và Z Bách Cung ở cùng «Tiên giới» parent.
+    const idxZ = info.indexOf('1. [[Z Bách Cung]] - `Tông Môn`');
+    const idxA = info.indexOf('1. [[A Lang Điện]] - `Tông Môn`');
+    const idxThanh = info.indexOf('1. [[Thanh Vân Các]] - `Tông Môn`');
+    expect(idxZ).toBeGreaterThan(-1);
+    expect(idxA).toBeGreaterThan(-1);
+    expect(idxThanh).toBeGreaterThan(-1);
+    // Mỗi cấp bậc tách ở mục ### dưới ## địa·loại·hệ.
+    expect(info).toMatch(/###[^\n]*Thiên Tôn cấp thế lực\s*\(1\)/u);
+    expect(info).toMatch(/###[^\n]*Địa Tôn cấp thế lực\s*\(1\)/u);
+    expect(info).toMatch(/###[^\n]*Thiên Vương cấp thế lực\s*\(1\)/u);
+  });
 
-    expect(idxTongMon).toBeGreaterThan(-1);
-    expect(idxThienTon).toBeGreaterThan(idxTongMon);
-    expect(idxDiaTon).toBeGreaterThan(idxThienTon);
-    expect(info).toContain('3. [[Thanh Vân Các]] - Thiên Vương cấp thế lực · Tiên Ma giới · Dạ Lang Tiên Tinh');
+  it('map list wiki-links territory heading, splits ranks under same địa bàn, and code-wraps org type', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'tai-nguyen',
+          label: 'Tài nguyên',
+          subTabs: [{ id: 'dia-danh', label: 'Bản đồ / Bí cảnh', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'tai-nguyen': {
+          'dia-danh': {
+            overview: '',
+            entities: [
+              { id: 'list-1', name: 'Danh Sách Bản đồ / Bí cảnh', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'map-1',
+                name: 'Băng Thiên Đại Lục',
+                info: '',
+                dynamicData: {},
+                milestones: [],
+              },
+              {
+                id: 'f-1',
+                name: 'Băng Thiên Đế Quốc',
+                info: '',
+                dynamicData: {
+                  f_loai_to_chuc: 'Đế Quốc',
+                  f_status: 'Cửu Cấp thế lực',
+                  f_dia_ban: 'Băng Thiên Đại Lục',
+                },
+                milestones: [],
+              },
+              {
+                id: 'f-2',
+                name: 'U Thiên Đế Quốc',
+                info: '',
+                dynamicData: {
+                  f_loai_to_chuc: 'Đế Quốc',
+                  f_status: 'Bát Cấp thế lực',
+                  f_dia_ban: 'Băng Thiên Đại Lục',
+                },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['tai-nguyen']['dia-danh'].entities[0].info || '');
+    expect(info).toContain('- Tổng số thẻ: 2');
+    expect(info).toContain('## [[Băng Thiên Đại Lục]] · Đế Quốc (2)');
+    expect(info).toContain('### Bát Cấp thế lực (1)');
+    expect(info).toContain('### Cửu Cấp thế lực (1)');
+    expect(info).toContain('`Đế Quốc`');
+    expect(info).toContain('[[Băng Thiên Đế Quốc]]');
+    expect(info).toContain('[[U Thiên Đế Quốc]]');
+  });
+
+  it('map tab detected from id dia-danh even when label has no “bản đồ”; no false owner from f_loai_to_chuc', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'tai-nguyen',
+          label: 'Tài nguyên',
+          subTabs: [{ id: 'dia-danh', label: 'Maps', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'tai-nguyen': {
+          'dia-danh': {
+            overview: '',
+            entities: [
+              { id: 'list-1', name: 'Danh Sách Maps', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'f-1',
+                name: 'Băng Thiên Đế Quốc',
+                info: '',
+                dynamicData: {
+                  f_loai_to_chuc: 'Đế Quốc',
+                  f_status: 'Cửu Cấp thế lực',
+                  f_dia_ban: 'Băng Thiên Đại Lục',
+                },
+                milestones: [],
+              },
+              {
+                id: 'f-2',
+                name: 'U Thiên Đế Quốc',
+                info: '',
+                dynamicData: {
+                  f_loai_to_chuc: 'Đế Quốc',
+                  f_status: 'Bát Cấp thế lực',
+                  f_dia_ban: 'Băng Thiên Đại Lục',
+                },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['tai-nguyen']['dia-danh'].entities[0].info || '');
+    expect(info).toContain('## Băng Thiên Đại Lục · Đế Quốc (2)');
+    expect(info).toContain('### Bát Cấp thế lực (1)');
+    expect(info).toContain('### Cửu Cấp thế lực (1)');
+    expect(info).toContain('`Đế Quốc`');
+    expect(info).not.toContain('[[Đế Quốc]]');
+  });
+
+  it('map list still splits by rank when autoListGroupFieldOrder is only f_dia_ban', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'tai-nguyen',
+          label: 'Tài nguyên',
+          subTabs: [
+            {
+              id: 'dia-danh',
+              label: 'Bản đồ / Bí cảnh',
+              viewType: 'collection-track',
+              autoListGroupFieldOrder: ['f_dia_ban'],
+            },
+          ],
+        },
+      ],
+      data: {
+        'tai-nguyen': {
+          'dia-danh': {
+            overview: '',
+            entities: [
+              { id: 'list-1', name: 'Danh Sách Bản đồ / Bí cảnh', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'f-1',
+                name: 'Băng Thiên Đế Quốc',
+                info: '',
+                dynamicData: {
+                  f_loai_to_chuc: 'Đế Quốc',
+                  f_status: 'Cửu Cấp thế lực',
+                  f_dia_ban: 'Băng Thiên Đại Lục',
+                },
+                milestones: [],
+              },
+              {
+                id: 'f-2',
+                name: 'U Thiên Đế Quốc',
+                info: '',
+                dynamicData: {
+                  f_loai_to_chuc: 'Đế Quốc',
+                  f_status: 'Bát Cấp thế lực',
+                  f_dia_ban: 'Băng Thiên Đại Lục',
+                },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['tai-nguyen']['dia-danh'].entities[0].info || '');
+    expect(info).toContain('## Băng Thiên Đại Lục · Đế Quốc (2)');
+    expect(info).toContain('### Bát Cấp thế lực (1)');
+    expect(info).toContain('### Cửu Cấp thế lực (1)');
+  });
+
+  it('tab Chủng Tộc (slug chung-toc) dùng cùng logic ## địa·loại·hệ + ### cấp như Đế quốc', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'custom-lon',
+          label: 'Lon tùy chỉnh',
+          subTabs: [{ id: 'chung-toc', label: 'Chủng Tộc', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'custom-lon': {
+          'chung-toc': {
+            overview: '',
+            entities: [
+              { id: 'list-1', name: 'Danh sách Chủng Tộc', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'e1',
+                name: 'Zeta Tộc',
+                info: '',
+                dynamicData: {
+                  f_loai_to_chuc: 'Chủng Tộc',
+                  f_dia_ban: 'Băng Thiên Đại Lục',
+                  f_status: 'Bát Cấp thế lực',
+                },
+                milestones: [],
+              },
+              {
+                id: 'e2',
+                name: 'Alpha Tộc',
+                info: '',
+                dynamicData: {
+                  f_loai_to_chuc: 'Chủng Tộc',
+                  f_dia_ban: 'Băng Thiên Đại Lục',
+                  f_status: 'Cửu Cấp thế lực',
+                },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['custom-lon']['chung-toc'].entities[0].info || '');
+    expect(info).toContain('## Băng Thiên Đại Lục · Chủng Tộc (2)');
+    expect(info).toContain('### Bát Cấp thế lực (1)');
+    expect(info).toContain('### Cửu Cấp thế lực (1)');
+    const iAlpha = info.indexOf('[[Alpha Tộc]]');
+    const iZeta = info.indexOf('[[Zeta Tộc]]');
+    expect(iAlpha).toBeGreaterThan(-1);
+    expect(iZeta).toBeGreaterThan(-1);
+    expect(iAlpha).toBeLessThan(iZeta);
+  });
+
+  it('map list: cấp chỉ nằm trong f_title (không có f_status) — vẫn tách nhóm cửu/bát và hiển thị trong dòng', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'tai-nguyen',
+          label: 'Tài nguyên',
+          subTabs: [{ id: 'dia-danh', label: 'Bản đồ / Bí cảnh', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'tai-nguyen': {
+          'dia-danh': {
+            overview: '',
+            entities: [
+              { id: 'list-1', name: 'Danh Sách Bản đồ / Bí cảnh', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'f-1',
+                name: 'Băng Thiên Đế Quốc',
+                info: '',
+                dynamicData: {
+                  f_loai_to_chuc: 'Đế Quốc',
+                  f_title: 'Cửu Cấp thế lực',
+                  f_dia_ban: 'Băng Thiên Đại Lục',
+                },
+                milestones: [],
+              },
+              {
+                id: 'f-2',
+                name: 'U Thiên Đế Quốc',
+                info: '',
+                dynamicData: {
+                  f_loai_to_chuc: 'Đế Quốc',
+                  f_title: 'Bát Cấp thế lực',
+                  f_dia_ban: 'Băng Thiên Đại Lục',
+                },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['tai-nguyen']['dia-danh'].entities[0].info || '');
+    expect(info).toContain('## Băng Thiên Đại Lục · Đế Quốc (2)');
+    expect(info).toContain('### Bát Cấp thế lực (1)');
+    expect(info).toContain('### Cửu Cấp thế lực (1)');
+    expect(info).toContain('`Cửu Cấp thế lực`');
+    expect(info).toContain('`Bát Cấp thế lực`');
+  });
+
+  it('AUTO map: không nhầm f_title (chuỗi cấp) với loại hình; nhóm không thu gọn thành chỉ «Bát Cấp…»', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'tai-nguyen',
+          label: 'Tài nguyên',
+          subTabs: [{ id: 'dia-danh', label: 'Bản đồ / Bí cảnh', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'tai-nguyen': {
+          'dia-danh': {
+            overview: '',
+            entities: [
+              { id: 'list-1', name: 'Danh Sách Bản đồ / Bí cảnh', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'f-bang',
+                name: 'Băng Thiên Đế Quốc',
+                info: '',
+                dynamicData: {
+                  f_title: 'Cửu Cấp thế lực',
+                  f_status: 'Cửu Cấp thế lực',
+                  f_dia_ban: 'Băng Thiên Đại Lục',
+                },
+                milestones: [],
+              },
+              {
+                id: 'f-u-nguyen',
+                name: 'U Nguyên Đế Quốc',
+                info: '',
+                dynamicData: {
+                  f_title: 'Cửu Cấp thế lực',
+                  f_status: 'Cửu Cấp thế lực',
+                  f_dia_ban: 'U Nguyên Đại Lục',
+                },
+                milestones: [],
+              },
+              {
+                id: 'f-u-thien',
+                name: 'U Thiên Đế Quốc',
+                info: '',
+                dynamicData: {
+                  f_title: 'Bát Cấp thế lực',
+                  f_status: 'Bát Cấp thế lực',
+                  f_dia_ban: 'U Nguyên Đại Lục',
+                },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['tai-nguyen']['dia-danh'].entities[0].info || '');
+    expect(info).toContain('`Đế Quốc`');
+    expect(info.split('\n').some((line) => /^\s*##\s+Bát Cấp thế lực\s*\(\d+\)\s*$/.test(line))).toBe(false);
+    expect(info).toContain('Băng Thiên Đại Lục · Đế Quốc');
+    expect(info).toContain('U Nguyên Đại Lục · Đế Quốc');
+  });
+
+  it('AUTO đế quốc: cùng địa chỉ + loại — sort theo hệ cấp bậc (f_he_cap_the_luc) rồi tên', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'tai-nguyen',
+          label: 'Tài nguyên',
+          subTabs: [{ id: 'de-quoc', label: 'Đế Quốc', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'tai-nguyen': {
+          'de-quoc': {
+            overview: '',
+            entities: [
+              { id: 'list-1', name: 'Danh sách Đế Quốc', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'z',
+                name: 'Zeta Đế Quốc',
+                info: '',
+                dynamicData: {
+                  f_loai_to_chuc: 'Đế Quốc',
+                  f_dia_ban: 'Băng Thiên Đại Lục',
+                  f_he_cap_the_luc: 'Tiên Ma giới',
+                  f_status: 'Cửu Cấp thế lực',
+                },
+                milestones: [],
+              },
+              {
+                id: 'a',
+                name: 'Alpha Đế Quốc',
+                info: '',
+                dynamicData: {
+                  f_loai_to_chuc: 'Đế Quốc',
+                  f_dia_ban: 'Băng Thiên Đại Lục',
+                  f_he_cap_the_luc: 'Hạ giới',
+                  f_status: 'Cửu Cấp thế lực',
+                },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['tai-nguyen']['de-quoc'].entities[0].info || '');
+    const iAlpha = info.indexOf('[[Alpha Đế Quốc]]');
+    const iZeta = info.indexOf('[[Zeta Đế Quốc]]');
+    expect(iAlpha).toBeGreaterThan(-1);
+    expect(iZeta).toBeGreaterThan(-1);
+    expect(iAlpha).toBeLessThan(iZeta);
+  });
+
+  it('tab Đế Quốc dưới lon Tài nguyên không dùng tier (chỉ cấp) — có loại hình trong tiêu đề nhóm', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'tai-nguyen',
+          label: 'Tài nguyên',
+          subTabs: [{ id: 'de-quoc', label: 'Đế Quốc', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'tai-nguyen': {
+          'de-quoc': {
+            overview: '',
+            entities: [
+              { id: 'list-1', name: 'Danh sách Đế Quốc', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'f-1',
+                name: 'Băng Thiên Đế Quốc',
+                info: '',
+                dynamicData: { f_title: 'Đế Quốc', f_status: 'Cửu Cấp thế lực' },
+                milestones: [],
+              },
+              {
+                id: 'f-2',
+                name: 'U Thiên Đế Quốc',
+                info: '',
+                dynamicData: { f_title: 'Đế Quốc', f_status: 'Bát Cấp thế lực' },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['tai-nguyen']['de-quoc'].entities[0].info || '');
+    expect(info.split('\n').some((line) => /^\s*##\s+Cửu Cấp thế lực\s*\(\d+\)\s*$/.test(line))).toBe(false);
+    expect(info.split('\n').some((line) => /^\s*##\s+Bát Cấp thế lực\s*\(\d+\)\s*$/.test(line))).toBe(false);
+    expect(info).toContain('## Đế Quốc (2)');
+    expect(info).toContain('### Cửu Cấp thế lực (1)');
+    expect(info).toContain('### Bát Cấp thế lực (1)');
   });
 
   it('supports explicit list grouping strategy override per tab', () => {
@@ -501,6 +956,35 @@ describe('collectionListCardSync', () => {
     expect(iThien).toBeGreaterThan(iThan);
     expect(iDia).toBeGreaterThan(iThien);
     expect(iHuyen).toBeGreaterThan(iDia);
+  });
+
+  it('uses listMergeOrder on fieldsTemplate to merge lists like explicit autoListGroupFieldOrder', () => {
+    const novel = buildNovel();
+    novel.tabsConfig[1].subTabs[0].autoListGroupStrategy = 'text';
+    novel.tabsConfig[1].subTabs[0].fieldsTemplate = [
+      { id: 'f_status', label: 'S', listMergeOrder: 1 },
+      { id: 'f_title', label: 'T', listMergeOrder: 2 },
+      { id: 'f_alias', label: 'Wiki' },
+    ];
+    novel.tabsConfig[1].subTabs[0].fieldSuggestionLists = {
+      f_status: ['S2', 'S1'],
+      f_title: ['T1'],
+    };
+    novel.data['he-thong']['goi-qua'].entities = [
+      { id: 'list-1', name: 'Danh sach goi qua', info: '', dynamicData: {}, milestones: [] },
+      { id: 'a', name: 'Item A', info: '', dynamicData: { f_status: 'S1' }, milestones: [] },
+      { id: 'b', name: 'Item B', info: '', dynamicData: { f_status: 'S2' }, milestones: [] },
+      { id: 'c', name: 'Item C', info: '', dynamicData: { f_title: 'T1' }, milestones: [] },
+    ];
+
+    syncAllCollectionListCards(novel);
+    const info = normalizeAsciiText(String(novel.data['he-thong']['goi-qua'].entities[0].info || ''));
+    const iS2 = info.indexOf('## s2');
+    const iS1 = info.indexOf('## s1');
+    const iT1 = info.indexOf('## t1');
+    expect(iS2).toBeGreaterThan(-1);
+    expect(iS1).toBeGreaterThan(iS2);
+    expect(iT1).toBeGreaterThan(iS1);
   });
 
   it('uses autoListGroupFieldOrder to merge suggestion lists and pick group label', () => {

@@ -13,6 +13,8 @@ import {
 import {
   NOVEL_STORAGE_SHARDED,
   buildDiskManifest,
+  buildShardWritePlan,
+  getShardState,
   listShardKeysFromData,
   loadShardsFromNovelDir,
   novelManifestBaseNameCandidates,
@@ -325,6 +327,8 @@ export function useAppPersistence({
         }, 0);
         return { ok: false, mode: 'directory', reason: 'manifest_build_failed', error: e };
       }
+      const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
+      const shardPlan = buildShardWritePlan(novelToWrite.data || {}, getShardState(novelDir).hashes);
       const mainFile = `${folderName}.json`;
       const tmpFile = `${folderName}.json.tmp`;
       let cachedBackupJson = null;
@@ -333,9 +337,9 @@ export function useAppPersistence({
         cachedBackupJson = JSON.stringify(novelToWrite, null, 2);
         return cachedBackupJson;
       };
-      const writeNovelBackup = async (novelDir) => {
+      const writeNovelBackup = async (dir) => {
         try {
-          const bf = await novelDir.getFileHandle(`${folderName}.backup.json`, { create: true });
+          const bf = await dir.getFileHandle(`${folderName}.backup.json`, { create: true });
           const bw = await bf.createWritable();
           await bw.write(getBackupJson());
           await bw.close();
@@ -344,7 +348,6 @@ export function useAppPersistence({
         }
       };
       const tryAtomic = async () => {
-        const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
         await writeShardTree(novelDir, novelToWrite);
         const tw = await novelDir.getFileHandle(tmpFile, { create: true });
         const w = await tw.createWritable();
@@ -371,7 +374,6 @@ export function useAppPersistence({
         await writeNovelBackup(novelDir);
       };
       const tryDirect = async () => {
-        const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
         await writeShardTree(novelDir, novelToWrite);
         const f = await novelDir.getFileHandle(mainFile, { create: true });
         const w = await f.createWritable();
@@ -382,7 +384,13 @@ export function useAppPersistence({
       };
       try {
         const lastManifestJson = lastNovelManifestJsonByIdRef.current.get(novelToWrite.id);
-        if (lastManifestJson === jsonStr) {
+        // Manifest trên đĩa (buildDiskManifest) luôn bỏ data → jsonStr không đổi khi chỉ sửa thẻ/tab;
+        // chỉ so manifest sẽ bỏ qua ghi shard và mất dữ liệu sau F5.
+        if (
+          lastManifestJson === jsonStr &&
+          shardPlan.writes.length === 0 &&
+          shardPlan.removed.length === 0
+        ) {
           return { ok: true, mode: 'directory', skipped: 'unchanged' };
         }
         await tryAtomic();

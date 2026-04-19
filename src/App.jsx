@@ -1205,7 +1205,7 @@ export default function App() {
   const updateActiveNovelData = useCallback(
     (updateFn) => {
       const currentData = activeNovelDataRef.current;
-      if (!currentData) return;
+      if (!currentData) return false;
       const updatedData = structuredClone(currentData);
       updateFn(updatedData);
       const nextStats = { ...novelStatsByIdRef.current };
@@ -1554,6 +1554,7 @@ export default function App() {
     setRecentlyMergedFields,
     setEditingEntityData,
     setIsEntityModalOpen,
+    setActiveTabNho,
     showToast,
     syncNovelRef,
     dirHandleRef,
@@ -2230,21 +2231,6 @@ export default function App() {
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
   };
-  const handleSetTabListGroupFieldOrder = (lonId, nhoId, text) => {
-    const current = structuredClone(getTabsToUpdate());
-    const lon = current.find((tab) => tab.id === lonId);
-    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
-    if (!nho || nho.viewType !== 'collection-track') return;
-    const parsed = linesToSuggestionArray(text).map((line) => String(line || '').trim()).filter(Boolean);
-    if (parsed.length === 0) delete nho.autoListGroupFieldOrder;
-    else nho.autoListGroupFieldOrder = parsed;
-    setTabsConfig(current, {
-      resyncAuto: true,
-      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
-      autoSyncReason: 'set_list_group_field_order',
-      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
-    });
-  };
   const handleSaveTabListGroupOrderToGenreTemplate = (lonId, nhoId, text) => {
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
@@ -2289,11 +2275,14 @@ export default function App() {
         targetNho.mapEntrySuggestions && typeof targetNho.mapEntrySuggestions === 'object' ? targetNho.mapEntrySuggestions : {};
       const prevTypes = Array.isArray(prev.types) ? prev.types : [];
       const prevHierarchy = Array.isArray(prev.hierarchy) ? prev.hierarchy : [];
+      const prevForceRanks = Array.isArray(prev.forceRanks) ? prev.forceRanks : [];
       const types = which === 'types' ? linesToSuggestionArray(text) : prevTypes;
       const hierarchy = which === 'hierarchy' ? linesToSuggestionArray(text) : prevHierarchy;
+      const forceRanks = which === 'forceRanks' ? linesToSuggestionArray(text) : prevForceRanks;
       const next = {};
       if (types.length) next.types = types;
       if (hierarchy.length) next.hierarchy = hierarchy;
+      if (forceRanks.length) next.forceRanks = forceRanks;
       if (Object.keys(next).length === 0) delete targetNho.mapEntrySuggestions;
       else targetNho.mapEntrySuggestions = next;
     };
@@ -2446,6 +2435,45 @@ export default function App() {
     if (propagate) {
       showToast(`Đã đổi nhãn trường trên mọi tab thu thập trong «${safeString(lon?.label || lonId)}».`, 'success');
     }
+  };
+
+  const handleSetTabTemplateFieldListMergeOrder = (lonId, nhoId, fieldId, rawValue, options = {}) => {
+    const propagate = Boolean(options?.propagateWithinLon);
+    const fid = safeString(fieldId).trim();
+    if (!fid || fid === 'f_alias') return;
+    const trimmed = safeString(rawValue).trim();
+    let orderValue;
+    if (trimmed === '') orderValue = undefined;
+    else {
+      const n = Number(trimmed);
+      if (!Number.isFinite(n)) return;
+      orderValue = Math.trunc(n);
+    }
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const targets = propagate
+      ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
+      : [nho];
+    targets.forEach((sub) => {
+      const hasField = (sub.fieldsTemplate || []).some((f) => f.id === fid);
+      if (!hasField) return;
+      const nextFields = (sub.fieldsTemplate || []).map((f) => {
+        if (f.id !== fid) return f;
+        const next = { ...f };
+        if (orderValue === undefined) delete next.listMergeOrder;
+        else next.listMergeOrder = orderValue;
+        return next;
+      });
+      sub.fieldsTemplate = ensureWikiAliasInFieldsTemplate(nextFields);
+    });
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: propagate ? buildFullAutoSyncPlan() : buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: propagate ? 'tab_propagate_field_list_merge_order' : 'tab_field_list_merge_order',
+      autoSyncScopeLabel: propagate ? safeString(lon?.label || lonId) : buildTabScopeLabel(lonId, nhoId, current),
+    });
   };
 
   const handleSetTabEntityQuickEntry = (lonId, nhoId, slotFields, slotLabels, options = {}) => {
@@ -2684,6 +2712,10 @@ export default function App() {
 
   const { runCommandPaletteAction, commandPaletteFiltered } = useAppModalShortcutOrchestration({
     activeNovelData,
+    activeTabLon,
+    activeTabNho,
+    sortedTabs,
+    setActiveTabNho,
     isEntityModalOpen,
     setIsCommandPaletteOpen,
     setCommandPaletteQuery,
@@ -2836,13 +2868,13 @@ export default function App() {
     handleSetTabAutoSyncFieldMap,
     handleSetTabListGroupStrategy,
     handleSetTabListGroupOrder,
-    handleSetTabListGroupFieldOrder,
     handleSaveTabListGroupOrderToGenreTemplate,
     handleSetTabMapEntrySuggestions,
     handleMergeTabFieldSuggestionList,
     handleAddTabTemplateField,
     handleRemoveTabTemplateField,
     handleRenameTabTemplateFieldLabel,
+    handleSetTabTemplateFieldListMergeOrder,
     handleSetTabEntityQuickEntry,
     handleApplySuggestedAutoSyncSetup,
     handleResyncAutoTabs,

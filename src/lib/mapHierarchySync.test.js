@@ -114,6 +114,7 @@ describe('mapHierarchySync', () => {
 
     expect(parent).toBeTruthy();
     expect(source.info).toContain('## Phân tầng bản đồ (AUTO)');
+    expect(source.info).toContain('Địa chỉ (chuỗi địa lý):');
     expect(source.info).toContain('Trực thuộc: [[Việt Long Tinh Cầu]]');
     expect(parent.info).toContain('## Bản đồ trực thuộc');
     expect(parent.info).toContain('[[Man Hoang Đại Lục]] (Đại Lục · Tiểu Thế Giới)');

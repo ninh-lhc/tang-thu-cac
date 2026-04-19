@@ -21,6 +21,8 @@ export function EntityTabFieldsCustomizerPanel({
   onRemoveField,
   onRenameField,
   onMergeSuggestionList,
+  /** Số thứ tự gộp list AUTO + nhãn nhóm (listMergeOrder trên fieldsTemplate). */
+  onSetFieldListMergeOrder,
   /** Gộp list gợi ý cho ô nhập nhanh bản đồ (mapEntrySuggestions) — tránh một khối chỉnh riêng trên modal. */
   mapQuickEntryLists = null,
 }) {
@@ -74,11 +76,13 @@ export function EntityTabFieldsCustomizerPanel({
         ) : (
           <>Chỉ áp dụng cho tab con hiện tại.</>
         )}{' '}
-        <strong className="text-slate-500">Thứ tự dòng trong list</strong> hỗ trợ AUTO cấp 2 khi chưa có list Nhóm AUTO.
+        <strong className="text-slate-500">Thứ tự dòng trong mỗi list</strong> (dòng trên = ưu tiên trước trong list đó) hỗ trợ AUTO
+        cấp 2 khi chưa có list Nhóm tĩnh. <strong className="text-slate-500">STT gộp list AUTO</strong> (ở từng trường) quyết định thứ
+        tự ghép các list giữa các trường trên thẻ Danh sách — dùng chung mọi thể loại khi bạn đánh số ít nhất một trường.
         {mapQuickEntryLists ? (
           <>
             {' '}
-            Với tab bản đồ / thế lực, thêm hai list «Loại địa bàn» / «Hệ phân cấp» cho ô nhập nhanh ở cuối khối này.
+            Với tab bản đồ / thế lực, chỉnh «Loại địa bàn» / «Hệ phân cấp» ở cuối khối. List cấp bậc Thế lực theo thẻ Bản đồ nằm ở «Quy chuẩn nhóm» trên modal (không chỉnh ở đây).
           </>
         ) : null}
       </p>
@@ -140,6 +144,25 @@ export function EntityTabFieldsCustomizerPanel({
                 <code className="text-[10px] text-slate-500 shrink-0 max-w-[7rem] truncate" title={fid}>
                   {fid}
                 </code>
+                {!isWiki && typeof onSetFieldListMergeOrder === 'function' && (
+                  <label className="flex flex-col gap-0.5 shrink-0">
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-cyan-500/90 whitespace-nowrap">
+                      STT gộp list
+                    </span>
+                    <input
+                      type="number"
+                      title="Số nhỏ = gộp list AUTO trước. Để trống = xếp sau các trường đã đánh số."
+                      defaultValue={
+                        typeof field.listMergeOrder === 'number' && Number.isFinite(field.listMergeOrder)
+                          ? field.listMergeOrder
+                          : ''
+                      }
+                      key={`entity-merge-ord-${tabPathKey}-${fid}-${field.listMergeOrder ?? 'none'}`}
+                      onBlur={(e) => onSetFieldListMergeOrder(fid, e.target.value, scopeOpts())}
+                      className="w-14 bg-slate-950 border border-slate-700 rounded-lg px-1.5 py-1 text-[11px] text-slate-100 font-mono outline-none focus:border-cyan-600/45"
+                    />
+                  </label>
+                )}
                 {!isWiki && typeof onRemoveField === 'function' && (
                   <button
                     type="button"
@@ -161,7 +184,9 @@ export function EntityTabFieldsCustomizerPanel({
                 )}
               </div>
               <div>
-                <div className="text-[10px] text-slate-500 mb-1 font-serif">Danh sách gợi ý / chọn — mỗi dòng một mục</div>
+                <div className="text-[10px] text-slate-500 mb-1 font-serif">
+                  Danh sách gợi ý / chọn — mỗi dòng một mục (dòng 1, 2, 3… = thứ tự trong nhóm này)
+                </div>
                 <textarea
                   defaultValue={suggestionLines}
                   key={`entity-sugg-${tabPathKey}-${fid}-${suggestionLines}`}
@@ -183,7 +208,7 @@ export function EntityTabFieldsCustomizerPanel({
         typeof mapQuickEntryLists.onSaveHierarchy === 'function' && (
         <div className="rounded-lg border border-slate-800/80 bg-slate-950/35 p-3 space-y-3">
           <div className="text-[10px] font-bold uppercase tracking-wide text-cyan-300/90">
-            List gợi ý nhập nhanh (Loại địa bàn / Hệ phân cấp)
+            List gợi ý nhập nhanh (Bản đồ / Thế lực)
           </div>
           <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
             Mỗi dòng một mục; lưu khi rời ô. Áp dụng lần tạo / sửa thẻ sau (đồng bộ nhánh bản đồ + mẫu thể loại như Quản lý tab).

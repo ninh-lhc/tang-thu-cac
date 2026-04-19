@@ -3,6 +3,7 @@
  * A list card is any entity whose name starts with "Danh sach".
  * The helper keeps manual notes intact and only rewrites its AUTO block.
  * Ranh giới khối: dòng tiêu đề # Danh mục thẻ (AUTO) (không dùng <!-- --> để giao diện gọn).
+ * Thế lực/bản đồ: một ## địa·loại·hệ (tổng), các ### theo cấp bậc; trong mỗi cấp sort tên A–Z.
  * Dữ liệu cũ có <!-- AUTO_COLLECTION_LIST:... --> vẫn được đọc và xóa khi đồng bộ lại.
  */
 
@@ -17,6 +18,7 @@ import { findEquivalentEntityByName } from './entityNameIdentity.js';
 import { isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
 import { normalizeTabAutoSyncLevelConfig } from './tabAutoSyncLevels.js';
 import { inferForceSystemLabel } from './forceRankLadder.js';
+import { classifyOrgType, inferOrgTypeFromContext, inferOrgTypeFromTabSlug } from './forceOrgTypeInfer.js';
 
 const LEGACY_AUTO_LIST_START = '<!-- AUTO_COLLECTION_LIST:START -->';
 const LEGACY_AUTO_LIST_END = '<!-- AUTO_COLLECTION_LIST:END -->';
@@ -75,9 +77,48 @@ export function normalizeAutoListGroupFieldOrder(tabConfig) {
   return raw.map((x) => safeString(x).trim()).filter(Boolean);
 }
 
+/** Có ít nhất một trường trong fieldsTemplate đặt listMergeOrder (số thứ tự gộp list AUTO). */
+export function templateHasListMergeOrder(tabConfig) {
+  const fields = Array.isArray(tabConfig?.fieldsTemplate) ? tabConfig.fieldsTemplate : [];
+  return fields.some((f) => {
+    const o = f?.listMergeOrder;
+    return typeof o === 'number' && Number.isFinite(o);
+  });
+}
+
+/**
+ * Thứ tự id trường để gộp list gợi ý / nhãn nhóm (khi bật listMergeOrder): số nhỏ trước;
+ * trường chưa đánh số xếp sau, giữ thứ tự trong mẫu. bỏ f_alias.
+ */
+export function getAutoListFieldIdsFromTemplate(tabConfig) {
+  const fields = Array.isArray(tabConfig?.fieldsTemplate) ? tabConfig.fieldsTemplate : [];
+  const rows = fields
+    .map((f, idx) => {
+      const id = safeString(f?.id).trim();
+      if (!id || id === 'f_alias') return null;
+      const o = f?.listMergeOrder;
+      const sort = typeof o === 'number' && Number.isFinite(o) ? Math.trunc(o) : null;
+      return { id, idx, sort };
+    })
+    .filter(Boolean);
+  rows.sort((a, b) => {
+    const aNum = a.sort !== null;
+    const bNum = b.sort !== null;
+    if (aNum && bNum && a.sort !== b.sort) return a.sort - b.sort;
+    if (aNum && !bNum) return -1;
+    if (!aNum && bNum) return 1;
+    return a.idx - b.idx;
+  });
+  return rows.map((r) => r.id);
+}
+
 function pickMergeFieldIds(tabConfig, fallbackIds = []) {
   const custom = normalizeAutoListGroupFieldOrder(tabConfig);
   if (custom.length > 0) return custom;
+  if (templateHasListMergeOrder(tabConfig)) {
+    const fromTpl = getAutoListFieldIdsFromTemplate(tabConfig);
+    if (fromTpl.length > 0) return fromTpl;
+  }
   return Array.isArray(fallbackIds) ? fallbackIds.map((x) => safeString(x).trim()).filter(Boolean) : [];
 }
 
@@ -132,7 +173,12 @@ function findTitleAutoListRange(text) {
           scan = nl2 === -1 ? text.length : nl2 + 1;
           continue;
         }
-        if (trimmed.startsWith('## ') || trimmed.startsWith('- ') || /^\d+\.\s/.test(trimmed)) {
+        if (
+          trimmed.startsWith('## ') ||
+          trimmed.startsWith('### ') ||
+          trimmed.startsWith('- ') ||
+          /^\d+\.\s/.test(trimmed)
+        ) {
           scan = nl2 === -1 ? text.length : nl2 + 1;
           continue;
         }
@@ -237,15 +283,38 @@ function splitHierarchyLikeTokens(value) {
 }
 
 function getMapDirectParent(entity) {
-  const tokens = splitHierarchyLikeTokens(pickFirstFilled(entity, ['f_vi_tri', 'f_dia_ban', 'f_status']));
+  // Chỉ địa bàn / vị trí — không dùng f_status (cấp bậc) kẻo nhầm «Cửu Cấp thế lực» thành parent bản đồ.
+  // Ưu tiên f_dia_ban (đại lục / địa chỉ lớn) trước f_vi_tri (thường là điểm cuối / đế quốc) để sort · nhóm khớp ý «địa chỉ».
+  const tokens = splitHierarchyLikeTokens(pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri']));
   return safeString(tokens[0]).trim();
+}
+
+/** Tránh nhầm «Cửu/Bát Cấp thế lực» trong ô f_title với loại hình. */
+function isLikelyForceRankLine(text) {
+  const raw = safeString(text).trim();
+  if (!raw) return false;
+  if (Number.isFinite(parseRankNumber(raw))) return true;
+  const n = normalize(raw);
+  return /\bcap\b/.test(n) && /\bthe\s+luc\b/.test(n);
+}
+
+/** f_title đôi khi chứa chuỗi cấp khi mẫu tab không có ô f_status / f_cap riêng. */
+function isRankLikeValue(text) {
+  const raw = safeString(text).trim();
+  if (!raw) return false;
+  if (Number.isFinite(parseRankNumber(raw))) return true;
+  return isLikelyForceRankLine(raw);
 }
 
 function getForceRankLabel(entity) {
   const rawStatus = pickFirstFilled(entity, ['f_status']);
   const parsedStatus = parseStatusHierarchy(rawStatus);
   if (parsedStatus?.rankLabel) return safeString(parsedStatus.rankLabel).trim();
-  const rawRank = pickFirstFilled(entity, ['f_status', 'f_cap']);
+  let rawRank = pickFirstFilled(entity, ['f_status', 'f_cap']);
+  if (!safeString(rawRank).trim()) {
+    const rawTitle = pickFirstFilled(entity, ['f_title']);
+    if (rawTitle && isRankLikeValue(rawTitle)) rawRank = rawTitle;
+  }
   return safeString(rawRank).trim();
 }
 
@@ -253,16 +322,6 @@ function getForceRankSystemLabel(entity) {
   const direct = pickFirstFilled(entity, ['f_he_cap_the_luc', 'f_he_phan_cap']);
   if (safeString(direct).trim()) return safeString(direct).trim();
   return inferForceSystemLabel(getForceRankLabel(entity));
-}
-
-function getForceLeafLocation(entity) {
-  const explicitLocations = splitHierarchyLikeTokens(pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri']));
-  if (explicitLocations.length > 0) return safeString(explicitLocations[explicitLocations.length - 1]).trim();
-
-  const parsedStatus = parseStatusHierarchy(pickFirstFilled(entity, ['f_status']));
-  const statusChain = Array.isArray(parsedStatus?.chain) ? parsedStatus.chain : [];
-  if (statusChain.length > 0) return safeString(statusChain[statusChain.length - 1]).trim();
-  return '';
 }
 
 /** Ghép thứ tự gợi ý từ nhiều fieldId (đúng thứ tự mảng). Trường không có list hoặc list rỗng: bỏ qua. */
@@ -352,14 +411,205 @@ function compareForceEntries(a, b) {
   return safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
 }
 
-function renderForceEntry(entity) {
+/** Loại hình thế lực để hiển thị trong dòng thẻ / nhóm (không dùng làm wiki). */
+function resolveForceOrgTypeLabel(entity, ctx = {}) {
+  const dyn = entity?.dynamicData && typeof entity.dynamicData === 'object' ? entity.dynamicData : {};
+  let org = inferOrgTypeFromContext({
+    dynamicData: dyn,
+    sourceNhoId: safeString(ctx.nhoId || ctx.tabConfig?.id || ''),
+    sourceNhoLabel: safeString(ctx.tabLabel || ctx.tabConfig?.label || ''),
+    typeFieldValue: '',
+  });
+  if (org === 'Thế Lực Khác') {
+    for (const fid of ['f_loai_to_chuc', 'f_loai', 'f_title']) {
+      const raw = safeString(dyn[fid] ?? (fid === 'f_title' ? entity?.title : '')).trim();
+      if (!raw || isLikelyForceRankLine(raw)) continue;
+      org = raw;
+      break;
+    }
+  }
+  if (!org || org === 'Thế Lực Khác') {
+    const fromSlug = inferOrgTypeFromTabSlug(safeString(ctx.nhoId || ctx.tabConfig?.id || ''));
+    if (fromSlug) return fromSlug;
+  }
+  if (!org || org === 'Thế Lực Khác') {
+    const fromName = classifyOrgType(safeString(entity?.name));
+    if (fromName !== 'Thế Lực Khác') return fromName;
+  }
+  if (!org || org === 'Thế Lực Khác') return '';
+  return org;
+}
+
+/** Loại hình cho nhãn nhóm / dòng AUTO: suy luận → f_loai_to_chuc / f_loai → slug tab. */
+function resolveOrgForMapList(entity, ctx) {
+  let o = resolveForceOrgTypeLabel(entity, ctx);
+  if (o) return o;
+  o = safeString(pickFirstFilled(entity, ['f_loai_to_chuc', 'f_loai'])).trim();
+  if (o) return o;
+  const fromId = inferOrgTypeFromTabSlug(safeString(ctx.nhoId || ctx.tabConfig?.id || ''));
+  if (fromId) return fromId;
+  return inferOrgTypeFromTabSlug(safeString(ctx.tabLabel || ctx.tabConfig?.label || ''));
+}
+
+/** Địa danh để sort: ưu tiên chuỗi đầy đủ f_dia_ban / f_vi_tri (khớp ô «Địa chỉ» trong modal), không chỉ token đầu. */
+function getForceSortLocation(entity) {
+  const full = safeString(pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri'])).trim();
+  if (full) return full;
+  return safeString(getMapDirectParent(entity)).trim();
+}
+
+function getForceRealmSystemSort(entity) {
+  return safeString(pickFirstFilled(entity, ['f_he_cap_the_luc', 'f_he_phan_cap'])).trim();
+}
+
+function compareNonemptyViEmptyLast(a, b) {
+  const A = safeString(a).trim();
+  const B = safeString(b).trim();
+  if (!A && !B) return 0;
+  if (!A) return 1;
+  if (!B) return -1;
+  return A.localeCompare(B, 'vi');
+}
+
+/** Địa danh → loại hình → hệ cấp bậc → cấp (số) → chuỗi cấp → tên (khớp Gợi ý nhanh Đế quốc). */
+function compareForceLocationHierarchy(a, b, ctx) {
+  const locCmp = compareNonemptyViEmptyLast(getForceSortLocation(a), getForceSortLocation(b));
+  if (locCmp !== 0) return locCmp;
+
+  const orgCmp = compareNonemptyViEmptyLast(resolveOrgForMapList(a, ctx), resolveOrgForMapList(b, ctx));
+  if (orgCmp !== 0) return orgCmp;
+
+  const sysCmp = compareNonemptyViEmptyLast(getForceRealmSystemSort(a), getForceRealmSystemSort(b));
+  if (sysCmp !== 0) return sysCmp;
+
+  const ar = parseRankNumber(getForceRankLabel(a));
+  const br = parseRankNumber(getForceRankLabel(b));
+  const aHas = Number.isFinite(ar);
+  const bHas = Number.isFinite(br);
+  if (aHas && bHas && ar !== br) return ar - br;
+  if (aHas !== bHas) return aHas ? -1 : 1;
+
+  const rankStrCmp = compareNonemptyViEmptyLast(getForceRankLabel(a), getForceRankLabel(b));
+  if (rankStrCmp !== 0) return rankStrCmp;
+
+  return safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
+}
+
+function renderForceEntry(entity, ctx = {}) {
   const name = safeString(entity?.name).trim();
   if (!name) return '';
-  const rank = getForceRankLabel(entity);
-  const system = getForceRankSystemLabel(entity);
-  const location = getForceLeafLocation(entity);
-  const parts = [rank, system, location].filter((item) => safeString(item).trim());
-  return parts.length > 0 ? `[[${name}]] - ${parts.join(' · ')}` : `[[${name}]]`;
+  const org = resolveOrgForMapList(entity, ctx);
+  const sys = getForceRealmSystemSort(entity);
+  const rank = safeString(getForceRankLabel(entity)).trim();
+  const bits = [];
+  if (org) bits.push(`\`${org}\``);
+  if (sys) bits.push(`\`${sys}\``);
+  if (rank) bits.push(`\`${rank}\``);
+  if (bits.length === 0) return `[[${name}]]`;
+  return `[[${name}]] - ${bits.join(' · ')}`;
+}
+
+const MAP_GROUP_RANK_SEP = ' \u00b7 ';
+
+/** Chuỗi cấp dùng để tách nhóm (không gộp cửu cấp với bát cấp). */
+function rankLineForForceSubGroup(entity) {
+  const rankLine = safeString(getForceRankLabel(entity)).trim();
+  if (!rankLine) return '';
+  if (Number.isFinite(parseRankNumber(rankLine))) return rankLine;
+  const n = normalize(rankLine);
+  if (/\b(cap|the\s+luc|de\b|ton\b|vuong\b|mon\b)\b/.test(n)) return rankLine;
+  return '';
+}
+
+/** Gom nhóm danh sách thế lực: cùng loại (Đế Quốc, Tông Môn…) nhưng khác cấp → tách bằng hậu tố · cấp bậc. */
+function appendRankToForceGroupLabel(baseText, entity) {
+  const base = safeString(baseText).trim();
+  const rankForSplit = rankLineForForceSubGroup(entity);
+  if (!rankForSplit) return base;
+  if (!base) return rankForSplit;
+  const nb = normalize(base);
+  const nr = normalize(rankForSplit);
+  if (nb.includes(nr)) return base;
+  return `${base}${MAP_GROUP_RANK_SEP}${rankForSplit}`;
+}
+
+/** Configured field đầu được coi là "base location/loại" hợp lệ chỉ khi không phải chuỗi cấp bậc. */
+function firstConfiguredNonRank(entity, fieldIds = []) {
+  for (const fid of fieldIds) {
+    const value = safeString(entity?.dynamicData?.[fid] ?? entity?.[fid]).trim();
+    if (!value) continue;
+    if (Number.isFinite(parseRankNumber(value))) continue;
+    return value;
+  }
+  return '';
+}
+
+/** Tiêu đề cấp 1 (địa · loại · hệ cấp) — không gồm hạng cấp; dùng cho khối ## lớn. */
+function buildMapForcePrimaryGroupLabel(entity, ctx) {
+  const configuredNonRank = firstConfiguredNonRank(entity, ctx.configuredFieldIds || []);
+  const locationValue = safeString(
+    pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri']) || getMapDirectParent(entity)
+  ).trim();
+  const orgValue = resolveOrgForMapList(entity, ctx);
+  const realmLine = getForceRealmSystemSort(entity);
+
+  const parts = [];
+  const pushUnique = (value) => {
+    const v = safeString(value).trim();
+    if (!v) return;
+    if (parts.some((p) => normalize(p) === normalize(v))) return;
+    parts.push(v);
+  };
+
+  if (ctx.preferLocationAsBase) {
+    pushUnique(locationValue || configuredNonRank);
+    pushUnique(orgValue);
+    pushUnique(realmLine);
+  } else {
+    pushUnique(locationValue);
+    pushUnique(orgValue);
+    pushUnique(realmLine);
+    pushUnique(configuredNonRank);
+  }
+
+  let core = parts.join(MAP_GROUP_RANK_SEP);
+  if (!core) core = safeString(pickFirstFilled(entity, ['f_title', 'f_status'])).trim();
+  return core.trim();
+}
+
+/** Nhãn gom nhóm phẳng (địa · loại · hệ · cấp) — giữ cho tương thích; danh sách AUTO dùng ## + ### tách cấp. */
+function buildMapForceGroupLabel(entity, ctx) {
+  const core = buildMapForcePrimaryGroupLabel(entity, ctx);
+  const rankLine = rankLineForForceSubGroup(entity);
+  const merged = appendRankToForceGroupLabel(core, entity);
+  return merged || safeString(rankLine || core || 'Chưa phân loại').trim();
+}
+
+function compareRankSubgroupOrder(rankLabelA, rankLabelB) {
+  const a = safeString(rankLabelA).trim();
+  const b = safeString(rankLabelB).trim();
+  const ar = parseRankNumber(a);
+  const br = parseRankNumber(b);
+  const aHas = Number.isFinite(ar);
+  const bHas = Number.isFinite(br);
+  if (aHas && bHas && ar !== br) return ar - br;
+  if (aHas !== bHas) return aHas ? -1 : 1;
+  return compareNonemptyViEmptyLast(a, b);
+}
+
+/** Tiêu đề nhóm AUTO: chỉ bọc [[wiki]] đoạn địa danh đầu tiên; các đoạn sau (· loại · cấp…) giữ plain. */
+function formatAutoListGroupHeading(groupLabel, ownerLookupEntities) {
+  const raw = safeString(groupLabel).trim();
+  if (!raw || raw === 'Chưa phân loại') return raw;
+  const parts = raw.split(MAP_GROUP_RANK_SEP).map((s) => s.trim()).filter(Boolean);
+  if (parts.length === 0) return raw;
+  const primary = parts[0];
+  const rest = parts.slice(1);
+  const hit = findEquivalentEntityByName(ownerLookupEntities, primary);
+  const canon = safeString(hit?.entity?.name).trim();
+  const head = canon ? `[[${canon}]]` : primary;
+  if (rest.length === 0) return head;
+  return `${head}${MAP_GROUP_RANK_SEP}${rest.join(MAP_GROUP_RANK_SEP)}`;
 }
 
 function extractOwnerName(rawValue) {
@@ -393,7 +643,10 @@ function resolveOwnerLabel(entity, ownerLookupEntities = []) {
     const dyn = entity?.dynamicData && typeof entity.dynamicData === 'object' ? entity.dynamicData : {};
     for (const [key, value] of Object.entries(dyn)) {
       if (!safeString(value).trim()) continue;
-      if (/(chu|owner|so_huu|phai|to_chuc|the_luc|phe)/i.test(safeString(key))) {
+      const k = safeString(key);
+      // f_loai_to_chuc chứa chuỗi "to_chuc" — không phải quyền sở hữu / tông phái.
+      if (/loai_to_chuc/i.test(k)) continue;
+      if (/(chu|owner|so_huu|phai|to_chuc|the_luc|phe)/i.test(k)) {
         raw = value;
         break;
       }
@@ -414,9 +667,28 @@ function resolveOwnerLabel(entity, ownerLookupEntities = []) {
   return safeString(matched?.entity?.name).trim() || ownerName;
 }
 
+/** Tab nhỏ gom thế lực theo «Đế quốc / Chủng tộc / Tông môn…» — dù lon là «Tài nguyên» vẫn không dùng tier như đan dược. */
+function isForceBucketCollectionTab(nhoId = '', tabLabel = '') {
+  const bag = normalize([nhoId, tabLabel].filter(Boolean).join(' ')).replace(/-/g, ' ');
+  if (!bag) return false;
+  return (
+    /\bde\s+quoc\b/.test(bag) ||
+    /\bquoc\s+gia\b/.test(bag) ||
+    /\bchung\s+toc\b/.test(bag) ||
+    /\btong\s+mon\b/.test(bag) ||
+    /\bgia\s+toc\b/.test(bag) ||
+    /\bhoc\s+vien\b/.test(bag) ||
+    /\bthuong\s+minh\b/.test(bag) ||
+    /\bthuong\s+hoi\b/.test(bag) ||
+    /\bthe\s+luc\s+khac\b/.test(bag)
+  );
+}
+
 function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentLabel = '', tabConfig = null } = {}) {
   const customGroupOrder = buildCustomGroupOrder(tabConfig);
-  const configuredFields = normalizeAutoListGroupFieldOrder(tabConfig);
+  const explicitFieldOrder = normalizeAutoListGroupFieldOrder(tabConfig);
+  const templateFieldOrder = templateHasListMergeOrder(tabConfig) ? getAutoListFieldIdsFromTemplate(tabConfig) : [];
+  const configuredFields = explicitFieldOrder.length > 0 ? explicitFieldOrder : templateFieldOrder;
   const hasConfiguredFields = configuredFields.length > 0;
   const labelFromConfigured = (entity) => pickFirstFilled(entity, configuredFields);
 
@@ -448,17 +720,30 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
         return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_status']), 'text', ['f_status']);
       case 'rank':
         return buildTierStrategy((entity) => pickFirstFilled(entity, ['f_cap', 'f_status']), ['f_cap', 'f_status', 'f_title']);
-      case 'location':
+      case 'location': {
+        const locationCtx = { nhoId, tabLabel, parentLabel, tabConfig };
+        const basePrimary = (entity) => {
+          const base = hasConfiguredFields
+            ? safeString(labelFromConfigured(entity)).trim()
+            : safeString(pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri', 'f_status'])).trim();
+          return base || '';
+        };
         return {
           kind: 'force-location',
-          getGroupLabel: hasConfiguredFields
-            ? labelFromConfigured
-            : (entity) => pickFirstFilled(entity, ['f_dia_ban', 'f_vi_tri', 'f_status']),
+          getGroupLabel: (entity) => {
+            const base = basePrimary(entity);
+            const merged = appendRankToForceGroupLabel(base, entity);
+            return merged || base || 'Ch\u01b0a ph\u00e2n lo\u1ea1i';
+          },
+          getForcePrimaryLabel: (entity) => basePrimary(entity) || 'Ch\u01b0a ph\u00e2n lo\u1ea1i',
+          compareEntries: compareForceEntries,
+          renderEntry: (entity) => renderForceEntry(entity, locationCtx),
           getGroupOrder:
             customGroupOrder ||
             buildMergedSuggestionOrder(tabConfig, pickMergeFieldIds(tabConfig, ['f_dia_ban', 'f_vi_tri', 'f_status'])) ||
             undefined,
         };
+      }
       case 'relation':
         return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_quan_he', 'f_title', 'f_status']), 'text', [
           'f_quan_he',
@@ -481,7 +766,8 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
     }
   }
 
-  const scope = normalize([lonId, nhoId, tabLabel, parentLabel].filter(Boolean).join(' '));
+  // Coi id dạng dia-danh / tai-nguyen như có khoảng — tránh không khớp tab bản đồ khi thiếu từ trong nhãn.
+  const scope = normalize([lonId, nhoId, tabLabel, parentLabel].filter(Boolean).join(' ')).replace(/-/g, ' ');
 
   if (scope.includes('di thuoc tinh')) {
     return {
@@ -490,6 +776,67 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
         'f_loai',
         'f_status',
       ]),
+    };
+  }
+
+  // Tab bản đồ thường nằm dưới lon «Tài nguyên» → scope có `tai nguyen`; phải ưu tiên trước buildTierStrategy tài nguyên.
+  if (scope.includes('ban do') || scope.includes('dia danh') || scope.includes('bi canh')) {
+    const mergeIds = pickMergeFieldIds(tabConfig, [
+      'f_dia_ban',
+      'f_vi_tri',
+      'f_status',
+      'f_title',
+      'f_he_gioi_ban_do',
+    ]);
+    const mapLabelCtx = {
+      nhoId,
+      tabLabel,
+      parentLabel,
+      tabConfig,
+      configuredFieldIds: hasConfiguredFields ? configuredFields : [],
+      preferLocationAsBase: true,
+    };
+    return {
+      kind: 'force-location',
+      getGroupLabel: (entity) => buildMapForceGroupLabel(entity, mapLabelCtx),
+      getForcePrimaryLabel: (entity) => buildMapForcePrimaryGroupLabel(entity, mapLabelCtx),
+      compareEntries: compareForceEntries,
+      renderEntry: (entity) => renderForceEntry(entity, { nhoId, tabLabel, parentLabel, tabConfig }),
+      getGroupOrder:
+        customGroupOrder || (mergeIds.length > 0 ? buildMergedSuggestionOrder(tabConfig, mergeIds) : null) || undefined,
+    };
+  }
+
+  // Lon «Tài nguyên» có scope `tai nguyen` — phải nhận tab con «Đế quốc / Tông môn…» trước tier tài nguyên.
+  if (scope.includes('the luc') || isForceBucketCollectionTab(nhoId, tabLabel)) {
+    const mergeIds = pickMergeFieldIds(tabConfig, [
+      'f_loai_to_chuc',
+      'f_to_chuc',
+      'f_loai',
+      'f_title',
+      'f_he_cap_the_luc',
+      'f_he_phan_cap',
+      'f_dia_ban',
+      'f_vi_tri',
+      'f_cap',
+      'f_status',
+    ]);
+    const forceLabelCtx = {
+      nhoId,
+      tabLabel,
+      parentLabel,
+      tabConfig,
+      configuredFieldIds: hasConfiguredFields ? configuredFields : [],
+      preferLocationAsBase: false,
+    };
+    return {
+      kind: 'force-location',
+      getGroupLabel: (entity) => buildMapForceGroupLabel(entity, forceLabelCtx),
+      getForcePrimaryLabel: (entity) => buildMapForcePrimaryGroupLabel(entity, forceLabelCtx),
+      compareEntries: compareForceEntries,
+      renderEntry: (entity) => renderForceEntry(entity, { nhoId, tabLabel, parentLabel, tabConfig }),
+      getGroupOrder:
+        customGroupOrder || (mergeIds.length > 0 ? buildMergedSuggestionOrder(tabConfig, mergeIds) : null) || undefined,
     };
   }
 
@@ -536,46 +883,6 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
     };
   }
 
-  if (scope.includes('the luc')) {
-    const mergeIds = pickMergeFieldIds(tabConfig, [
-      'f_loai_to_chuc',
-      'f_to_chuc',
-      'f_loai',
-      'f_title',
-      'f_he_cap_the_luc',
-      'f_he_phan_cap',
-      'f_dia_ban',
-      'f_vi_tri',
-      'f_cap',
-      'f_status',
-    ]);
-    return {
-      kind: 'force-location',
-      getGroupLabel: hasConfiguredFields
-        ? labelFromConfigured
-        : (entity) =>
-            pickFirstFilled(entity, ['f_loai_to_chuc', 'f_to_chuc', 'f_loai', 'f_title']) ||
-            getForceRankSystemLabel(entity) ||
-            getForceLeafLocation(entity) ||
-            getForceRankLabel(entity) ||
-            pickFirstFilled(entity, ['f_cap', 'f_status']),
-      compareEntries: compareForceEntries,
-      renderEntry: renderForceEntry,
-      getGroupOrder:
-        customGroupOrder || (mergeIds.length > 0 ? buildMergedSuggestionOrder(tabConfig, mergeIds) : null) || undefined,
-    };
-  }
-
-  if (scope.includes('ban do') || scope.includes('dia danh') || scope.includes('bi canh')) {
-    return {
-      ...buildTextStrategy(
-        (entity) => getMapDirectParent(entity) || pickFirstFilled(entity, ['f_title', 'f_status']),
-        'text',
-        ['f_title', 'f_status', 'f_vi_tri', 'f_he_gioi_ban_do']
-      ),
-    };
-  }
-
   return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_title', 'f_cap', 'f_status']), 'text', [
     'f_title',
     'f_cap',
@@ -597,6 +904,12 @@ function computeGroupOrder(kind, label, strategy = null) {
     if (Number.isFinite(custom)) return custom;
   }
 
+  // Nhãn nhóm «địa danh · loại · cấp» là chuỗi ghép: không dùng parseRankNumber/computeTierOrder
+  // trên cả chuỗi (vd. «Bát Cấp» = 8 khiến thứ tự nhóm sai). Chỉ localeCompare tie-break.
+  if (kind === 'force-location') {
+    return 5_000;
+  }
+
   const anyTierOrder = computeTierOrder(label);
   if (anyTierOrder != null) return anyTierOrder;
 
@@ -611,16 +924,16 @@ function computeGroupOrder(kind, label, strategy = null) {
     return 9_000;
   }
 
-  if (kind === 'force-location') {
-    const parsed = parseRankNumber(label);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-
   return 5_000;
 }
 
-function buildAutoLines(records, strategy, ownerLookupEntities = []) {
-  const items = Array.isArray(records) ? records : [];
+function buildAutoLines(records, strategy, ownerLookupEntities = [], sortContext = null) {
+  const useForceHierarchy =
+    strategy.kind === 'force-location' && sortContext != null && typeof sortContext === 'object';
+  let items = Array.isArray(records) ? [...records] : [];
+  if (useForceHierarchy) {
+    items.sort((a, b) => compareForceLocationHierarchy(a, b, sortContext));
+  }
   const lines = [AUTO_LIST_TITLE, '', `- T\u1ed5ng s\u1ed1 th\u1ebb: ${items.length}`, ''];
   const compareEntries = typeof strategy?.compareEntries === 'function'
     ? strategy.compareEntries
@@ -642,6 +955,62 @@ function buildAutoLines(records, strategy, ownerLookupEntities = []) {
     return lines;
   }
 
+  if (useForceHierarchy && typeof strategy.getForcePrimaryLabel === 'function') {
+    const RANK_UNKNOWN = 'Ch\u01b0a r\u00f5 c\u1ea5p b\u1eadc';
+    const primaryBuckets = new Map();
+    const primaryOrder = [];
+    const seenPrimary = new Set();
+
+    items.forEach((entity) => {
+      const rawPrimary = safeString(strategy.getForcePrimaryLabel(entity)).trim();
+      const primaryLabel = rawPrimary || 'Ch\u01b0a ph\u00e2n lo\u1ea1i';
+      const pk = normalizeGroupKey(primaryLabel) || 'chua phan loai';
+      if (!seenPrimary.has(pk)) {
+        seenPrimary.add(pk);
+        primaryOrder.push(pk);
+      }
+      const rankRaw = rankLineForForceSubGroup(entity).trim();
+      const rankDisplay = rankRaw || RANK_UNKNOWN;
+      const rk = normalizeGroupKey(rankRaw) || 'chua ro cap';
+      if (!primaryBuckets.has(pk)) {
+        primaryBuckets.set(pk, { label: primaryLabel, rankMap: new Map() });
+      }
+      const bucket = primaryBuckets.get(pk);
+      if (!bucket.rankMap.has(rk)) bucket.rankMap.set(rk, { rankDisplay, entities: [] });
+      bucket.rankMap.get(rk).entities.push(entity);
+    });
+
+    primaryOrder.forEach((pk, index) => {
+      const bucket = primaryBuckets.get(pk);
+      const rankMap = bucket.rankMap;
+      const total = [...rankMap.values()].reduce((s, sub) => s + sub.entities.length, 0);
+      if (index > 0) lines.push('');
+      const headingCore = formatAutoListGroupHeading(bucket.label, ownerLookupEntities);
+      lines.push(`## ${headingCore} (${total})`);
+      lines.push('');
+      const rankKeys = [...rankMap.keys()];
+      rankKeys.sort((a, b) =>
+        compareRankSubgroupOrder(rankMap.get(a).rankDisplay, rankMap.get(b).rankDisplay)
+      );
+      rankKeys.forEach((rk, rkIndex) => {
+        const sub = rankMap.get(rk);
+        const subEntities = [...sub.entities].sort((a, b) =>
+          safeString(a?.name).localeCompare(safeString(b?.name), 'vi')
+        );
+        if (rkIndex > 0) lines.push('');
+        lines.push(`### ${sub.rankDisplay} (${subEntities.length})`);
+        lines.push('');
+        subEntities.forEach((entity, idx) => {
+          const lineContent = renderEntry(entity, ownerLookupEntities);
+          if (!lineContent) return;
+          lines.push(`${idx + 1}. ${lineContent}`);
+        });
+      });
+    });
+
+    return lines;
+  }
+
   const grouped = new Map();
   items.forEach((entity) => {
     const rawLabel = safeString(strategy.getGroupLabel(entity)).trim();
@@ -660,20 +1029,46 @@ function buildAutoLines(records, strategy, ownerLookupEntities = []) {
 
   groupEntries.forEach(({ label: groupLabel, entities }, index) => {
     if (index > 0) lines.push('');
-    lines.push(`## ${groupLabel} (${entities.length})`);
+    const headingCore = formatAutoListGroupHeading(groupLabel, ownerLookupEntities);
+    lines.push(`## ${headingCore} (${entities.length})`);
     lines.push('');
     let visibleIdx = 0;
-    [...entities]
-      .sort(compareEntries)
-      .forEach((entity) => {
-        const lineContent = renderEntry(entity, ownerLookupEntities);
-        if (!lineContent) return;
-        visibleIdx += 1;
-        lines.push(`${visibleIdx}. ${lineContent}`);
-      });
+    const orderedEntities = [...entities].sort(compareEntries);
+    orderedEntities.forEach((entity) => {
+      const lineContent = renderEntry(entity, ownerLookupEntities);
+      if (!lineContent) return;
+      visibleIdx += 1;
+      lines.push(`${visibleIdx}. ${lineContent}`);
+    });
   });
 
   return lines;
+}
+
+/** Thẻ chỉ là đại lục/địa danh trên tab bản đồ, không có tín hiệu thế lực → không đưa vào khối AUTO danh sách thế lực. */
+function entityHasMapForceListSignals(entity) {
+  const pick = (fieldId) => safeString(entity?.dynamicData?.[fieldId] ?? entity?.[fieldId]).trim();
+  if (
+    pick('f_loai_to_chuc') ||
+    pick('f_to_chuc') ||
+    pick('f_loai') ||
+    pick('f_status') ||
+    pick('f_cap') ||
+    pick('f_dia_ban') ||
+    pick('f_vi_tri') ||
+    pick('f_title')
+  ) {
+    return true;
+  }
+  const dyn = entity?.dynamicData && typeof entity.dynamicData === 'object' ? entity.dynamicData : {};
+  return Object.keys(dyn).length > 0;
+}
+
+function isMapLikeCollectionScope(context = {}) {
+  const scope = normalize(
+    [context.lonId, context.nhoId, context.tabLabel, context.parentLabel].filter(Boolean).join(' ')
+  ).replace(/-/g, ' ');
+  return scope.includes('ban do') || scope.includes('dia danh') || scope.includes('bi canh');
 }
 
 function syncListCardsInTab(tabData, context, ownerLookupEntities) {
@@ -681,9 +1076,19 @@ function syncListCardsInTab(tabData, context, ownerLookupEntities) {
   const listCards = entities.filter(isListCardEntity);
   if (listCards.length === 0) return false;
 
-  const normalEntities = entities.filter((entity) => !isListCardEntity(entity));
+  let normalEntities = entities.filter((entity) => !isListCardEntity(entity));
   const strategy = detectGroupingStrategy(context);
-  const blockText = buildAutoLines(normalEntities, strategy, ownerLookupEntities).join('\n');
+  if (strategy.kind === 'force-location' && isMapLikeCollectionScope(context)) {
+    normalEntities = normalEntities.filter(entityHasMapForceListSignals);
+  }
+  const sortContext = {
+    nhoId: context.nhoId,
+    tabLabel: context.tabLabel,
+    parentLabel: context.parentLabel,
+    tabConfig: context.tabConfig,
+    lonId: context.lonId,
+  };
+  const blockText = buildAutoLines(normalEntities, strategy, ownerLookupEntities, sortContext).join('\n');
   let changed = false;
 
   listCards.forEach((listCard) => {

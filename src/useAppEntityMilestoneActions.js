@@ -63,6 +63,7 @@ export function useAppEntityMilestoneActions({
   setRecentlyMergedFields,
   setEditingEntityData,
   setIsEntityModalOpen,
+  setActiveTabNho,
   showToast,
   syncNovelRef,
   dirHandleRef,
@@ -71,9 +72,20 @@ export function useAppEntityMilestoneActions({
   confirmDeleteEntityRef,
 }) {
   const handleOpenCreateEntity = useCallback(() => {
+    if (!activeTabNho && Array.isArray(currentTabConfig?.subTabs) && currentTabConfig.subTabs.length > 0) {
+      const first =
+        currentTabConfig.subTabs.find((s) => s.viewType === 'collection-track') || currentTabConfig.subTabs[0];
+      if (first?.id) setActiveTabNho(first.id);
+    }
     setEditingEntityData(null);
     setIsEntityModalOpen(true);
-  }, [setEditingEntityData, setIsEntityModalOpen]);
+  }, [
+    activeTabNho,
+    currentTabConfig?.subTabs,
+    setActiveTabNho,
+    setEditingEntityData,
+    setIsEntityModalOpen,
+  ]);
 
   const handleOpenEditEntity = useCallback(() => {
     if (!selectedEntity) return;
@@ -196,6 +208,13 @@ export function useAppEntityMilestoneActions({
         showToast('Điền Danh xưng / Tên gọi trước khi lưu.', 'warning');
         return;
       }
+      if (!activeTabNho && Array.isArray(currentTabConfig?.subTabs) && currentTabConfig.subTabs.length > 0) {
+        showToast(
+          'Chưa chọn chương mục con (vd. Chủng Tộc) — bấm vào tab con trên mục lục rồi lưu lại; hoặc đóng modal và mở «Tạo mới» từ danh sách.',
+          'warning'
+        );
+        return;
+      }
       const prev = activeNovelData ? structuredClone(activeNovelData) : null;
       const isCreate = !formData.id;
       const newEntityId = isCreate ? generateId('ent') : formData.id;
@@ -220,7 +239,9 @@ export function useAppEntityMilestoneActions({
       let mapHierarchyAutoApplied = false;
       let mapHierarchyRenameSynced = 0;
 
-      updateActiveNovelData((nov) => {
+      let saveOk = false;
+      try {
+        saveOk = updateActiveNovelData((nov) => {
         if (!nov.data) nov.data = {};
         if (!nov.data[activeTabLon]) nov.data[activeTabLon] = {};
         let tabData = nov.data[activeTabLon][activeTabNho || 'default'];
@@ -396,6 +417,18 @@ export function useAppEntityMilestoneActions({
         }
         syncAllCollectionListCards(nov);
       });
+      } catch (err) {
+        console.error('[TTC] handleSaveEntity', err);
+        showToast(
+          `Không lưu được thẻ (lỗi nội bộ): ${safeString(err?.message || err).slice(0, 200)}`,
+          'error'
+        );
+        return;
+      }
+      if (saveOk === false) {
+        showToast('Không lưu được — chưa có dữ liệu truyện đang mở.', 'error');
+        return;
+      }
 
       // UX: tạo thẻ xong thì tự vào tab Hồ Sơ + bật chế độ ghi chép chi tiết.
       if (isCreate && createTargetEntityId) {
@@ -466,6 +499,7 @@ export function useAppEntityMilestoneActions({
       activeTabLon,
       activeTabNho,
       currentTabConfig,
+      setActiveTabNho,
       getStatusLineForCurrentTab,
       mergeAliasForCurrentTab,
       updateActiveNovelData,

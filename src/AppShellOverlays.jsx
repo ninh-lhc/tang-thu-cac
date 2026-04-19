@@ -5,7 +5,7 @@
  * Không chứa routing hay state nghiệp vụ — chỉ nhận props từ App.jsx.
  */
 import React from 'react';
-import { X, Sparkles, HardDrive } from 'lucide-react';
+import { X, Sparkles } from 'lucide-react';
 import { AsyncLocalImage, safeString } from './MasterUtils.jsx';
 import { FALLBACK_IMG } from './MasterEngines.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
@@ -20,11 +20,11 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
   setToastMessage,
   isUploading,
   importProgress,
+  // eslint-disable-next-line no-unused-vars
   isDirectoryConnectionBootstrapping,
   currentContextDirHandle,
 }) {
   const [lightboxZoom, setLightboxZoom] = React.useState(1);
-  const [dismissBootstrapOverlay, setDismissBootstrapOverlay] = React.useState(false);
   const lightboxTrapRef = useFocusTrap(Boolean(lightboxSrc));
   const clampZoom = React.useCallback((z) => Math.min(5, Math.max(0.25, z)), []);
 
@@ -32,17 +32,6 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
     if (!lightboxSrc) return;
     setLightboxZoom(1);
   }, [lightboxSrc]);
-
-  React.useEffect(() => {
-    if (!isDirectoryConnectionBootstrapping) {
-      setDismissBootstrapOverlay(false);
-      return undefined;
-    }
-    const timer = setTimeout(() => {
-      setDismissBootstrapOverlay(true);
-    }, 6500);
-    return () => clearTimeout(timer);
-  }, [isDirectoryConnectionBootstrapping]);
 
   const handleLightboxWheel = React.useCallback((e) => {
     e.preventDefault();
@@ -52,39 +41,6 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
 
   return (
     <>
-      {isDirectoryConnectionBootstrapping && !dismissBootstrapOverlay && (
-        <div
-          className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/95 backdrop-blur-md px-4"
-          role="status"
-          aria-live="polite"
-          aria-label="Đang khôi phục kết nối thư mục"
-        >
-          <div className="w-full max-w-md rounded-[28px] border border-amber-700/30 bg-slate-950/90 shadow-[0_0_60px_rgba(0,0,0,0.65)] px-8 py-10 text-center">
-            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full border border-amber-500/20 bg-amber-950/25">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-amber-400/25 border-t-amber-400 animate-spin">
-                <HardDrive size={16} className="text-amber-300" />
-              </div>
-            </div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.35em] text-amber-400 mb-3">
-              Khôi phục kết nối
-            </p>
-            <h2 className="text-2xl font-heading font-bold text-slate-100 mb-3">
-              Đang mở lại thư mục đã kết nối
-            </h2>
-            <p className="font-serif text-sm leading-relaxed text-slate-400">
-              Tàng Thư Các đang đọc lại thư mục từ lần trước. Nếu còn hợp lệ, giao diện sẽ giữ nguyên trạng thái làm việc sau khi khôi phục xong.
-            </p>
-            <button
-              type="button"
-              onClick={() => setDismissBootstrapOverlay(true)}
-              className="mt-5 inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-[11px] font-semibold text-slate-300 hover:border-slate-600 hover:text-slate-100"
-            >
-              Bỏ qua khôi phục (vào app ngay)
-            </button>
-          </div>
-        </div>
-      )}
-
       {lightboxSrc && (
         <div
           ref={lightboxTrapRef}

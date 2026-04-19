@@ -217,9 +217,10 @@ describe('theLucBanDoSync', () => {
     expect(ok).toBe(true);
     const ent = nov.data['the-luc']['gia-toc'].entities[0];
     expect(ent.info).toContain('## Đồng bộ Thế Lực (AUTO)');
-    expect(ent.info).toContain('Vị Trí:');
-    expect(ent.info).toContain('Đại Lục');
-    expect(ent.info).toContain('Tinh Cầu');
+    expect(ent.info).toContain('hồ sơ phía trên');
+    expect(ent.info).not.toContain('## Phân tầng bản đồ (thế lực) (AUTO)');
+    expect(ent.info).not.toContain('Loại Hình:');
+    expect(ent.info).not.toContain('Vị Trí:');
     const mapEntities = nov.data['tai-nguyen']['dia-danh'].entities;
     expect(mapEntities.length).toBe(2);
     const continent = mapEntities.find((m) => m.name === 'Băng Thiên Đại Lục');
@@ -238,7 +239,7 @@ describe('theLucBanDoSync', () => {
     expect(planetInfo).toContain('1. [[Lạc Gia]] - Bát Cấp Thế Lực - Băng Thiên Đại Lục > Việt Long Tinh Cầu');
   });
 
-  it('includes explicit rank-system field in force AUTO block and map list lines', () => {
+  it('includes rank-system on map list lines without duplicating it in force AUTO block', () => {
     const nov = {
       tabsConfig: [
         { id: 'the-luc', label: 'Thế Lực', subTabs: [{ id: 'tong-mon', label: 'Tông Môn', viewType: 'collection-track' }] },
@@ -268,7 +269,8 @@ describe('theLucBanDoSync', () => {
 
     expect(syncAllTheLucMapAutoBlocks(nov, { sourceLonId: 'the-luc' })).toBe(true);
     const forceInfo = String(nov.data['the-luc']['tong-mon'].entities[0].info || '');
-    expect(forceInfo).toContain('Hệ Cấp Bậc: Nguyên giới');
+    expect(forceInfo).toContain('hồ sơ phía trên');
+    expect(forceInfo).not.toContain('Hệ Cấp Bậc:');
     const mapEntity = nov.data['tai-nguyen']['dia-danh'].entities.find((item) => item.name === 'Tây Châu');
     expect(String(mapEntity?.info || '')).toContain('[[Bá Việt Tông]] - Thiên Đế cấp thế lực (Nguyên giới)');
   });

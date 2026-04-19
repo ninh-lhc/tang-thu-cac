@@ -22,16 +22,28 @@ import {
 } from './autoSyncEntityPrefs.js';
 import { hasAutoSyncFeature, isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
 import { buildAutoSyncTargetPath, collectExplicitAutoSyncLinkSources } from './tabAutoSyncLinks.js';
+import { classifyOrgType, inferOrgTypeFromContext } from './forceOrgTypeInfer.js';
 
 const AUTO_FORCE_BLOCK_START = '<!-- AUTO_THE_LUC_META:START -->';
 const AUTO_FORCE_BLOCK_END = '<!-- AUTO_THE_LUC_META:END -->';
 const AUTO_MAP_BLOCK_START = '<!-- AUTO_MAP_THE_LUC_LIST:START -->';
 const AUTO_MAP_BLOCK_END = '<!-- AUTO_MAP_THE_LUC_LIST:END -->';
 const FORCE_META_TITLE = '## Đồng bộ Thế Lực (AUTO)';
+/** @deprecated Chỉ còn dùng khi strip ghi chú cũ (đã bỏ khối này khỏi thẻ thế lực). */
+const FORCE_MAP_STRATA_TITLE = '## Phân tầng bản đồ (thế lực) (AUTO)';
 const FORCE_MAP_LIST_TITLE = '## Thế lực theo vị trí (AUTO)';
 const FORCE_AUTO_END = '> (Tự động cập nhật theo Thế Lực ↔ Bản đồ)';
+const FORCE_MAP_STRATA_END = '> (Theo địa bàn đã nhập; đồng bộ với tab Bản đồ khi có)';
 const FORCE_SYNC_WARNING_LIMIT = 3;
-const FORCE_TYPE_GROUP_ORDER = ['Đế Quốc', 'Gia Tộc', 'Học Viện', 'Tông Môn', 'Thương Minh', 'Thế Lực Khác'];
+const FORCE_TYPE_GROUP_ORDER = [
+  'Đế Quốc',
+  'Chủng Tộc',
+  'Gia Tộc',
+  'Học Viện',
+  'Tông Môn',
+  'Thương Minh',
+  'Thế Lực Khác',
+];
 
 function safeString(v) {
   if (v == null || v === 'null' || v === 'undefined') return '';
@@ -122,7 +134,11 @@ function stripTheLucMapAutoBlocksFromNovel(nov) {
       AUTO_MAP_BLOCK_START,
       AUTO_MAP_BLOCK_END
     );
-    const cleaned = removeAutoSection(removeAutoSection(next, FORCE_META_TITLE, FORCE_AUTO_END), FORCE_MAP_LIST_TITLE, FORCE_AUTO_END);
+    const cleaned = removeAutoSection(
+      removeAutoSection(removeAutoSection(next, FORCE_META_TITLE, FORCE_AUTO_END), FORCE_MAP_STRATA_TITLE, FORCE_MAP_STRATA_END),
+      FORCE_MAP_LIST_TITLE,
+      FORCE_AUTO_END
+    );
     if (cleaned !== original) {
       entity.info = cleaned;
       changed = true;
@@ -177,36 +193,6 @@ function buildForceMeta(orgType, rankText, locations, realmSystem = '') {
     locations: locs,
     tailPath: locs.join(' > '),
   };
-}
-
-function classifyOrgType(rawType) {
-  const n = normalizeAscii(rawType).replace(/[^a-z0-9]+/g, ' ');
-  if (n.includes('de quoc') || n.includes('quoc gia') || n.includes('trieu')) return 'Đế Quốc';
-  if (n.includes('gia toc')) return 'Gia Tộc';
-  if (n.includes('hoc vien')) return 'Học Viện';
-  if (n.includes('tong mon') || n.includes('to chuc') || n.includes('the luc')) return 'Tông Môn';
-  if (n.includes('thuong minh') || n.includes('thuong hoi')) return 'Thương Minh';
-  return 'Thế Lực Khác';
-}
-
-function inferOrgTypeFromContext({ dynamicData, sourceNhoId = '', sourceNhoLabel = '', typeFieldValue = '' } = {}) {
-  const dyn = dynamicData && typeof dynamicData === 'object' ? dynamicData : {};
-  const candidates = [
-    typeFieldValue,
-    dyn.f_loai_to_chuc,
-    dyn.f_loai,
-    dyn.f_to_chuc,
-    dyn.f_title,
-    sourceNhoLabel,
-    sourceNhoId,
-  ];
-  for (const candidate of candidates) {
-    const raw = safeString(candidate).trim();
-    if (!raw) continue;
-    const mapped = classifyOrgType(raw);
-    if (mapped !== 'Thế Lực Khác') return mapped;
-  }
-  return 'Thế Lực Khác';
 }
 
 function splitLocationTokens(locationText) {
@@ -307,7 +293,8 @@ function buildMapAutoBlockLines(locationName, rows, { detailedLayout, duplicateN
   const byGroup = new Map(FORCE_TYPE_GROUP_ORDER.map((g) => [g, []]));
   rows.forEach((r) => {
     const g = classifyOrgType(r.meta.orgType);
-    byGroup.get(g).push(r);
+    const bucket = byGroup.get(g) ?? byGroup.get('Thế Lực Khác');
+    if (bucket) bucket.push(r);
   });
 
   const sectionLines = detailedLayout
@@ -336,13 +323,9 @@ function buildMapAutoBlockLines(locationName, rows, { detailedLayout, duplicateN
   return sectionLines;
 }
 
-function buildForceMetaBlockLines(meta) {
+function buildForceMetaBlockLines() {
   return [
-    `Loại Hình: ${meta.orgType}`,
-    ...(safeString(meta.realmSystem).trim() ? [`Hệ Cấp Bậc: ${meta.realmSystem}`] : []),
-    `Cấp Bậc: ${meta.rankText}`,
-    'Vị Trí:',
-    ...buildLocationHierarchyLines(meta.locations),
+    '> **Đồng bộ Thế Lực** dùng dữ liệu đã nhập ở **hồ sơ phía trên** (vd. *Thể chế*, *Cấp bậc*, *Địa bàn*, *Vị trí*…) để cập nhật tab **Bản đồ** và **Danh sách**. Không lặp lại nội dung tại đây — sửa các ô hồ sơ là đủ.',
   ];
 }
 
@@ -444,8 +427,12 @@ function ensureCollectionTabData(nov, lonId, nhoId) {
 }
 
 function ensureMapEntityByName(tabData, name, mapContext = {}) {
+  if (!tabData || typeof tabData !== 'object') {
+    return { entity: null, created: false };
+  }
+  if (!Array.isArray(tabData.entities)) tabData.entities = [];
   const key = normalizeAscii(name);
-  let ent = (tabData.entities || []).find((e) => normalizeAscii(e.name) === key);
+  let ent = tabData.entities.find((e) => normalizeAscii(e.name) === key);
   let created = false;
   if (!ent) {
     ent = {
@@ -657,9 +644,13 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
       let cleanedInfo = safeString(entity.info).trim();
       if (!locked) {
         cleanedInfo = removeAutoSection(
-          removeAutoBlock(entity.info, AUTO_FORCE_BLOCK_START, AUTO_FORCE_BLOCK_END),
-          FORCE_META_TITLE,
-          FORCE_AUTO_END
+          removeAutoSection(
+            removeAutoBlock(entity.info, AUTO_FORCE_BLOCK_START, AUTO_FORCE_BLOCK_END),
+            FORCE_META_TITLE,
+            FORCE_AUTO_END
+          ),
+          FORCE_MAP_STRATA_TITLE,
+          FORCE_MAP_STRATA_END
         );
         if (cleanedInfo !== safeString(entity.info).trim()) {
           entity.info = cleanedInfo;
@@ -678,7 +669,7 @@ export function syncAllTheLucMapAutoBlocksDetailed(nov, { sourceLonId } = {}) {
       if (!meta) return;
 
       if (!locked) {
-        const nextInfo = mergeAutoSection(cleanedInfo, FORCE_META_TITLE, FORCE_AUTO_END, buildForceMetaBlockLines(meta));
+        const nextInfo = mergeAutoSection(cleanedInfo, FORCE_META_TITLE, FORCE_AUTO_END, buildForceMetaBlockLines());
         if (nextInfo !== cleanedInfo) {
           entity.info = nextInfo;
           changed = true;
