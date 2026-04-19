@@ -94,6 +94,21 @@ describe('modal ttc-save scope', () => {
     expect(getByText(/Bách Thú Cung = Tông môn · Thiên Tôn cấp thế lực · Hoang Thú giới/)).toBeTruthy();
   });
 
+  it('defaults Giới Diện to the active map sub-tab label when creating a map entity', () => {
+    const { getByLabelText } = render(
+      <ModalEntity
+        {...entityProps({
+          initialData: null,
+          parentTabId: 'ban-do',
+          parentLabel: 'Ban do',
+          tabConfig: { id: 'am-gian', label: 'Âm Gian (Địa phủ)', viewType: 'collection-track' },
+        })}
+      />
+    );
+    const gioiDien = getByLabelText('Giới Diện bản đồ');
+    expect(gioiDien.value).toBe('Âm Gian (Địa phủ)');
+  });
+
   it('maps quick fields into map entity payloads', () => {
     const onEntitySave = vi.fn();
     const { getByLabelText, getByRole } = render(
@@ -109,8 +124,8 @@ describe('modal ttc-save scope', () => {
     );
 
     fireEvent.change(getByRole('textbox', { name: /danh xưng/i }), { target: { value: 'Hoang Thu Gioi' } });
-    fireEvent.change(getByLabelText('Loại địa bàn'), { target: { value: 'Giới' } });
-    fireEvent.change(getByLabelText('Hệ phân cấp bản đồ'), { target: { value: 'Tôn giới' } });
+    fireEvent.change(getByLabelText('Giới Diện bản đồ'), { target: { value: 'Giới' } });
+    fireEvent.change(getByLabelText('Đặc Tính Địa Vực bản đồ'), { target: { value: 'Tôn giới' } });
     fireEvent.change(getByLabelText('Trực thuộc bản đồ'), { target: { value: 'Trung Tiên giới' } });
     fireEvent.click(getByRole('button', { name: /lưu thông tin/i }));
 
@@ -196,7 +211,7 @@ describe('modal ttc-save scope', () => {
         })}
       />
     );
-    const mapTypeInput = getByLabelText('Loại địa bàn');
+    const mapTypeInput = getByLabelText('Giới Diện bản đồ');
     const listEl = document.getElementById(mapTypeInput.getAttribute('list') || '');
     const options = Array.from(listEl?.querySelectorAll('option') || []).map((item) => item.getAttribute('value') || '');
     expect(options).toContain('Thành phố');
@@ -216,8 +231,8 @@ describe('modal ttc-save scope', () => {
         })}
       />
     );
-    fireEvent.change(getByLabelText('Hệ giới bản đồ'), { target: { value: 'Nguyên giới' } });
-    const mapSystemInput = getByLabelText('Hệ phân cấp bản đồ');
+    fireEvent.change(getByLabelText('Quy Mô Địa Vực bản đồ'), { target: { value: 'Nguyên giới' } });
+    const mapSystemInput = getByLabelText('Đặc Tính Địa Vực bản đồ');
     const listEl = document.getElementById(mapSystemInput.getAttribute('list') || '');
     const options = Array.from(listEl?.querySelectorAll('option') || []).map((item) => item.getAttribute('value') || '');
     expect(options).toContain('Đế giới');
@@ -261,7 +276,7 @@ describe('modal ttc-save scope', () => {
       />
     );
 
-    const mapSystemInput = getByLabelText('Hệ phân cấp bản đồ');
+    const mapSystemInput = getByLabelText('Đặc Tính Địa Vực bản đồ');
     const listId = mapSystemInput.getAttribute('list');
     expect(listId).toBe('ttc-force-system-options');
     const listEl = document.getElementById(listId);

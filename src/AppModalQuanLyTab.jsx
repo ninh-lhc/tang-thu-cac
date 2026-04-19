@@ -1447,11 +1447,11 @@ export function AppModalQuanLyTab({
                                   {isMapTab && (
                                     <div className="space-y-2 border-t border-amber-800/35 pt-3">
                                     <div className="text-[11px] font-semibold text-amber-100">
-                                      Gợi ý thêm cho Bản đồ (Loại địa bàn / Hệ phân cấp)
+                                      Gợi ý thêm cho Bản đồ (Giới Diện / Đặc Tính Địa Vực)
                                     </div>
                                     <div className="grid gap-2 md:grid-cols-2">
                                       <div>
-                                        <div className="text-[10px] text-slate-500 mb-1">Loại địa bàn</div>
+                                        <div className="text-[10px] text-slate-500 mb-1">Giới Diện</div>
                                         <textarea
                                           defaultValue={(tabNho.mapEntrySuggestions?.types || []).join('\n')}
                                           key={`mapt-${tabPathKey}-${(tabNho.mapEntrySuggestions?.types || []).length}`}
@@ -1469,7 +1469,7 @@ export function AppModalQuanLyTab({
                                         />
                                       </div>
                                       <div>
-                                        <div className="text-[10px] text-slate-500 mb-1">Hệ phân cấp</div>
+                                        <div className="text-[10px] text-slate-500 mb-1">Đặc Tính Địa Vực</div>
                                         <textarea
                                           defaultValue={(tabNho.mapEntrySuggestions?.hierarchy || []).join('\n')}
                                           key={`maph-${tabPathKey}-${(tabNho.mapEntrySuggestions?.hierarchy || []).length}`}

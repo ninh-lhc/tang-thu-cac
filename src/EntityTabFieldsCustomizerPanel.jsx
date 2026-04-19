@@ -82,7 +82,7 @@ export function EntityTabFieldsCustomizerPanel({
         {mapQuickEntryLists ? (
           <>
             {' '}
-            Với tab bản đồ / thế lực, chỉnh «Loại địa bàn» / «Hệ phân cấp» ở cuối khối. List cấp bậc Thế lực theo thẻ Bản đồ nằm ở «Quy chuẩn nhóm» trên modal (không chỉnh ở đây).
+            Với tab bản đồ / thế lực, chỉnh «Giới Diện» / «Đặc Tính Địa Vực» ở cuối khối. List cấp bậc Thế lực theo thẻ Bản đồ nằm ở «Quy chuẩn nhóm» trên modal (không chỉnh ở đây).
           </>
         ) : null}
       </p>
@@ -215,7 +215,7 @@ export function EntityTabFieldsCustomizerPanel({
           </p>
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1">
-              <span className="block text-[10px] font-bold uppercase tracking-wide text-cyan-300/85">Loại địa bàn</span>
+              <span className="block text-[10px] font-bold uppercase tracking-wide text-cyan-300/85">Giới Diện</span>
               <textarea
                 rows={4}
                 defaultValue={safeString(mapQuickEntryLists.typesLines)}
@@ -226,7 +226,7 @@ export function EntityTabFieldsCustomizerPanel({
               />
             </label>
             <label className="space-y-1">
-              <span className="block text-[10px] font-bold uppercase tracking-wide text-cyan-300/85">Hệ phân cấp</span>
+              <span className="block text-[10px] font-bold uppercase tracking-wide text-cyan-300/85">Đặc Tính Địa Vực</span>
               <textarea
                 rows={4}
                 defaultValue={safeString(mapQuickEntryLists.hierarchyLines)}

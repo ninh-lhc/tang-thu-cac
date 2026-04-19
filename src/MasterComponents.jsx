@@ -1511,7 +1511,7 @@ export const ModalEntity = ({
       saveToGenreTemplate: true,
     });
     if (typeof showToast === 'function') {
-      const label = which === 'types' ? 'Loại địa bàn' : 'Hệ phân cấp';
+      const label = which === 'types' ? 'Giới Diện' : 'Đặc Tính Địa Vực';
       showToast(`Đã lưu gợi ý ${label} cho tab hiện tại.`, 'success');
     }
   };
@@ -1714,8 +1714,17 @@ export const ModalEntity = ({
       setForceQuickLocation(forceQuickState.locationLine);
     } else {
       setFormData({ id: null, name: '', avatar: '', rawText: '' });
-      setDynamicData({});
-      setMapQuickType('');
+      const subTabLabel = safeString(tabConfig?.label).trim();
+      const defaultMapTypeFromSubTab = isMapScope && !isForceScope && subTabLabel ? subTabLabel : '';
+      if (defaultMapTypeFromSubTab) {
+        setDynamicData({
+          f_title: defaultMapTypeFromSubTab,
+          f_status: composeMapStatusLine(defaultMapTypeFromSubTab, ''),
+        });
+      } else {
+        setDynamicData({});
+      }
+      setMapQuickType(defaultMapTypeFromSubTab);
       setMapQuickRealmSystem('');
       setMapQuickSystem('');
       setMapQuickParentPath('');
@@ -1725,7 +1734,7 @@ export const ModalEntity = ({
       setForceQuickLocation('');
     }
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [isOpen, initialData, activeNovelData]);
+  }, [isOpen, initialData, activeNovelData, tabConfig, isMapScope, isForceScope]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -2147,9 +2156,9 @@ export const ModalEntity = ({
               </p>
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
-                  <label className={entityModalQuickLabel}>Loại địa bàn</label>
+                  <label className={entityModalQuickLabel}>Giới Diện</label>
                   <input
-                    aria-label="Loại địa bàn"
+                    aria-label="Giới Diện bản đồ"
                     list="ttc-map-type-options"
                     value={mapQuickType}
                     onChange={(e) => handleMapTypeChange(e.target.value)}
@@ -2158,9 +2167,9 @@ export const ModalEntity = ({
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className={entityModalQuickLabel}>Hệ giới</label>
+                  <label className={entityModalQuickLabel}>Quy Mô Địa Vực</label>
                   <input
-                    aria-label="Hệ giới bản đồ"
+                    aria-label="Quy Mô Địa Vực bản đồ"
                     list="ttc-map-realm-options"
                     value={mapQuickRealmSystem}
                     onChange={(e) => handleMapRealmSystemChange(e.target.value)}
@@ -2169,9 +2178,9 @@ export const ModalEntity = ({
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className={entityModalQuickLabel}>Hệ phân cấp</label>
+                  <label className={entityModalQuickLabel}>Đặc Tính Địa Vực</label>
                   <input
-                    aria-label="Hệ phân cấp bản đồ"
+                    aria-label="Đặc Tính Địa Vực bản đồ"
                     list="ttc-force-system-options"
                     value={mapQuickSystem}
                     onChange={(e) => handleMapSystemChange(e.target.value)}
@@ -2373,7 +2382,7 @@ export const ModalEntity = ({
               <p className={entityModalHintTitle}>Ghi nhanh cho thẻ Bản Đồ</p>
               <p className="text-[11px] text-slate-300 font-serif leading-relaxed">
                 Thẻ bản đồ chỉ ghi nơi chốn: tên địa bàn + <strong className="text-amber-200/95">{safeString(fStatusLabel)}</strong> theo mẫu{' '}
-                <code className="text-amber-200">Loại địa bàn · Hệ phân cấp</code>.
+                <code className="text-amber-200">Giới Diện · Đặc Tính Địa Vực</code>.
               </p>
               <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
                 Gợi ý điền nhanh: <code className="text-amber-200">{statusFieldPlaceholder}</code>

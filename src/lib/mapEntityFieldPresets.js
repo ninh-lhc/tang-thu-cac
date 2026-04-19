@@ -1,5 +1,5 @@
 /**
- * Preset gợi ý form Bản Đồ (Loại địa bàn / Hệ phân cấp) theo `genres` của truyện.
+ * Preset gợi ý form Bản Đồ (Giới Diện / Đặc Tính Địa Vực) theo `genres` của truyện.
  * `MasterComponents` / `collectMapEntityHints` import để hạt giống datalist + placeholder.
  * Ưu tiên Đô Thị trước Tiên Hiệp khi cả hai có trong danh sách thể loại.
  */
@@ -62,7 +62,7 @@ const MAP_TYPE_BY_FLAVOR = Object.freeze({
   ]),
 });
 
-/** Nhãn "Hệ phân cấp" trong form bản đồ (không dùng chung ladder thế lực tu tiên). */
+/** Seed hệ phân cấp địa bàn (nhãn UI: Đặc Tính Địa Vực). Không dùng chung ladder thế lực tu tiên. */
 const MAP_HIERARCHY_BY_FLAVOR = Object.freeze({
   [MAP_FIELD_PRESET_FLAVOR.CULTIVATION]: Object.freeze(['Cửu cấp', 'Vương giới', 'Tôn giới', 'Đế giới']),
   [MAP_FIELD_PRESET_FLAVOR.URBAN]: Object.freeze([
@@ -100,7 +100,7 @@ const PLACEHOLDER_BY_FLAVOR = Object.freeze({
     mapHierarchy: 'Ví dụ: Vương giới / Tôn giới / Đế giới',
     quickLine: 'Giới · Tôn giới / Tiên tinh · Vương giới',
     mapProfileHint:
-      'Ở thẻ bản đồ, ghi Loại địa bàn · Hệ phân cấp. Ví dụ: Hoang Thú giới = Giới · Tôn giới.',
+      'Ở thẻ bản đồ, ghi Giới Diện · Đặc Tính Địa Vực. Ví dụ: Hoang Thú giới = Giới · Tôn giới.',
     exampleA: 'Hoang Thú giới = Giới · Tôn giới',
     exampleB: 'Dạ Lang Tiên Tinh = Tiên tinh · Vương giới',
   }),
@@ -109,7 +109,7 @@ const PLACEHOLDER_BY_FLAVOR = Object.freeze({
     mapHierarchy: 'Ví dụ: Cấp thành phố / Cấp quận / VIP',
     quickLine: 'Thành phố · Cấp thành phố / Khu phố · Cấp phường',
     mapProfileHint:
-      'Ở thẻ bản đồ, ghi Loại địa bàn · Hệ phân cấp. Ví dụ: Quận 1 = Thành phố · Cấp thành phố.',
+      'Ở thẻ bản đồ, ghi Giới Diện · Đặc Tính Địa Vực. Ví dụ: Quận 1 = Thành phố · Cấp thành phố.',
     exampleA: 'Quận 1 = Thành phố · Cấp thành phố',
     exampleB: 'Tòa Landmark = Tòa nhà / Công trình · Cấp tòa nhà / trụ sở',
   }),
@@ -118,7 +118,7 @@ const PLACEHOLDER_BY_FLAVOR = Object.freeze({
     mapHierarchy: 'Ví dụ: Cấp Hành tinh / Cấp Trạm',
     quickLine: 'Hành tinh · Cấp Hành tinh / Trạm không gian · Cấp Trạm',
     mapProfileHint:
-      'Ở thẻ bản đồ, ghi Loại địa bàn · Hệ phân cấp. Ví dụ: Colony-7 = Hành tinh · Cấp Hành tinh.',
+      'Ở thẻ bản đồ, ghi Giới Diện · Đặc Tính Địa Vực. Ví dụ: Colony-7 = Hành tinh · Cấp Hành tinh.',
     exampleA: 'Trạm Orion = Trạm không gian · Cấp Trạm',
     exampleB: 'Colony-7 = Hành tinh · Cấp Hành tinh',
   }),
@@ -127,7 +127,7 @@ const PLACEHOLDER_BY_FLAVOR = Object.freeze({
     mapHierarchy: 'Ví dụ: Lõi an toàn / Vành đai / Vùng ngoài',
     quickLine: 'Căn cứ · Lõi an toàn / Khu phế tích · Vùng ngoài',
     mapProfileHint:
-      'Ở thẻ bản đồ, ghi Loại địa bàn · Hệ phân cấp. Ví dụ: Căn cứ Bắc = Căn cứ · Lõi an toàn.',
+      'Ở thẻ bản đồ, ghi Giới Diện · Đặc Tính Địa Vực. Ví dụ: Căn cứ Bắc = Căn cứ · Lõi an toàn.',
     exampleA: 'Căn cứ Bắc = Căn cứ · Lõi an toàn',
     exampleB: 'Khu Xám-3 = Khu phế tích · Vùng ngoài',
   }),
