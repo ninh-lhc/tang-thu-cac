@@ -82,7 +82,7 @@ export function EntityTabFieldsCustomizerPanel({
         {mapQuickEntryLists ? (
           <>
             {' '}
-            Với tab bản đồ / thế lực, chỉnh «Giới Diện» / «Đặc Tính Địa Vực» ở cuối khối. List cấp bậc Thế lực theo thẻ Bản đồ nằm ở «Quy chuẩn nhóm» trên modal (không chỉnh ở đây).
+            Với tab bản đồ / thế lực, chỉnh «Giới Diện» / «Đặc Tính Địa Vực» ở cuối khối. List cấp bậc theo thẻ Bản đồ (gợi ý ô Cấp bậc khi tạo thẻ Thế lực): «Quy chuẩn nhóm» khi mở <strong className="text-slate-400">Khởi tạo thẻ từ tab Bản đồ</strong> — không chỉnh ở đây.
           </>
         ) : null}
       </p>

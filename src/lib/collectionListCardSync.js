@@ -63,6 +63,10 @@ const LIST_GROUP_STRATEGY_VALUES = new Set([
   'relation',
   'owner',
   'text',
+  /** Đồng bộ ô Gợi ý nhanh Thế lực: Loại hình */
+  'force_loai',
+  /** Đồng bộ ô Hệ cấp bậc (thẻ Bản đồ) */
+  'force_realm',
 ]);
 
 export function normalizeListGroupStrategy(value = '') {
@@ -744,6 +748,18 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
             undefined,
         };
       }
+      case 'force_loai':
+        return buildTextStrategy(
+          (entity) => pickFirstFilled(entity, ['f_loai_to_chuc', 'f_loai', 'f_to_chuc', 'f_title']),
+          'text',
+          ['f_loai_to_chuc', 'f_loai', 'f_to_chuc']
+        );
+      case 'force_realm':
+        return buildTextStrategy(
+          (entity) => pickFirstFilled(entity, ['f_he_cap_the_luc', 'f_he_phan_cap']),
+          'text',
+          ['f_he_cap_the_luc', 'f_he_phan_cap']
+        );
       case 'relation':
         return buildTextStrategy((entity) => pickFirstFilled(entity, ['f_quan_he', 'f_title', 'f_status']), 'text', [
           'f_quan_he',

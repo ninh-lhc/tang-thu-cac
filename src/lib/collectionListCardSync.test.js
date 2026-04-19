@@ -1029,4 +1029,34 @@ describe('collectionListCardSync', () => {
     expect(idxVanY).toBeGreaterThan(-1);
     expect(idxLacNam).toBeGreaterThan(idxVanY);
   });
+
+  it('force_loai strategy groups by f_loai_to_chuc (đồng bộ ô Loại hình Thế lực)', () => {
+    const novel = buildNovel();
+    novel.tabsConfig.push({
+      id: 'tai-nguyen',
+      label: 'Tai nguyen',
+      subTabs: [
+        {
+          id: 'de-quoc',
+          label: 'De quoc The luc',
+          viewType: 'collection-track',
+          autoListGroupStrategy: 'force_loai',
+        },
+      ],
+    });
+    novel.data['tai-nguyen'] = {
+      'de-quoc': {
+        overview: '',
+        entities: [
+          { id: 'list-dq', name: 'Danh sach de quoc', info: '', dynamicData: {}, milestones: [] },
+          { id: 'e1', name: 'Mot', info: '', dynamicData: { f_loai_to_chuc: 'Tông Môn' }, milestones: [] },
+          { id: 'e2', name: 'Hai', info: '', dynamicData: { f_loai_to_chuc: 'Đế Quốc' }, milestones: [] },
+        ],
+      },
+    };
+    syncAllCollectionListCards(novel);
+    const info = normalizeAsciiText(String(novel.data['tai-nguyen']['de-quoc'].entities[0].info || ''));
+    expect(info).toContain('tong mon');
+    expect(info).toContain('de quoc');
+  });
 });

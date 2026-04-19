@@ -1782,13 +1782,16 @@ export const ModalEntity = ({
             {tabConfig?.viewType === 'collection-track' && (
               <button
                 type="button"
-                  onClick={() =>
-                    setIsGroupConfigOpen((prev) => {
-                      const next = !prev;
-                      if (next) setIsGroupOrderDirty(false);
-                      return next;
-                    })
-                  }
+                onClick={() =>
+                  setIsGroupConfigOpen((prev) => {
+                    const next = !prev;
+                    if (next) {
+                      setIsGroupOrderDirty(false);
+                      if (showForceQuickSection) setIsTabFieldsCustomizerOpen(true);
+                    }
+                    return next;
+                  })
+                }
                 className="inline-flex items-center gap-2 rounded-xl border border-violet-800/40 bg-violet-950/20 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-violet-300 transition-colors hover:border-violet-500/60 hover:bg-violet-900/30 hover:text-violet-200"
               >
                 <ListIcon size={14} /> Quy chuẩn nhóm
@@ -1855,8 +1858,19 @@ export const ModalEntity = ({
                     Quy chuẩn nhóm AUTO cho tab này
                   </div>
                   <div className="mt-1 text-[12px] text-slate-300 font-serif">
-                    Cấp bậc Thế lực theo từng thẻ Bản đồ (lưu từng mục trước khi chọn thẻ khác). Gom nhóm thẻ Danh sách nằm ở mục
-                    mở rộng bên dưới.
+                    {showForceQuickSection ? (
+                      <>
+                        Gom nhóm thẻ Danh sách (AUTO) — mục mở rộng bên dưới. List cấp bậc theo thẻ Bản đồ không chỉnh ở đây; mở
+                        Khởi tạo thẻ từ <strong className="text-violet-200/95">tab Bản đồ</strong> → «Quy chuẩn nhóm». List gợi ý từng
+                        trường: mục <strong className="text-cyan-200/95">Chỉnh trường hồ sơ &amp; list gợi ý</strong> (đã mở khi bạn bấm
+                        Quy chuẩn nhóm từ Thế lực).
+                      </>
+                    ) : (
+                      <>
+                        Cấp bậc Thế lực theo từng thẻ Bản đồ (lưu từng mục trước khi chọn thẻ khác). Gom nhóm thẻ Danh sách nằm ở mục
+                        mở rộng bên dưới.
+                      </>
+                    )}
                   </div>
                 </div>
                 <button
@@ -1870,109 +1884,132 @@ export const ModalEntity = ({
                 </button>
               </div>
 
-              {mapSubTabsForForce.length === 0 ? (
-                <p className="text-[11px] text-amber-200/90 font-serif">
-                  Chưa có tab con dưới lon Bản đồ — thêm trong Quản lý tab trước khi nhập cấp bậc.
-                </p>
-              ) : (
-                <>
-                  <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_1fr]">
-                    <label className="space-y-1">
-                      <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                        Hệ cấp bậc (thẻ Bản đồ)
-                      </span>
-                      <select
-                        value={
-                          forceLadderRealmLabel &&
-                          mapSubTabsForForce.some((t) => t.label === forceLadderRealmLabel)
-                            ? forceLadderRealmLabel
-                            : mapSubTabsForForce[0]?.label || ''
-                        }
-                        onChange={(e) => {
-                          setForceLadderRealmLabel(e.target.value);
+              {!showForceQuickSection &&
+                (mapSubTabsForForce.length === 0 ? (
+                  <p className="text-[11px] text-amber-200/90 font-serif">
+                    Chưa có tab con dưới lon Bản đồ — thêm trong Quản lý tab trước khi nhập cấp bậc.
+                  </p>
+                ) : (
+                  <>
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_1fr]">
+                      <label className="space-y-1">
+                        <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                          Hệ cấp bậc (thẻ Bản đồ)
+                        </span>
+                        <select
+                          value={
+                            forceLadderRealmLabel &&
+                            mapSubTabsForForce.some((t) => t.label === forceLadderRealmLabel)
+                              ? forceLadderRealmLabel
+                              : mapSubTabsForForce[0]?.label || ''
+                          }
+                          onChange={(e) => {
+                            setForceLadderRealmLabel(e.target.value);
+                            setIsForceRankLadderDirty(false);
+                          }}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-200 font-serif outline-none focus:border-violet-500/50 cursor-pointer"
+                        >
+                          {mapSubTabsForForce.map((t) => (
+                            <option key={`${t.lonId}::${t.nhoId}`} value={t.label}>
+                              {t.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="space-y-1">
+                        <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">Cấp bậc</span>
+                        <textarea
+                          ref={forceRankLadderTextRef}
+                          key={`frl-${forceLadderRealmLabel}-${forceLadderLinesFromData}`}
+                          defaultValue={forceLadderLinesFromData}
+                          onChange={(e) => {
+                            setIsForceRankLadderDirty(e.target.value !== forceLadderLinesFromData);
+                          }}
+                          rows={5}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono leading-relaxed"
+                          placeholder={'Mỗi dòng một cấp (vd. Nhất Cấp thế lực)\nLưu trước khi chọn thẻ Bản đồ khác.'}
+                        />
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!selectedMapPairForLadder) return;
+                          const text = safeString(forceRankLadderTextRef.current?.value ?? '');
+                          onSetTabMapEntrySuggestions?.(
+                            selectedMapPairForLadder.lonId,
+                            selectedMapPairForLadder.nhoId,
+                            'forceRanks',
+                            text,
+                            { propagateWithinMapLon: false, saveToGenreTemplate: false }
+                          );
                           setIsForceRankLadderDirty(false);
+                          showToast?.('Đã lưu list cấp bậc cho thẻ Bản đồ này.', 'success');
                         }}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-200 font-serif outline-none focus:border-violet-500/50 cursor-pointer"
+                        disabled={!isForceRankLadderDirty || !selectedMapPairForLadder}
+                        className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
+                          isForceRankLadderDirty && selectedMapPairForLadder
+                            ? 'border-violet-600/55 bg-violet-900/35 text-violet-100 hover:bg-violet-900/50'
+                            : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
+                        }`}
                       >
-                        {mapSubTabsForForce.map((t) => (
-                          <option key={`${t.lonId}::${t.nhoId}`} value={t.label}>
-                            {t.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="space-y-1">
-                      <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">Cấp bậc</span>
-                      <textarea
-                        ref={forceRankLadderTextRef}
-                        key={`frl-${forceLadderRealmLabel}-${forceLadderLinesFromData}`}
-                        defaultValue={forceLadderLinesFromData}
-                        onChange={(e) => {
-                          setIsForceRankLadderDirty(e.target.value !== forceLadderLinesFromData);
+                        Lưu cấp bậc
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!selectedMapPairForLadder) return;
+                          const text = safeString(forceRankLadderTextRef.current?.value ?? '');
+                          onSetTabMapEntrySuggestions?.(
+                            selectedMapPairForLadder.lonId,
+                            selectedMapPairForLadder.nhoId,
+                            'forceRanks',
+                            text,
+                            { propagateWithinMapLon: false, saveToGenreTemplate: true }
+                          );
+                          setIsForceRankLadderDirty(false);
+                          showToast?.('Đã lưu cấp bậc và cập nhật mẫu thể loại.', 'success');
                         }}
-                        rows={5}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono leading-relaxed"
-                        placeholder={'Mỗi dòng một cấp (vd. Nhất Cấp thế lực)\nLưu trước khi chọn thẻ Bản đồ khác.'}
-                      />
-                    </label>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!selectedMapPairForLadder) return;
-                        const text = safeString(forceRankLadderTextRef.current?.value ?? '');
-                        onSetTabMapEntrySuggestions?.(
-                          selectedMapPairForLadder.lonId,
-                          selectedMapPairForLadder.nhoId,
-                          'forceRanks',
-                          text,
-                          { propagateWithinMapLon: false, saveToGenreTemplate: false }
-                        );
-                        setIsForceRankLadderDirty(false);
-                        showToast?.('Đã lưu list cấp bậc cho thẻ Bản đồ này.', 'success');
-                      }}
-                      disabled={!isForceRankLadderDirty || !selectedMapPairForLadder}
-                      className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
-                        isForceRankLadderDirty && selectedMapPairForLadder
-                          ? 'border-violet-600/55 bg-violet-900/35 text-violet-100 hover:bg-violet-900/50'
-                          : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
-                      }`}
-                    >
-                      Lưu cấp bậc
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!selectedMapPairForLadder) return;
-                        const text = safeString(forceRankLadderTextRef.current?.value ?? '');
-                        onSetTabMapEntrySuggestions?.(
-                          selectedMapPairForLadder.lonId,
-                          selectedMapPairForLadder.nhoId,
-                          'forceRanks',
-                          text,
-                          { propagateWithinMapLon: false, saveToGenreTemplate: true }
-                        );
-                        setIsForceRankLadderDirty(false);
-                        showToast?.('Đã lưu cấp bậc và cập nhật mẫu thể loại.', 'success');
-                      }}
-                      disabled={!isForceRankLadderDirty || !selectedMapPairForLadder}
-                      className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
-                        isForceRankLadderDirty && selectedMapPairForLadder
-                          ? 'border-cyan-600/55 bg-cyan-900/30 text-cyan-100 hover:bg-cyan-900/45'
-                          : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
-                      }`}
-                    >
-                      Lưu cấp bậc + cập nhật mẫu thể loại
-                    </button>
-                  </div>
-                </>
+                        disabled={!isForceRankLadderDirty || !selectedMapPairForLadder}
+                        className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${
+                          isForceRankLadderDirty && selectedMapPairForLadder
+                            ? 'border-cyan-600/55 bg-cyan-900/30 text-cyan-100 hover:bg-cyan-900/45'
+                            : 'border-slate-700 bg-slate-900/60 text-slate-500 cursor-not-allowed'
+                        }`}
+                      >
+                        Lưu cấp bậc + cập nhật mẫu thể loại
+                      </button>
+                    </div>
+                  </>
+                ))}
+
+              {showForceQuickSection && (
+                <p className="text-[11px] text-slate-400 font-serif leading-relaxed rounded-lg border border-slate-800/80 bg-slate-950/50 p-3">
+                  Ô «Cấp bậc» theo thẻ Bản đồ (gợi ý khi tạo thẻ Thế lực) chỉnh từ{' '}
+                  <strong className="text-slate-200">Khởi tạo thẻ trên tab Bản đồ</strong> → «Quy chuẩn nhóm». Nội dung list từng trường
+                  hồ sơ: <strong className="text-cyan-200/95">Chỉnh trường hồ sơ &amp; list gợi ý (tab này)</strong> phía trên. Nếu trước
+                  đây đã dán nhầm vào ô Cấp bậc ở đây, hãy chuyển sang đúng trường ở khối cyan; phần lưu trên tab Bản đồ sửa trong Quản
+                  lý tab hoặc mở lại «Quy chuẩn nhóm» từ Bản đồ.
+                </p>
               )}
 
-              <details className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3 space-y-3 open:border-violet-800/40">
+              <details
+                className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3 space-y-3 open:border-violet-800/40"
+                defaultOpen={showForceQuickSection}
+              >
                 <summary className="cursor-pointer text-[11px] font-bold text-violet-300/95 font-serif">
-                  Gom nhóm thẻ Danh sách (AUTO) — kiểu gom nhóm &amp; list thứ tự tĩnh
+                  {showForceQuickSection
+                    ? 'Gom nhóm thẻ Danh sách (AUTO) — đồng bộ 4 ô Gợi ý nhanh Thế lực'
+                    : 'Gom nhóm thẻ Danh sách (AUTO) — kiểu gom nhóm và list thứ tự tĩnh'}
                 </summary>
+                {showForceQuickSection && (
+                  <p className="text-[11px] text-violet-200/90 font-serif leading-relaxed pt-1">
+                    «Kiểu gom nhóm» trỏ đúng trường dữ liệu như <strong className="text-slate-200">Loại hình · Hệ cấp bậc (Bản đồ) · Cấp bậc ·
+                    Địa chỉ</strong> trên thẻ Thế lực — cùng nguồn để AUTO đọc khi gom nhóm / sắp xếp. «List thứ tự / nhóm» = thứ tự nhóm
+                    tĩnh (tuỳ chọn), nên khớp list gợi ý của trường tương ứng trong «Chỉnh trường hồ sơ &amp; list».
+                  </p>
+                )}
                 <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_1fr] pt-2">
                   <label className="space-y-1">
                     <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">
@@ -1983,14 +2020,37 @@ export const ModalEntity = ({
                       onChange={(e) => onSetTabListGroupStrategy?.(parentTabId, tabConfig?.id, e.target.value)}
                       className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-200 font-serif outline-none focus:border-violet-500/50"
                     >
-                      <option value="auto">Tự đoán theo tab/genre</option>
-                      <option value="title">Theo Loại / Tiêu đề (f_title)</option>
-                      <option value="status">Theo Trạng thái (f_status)</option>
-                      <option value="rank">Theo Cấp bậc (f_cap/f_status)</option>
-                      <option value="location">Theo Địa bàn / Vị trí</option>
-                      <option value="relation">Theo Quan hệ</option>
-                      <option value="owner">Theo Chủ sở hữu</option>
-                      <option value="text">Theo Text tổng quát</option>
+                      {showForceQuickSection ? (
+                        <>
+                          <optgroup label="4 ô Gợi ý nhanh (Thế lực)">
+                            <option value="auto">Tự đoán (theo tab Thế lực)</option>
+                            <option value="force_loai">Loại hình (f_loai_to_chuc)</option>
+                            <option value="force_realm">Hệ cấp bậc — thẻ Bản đồ (f_he_cap_the_luc)</option>
+                            <option value="rank">Cấp bậc (f_cap / f_status)</option>
+                            <option value="location">Địa chỉ (f_dia_ban / f_vi_tri)</option>
+                          </optgroup>
+                          <optgroup label="Khác">
+                            <option value="title">Theo Loại / Tiêu đề (f_title)</option>
+                            <option value="status">Theo Trạng thái (f_status)</option>
+                            <option value="relation">Theo Quan hệ</option>
+                            <option value="owner">Theo Chủ sở hữu</option>
+                            <option value="text">Theo Text tổng quát</option>
+                          </optgroup>
+                        </>
+                      ) : (
+                        <>
+                          <option value="auto">Tự đoán theo tab/genre</option>
+                          <option value="title">Theo Loại / Tiêu đề (f_title)</option>
+                          <option value="status">Theo Trạng thái (f_status)</option>
+                          <option value="rank">Theo Cấp bậc (f_cap/f_status)</option>
+                          <option value="location">Theo Địa bàn / Vị trí</option>
+                          <option value="relation">Theo Quan hệ</option>
+                          <option value="owner">Theo Chủ sở hữu</option>
+                          <option value="text">Theo Text tổng quát</option>
+                          <option value="force_loai">Loại hình Thế lực (f_loai_to_chuc)</option>
+                          <option value="force_realm">Hệ Bản đồ Thế lực (f_he_cap_the_luc)</option>
+                        </>
+                      )}
                     </select>
                   </label>
                   <label className="space-y-1">
@@ -2006,7 +2066,11 @@ export const ModalEntity = ({
                       }}
                       rows={4}
                       className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono leading-relaxed"
-                      placeholder={'Ví dụ:\nThần Cấp\nThiên Cấp\nĐịa Cấp\nHuyền Cấp'}
+                      placeholder={
+                        showForceQuickSection
+                          ? 'Mỗi dòng một nhãn nhóm (vd. Thần Cấp, Thiên Cấp… khi gom theo Cấp bậc). Khớp list gợi ý trường tương ứng trong Chỉnh trường hồ sơ.'
+                          : 'Ví dụ:\nThần Cấp\nThiên Cấp\nĐịa Cấp\nHuyền Cấp'
+                      }
                     />
                   </label>
                 </div>
@@ -2255,7 +2319,7 @@ export const ModalEntity = ({
                     className={entityModalQuickInput}
                     placeholder={
                       forceRankOptions[0] ||
-                      'Thêm list trong «Quy chuẩn nhóm» (mở rộng) → Hệ cấp bậc / Cấp bậc → Lưu cấp bậc'
+                      'List cấp: mở tab Bản đồ → Khởi tạo thẻ → «Quy chuẩn nhóm» → Hệ cấp bậc / Cấp bậc → Lưu'
                     }
                   />
                 </div>
