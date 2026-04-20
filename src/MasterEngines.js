@@ -49,6 +49,12 @@ export const WIKI_ALIAS_FIELD = {
   label: 'Biệt danh / tên khác (phẩy, / hoặc | — cùng liên kết wiki với tên chính)',
 };
 
+/** Thứ tự trong thẻ «Danh sách (AUTO)»: La Mã (I…) = mục lớn; 1, 1.1 = mục con — gợi ý list theo tab. */
+export const OUTLINE_LIST_FIELD = {
+  id: 'f_muc_luc_danh_sach',
+  label: 'Mục lục danh sách (AUTO)',
+};
+
 export const DEFAULT_ENTITY_FIELDS = [
   { id: 'f_status', label: 'Cảnh giới / Trạng thái' },
   { id: 'f_title', label: 'Danh hiệu / Phân loại' },
@@ -334,7 +340,16 @@ export const resolveFieldsTemplate = (tabConfig, parentTabId, parentLabel = '') 
     guessFieldsByLabel(tabConfig?.label || '') ||
     guessFieldsByLabel(parentLabel);
   const base = (!t || t.length === 0) ? (target || DEFAULT_ENTITY_FIELDS) : t;
-  return mergeFieldsTemplate([WIKI_ALIAS_FIELD], base);
+  const merged = mergeFieldsTemplate([WIKI_ALIAS_FIELD], base);
+  const hasOutline = merged.some((f) => f && f.id === OUTLINE_LIST_FIELD.id);
+  if (hasOutline) return merged;
+  const aliasIdx = merged.findIndex((f) => f && f.id === WIKI_ALIAS_FIELD.id);
+  if (aliasIdx >= 0) {
+    const next = [...merged];
+    next.splice(aliasIdx, 0, { ...OUTLINE_LIST_FIELD });
+    return next;
+  }
+  return [...merged, { ...OUTLINE_LIST_FIELD }];
 };
 
 /** Lần đầu có đúng 1 thẻ trong mục: ghi fieldsTemplate vào tabsConfig (thẻ chuẩn cho mục đó). */

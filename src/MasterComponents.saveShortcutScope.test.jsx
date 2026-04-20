@@ -125,8 +125,9 @@ describe('modal ttc-save scope', () => {
 
     fireEvent.change(getByRole('textbox', { name: /danh xưng/i }), { target: { value: 'Hoang Thu Gioi' } });
     fireEvent.change(getByLabelText('Giới Diện bản đồ'), { target: { value: 'Giới' } });
+    fireEvent.change(getByLabelText('Quy Mô Địa Vực bản đồ'), { target: { value: 'Đại lục' } });
     fireEvent.change(getByLabelText('Đặc Tính Địa Vực bản đồ'), { target: { value: 'Tôn giới' } });
-    fireEvent.change(getByLabelText('Trực thuộc bản đồ'), { target: { value: 'Trung Tiên giới' } });
+    fireEvent.change(getByLabelText('Trực thuộc tầng 1 bản đồ'), { target: { value: 'Trung Tiên giới' } });
     fireEvent.click(getByRole('button', { name: /lưu thông tin/i }));
 
     expect(onEntitySave).toHaveBeenCalledTimes(1);
@@ -194,7 +195,7 @@ describe('modal ttc-save scope', () => {
     });
   });
 
-  it('uses urban map presets when novel genres include Đô Thị', () => {
+  it('keeps map type suggestions empty until user configures a list', () => {
     const activeNovelData = {
       genres: ['Hệ Thống', 'Đô Thị'],
       tabsConfig: [],
@@ -214,8 +215,7 @@ describe('modal ttc-save scope', () => {
     const mapTypeInput = getByLabelText('Giới Diện bản đồ');
     const listEl = document.getElementById(mapTypeInput.getAttribute('list') || '');
     const options = Array.from(listEl?.querySelectorAll('option') || []).map((item) => item.getAttribute('value') || '');
-    expect(options).toContain('Thành phố');
-    expect(options).not.toContain('Tiên tinh');
+    expect(options).toEqual([]);
   });
 
   it('keeps map system suggestions empty until shared list is configured', async () => {

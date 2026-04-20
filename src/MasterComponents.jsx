@@ -19,7 +19,9 @@ import {
   FALLBACK_IMG, GENRES, THEMES,
   resolveFieldsTemplate,
   WIKI_ALIAS_FIELD,
+  OUTLINE_LIST_FIELD,
 } from './MasterEngines.js';
+import { resolveAutoListOutlineFieldId } from './lib/outlineListOrder.js';
 import {
   safeString, getTerms, AsyncLocalImage,
   handleToolbarClick,
@@ -57,11 +59,7 @@ import {
   listMapTabEntityNames,
   matchMapSubTabByRealmInput,
 } from './lib/mapTabForceBridge.js';
-import {
-  getMapFieldPlaceholders,
-  getMapTypeSeedPresets,
-  resolveMapFieldPresetFlavor,
-} from './lib/mapEntityFieldPresets.js';
+import { getMapFieldPlaceholders, resolveMapFieldPresetFlavor } from './lib/mapEntityFieldPresets.js';
 import { resolveEntityQuickSlots } from './lib/entityQuickEntrySlots.js';
 import { AppEntityTemplateFieldEditor } from './AppEntityTemplateFieldEditor.jsx';
 import { normalizeAsciiText, splitStatusHierarchyTokens } from './lib/statusHierarchyParser.js';
@@ -1067,18 +1065,41 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
       : f2;
   const mapCardQuick = parseMapQuickState(entity?.dynamicData || {});
   const mapSystemBadgeLabel = isMapCardScope ? safeString(mapCardQuick.mapSystem).trim() : '';
-  const mapSystemBadgePalette = [
-    'bg-cyan-900/40 border-cyan-500/45 text-cyan-100',
-    'bg-violet-900/40 border-violet-500/45 text-violet-100',
-    'bg-emerald-900/40 border-emerald-500/45 text-emerald-100',
-    'bg-amber-900/40 border-amber-500/45 text-amber-100',
-    'bg-rose-900/40 border-rose-500/45 text-rose-100',
-    'bg-sky-900/40 border-sky-500/45 text-sky-100',
-  ];
-  const mapSystemBadgeKey = normalizeAsciiText(mapSystemBadgeLabel);
-  const mapSystemBadgeIdx =
-    mapSystemBadgeKey.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % mapSystemBadgePalette.length;
-  const mapSystemBadgeClass = mapSystemBadgePalette[mapSystemBadgeIdx];
+  const mapTypeLabel = isMapCardScope ? safeString(mapCardQuick.mapType).trim() : '';
+  const mapSystemBadgeStyle = buildMapTraitBadgeStyle(mapSystemBadgeLabel);
+  const mapParentPath = isMapCardScope ? safeString(entity?.dynamicData?.f_vi_tri).trim() : '';
+  let f1DisplayResolved = f1Display;
+  if (isMapCardScope && !isListCardEntity && mapSystemBadgeLabel) {
+    const statusParts = safeString(f1Display).split('·').map((x) => safeString(x).trim()).filter(Boolean);
+    if (statusParts.length > 1) {
+      // Badge đã thể hiện "Đặc Tính", nên dòng tím chỉ giữ "Giới Diện".
+      f1DisplayResolved = statusParts[0];
+    }
+  }
+  let f2DisplayResolved = f2Display;
+  if (isMapCardScope) {
+    const statusParts = safeString(f2Display).split('·').map((x) => safeString(x).trim()).filter(Boolean);
+    if (statusParts.length > 1) {
+      // Badge đã hiển thị phần "Đặc Tính", nên dòng phụ chỉ giữ phần trước dấu chấm giữa.
+      f2DisplayResolved = statusParts[0];
+    }
+    if (
+      normalizeAsciiText(f2DisplayResolved) &&
+      normalizeAsciiText(f2DisplayResolved) === normalizeAsciiText(mapTypeLabel)
+    ) {
+      // Tránh lặp cùng nội dung với dòng trên; ưu tiên hiện "Trực thuộc" nếu có.
+      f2DisplayResolved = mapParentPath;
+    }
+  }
+  const f3Trim = safeString(f3).trim();
+  const f2Trim = safeString(f2DisplayResolved).trim();
+  const hideMapField3Duplicate =
+    isMapCardScope &&
+    !isListCardEntity &&
+    fields[2] &&
+    f3Trim &&
+    f2Trim &&
+    normalizeAsciiText(f3Trim) === normalizeAsciiText(f2Trim);
 
   const avatarColors = ['bg-amber-900/50','bg-indigo-900/50','bg-emerald-900/50','bg-rose-900/50','bg-purple-900/50','bg-sky-900/50','bg-orange-900/50','bg-teal-900/50'];
   const avatarTextColors = ['text-amber-400','text-indigo-400','text-emerald-400','text-rose-400','text-purple-400','text-sky-400','text-orange-400','text-teal-400'];
@@ -1102,17 +1123,22 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
            <div className="flex flex-wrap items-center gap-2">
              <h4 className="text-amber-100 font-bold font-serif text-base leading-snug break-words" title={safeString(entity.name)}>{safeString(entity.name)}</h4>
              {mapSystemBadgeLabel && (
-               <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wide ${mapSystemBadgeClass}`}>
+               <span
+                 className="px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wide"
+                 style={mapSystemBadgeStyle || undefined}
+               >
                  {mapSystemBadgeLabel}
                </span>
              )}
            </div>
-            {fields[0] && <p className="text-[11px] text-amber-600 font-bold uppercase tracking-widest mt-0.5 break-words">{f1Display || '---'}</p>}
+            {fields[0] && <p className="text-[11px] text-amber-600 font-bold uppercase tracking-widest mt-0.5 break-words">{f1DisplayResolved || '---'}</p>}
          </div>
       </div>
       <div className="mb-4 space-y-1">
-        {fields[1] && <div className="text-xs text-slate-400 font-serif line-clamp-2 italic"><Shield size={10} className="inline mr-1 opacity-50"/> {safeString(fields[1].label)}: {f2Display || '---'}</div>}
-        {fields[2] && <p className="text-sm text-slate-300 font-serif line-clamp-3 leading-relaxed mt-1">{f3 || '...'}</p>}
+        {fields[1] && <div className="text-xs text-slate-400 font-serif line-clamp-2 italic"><Shield size={10} className="inline mr-1 opacity-50"/> {safeString(fields[1].label)}: {f2DisplayResolved || '---'}</div>}
+        {fields[2] && !hideMapField3Duplicate && (
+          <p className="text-sm text-slate-300 font-serif line-clamp-3 leading-relaxed mt-1">{f3 || '...'}</p>
+        )}
       </div>
       <div className="w-full pt-3 border-t border-slate-800/80 flex justify-between items-center text-[10px] text-slate-500 uppercase tracking-widest font-bold">
         <span>{entity.milestones?.length || 0} {terms.msTitle.split('/')[0].trim()}</span>
@@ -1158,6 +1184,37 @@ function composeMapStatusLine(mapType, forceSystem) {
   return [safeString(mapType).trim(), safeString(forceSystem).trim()].filter(Boolean).join(' · ');
 }
 
+function parseParentPathTiers(pathLine = '') {
+  const tokens = splitStatusHierarchyTokens(pathLine);
+  return {
+    tier1: tokens[0] || '',
+    tier2: tokens[1] || '',
+    tier3: tokens[2] || '',
+  };
+}
+
+function composeParentPathFromTiers(t1 = '', t2 = '', t3 = '') {
+  return [safeString(t1).trim(), safeString(t2).trim(), safeString(t3).trim()].filter(Boolean).join(' > ');
+}
+
+function resolveMapParentTierSchema(realmScale = '') {
+  const key = normalizeAsciiText(realmScale);
+  if (!key) return [];
+  if (/(tinh cau|hanh tinh|tinh he|thien ha|vi dien|gioi|mat trang|ve tinh)/.test(key)) {
+    return [];
+  }
+  if (/(dai luc|dai duong|chau|vuc|khu vuc|de quoc|quoc gia|lien bang)/.test(key)) {
+    return [{ id: 'tier1', label: 'Tinh cầu', placeholder: 'Chọn Tinh cầu cha' }];
+  }
+  if (/(thanh|tran|do thanh|thanh tri|khu dan cu|lang|dao)/.test(key)) {
+    return [
+      { id: 'tier1', label: 'Tinh cầu', placeholder: 'Chọn Tinh cầu cha' },
+      { id: 'tier2', label: 'Đại lục/Đại dương', placeholder: 'Chọn Đại lục/Đại dương cha' },
+    ];
+  }
+  return [{ id: 'tier1', label: 'Tinh cầu', placeholder: 'Chọn Tinh cầu cha' }];
+}
+
 function parseMapQuickState(dynamicData) {
   const statusTokens = splitDotMetaTokens(dynamicData?.f_status);
   const mapSystem = statusTokens.length > 1 ? statusTokens.slice(1).join(' · ') : '';
@@ -1181,6 +1238,18 @@ function parseForceQuickState(dynamicData) {
     realmSystem,
     rankLabel,
     locationLine,
+  };
+}
+
+function buildMapTraitBadgeStyle(label = '') {
+  const key = normalizeAsciiText(label);
+  if (!key) return null;
+  const hash = key.split('').reduce((acc, ch) => acc * 31 + ch.charCodeAt(0), 7);
+  const hue = Math.abs(hash) % 360;
+  return {
+    backgroundColor: `hsla(${hue}, 82%, 20%, 0.55)`,
+    borderColor: `hsla(${hue}, 78%, 52%, 0.65)`,
+    color: `hsla(${hue}, 95%, 88%, 1)`,
   };
 }
 
@@ -1248,14 +1317,19 @@ function collectForceQuickHints(activeNovelData) {
   };
 }
 
-function collectMapEntityHints(activeNovelData, mapTabConfig = null) {
+function collectMapEntityHints(activeNovelData, mapTabConfig = null, mapLonScopeId = '') {
   const mapNameList = [];
+  const parentTier1List = [];
+  const parentTier2List = [];
+  const parentTier3List = [];
   const presetFlavor = resolveMapFieldPresetFlavor(normalizeNovelGenresForMapPresets(activeNovelData));
-  let mapTypeList = [...getMapTypeSeedPresets(presetFlavor)];
+  // "Giới Diện" để user nhập tay, không auto-gợi ý từ dữ liệu cũ.
+  let mapTypeList = [];
   // "Đặc Tính Địa Vực" để user nhập tay hoàn toàn (không auto-gợi ý để tránh nhầm dữ liệu cũ).
   let forceSystemList = [];
   const recordsByName = new Map();
   for (const lon of activeNovelData?.tabsConfig || []) {
+    if (mapLonScopeId && lon?.id !== mapLonScopeId) continue;
     for (const nho of lon?.subTabs || []) {
       if (
         !isMapCollectionScope({
@@ -1275,7 +1349,12 @@ function collectMapEntityHints(activeNovelData, mapTabConfig = null) {
         if (normalizeAsciiText(name).startsWith('danh sach')) return;
         mapNameList.push(name);
         const mapType = safeString(entity?.dynamicData?.f_title).trim();
-        if (mapType) mapTypeList.push(mapType);
+        const locationRaw = safeString(entity?.dynamicData?.f_vi_tri).trim();
+        const parentTokens = splitStatusHierarchyTokens(locationRaw);
+        if (parentTokens.length > 0) parentTier1List.push(parentTokens[0]);
+        if (parentTokens.length > 1) parentTier2List.push(parentTokens[1]);
+        if (parentTokens.length > 2) parentTier3List.push(parentTokens[2]);
+        // Cố ý không gom gợi ý "Giới Diện" từ entity cũ.
         // Cố ý không gom gợi ý "Đặc Tính Địa Vực" từ entity cũ.
         const key = normalizeAsciiText(name);
         const nextList = recordsByName.get(key) || [];
@@ -1292,11 +1371,14 @@ function collectMapEntityHints(activeNovelData, mapTabConfig = null) {
   }
   const extraMap = mapTabConfig?.mapEntrySuggestions;
   if (extraMap && typeof extraMap === 'object') {
-    if (Array.isArray(extraMap.types)) mapTypeList.push(...extraMap.types);
+    // Cố ý bỏ extraMap.types để ô "Giới Diện" luôn trống khi tạo/tu bổ.
     if (Array.isArray(extraMap.hierarchy)) forceSystemList.push(...extraMap.hierarchy);
   }
   return {
     mapNames: dedupeCaseInsensitive(mapNameList),
+    parentTier1Options: dedupeCaseInsensitive(parentTier1List),
+    parentTier2Options: dedupeCaseInsensitive(parentTier2List),
+    parentTier3Options: dedupeCaseInsensitive(parentTier3List),
     mapTypes: dedupeCaseInsensitive(mapTypeList),
     forceSystems: dedupeCaseInsensitive(forceSystemList),
     presetFlavor,
@@ -1402,18 +1484,43 @@ export const ModalEntity = ({
     [showGenericQuickEntry, tabConfig, fieldsTemplate, activeNovelData, parentTabId, parentLabel]
   );
   const genericQuickListPrefix = useId().replace(/:/g, '');
+  const entityOutlineListPrefix = useId().replace(/:/g, '');
   const hideLegacyStatusInput = Boolean(
     showGenericQuickEntry && genericQuickResolved?.slotFields?.includes('f_status')
   );
+  const outlineMeta = useMemo(() => {
+    if (tabConfig?.viewType !== 'collection-track') return null;
+    const oid = resolveAutoListOutlineFieldId(tabConfig || {});
+    if (!oid) return null;
+    const label = fieldsTemplate.find((x) => x.id === oid)?.label || OUTLINE_LIST_FIELD.label;
+    const fromTab = Array.isArray(tabConfig?.fieldSuggestionLists?.[oid]) ? tabConfig.fieldSuggestionLists[oid] : [];
+    const sug = dedupeCaseInsensitive([
+      ...fromTab,
+      'I',
+      'II',
+      'III',
+      'IV',
+      '1',
+      '2',
+      '3',
+      '1.1',
+      '1.2',
+      '2.1',
+    ]);
+    return { oid, label, sug };
+  }, [tabConfig, fieldsTemplate]);
   const mapEntityHints = useMemo(
-    () => collectMapEntityHints(activeNovelData, isMapScope ? tabConfig : null),
-    [activeNovelData, tabConfig, isMapScope]
+    () => collectMapEntityHints(activeNovelData, isMapScope ? tabConfig : null, isMapScope ? parentTabId : ''),
+    [activeNovelData, tabConfig, isMapScope, parentTabId]
   );
   const mapFieldPlaceholders = useMemo(
     () => getMapFieldPlaceholders(mapEntityHints.presetFlavor),
     [mapEntityHints.presetFlavor]
   );
   const mapNameSuggestions = mapEntityHints.mapNames;
+  const mapParentTier1Suggestions = mapEntityHints.parentTier1Options || [];
+  const mapParentTier2Suggestions = mapEntityHints.parentTier2Options || [];
+  const mapParentTier3Suggestions = mapEntityHints.parentTier3Options || [];
   const mapTypeSuggestions = mapEntityHints.mapTypes;
   const forceSystemSuggestions = mapEntityHints.forceSystems;
   const statusFieldPlaceholder = isMapScope
@@ -1428,6 +1535,14 @@ export const ModalEntity = ({
   const [mapQuickRealmSystem, setMapQuickRealmSystem] = useState('');
   const [mapQuickSystem, setMapQuickSystem] = useState('');
   const [mapQuickParentPath, setMapQuickParentPath] = useState('');
+  const [mapQuickParentTier1, setMapQuickParentTier1] = useState('');
+  const [mapQuickParentTier2, setMapQuickParentTier2] = useState('');
+  const [mapQuickParentTier3, setMapQuickParentTier3] = useState('');
+  const mapParentTierSchema = useMemo(
+    () => resolveMapParentTierSchema(mapQuickRealmSystem),
+    [mapQuickRealmSystem]
+  );
+  const mapParentTierRequiredCount = mapParentTierSchema.length;
   const [mapRealmListPanelOpen, setMapRealmListPanelOpen] = useState(false);
   const [mapRealmListDraft, setMapRealmListDraft] = useState('');
   const [mapHierarchyListPanelOpen, setMapHierarchyListPanelOpen] = useState(false);
@@ -1643,8 +1758,51 @@ export const ModalEntity = ({
   };
   const handleMapParentPathChange = (value) => {
     setMapQuickParentPath(value);
+    const tiers = parseParentPathTiers(value);
+    setMapQuickParentTier1(tiers.tier1);
+    setMapQuickParentTier2(tiers.tier2);
+    setMapQuickParentTier3(tiers.tier3);
     patchDynamicData({ f_vi_tri: value });
   };
+  const handleMapParentTier1Change = (value) => {
+    setMapQuickParentTier1(value);
+    const nextPath = composeParentPathFromTiers(value, mapQuickParentTier2, mapQuickParentTier3);
+    setMapQuickParentPath(nextPath);
+    patchDynamicData({ f_vi_tri: nextPath });
+  };
+  const handleMapParentTier2Change = (value) => {
+    setMapQuickParentTier2(value);
+    const nextPath = composeParentPathFromTiers(mapQuickParentTier1, value, mapQuickParentTier3);
+    setMapQuickParentPath(nextPath);
+    patchDynamicData({ f_vi_tri: nextPath });
+  };
+  const handleMapParentTier3Change = (value) => {
+    setMapQuickParentTier3(value);
+    const nextPath = composeParentPathFromTiers(mapQuickParentTier1, mapQuickParentTier2, value);
+    setMapQuickParentPath(nextPath);
+    patchDynamicData({ f_vi_tri: nextPath });
+  };
+  useEffect(() => {
+    if (!isOpen || !showMapQuickSection) return;
+    const tier1 = safeString(mapQuickParentTier1).trim();
+    const tier2 = mapParentTierRequiredCount >= 2 ? safeString(mapQuickParentTier2).trim() : '';
+    const tier3 = mapParentTierRequiredCount >= 3 ? safeString(mapQuickParentTier3).trim() : '';
+    const nextPath = composeParentPathFromTiers(tier1, tier2, tier3);
+    if (mapParentTierRequiredCount < 3 && mapQuickParentTier3) setMapQuickParentTier3('');
+    if (mapParentTierRequiredCount < 2 && mapQuickParentTier2) setMapQuickParentTier2('');
+    if (mapQuickParentPath !== nextPath) {
+      setMapQuickParentPath(nextPath);
+      patchDynamicData({ f_vi_tri: nextPath });
+    }
+  }, [
+    isOpen,
+    showMapQuickSection,
+    mapParentTierRequiredCount,
+    mapQuickParentTier1,
+    mapQuickParentTier2,
+    mapQuickParentTier3,
+    mapQuickParentPath,
+  ]);
   const loadRealmListDraftFor = useCallback(
     (lonId, nhoId) => {
       const nho = getMapSubTabFromNovel(lonId, nhoId);
@@ -1752,7 +1910,35 @@ export const ModalEntity = ({
       if (!initialDyn.f_status && initialData.status) initialDyn.f_status = initialData.status;
       if (!initialDyn.f_title && initialData.title) initialDyn.f_title = initialData.title;
       if (!initialDyn.f_desc && initialData.description) initialDyn.f_desc = initialData.description;
-      const mapQuickState = parseMapQuickState(initialDyn);
+      const mapQuickStateRaw = parseMapQuickState(initialDyn);
+      const configuredRealmTypeKeys = Object.keys(tabConfig?.mapEntrySuggestions?.realmScaleLists || {});
+      const defaultMapTypeFromSubTab = safeString(tabConfig?.label).trim();
+      const mapQuickType =
+        isMapScope &&
+        !isForceScope &&
+        configuredRealmTypeKeys.length > 0 &&
+        !configuredRealmTypeKeys.some((k) => normalizeAsciiText(k) === normalizeAsciiText(mapQuickStateRaw.mapType))
+          ? defaultMapTypeFromSubTab
+          : mapQuickStateRaw.mapType;
+      const mapRealmOptions = buildMapRealmSystemOptions(tabConfig, mapQuickType);
+      const mapQuickRealmSystem =
+        mapQuickStateRaw.realmSystem &&
+        mapRealmOptions.some((x) => normalizeAsciiText(x) === normalizeAsciiText(mapQuickStateRaw.realmSystem))
+          ? mapQuickStateRaw.realmSystem
+          : '';
+      // Khi Tu Bổ thẻ đã có dữ liệu, luôn giữ lại "Đặc Tính Địa Vực" đã lưu.
+      // Trường này là optional nên không auto điền khi tạo mới, nhưng không được tự mất khi mở lại form.
+      const mapQuickSystem = safeString(mapQuickStateRaw.mapSystem).trim();
+      const mapQuickState = {
+        ...mapQuickStateRaw,
+        mapType: mapQuickType,
+        realmSystem: mapQuickRealmSystem,
+        mapSystem: mapQuickSystem,
+      };
+      if (isMapScope && !isForceScope) {
+        initialDyn.f_he_gioi_ban_do = mapQuickState.realmSystem;
+        initialDyn.f_status = composeMapStatusLine(mapQuickState.mapType, mapQuickState.mapSystem);
+      }
       const forceQuickState = parseForceQuickState(initialDyn);
       const mapBanDoLabels = dedupeCaseInsensitive(
         collectMapSubTabsForForceUi(activeNovelData).map((t) => t.label)
@@ -1767,6 +1953,10 @@ export const ModalEntity = ({
       setMapQuickRealmSystem(mapQuickState.realmSystem);
       setMapQuickSystem(mapQuickState.mapSystem);
       setMapQuickParentPath(mapQuickState.parentPath);
+      const mapParentTiers = parseParentPathTiers(mapQuickState.parentPath);
+      setMapQuickParentTier1(mapParentTiers.tier1);
+      setMapQuickParentTier2(mapParentTiers.tier2);
+      setMapQuickParentTier3(mapParentTiers.tier3);
       setForceQuickType(forceQuickState.orgType);
       setForceQuickRealmSystem(rawRealm && mapBanDoLabels.includes(rawRealm) ? rawRealm : '');
       setForceQuickRank(forceQuickState.rankLabel);
@@ -1787,6 +1977,9 @@ export const ModalEntity = ({
       setMapQuickRealmSystem('');
       setMapQuickSystem('');
       setMapQuickParentPath('');
+      setMapQuickParentTier1('');
+      setMapQuickParentTier2('');
+      setMapQuickParentTier3('');
       setForceQuickType('');
       setForceQuickRealmSystem('');
       setForceQuickRank('');
@@ -2095,14 +2288,55 @@ export const ModalEntity = ({
               </div>
               <div className="space-y-2">
                 <label className={entityModalQuickLabel}>Trực thuộc</label>
-                <input
-                  aria-label="Trực thuộc bản đồ"
-                  list="ttc-map-name-options"
-                  value={mapQuickParentPath}
-                  onChange={(e) => handleMapParentPathChange(e.target.value)}
-                  className={entityModalQuickInput}
-                  placeholder="Có thể bỏ trống nếu là tầng cao nhất"
-                />
+                {mapParentTierRequiredCount === 0 ? (
+                  <p className="text-[11px] text-slate-400 font-serif">
+                    Quy mô hiện tại là tầng cao nhất, không cần chọn «Trực thuộc».
+                  </p>
+                ) : (
+                  <>
+                    <div className={`grid gap-2 ${mapParentTierRequiredCount === 1 ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}>
+                      {mapParentTierRequiredCount >= 1 && (
+                        <input
+                          aria-label="Trực thuộc tầng 1 bản đồ"
+                          list="ttc-map-parent-tier1-options"
+                          autoComplete="off"
+                          value={mapQuickParentTier1}
+                          onChange={(e) => handleMapParentTier1Change(e.target.value)}
+                          className={entityModalQuickInput}
+                          placeholder={mapParentTierSchema[0]?.placeholder || 'Chọn tầng cha'}
+                        />
+                      )}
+                      {mapParentTierRequiredCount >= 2 && (
+                        <input
+                          aria-label="Trực thuộc tầng 2 bản đồ"
+                          list="ttc-map-parent-tier2-options"
+                          autoComplete="off"
+                          value={mapQuickParentTier2}
+                          onChange={(e) => handleMapParentTier2Change(e.target.value)}
+                          className={entityModalQuickInput}
+                          placeholder={mapParentTierSchema[1]?.placeholder || 'Chọn tầng cha'}
+                        />
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-serif leading-snug">
+                      Chuỗi auto ghép: <code className="text-slate-300">{mapQuickParentPath || 'Chưa chọn'}</code>
+                    </p>
+                    <input
+                      aria-label="Trực thuộc bản đồ"
+                      list="ttc-map-name-options"
+                      autoComplete="off"
+                      value={mapQuickParentPath}
+                      onChange={(e) => handleMapParentPathChange(e.target.value)}
+                      className={entityModalQuickInput}
+                      placeholder="Có thể nhập/sửa tay chuỗi trực thuộc"
+                    />
+                  </>
+                )}
+                {mapParentTierRequiredCount > 0 && !mapQuickParentPath.trim() && /(dai luc|chau|thanh|tran|de quoc|vuc|khu|tinh cau)/.test(normalizeAsciiText(mapQuickRealmSystem)) && (
+                  <p className="text-[11px] text-amber-200/90 font-serif">
+                    Cấp địa vực hiện tại nên khai báo «Trực thuộc» để biết chính xác thuộc Tinh cầu/Giới nào.
+                  </p>
+                )}
                 {!mapQuickSystem && suggestedMapSystem && (
                   <p className="text-[11px] text-amber-200/90 font-serif">
                     Gợi ý theo địa bàn cha: <strong>{suggestedMapSystem}</strong>
@@ -2216,6 +2450,31 @@ export const ModalEntity = ({
             </div>
           )}
 
+          {outlineMeta && (
+            <div className="pt-2 border-t border-slate-800/60 space-y-2">
+              <label className="block text-[10px] font-bold text-emerald-400/95 uppercase tracking-widest leading-snug">
+                {outlineMeta.label}
+              </label>
+              <input
+                aria-label={outlineMeta.label}
+                type="text"
+                list={`${entityOutlineListPrefix}-outline-dl`}
+                value={safeString(dynamicData[outlineMeta.oid])}
+                onChange={(e) => patchDynamicData({ [outlineMeta.oid]: e.target.value })}
+                className="w-full bg-slate-950/80 border border-emerald-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-emerald-500/70 outline-none"
+                placeholder="Ví dụ: I  hoặc  1  hoặc  1.1 — cùng mục xếp theo tên thẻ"
+              />
+              <datalist id={`${entityOutlineListPrefix}-outline-dl`}>
+                {outlineMeta.sug.map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
+              <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
+                Quy ước chung: La Mã I, II là mục lớn; 1, 2 là mục con cấp 1; 1.1, 2.3 là cấp sâu hơn; cùng mục thì xếp theo tên thẻ. List gợi ý từng tab chỉnh ở khối «Trường hồ sơ &amp; danh sách gợi ý» bên dưới.
+              </p>
+            </div>
+          )}
+
           <datalist id="ttc-map-type-options">
             {mapTypeSuggestions.map((item) => (
               <option key={item} value={item} />
@@ -2234,6 +2493,21 @@ export const ModalEntity = ({
           <datalist id="ttc-map-name-options">
             {mapNameSuggestions.map((item) => (
               <option key={item} value={item} />
+            ))}
+          </datalist>
+          <datalist id="ttc-map-parent-tier1-options">
+            {mapParentTier1Suggestions.map((item) => (
+              <option key={`tier1-${item}`} value={item} />
+            ))}
+          </datalist>
+          <datalist id="ttc-map-parent-tier2-options">
+            {mapParentTier2Suggestions.map((item) => (
+              <option key={`tier2-${item}`} value={item} />
+            ))}
+          </datalist>
+          <datalist id="ttc-map-parent-tier3-options">
+            {mapParentTier3Suggestions.map((item) => (
+              <option key={`tier3-${item}`} value={item} />
             ))}
           </datalist>
           <datalist id="ttc-force-rank-options">

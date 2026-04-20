@@ -41,6 +41,32 @@ function getLeafHierarchyLabel(value) {
   return safeString(tokens[tokens.length - 1]).trim();
 }
 
+function getMapTraitLabel(statusLine = '') {
+  const raw = safeString(statusLine).trim();
+  if (!raw) return '';
+  const parts = raw.split('·').map((x) => safeString(x).trim()).filter(Boolean);
+  return parts.length > 1 ? parts.slice(1).join(' · ') : '';
+}
+
+function getMapTypeLabel(statusLine = '') {
+  const raw = safeString(statusLine).trim();
+  if (!raw) return '';
+  const parts = raw.split('·').map((x) => safeString(x).trim()).filter(Boolean);
+  return parts[0] || '';
+}
+
+function getMapTraitBadgeStyle(label = '') {
+  const key = safeString(label).trim().toLowerCase();
+  if (!key) return undefined;
+  const hash = key.split('').reduce((acc, ch) => acc * 31 + ch.charCodeAt(0), 7);
+  const hue = Math.abs(hash) % 360;
+  return {
+    backgroundColor: `hsla(${hue}, 82%, 20%, 0.55)`,
+    borderColor: `hsla(${hue}, 78%, 52%, 0.65)`,
+    color: `hsla(${hue}, 95%, 88%, 1)`,
+  };
+}
+
 export function AppCollectionSection({
   // nav state
   activeTabLon,
@@ -585,8 +611,12 @@ export function AppCollectionSection({
               const statusLine =
                 safeString(detailEntity?.status).trim() ||
                 safeString(detailEntity?.dynamicData?.f_status).trim();
+              const mapTraitLabel = isMapDetail ? getMapTraitLabel(statusLine) : '';
+              const mapTraitBadgeStyle = getMapTraitBadgeStyle(mapTraitLabel);
+              const mapStatusForSubtitle =
+                isMapDetail && mapTraitLabel ? getMapTypeLabel(statusLine) : statusLine;
               const profileSubtitle = isMapDetail
-                ? [...new Set([mapParentLine, statusLine].filter(Boolean))].join(' · ')
+                ? [...new Set([mapParentLine, mapStatusForSubtitle].filter(Boolean))].join(' · ')
                 : isForceDetail
                   ? [...new Set([forceTypeLine, statusLine, forceLocationLine].filter(Boolean))].join(' Â· ')
                   : statusLine;
@@ -624,12 +654,22 @@ export function AppCollectionSection({
                         )
                       ) : safeString(detailEntity?.name).charAt(0).toUpperCase()}
                     </div>
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h2 className="text-4xl font-heading font-bold text-slate-100">{safeString(detailEntity?.name)}</h2>
-                        {safeString(detailEntity?.title).trim() && (
-                          <span className="px-3 py-1 bg-amber-900/30 text-amber-400 text-[10px] font-bold uppercase tracking-widest rounded-full border border-amber-700/30 shadow-inner">
-                            {safeString(detailEntity.title)}
+                    <div className="flex flex-col flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <h2 className="text-4xl font-heading font-bold text-slate-100">{safeString(detailEntity?.name)}</h2>
+                          {safeString(detailEntity?.title).trim() && (
+                            <span className="px-3 py-1 bg-amber-900/30 text-amber-400 text-[10px] font-bold uppercase tracking-widest rounded-full border border-amber-700/30 shadow-inner">
+                              {safeString(detailEntity.title)}
+                            </span>
+                          )}
+                        </div>
+                        {mapTraitLabel && (
+                          <span
+                            className="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide"
+                            style={mapTraitBadgeStyle}
+                          >
+                            {mapTraitLabel}
                           </span>
                         )}
                       </div>

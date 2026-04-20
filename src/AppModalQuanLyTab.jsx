@@ -82,6 +82,7 @@ export function AppModalQuanLyTab({
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
   handleSaveCurrentTabsAsGenreTemplate,
+  handleSetTabAutoListOutlineFieldId,
   setConfirmDialog,
 }) {
   const trapRef = useFocusTrap(true);
@@ -1100,6 +1101,31 @@ export function AppModalQuanLyTab({
                                       })}
                                     </div>
                                   )}
+                                </div>
+                              )}
+
+                              {tabNho.viewType === 'collection-track' && typeof handleSetTabAutoListOutlineFieldId === 'function' && (
+                                <div className="rounded-xl border border-emerald-900/35 bg-emerald-950/15 px-3 py-2.5 space-y-1.5">
+                                  <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-200/95">
+                                    Thứ tự trong thẻ Danh sách (AUTO)
+                                  </div>
+                                  <p className="text-[11px] text-slate-400 font-serif leading-relaxed">
+                                    Quy ước chung: La Mã I, II là mục lớn; 1, 2 là cấp 1; 1.1 là cấp 2; cùng mục xếp theo tên. Ô «Mục lục» trên form khởi tạo thẻ đọc từ trường id bên dưới (mặc định{' '}
+                                    <code className="text-emerald-200/90">f_muc_luc_danh_sach</code>).
+                                  </p>
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                                    Id trường đọc mục lục (per tab)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={safeString(tabNho.autoListOutlineFieldId ?? '')}
+                                    onChange={(e) =>
+                                      handleSetTabAutoListOutlineFieldId(tabLon.id, tabNho.id, e.target.value)
+                                    }
+                                    placeholder="Để trống = mặc định — gõ __off__ để tắt ô trên form"
+                                    className="w-full bg-slate-950 border border-emerald-900/45 rounded-lg px-2.5 py-2 text-xs text-slate-100 font-mono outline-none focus:border-emerald-600/55"
+                                    spellCheck={false}
+                                  />
                                 </div>
                               )}
 

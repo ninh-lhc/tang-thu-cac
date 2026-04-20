@@ -2218,6 +2218,23 @@ export default function App() {
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
   };
+  const handleSetTabAutoListOutlineFieldId = (lonId, nhoId, nextValue) => {
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const t = safeString(nextValue).trim();
+    if (!t) delete nho.autoListOutlineFieldId;
+    else if (t === '__off__' || t === '-') nho.autoListOutlineFieldId = '__off__';
+    else nho.autoListOutlineFieldId = t;
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: 'set_auto_list_outline_field',
+      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
+    });
+  };
+
   const handleSetTabListGroupOrder = (lonId, nhoId, text) => {
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
@@ -2887,6 +2904,7 @@ export default function App() {
     handleSetTabAutoSyncLevels,
     handleSetTabAutoSyncFieldMap,
     handleSetTabListGroupStrategy,
+    handleSetTabAutoListOutlineFieldId,
     handleSetTabListGroupOrder,
     handleSaveTabListGroupOrderToGenreTemplate,
     handleSetTabMapEntrySuggestions,

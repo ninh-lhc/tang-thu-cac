@@ -115,7 +115,7 @@ export function AppEntityTemplateFieldEditor({
           </div>
           <div className="text-[12px] text-slate-300 font-serif mt-1">
             Thêm trường tuỳ chỉnh, đổi tên và chỉnh list gợi ý ngay khi khởi tạo thẻ —
-            áp dụng cho tab con hiện tại hoặc toàn bộ tab lớn.
+            áp dụng cho tab con hiện tại hoặc toàn bộ tab lớn. Trường «Mục lục danh sách (AUTO)» dùng quy ước I / 1 / 1.1 để sắp thứ tự trong thẻ Danh sách.
           </div>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-800/50 bg-amber-950/40 px-2.5 py-1.5 text-[11px] font-bold text-amber-100 shrink-0">

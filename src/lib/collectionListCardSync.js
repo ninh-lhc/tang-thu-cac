@@ -19,6 +19,11 @@ import { isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
 import { normalizeTabAutoSyncLevelConfig } from './tabAutoSyncLevels.js';
 import { inferForceSystemLabel } from './forceRankLadder.js';
 import { classifyOrgType, inferOrgTypeFromContext, inferOrgTypeFromTabSlug } from './forceOrgTypeInfer.js';
+import {
+  compareOutlineStrings,
+  pickEntityOutlineValue,
+  resolveAutoListOutlineFieldId,
+} from './outlineListOrder.js';
 
 const LEGACY_AUTO_LIST_START = '<!-- AUTO_COLLECTION_LIST:START -->';
 const LEGACY_AUTO_LIST_END = '<!-- AUTO_COLLECTION_LIST:END -->';
@@ -499,29 +504,59 @@ function compareForceLocationHierarchy(a, b, ctx) {
   return safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
 }
 
+const MAP_GROUP_RANK_SEP = ' \u00b7 ';
+
+/** Giống modal bản đồ `parseMapQuickState`: tách token theo · / • / | / /. */
+function extractMapStatusSegments(fStatus) {
+  return safeString(fStatus)
+    .split(/[·•|/]+/)
+    .map((s) => safeString(s).trim())
+    .filter(Boolean);
+}
+
+/** «Quy mô địa vực» (và phần sau) khi f_status dạng «Giới diện · Quy mô …». */
+function mapQuyMoRankLineFromEntity(entity) {
+  const raw = pickFirstFilled(entity, ['f_status']);
+  const segs = extractMapStatusSegments(raw);
+  if (segs.length >= 2) return segs.slice(1).join(MAP_GROUP_RANK_SEP).trim();
+  return '';
+}
+
 function renderForceEntry(entity, ctx = {}) {
   const name = safeString(entity?.name).trim();
   if (!name) return '';
   const org = resolveOrgForMapList(entity, ctx);
   const sys = getForceRealmSystemSort(entity);
-  const rank = safeString(getForceRankLabel(entity)).trim();
+  const rank =
+    mapQuyMoRankLineFromEntity(entity) || safeString(getForceRankLabel(entity)).trim();
   const bits = [];
-  if (org) bits.push(`\`${org}\``);
-  if (sys) bits.push(`\`${sys}\``);
-  if (rank) bits.push(`\`${rank}\``);
+  const seenNorm = new Set();
+  const pushBit = (raw) => {
+    const v = safeString(raw).trim();
+    if (!v) return;
+    const nk = normalize(v);
+    if (seenNorm.has(nk)) return;
+    seenNorm.add(nk);
+    bits.push(`\`${v}\``);
+  };
+  pushBit(org);
+  pushBit(sys);
+  pushBit(rank);
   if (bits.length === 0) return `[[${name}]]`;
   return `[[${name}]] - ${bits.join(' · ')}`;
 }
 
-const MAP_GROUP_RANK_SEP = ' \u00b7 ';
-
 /** Chuỗi cấp dùng để tách nhóm (không gộp cửu cấp với bát cấp). */
 function rankLineForForceSubGroup(entity) {
   const rankLine = safeString(getForceRankLabel(entity)).trim();
-  if (!rankLine) return '';
-  if (Number.isFinite(parseRankNumber(rankLine))) return rankLine;
-  const n = normalize(rankLine);
-  if (/\b(cap|the\s+luc|de\b|ton\b|vuong\b|mon\b)\b/.test(n)) return rankLine;
+  if (rankLine) {
+    if (Number.isFinite(parseRankNumber(rankLine))) return rankLine;
+    const n = normalize(rankLine);
+    if (/\b(cap|the\s+luc|de\b|ton\b|vuong\b|mon\b)\b/.test(n)) return rankLine;
+  }
+  const quyMo = mapQuyMoRankLineFromEntity(entity);
+  if (quyMo) return quyMo;
+  if (rankLine) return rankLine;
   return '';
 }
 
@@ -906,6 +941,17 @@ function detectGroupingStrategy({ lonId = '', nhoId = '', tabLabel = '', parentL
   ]);
 }
 
+/** Cùng nhóm: ưu tiên «Mục lục» (La Mã / 1 / 1.1), rồi mới so sánh nội bộ (tên, v.v.). */
+function compareWithOutlinePrimary(a, b, innerCompare, tabConfig) {
+  const fid = resolveAutoListOutlineFieldId(tabConfig);
+  if (!fid) return innerCompare(a, b);
+  const oa = pickEntityOutlineValue(a, fid);
+  const ob = pickEntityOutlineValue(b, fid);
+  const oc = compareOutlineStrings(oa, ob);
+  if (oc !== 0) return oc;
+  return innerCompare(a, b);
+}
+
 function computeGroupOrder(kind, label, strategy = null) {
   const normalized = normalize(label);
   if (!normalized) return 10_000;
@@ -946,14 +992,23 @@ function computeGroupOrder(kind, label, strategy = null) {
 function buildAutoLines(records, strategy, ownerLookupEntities = [], sortContext = null) {
   const useForceHierarchy =
     strategy.kind === 'force-location' && sortContext != null && typeof sortContext === 'object';
+  const tabCfg = sortContext?.tabConfig;
   let items = Array.isArray(records) ? [...records] : [];
   if (useForceHierarchy) {
-    items.sort((a, b) => compareForceLocationHierarchy(a, b, sortContext));
+    items.sort((a, b) =>
+      compareWithOutlinePrimary(
+        a,
+        b,
+        (x, y) => compareForceLocationHierarchy(x, y, sortContext),
+        tabCfg
+      )
+    );
   }
   const lines = [AUTO_LIST_TITLE, '', `- T\u1ed5ng s\u1ed1 th\u1ebb: ${items.length}`, ''];
-  const compareEntries = typeof strategy?.compareEntries === 'function'
+  const compareEntriesBase = typeof strategy?.compareEntries === 'function'
     ? strategy.compareEntries
     : (a, b) => safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
+  const compareEntries = (a, b) => compareWithOutlinePrimary(a, b, compareEntriesBase, tabCfg);
   const renderEntry = typeof strategy?.renderEntry === 'function'
     ? strategy.renderEntry
     : (entity) => {
@@ -1010,9 +1065,7 @@ function buildAutoLines(records, strategy, ownerLookupEntities = [], sortContext
       );
       rankKeys.forEach((rk, rkIndex) => {
         const sub = rankMap.get(rk);
-        const subEntities = [...sub.entities].sort((a, b) =>
-          safeString(a?.name).localeCompare(safeString(b?.name), 'vi')
-        );
+        const subEntities = [...sub.entities].sort(compareEntries);
         if (rkIndex > 0) lines.push('');
         lines.push(`### ${sub.rankDisplay} (${subEntities.length})`);
         lines.push('');
@@ -1072,7 +1125,8 @@ function entityHasMapForceListSignals(entity) {
     pick('f_cap') ||
     pick('f_dia_ban') ||
     pick('f_vi_tri') ||
-    pick('f_title')
+    pick('f_title') ||
+    pick('f_muc_luc_danh_sach')
   ) {
     return true;
   }

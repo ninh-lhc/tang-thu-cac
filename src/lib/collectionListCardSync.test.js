@@ -514,6 +514,95 @@ describe('collectionListCardSync', () => {
     expect(info).toContain('[[U Thiên Đế Quốc]]');
   });
 
+  it('AUTO xếp theo trường mục lục (I / 1 / 1.1) rồi mới theo tên trong cùng nhóm', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'he-thong',
+          label: 'Hệ thống',
+          subTabs: [
+            {
+              id: 'goi-qua',
+              label: 'Gói quà',
+              viewType: 'collection-track',
+              autoListGroupStrategy: 'title',
+            },
+          ],
+        },
+      ],
+      data: {
+        'he-thong': {
+          'goi-qua': {
+            overview: '',
+            entities: [
+              { id: 'list-1', name: 'Danh Sách Gói Qua', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'a',
+                name: 'Zeta',
+                info: '',
+                dynamicData: { f_title: 'Nhóm A', f_muc_luc_danh_sach: 'II' },
+                milestones: [],
+              },
+              {
+                id: 'b',
+                name: 'Alpha',
+                info: '',
+                dynamicData: { f_title: 'Nhóm A', f_muc_luc_danh_sach: 'I' },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['he-thong']['goi-qua'].entities[0].info || '');
+    const alphaIdx = info.indexOf('[[Alpha]]');
+    const zetaIdx = info.indexOf('[[Zeta]]');
+    expect(alphaIdx).toBeGreaterThan(-1);
+    expect(zetaIdx).toBeGreaterThan(-1);
+    expect(alphaIdx).toBeLessThan(zetaIdx);
+  });
+
+  it('map list: f_status dạng «Giới · Quy mô» dùng Quy mô cho ### (không rơi Chưa rõ cấp bậc)', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'tai-nguyen',
+          label: 'Tài nguyên',
+          subTabs: [{ id: 'dia-danh', label: 'Bản đồ / Bí cảnh', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'tai-nguyen': {
+          'dia-danh': {
+            overview: '',
+            entities: [
+              { id: 'list-1', name: 'Danh Sách Bản đồ / Bí cảnh', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'm-1',
+                name: 'Tây Châu',
+                info: '',
+                dynamicData: {
+                  f_title: 'Nguyên Giới (đại Thế Giới)',
+                  f_status: 'Nguyên Giới (đại Thế Giới) · Châu',
+                  f_vi_tri: 'Việt Long Tinh',
+                },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['tai-nguyen']['dia-danh'].entities[0].info || '');
+    expect(info).toContain('### Châu (1)');
+    expect(info).not.toMatch(/###\s*Chưa rõ cấp bậc/u);
+  });
+
   it('map tab detected from id dia-danh even when label has no “bản đồ”; no false owner from f_loai_to_chuc', () => {
     const novel = {
       tabsConfig: [
