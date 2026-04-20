@@ -4,12 +4,27 @@
  */
 import { WIKI_ALIAS_FIELD } from '../MasterEngines.js';
 import { safeString } from '../MasterUtils.jsx';
+import { normalizeAsciiText } from './statusHierarchyParser.js';
 
 export function linesToSuggestionArray(text) {
   return safeString(text)
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+/** Chuỗi trùng không phân biệt hoa thường / dấu (dùng list gợi ý). */
+export function dedupeCaseInsensitiveLines(values) {
+  const out = [];
+  const seen = new Set();
+  (values || []).forEach((value) => {
+    const raw = safeString(value).trim();
+    const key = normalizeAsciiText(raw);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(raw);
+  });
+  return out;
 }
 
 export function sanitizeFieldsTemplate(fields) {

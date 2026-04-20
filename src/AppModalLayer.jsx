@@ -167,15 +167,6 @@ export function AppModalLayer({
         isOpen={isEntityModalOpen}
         onClose={() => setIsEntityModalOpen(false)}
         onOpenAutoSyncGuide={setIsAutoSyncGuideOpen ? () => setIsAutoSyncGuideOpen(true) : undefined}
-        onSetTabListGroupStrategy={handleSetTabListGroupStrategy}
-        onSetTabListGroupOrder={handleSetTabListGroupOrder}
-        onSaveTabListGroupOrderToGenreTemplate={handleSaveTabListGroupOrderToGenreTemplate}
-        onSetTabMapEntrySuggestions={handleSetTabMapEntrySuggestions}
-        handleAddTabTemplateField={handleAddTabTemplateField}
-        handleRemoveTabTemplateField={handleRemoveTabTemplateField}
-        handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
-        handleSetTabTemplateFieldListMergeOrder={handleSetTabTemplateFieldListMergeOrder}
-        handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
         onSave={handleSaveEntity}
         initialData={editingEntityData}
         tabConfig={currentTabConfig}
@@ -189,6 +180,14 @@ export function AppModalLayer({
         showToast={showToast}
         geminiApiKey={geminiApiKeys}
         geminiMode={aiMode}
+        onPatchMapRealmScaleLists={(patch) => {
+          const nhoId = currentTabConfig?.id;
+          if (!activeTabLon || !nhoId) return;
+          const ok = handleSetTabMapEntrySuggestions(activeTabLon, nhoId, 'realmScaleLists', '', { patch });
+          if (ok) {
+            showToast?.('Đã lưu list «Quy mô địa vực» cho giới diện này (theo tab Bản đồ).', 'success');
+          }
+        }}
       />
       <ModalMilestone
         isOpen={isMilestoneModalOpen}

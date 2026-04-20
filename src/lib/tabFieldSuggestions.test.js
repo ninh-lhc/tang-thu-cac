@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ensureWikiAliasInFieldsTemplate,
   linesToSuggestionArray,
+  dedupeCaseInsensitiveLines,
   normalizeFieldSuggestionLists,
   pruneFieldSuggestionLists,
 } from './tabFieldSuggestions.js';
@@ -9,6 +10,10 @@ import {
 describe('tabFieldSuggestions', () => {
   it('linesToSuggestionArray splits và trim', () => {
     expect(linesToSuggestionArray(' A \n B \n ')).toEqual(['A', 'B']);
+  });
+
+  it('dedupeCaseInsensitiveLines bỏ trùng không phân biệt hoa thường', () => {
+    expect(dedupeCaseInsensitiveLines(['A', 'a', 'B'])).toEqual(['A', 'B']);
   });
 
   it('ensureWikiAliasInFieldsTemplate giữ f_alias', () => {

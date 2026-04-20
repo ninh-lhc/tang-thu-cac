@@ -135,7 +135,9 @@ import {
   sanitizeFieldsTemplate,
   linesToSuggestionArray,
   normalizeFieldSuggestionLists,
+  dedupeCaseInsensitiveLines,
 } from './lib/tabFieldSuggestions.js';
+import { normalizeAsciiText } from './lib/statusHierarchyParser.js';
 
 export default function App() {
   const {
@@ -2269,13 +2271,29 @@ export default function App() {
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
-    if (!nho || nho.viewType !== 'collection-track') return;
+    if (!nho || nho.viewType !== 'collection-track') return false;
     const applyToOne = (targetNho) => {
       const prev =
         targetNho.mapEntrySuggestions && typeof targetNho.mapEntrySuggestions === 'object' ? targetNho.mapEntrySuggestions : {};
       const prevTypes = Array.isArray(prev.types) ? prev.types : [];
       const prevHierarchy = Array.isArray(prev.hierarchy) ? prev.hierarchy : [];
       const prevForceRanks = Array.isArray(prev.forceRanks) ? prev.forceRanks : [];
+      const prevRealmScaleLists =
+        prev.realmScaleLists && typeof prev.realmScaleLists === 'object' && !Array.isArray(prev.realmScaleLists)
+          ? { ...prev.realmScaleLists }
+          : {};
+      let realmScaleLists = prevRealmScaleLists;
+      if (which === 'realmScaleLists' && options.patch && typeof options.patch === 'object') {
+        realmScaleLists = { ...prevRealmScaleLists };
+        for (const [k, v] of Object.entries(options.patch)) {
+          const normKey = normalizeAsciiText(safeString(k).trim());
+          if (!normKey) continue;
+          if (!Array.isArray(v)) continue;
+          const cleaned = dedupeCaseInsensitiveLines(v);
+          if (cleaned.length) realmScaleLists[normKey] = cleaned;
+          else delete realmScaleLists[normKey];
+        }
+      }
       const types = which === 'types' ? linesToSuggestionArray(text) : prevTypes;
       const hierarchy = which === 'hierarchy' ? linesToSuggestionArray(text) : prevHierarchy;
       const forceRanks = which === 'forceRanks' ? linesToSuggestionArray(text) : prevForceRanks;
@@ -2283,6 +2301,7 @@ export default function App() {
       if (types.length) next.types = types;
       if (hierarchy.length) next.hierarchy = hierarchy;
       if (forceRanks.length) next.forceRanks = forceRanks;
+      if (Object.keys(realmScaleLists).length > 0) next.realmScaleLists = realmScaleLists;
       if (Object.keys(next).length === 0) delete targetNho.mapEntrySuggestions;
       else targetNho.mapEntrySuggestions = next;
     };
@@ -2307,6 +2326,7 @@ export default function App() {
         saveGenreTabsTemplate(genres, current);
       }
     }
+    return true;
   };
 
   const applyFieldSuggestionMergeToNho = (nho, fieldId, text) => {

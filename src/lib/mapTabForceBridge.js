@@ -1,7 +1,7 @@
 /**
  * Nối tab con Bản đồ ↔ gợi ý nhanh Thế lực (modal Khởi tạo thực thể).
  * Chỉ lon nhánh «Bản đồ» (id/label), không gom tab `dia-danh` / map-scope ở tab lớn khác.
- * «Cấp bậc»: mapEntrySuggestions.forceRanks trên từng tab con Bản đồ (nhập từ «Quy chuẩn nhóm» khi Khởi tạo thẻ mở từ tab Bản đồ — không dùng khối đó từ modal Thế lực).
+ * «Cấp bậc»: mapEntrySuggestions.forceRanks trên từng tab con Bản đồ — chỉnh trong Quản lý tab / JSON tab config.
  */
 import { normalizeAsciiText } from './statusHierarchyParser.js';
 import { isMapCollectionScope } from './mapHierarchySync.js';
