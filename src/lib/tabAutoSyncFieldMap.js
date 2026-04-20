@@ -10,6 +10,7 @@ import {
   AUTO_SYNC_ROLE_FORCE,
   AUTO_SYNC_ROLE_MAIN_CHARACTER,
   AUTO_SYNC_ROLE_MAP,
+  AUTO_SYNC_ROLE_OFF,
   getEffectiveAutoSyncRole,
   hydrateTabsAutoSyncRoles,
 } from './tabAutoSyncRole.js';
@@ -30,6 +31,28 @@ function cloneValue(value) {
     return value;
   }
 }
+
+// Bộ trường cơ bản dùng chung cho tab chưa có vai trò auto rõ ràng.
+// Giúp người dùng vẫn cấu hình được "cột trạng thái" / "cột tiêu đề"
+// trước khi bật auto, cấu hình này tự động dùng lại khi về sau gán vai trò.
+const GENERIC_FIELD_DEFS = Object.freeze([
+  {
+    key: 'status',
+    label: 'Cột trạng thái / cấp bậc',
+    hint: 'Trường hiển thị cấp bậc hoặc trạng thái chính của thẻ (Cảnh giới, Hạng, Cấp...).',
+    defaultId: 'f_status',
+    candidateIds: ['f_status', 'f_cap'],
+    keywordHints: ['trang thai', 'cap', 'rank', 'canh gioi', 'status', 'hang'],
+  },
+  {
+    key: 'title',
+    label: 'Cột tiêu đề / phân loại',
+    hint: 'Trường mô tả loại hoặc danh xưng chính (Loại, Danh xưng, Phân loại).',
+    defaultId: 'f_title',
+    candidateIds: ['f_title', 'f_ten', 'f_loai'],
+    keywordHints: ['ten', 'loai', 'title', 'danh xung', 'phan loai'],
+  },
+]);
 
 const FIELD_DEFS_BY_ROLE = Object.freeze({
   [AUTO_SYNC_ROLE_FORCE]: [
@@ -166,7 +189,13 @@ function findFieldIdByHints(templateFields, def) {
 }
 
 export function getAutoSyncFieldDefs(role) {
-  return FIELD_DEFS_BY_ROLE[role] || [];
+  // Tab đã chọn "Tắt auto" thì không cần bộ trường nào.
+  if (role === AUTO_SYNC_ROLE_OFF) return [];
+  // Vai trò có profile riêng (Thế lực / Bản đồ / Hệ tu luyện / NVC ...).
+  if (role && FIELD_DEFS_BY_ROLE[role]) return FIELD_DEFS_BY_ROLE[role];
+  // Tab chưa gán vai trò hoặc vai trò lạ: dùng bộ trường chung để UI vẫn
+  // hiển thị được phần "Chỉnh trường nâng cao" cho 12 thể loại.
+  return GENERIC_FIELD_DEFS;
 }
 
 export function normalizeAutoSyncFieldMap(fieldMap, role = '') {
@@ -194,7 +223,7 @@ export function readExplicitAutoSyncFieldMap(tabConfig, role = '') {
 }
 
 export function guessAutoSyncFieldMap({ role = '', currentTabConfig = null } = {}) {
-  if (!role) return {};
+  if (role === AUTO_SYNC_ROLE_OFF) return {};
   const defs = getAutoSyncFieldDefs(role);
   if (defs.length === 0) return {};
   const templateFields = getTemplateFields(currentTabConfig);
@@ -208,10 +237,11 @@ export function guessAutoSyncFieldMap({ role = '', currentTabConfig = null } = {
 
 export function getEffectiveAutoSyncFieldMap(ctx = {}) {
   const role = ctx.role || getEffectiveAutoSyncRole(ctx);
-  if (!role) return {};
+  if (role === AUTO_SYNC_ROLE_OFF) return {};
+  // role có thể rỗng — vẫn đoán theo bộ trường chung để UI hiện được lựa chọn gợi ý.
   return {
-    ...guessAutoSyncFieldMap({ ...ctx, role }),
-    ...readExplicitAutoSyncFieldMap(ctx.currentTabConfig, role),
+    ...guessAutoSyncFieldMap({ ...ctx, role: role || '' }),
+    ...readExplicitAutoSyncFieldMap(ctx.currentTabConfig, role || ''),
   };
 }
 

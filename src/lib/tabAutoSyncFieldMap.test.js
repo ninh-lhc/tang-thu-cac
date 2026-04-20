@@ -11,7 +11,11 @@ import {
   AUTO_SYNC_ROLE_MAIN_CHARACTER,
   AUTO_SYNC_ROLE_MAP,
 } from './tabAutoSyncRole.js';
-import { hydrateTabsAutoSyncConfigs } from './tabAutoSyncFieldMap.js';
+import {
+  getAutoSyncFieldDefs,
+  getEffectiveAutoSyncFieldMap,
+  hydrateTabsAutoSyncConfigs,
+} from './tabAutoSyncFieldMap.js';
 
 describe('tabAutoSyncFieldMap', () => {
   it('hydrates default field maps for auto tabs', () => {
@@ -295,5 +299,57 @@ describe('tabAutoSyncFieldMap', () => {
     expect(changed).toBe(true);
     expect(novel.data['luc-luong-rieng']['phe-1'].entities[0].info).toContain('[[Huyet Gioi]]');
     expect(novel.data['ban-do-rieng']['cum-1'].entities[1].info).toContain('[[Lac Gia]]');
+  });
+
+  it('getAutoSyncFieldDefs trả bộ trường chung khi tab chưa có vai trò', () => {
+    const defs = getAutoSyncFieldDefs('');
+    const keys = defs.map((d) => d.key);
+    expect(keys).toContain('status');
+    expect(keys).toContain('title');
+    expect(defs.length).toBeGreaterThan(0);
+  });
+
+  it('getAutoSyncFieldDefs trả bộ trường chung cho vai trò lạ', () => {
+    const defs = getAutoSyncFieldDefs('vai-tro-khong-ton-tai');
+    expect(defs.length).toBeGreaterThan(0);
+    expect(defs.map((d) => d.key)).toContain('status');
+  });
+
+  it('getAutoSyncFieldDefs trả rỗng khi tab chọn Tắt auto', () => {
+    const defs = getAutoSyncFieldDefs('khong-tu-dong');
+    expect(defs).toEqual([]);
+  });
+
+  it('getEffectiveAutoSyncFieldMap đoán được cột trạng thái / tiêu đề cho tab không có vai trò', () => {
+    const tab = {
+      viewType: 'collection-track',
+      fieldsTemplate: [
+        { id: 'f_status', label: 'Trạng thái' },
+        { id: 'f_title', label: 'Danh xưng' },
+        { id: 'f_desc', label: 'Mô tả' },
+      ],
+    };
+    const fieldMap = getEffectiveAutoSyncFieldMap({
+      activeTabLon: 'cau-chuyen',
+      activeTabNho: 'ghi-chu',
+      currentTabConfig: tab,
+      parentLabel: 'Câu Chuyện',
+    });
+    expect(fieldMap.status).toBe('f_status');
+    expect(fieldMap.title).toBe('f_title');
+  });
+
+  it('hydrate không đụng đến tab chưa có vai trò (giữ cấu hình truyện sạch)', () => {
+    const tabs = [
+      {
+        id: 'nhom-la',
+        label: 'Nhom la',
+        subTabs: [
+          { id: 'muc-tu-do', label: 'Muc tu do', viewType: 'collection-track' },
+        ],
+      },
+    ];
+    const out = hydrateTabsAutoSyncConfigs(tabs).tabsConfig;
+    expect(out[0].subTabs[0].autoSyncFieldMap).toBeUndefined();
   });
 });
