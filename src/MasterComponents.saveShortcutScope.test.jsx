@@ -218,7 +218,7 @@ describe('modal ttc-save scope', () => {
     expect(options).not.toContain('Tiên tinh');
   });
 
-  it('suggests custom map systems from existing novel entities', async () => {
+  it('keeps map system suggestions empty until shared list is configured', async () => {
     const activeNovelData = {
       tabsConfig: [
         {
@@ -260,7 +260,7 @@ describe('modal ttc-save scope', () => {
     expect(listId).toBe('ttc-force-system-options');
     const listEl = document.getElementById(listId);
     const options = Array.from(listEl?.querySelectorAll('option') || []).map((item) => item.getAttribute('value') || '');
-    expect(options).toContain('Chí Tôn Vũ Trụ');
+    expect(options).toEqual([]);
   });
 
   it('when multiple dialogs coexist, only top trap modal consumes ttc-save', async () => {

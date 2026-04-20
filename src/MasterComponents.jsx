@@ -59,7 +59,6 @@ import {
 } from './lib/mapTabForceBridge.js';
 import {
   getMapFieldPlaceholders,
-  getMapHierarchySeedLabels,
   getMapTypeSeedPresets,
   resolveMapFieldPresetFlavor,
 } from './lib/mapEntityFieldPresets.js';
@@ -1024,6 +1023,12 @@ export const LandingScreen = memo(({ setIsAddNovelOpen, setIsManageTabsOpen }) =
 export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, tabConfig, dirHandle, parentTabId, parentLabel }) => {
   const fields = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const terms = getTerms(parentTabId);
+  const isMapCardScope = isMapCollectionScope({
+    activeTabLon: parentTabId,
+    activeTabNho: tabConfig?.id || '',
+    currentTabConfig: tabConfig || null,
+    parentLabel: parentLabel || '',
+  });
   const getFieldValue = (fieldId, ent) => {
      if (ent.dynamicData && ent.dynamicData[fieldId]) return ent.dynamicData[fieldId];
      if (fieldId === 'f_status') return ent.status;
@@ -1060,6 +1065,20 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
     isListCardEntity && fields[1] && !f2.trim() && listCardOrgDisplay
       ? listCardOrgDisplay
       : f2;
+  const mapCardQuick = parseMapQuickState(entity?.dynamicData || {});
+  const mapSystemBadgeLabel = isMapCardScope ? safeString(mapCardQuick.mapSystem).trim() : '';
+  const mapSystemBadgePalette = [
+    'bg-cyan-900/40 border-cyan-500/45 text-cyan-100',
+    'bg-violet-900/40 border-violet-500/45 text-violet-100',
+    'bg-emerald-900/40 border-emerald-500/45 text-emerald-100',
+    'bg-amber-900/40 border-amber-500/45 text-amber-100',
+    'bg-rose-900/40 border-rose-500/45 text-rose-100',
+    'bg-sky-900/40 border-sky-500/45 text-sky-100',
+  ];
+  const mapSystemBadgeKey = normalizeAsciiText(mapSystemBadgeLabel);
+  const mapSystemBadgeIdx =
+    mapSystemBadgeKey.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % mapSystemBadgePalette.length;
+  const mapSystemBadgeClass = mapSystemBadgePalette[mapSystemBadgeIdx];
 
   const avatarColors = ['bg-amber-900/50','bg-indigo-900/50','bg-emerald-900/50','bg-rose-900/50','bg-purple-900/50','bg-sky-900/50','bg-orange-900/50','bg-teal-900/50'];
   const avatarTextColors = ['text-amber-400','text-indigo-400','text-emerald-400','text-rose-400','text-purple-400','text-sky-400','text-orange-400','text-teal-400'];
@@ -1080,7 +1099,14 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
            ) : <span className={avatarTextColors[colorIdx]}>{safeString(entity.name).charAt(0).toUpperCase()}</span>}
          </div>
          <div className="flex-1 min-w-0 pr-6">
-            <h4 className="text-amber-100 font-bold font-serif text-base leading-snug break-words" title={safeString(entity.name)}>{safeString(entity.name)}</h4>
+           <div className="flex flex-wrap items-center gap-2">
+             <h4 className="text-amber-100 font-bold font-serif text-base leading-snug break-words" title={safeString(entity.name)}>{safeString(entity.name)}</h4>
+             {mapSystemBadgeLabel && (
+               <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wide ${mapSystemBadgeClass}`}>
+                 {mapSystemBadgeLabel}
+               </span>
+             )}
+           </div>
             {fields[0] && <p className="text-[11px] text-amber-600 font-bold uppercase tracking-widest mt-0.5 break-words">{f1Display || '---'}</p>}
          </div>
       </div>
@@ -1226,7 +1252,8 @@ function collectMapEntityHints(activeNovelData, mapTabConfig = null) {
   const mapNameList = [];
   const presetFlavor = resolveMapFieldPresetFlavor(normalizeNovelGenresForMapPresets(activeNovelData));
   let mapTypeList = [...getMapTypeSeedPresets(presetFlavor)];
-  let forceSystemList = [...getMapHierarchySeedLabels(presetFlavor)];
+  // "Đặc Tính Địa Vực" để user nhập tay hoàn toàn (không auto-gợi ý để tránh nhầm dữ liệu cũ).
+  let forceSystemList = [];
   const recordsByName = new Map();
   for (const lon of activeNovelData?.tabsConfig || []) {
     for (const nho of lon?.subTabs || []) {
@@ -1249,10 +1276,7 @@ function collectMapEntityHints(activeNovelData, mapTabConfig = null) {
         mapNameList.push(name);
         const mapType = safeString(entity?.dynamicData?.f_title).trim();
         if (mapType) mapTypeList.push(mapType);
-        const statusTokens = splitDotMetaTokens(entity?.dynamicData?.f_status || entity?.status);
-        if (statusTokens.length > 1) {
-          forceSystemList.push(statusTokens.slice(1).join(' · '));
-        }
+        // Cố ý không gom gợi ý "Đặc Tính Địa Vực" từ entity cũ.
         const key = normalizeAsciiText(name);
         const nextList = recordsByName.get(key) || [];
         nextList.push({
@@ -1309,6 +1333,7 @@ export const ModalEntity = ({
   geminiMode = 'standard',
   onOpenAutoSyncGuide,
   onPatchMapRealmScaleLists,
+  onSaveMapHierarchySharedList,
   handleAddTabTemplateField,
   handleRemoveTabTemplateField,
   handleRenameTabTemplateFieldLabel,
@@ -1405,6 +1430,8 @@ export const ModalEntity = ({
   const [mapQuickParentPath, setMapQuickParentPath] = useState('');
   const [mapRealmListPanelOpen, setMapRealmListPanelOpen] = useState(false);
   const [mapRealmListDraft, setMapRealmListDraft] = useState('');
+  const [mapHierarchyListPanelOpen, setMapHierarchyListPanelOpen] = useState(false);
+  const [mapHierarchyListDraft, setMapHierarchyListDraft] = useState('');
   const [mapRealmListTargetLonId, setMapRealmListTargetLonId] = useState(parentTabId || '');
   const [mapRealmListTargetNhoId, setMapRealmListTargetNhoId] = useState(tabConfig?.id || '');
   const mapRealmSystemOptions = useMemo(
@@ -1590,7 +1617,7 @@ export const ModalEntity = ({
     const nextSystem =
       trimmedSys && scoped.some((x) => normalizeAsciiText(x) === normalizeAsciiText(trimmedSys))
         ? mapQuickSystem
-        : scoped[0] || '';
+        : '';
     setMapQuickSystem(nextSystem);
     patchDynamicData({
       f_title: value,
@@ -1607,7 +1634,7 @@ export const ModalEntity = ({
   const handleMapRealmSystemChange = (value) => {
     setMapQuickRealmSystem(value);
     const scoped = getMapHierarchyOptionsByRealm(value, forceSystemSuggestions);
-    const nextSystem = scoped.includes(mapQuickSystem) ? mapQuickSystem : (scoped[0] || '');
+    const nextSystem = scoped.includes(mapQuickSystem) ? mapQuickSystem : '';
     setMapQuickSystem(nextSystem);
     patchDynamicData({
       f_he_gioi_ban_do: value,
@@ -1643,6 +1670,19 @@ export const ModalEntity = ({
       return;
     }
     onPatchMapRealmScaleLists({ [label]: linesToSuggestionArray(mapRealmListDraft) }, { lonId, nhoId });
+  };
+  const handleSaveMapHierarchyListDraft = () => {
+    if (!onSaveMapHierarchySharedList) return;
+    onSaveMapHierarchySharedList(mapHierarchyListDraft);
+  };
+  const toggleMapHierarchyListEditor = () => {
+    if (mapHierarchyListPanelOpen) {
+      setMapHierarchyListPanelOpen(false);
+      return;
+    }
+    const lines = tabConfig?.mapEntrySuggestions?.hierarchy;
+    setMapHierarchyListDraft(Array.isArray(lines) ? lines.join('\n') : '');
+    setMapHierarchyListPanelOpen(true);
   };
   const toggleMapRealmListEditor = () => {
     if (mapRealmListPanelOpen) {
@@ -1894,16 +1934,28 @@ export const ModalEntity = ({
                 <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
                   Gợi ý nhanh ({safeString(tabConfig?.label).trim() || 'Bản đồ'})
                 </p>
-                {onPatchMapRealmScaleLists && (
-                  <button
-                    type="button"
-                    onClick={toggleMapRealmListEditor}
-                    className="inline-flex items-center gap-2 rounded-xl border border-cyan-800/50 bg-cyan-950/25 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-cyan-200/95 transition-colors hover:border-cyan-500/55 hover:bg-cyan-900/35"
-                  >
-                    <ListIcon size={14} aria-hidden />
-                    List «Quy mô» theo giới diện
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {onPatchMapRealmScaleLists && (
+                    <button
+                      type="button"
+                      onClick={toggleMapRealmListEditor}
+                      className="inline-flex items-center gap-2 rounded-xl border border-cyan-800/50 bg-cyan-950/25 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-cyan-200/95 transition-colors hover:border-cyan-500/55 hover:bg-cyan-900/35"
+                    >
+                      <ListIcon size={14} aria-hidden />
+                      List «Quy mô» theo giới diện
+                    </button>
+                  )}
+                  {onSaveMapHierarchySharedList && (
+                    <button
+                      type="button"
+                      onClick={toggleMapHierarchyListEditor}
+                      className="inline-flex items-center gap-2 rounded-xl border border-violet-800/50 bg-violet-950/25 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-violet-200/95 transition-colors hover:border-violet-500/55 hover:bg-violet-900/35"
+                    >
+                      <ListIcon size={14} aria-hidden />
+                      List «Đặc tính» dùng chung
+                    </button>
+                  )}
+                </div>
               </div>
               {mapRealmListPanelOpen && (
                 <div className="rounded-xl border border-cyan-900/45 bg-slate-950/55 p-3 space-y-2">
@@ -1967,6 +2019,39 @@ export const ModalEntity = ({
                   </div>
                 </div>
               )}
+              {mapHierarchyListPanelOpen && (
+                <div className="rounded-xl border border-violet-900/45 bg-slate-950/55 p-3 space-y-2">
+                  <p className="text-[11px] text-slate-400 font-serif leading-relaxed">
+                    List «Đặc Tính Địa Vực» dùng chung cho tất cả tab con trong nhánh Bản đồ hiện tại.
+                  </p>
+                  <textarea
+                    value={mapHierarchyListDraft}
+                    onChange={(e) => setMapHierarchyListDraft(e.target.value)}
+                    rows={5}
+                    className="w-full bg-slate-950/90 border border-violet-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-violet-500/70 outline-none resize-y min-h-[5rem]"
+                    placeholder={'Đại lục\nTinh cầu\nTây Châu\n…'}
+                  />
+                  <p className="text-[11px] text-slate-500 font-serif">
+                    Mỗi dòng là một nhãn. Khi gán vào thẻ, nhãn sẽ hiện cạnh tên thẻ với màu tự phân biệt.
+                  </p>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMapHierarchyListPanelOpen(false)}
+                      className="px-3 py-1.5 rounded-lg border border-slate-700 text-[11px] font-bold text-slate-400 hover:text-slate-200"
+                    >
+                      Đóng
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveMapHierarchyListDraft}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-700/50 bg-violet-950/40 text-[11px] font-bold text-violet-100 hover:bg-violet-900/45"
+                    >
+                      <Save size={14} aria-hidden /> Lưu list dùng chung
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
                   <label className={entityModalQuickLabel}>Giới Diện</label>
@@ -2001,8 +2086,11 @@ export const ModalEntity = ({
                     value={mapQuickSystem}
                     onChange={(e) => handleMapSystemChange(e.target.value)}
                     className={entityModalQuickInput}
-                    placeholder={mapFieldPlaceholders.mapHierarchy}
+                    placeholder="Không bắt buộc (có thể để trống)"
                   />
+                  <p className="text-[10px] text-slate-500 font-serif leading-snug">
+                    Nhãn tùy chọn; có thể để trống. Nếu có, sẽ hiển thị cạnh tên thẻ.
+                  </p>
                 </div>
               </div>
               <div className="space-y-2">

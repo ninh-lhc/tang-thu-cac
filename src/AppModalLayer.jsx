@@ -189,6 +189,16 @@ export function AppModalLayer({
             showToast?.('Đã lưu list «Quy mô địa vực» cho giới diện này (theo tab Bản đồ).', 'success');
           }
         }}
+        onSaveMapHierarchySharedList={(text) => {
+          const nhoId = currentTabConfig?.id;
+          if (!activeTabLon || !nhoId) return;
+          const ok = handleSetTabMapEntrySuggestions(activeTabLon, nhoId, 'hierarchy', text, {
+            propagateWithinMapLon: true,
+          });
+          if (ok) {
+            showToast?.('Đã lưu list «Đặc Tính Địa Vực» dùng chung cho các tab Bản đồ cùng nhánh.', 'success');
+          }
+        }}
         handleAddTabTemplateField={handleAddTabTemplateField}
         handleRemoveTabTemplateField={handleRemoveTabTemplateField}
         handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
