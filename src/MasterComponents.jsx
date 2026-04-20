@@ -64,6 +64,7 @@ import {
   resolveMapFieldPresetFlavor,
 } from './lib/mapEntityFieldPresets.js';
 import { resolveEntityQuickSlots } from './lib/entityQuickEntrySlots.js';
+import { AppEntityTemplateFieldEditor } from './AppEntityTemplateFieldEditor.jsx';
 import { normalizeAsciiText, splitStatusHierarchyTokens } from './lib/statusHierarchyParser.js';
 import { inferOrgTypeFromContext, inferOrgTypeFromTabSlug } from './lib/forceOrgTypeInfer.js';
 import { mergeTabsByGenres } from './genreTabsMap.js';
@@ -1325,6 +1326,11 @@ export const ModalEntity = ({
   geminiMode = 'standard',
   onOpenAutoSyncGuide,
   onPatchMapRealmScaleLists,
+  handleAddTabTemplateField,
+  handleRemoveTabTemplateField,
+  handleRenameTabTemplateFieldLabel,
+  handleMergeTabFieldSuggestionList,
+  setConfirmDialog,
 }) => {
   void onUpdateTemplate;
   void geminiApiKey;
@@ -1848,7 +1854,7 @@ export const ModalEntity = ({
               </p>
               <p className="text-[11px] text-slate-500 font-serif">
                 Đổi 3 ô, nhãn hoặc menu select: Trận pháp → Quản lý tab.
-                {quickUseSelect ? ' Đang bật chế độ select.' : ''} Sửa list gợi ý từng trường: Quản lý tab → tab con đó.
+                {quickUseSelect ? ' Đang bật chế độ select.' : ''} Thêm trường &amp; chỉnh list gợi ý ở khối «Trường hồ sơ &amp; danh sách gợi ý» phía dưới.
               </p>
             </div>
           )}
@@ -2175,6 +2181,18 @@ export const ModalEntity = ({
               </p>
             </div>
           )}
+
+          <AppEntityTemplateFieldEditor
+            tabConfig={tabConfig}
+            parentTabId={parentTabId}
+            parentLabel={parentLabel}
+            handleAddTabTemplateField={handleAddTabTemplateField}
+            handleRemoveTabTemplateField={handleRemoveTabTemplateField}
+            handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
+            handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
+            setConfirmDialog={setConfirmDialog}
+            showToast={showToast}
+          />
         </div>
 
         <div className="p-6 pt-4 border-t border-slate-800 flex flex-shrink-0 justify-end gap-3 bg-slate-900">

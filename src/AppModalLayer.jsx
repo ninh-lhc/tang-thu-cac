@@ -188,6 +188,11 @@ export function AppModalLayer({
             showToast?.('Đã lưu list «Quy mô địa vực» cho giới diện này (theo tab Bản đồ).', 'success');
           }
         }}
+        handleAddTabTemplateField={handleAddTabTemplateField}
+        handleRemoveTabTemplateField={handleRemoveTabTemplateField}
+        handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
+        handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
+        setConfirmDialog={setConfirmDialog}
       />
       <ModalMilestone
         isOpen={isMilestoneModalOpen}

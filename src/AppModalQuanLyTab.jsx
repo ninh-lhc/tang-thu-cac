@@ -22,7 +22,6 @@ import {
   ArrowLeftRight,
 } from 'lucide-react';
 import { safeString, getIconComponent } from './MasterUtils.jsx';
-import { WIKI_ALIAS_FIELD } from './MasterEngines.js';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
 import { pickDefaultQuickFieldIds } from './lib/entityQuickEntrySlots.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
@@ -79,10 +78,6 @@ export function AppModalQuanLyTab({
   handleSetTabAutoSyncLevels,
   handleSetTabAutoSyncFieldMap,
   handleSetTabMapEntrySuggestions,
-  handleMergeTabFieldSuggestionList,
-  handleAddTabTemplateField,
-  handleRemoveTabTemplateField,
-  handleRenameTabTemplateFieldLabel,
   handleSetTabEntityQuickEntry,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
@@ -90,7 +85,6 @@ export function AppModalQuanLyTab({
   setConfirmDialog,
 }) {
   const trapRef = useFocusTrap(true);
-  const [extraFieldDraftByPath, setExtraFieldDraftByPath] = React.useState({});
   const [advancedOpenByPath, setAdvancedOpenByPath] = React.useState({});
   const [expandedRoleChoicesByPath, setExpandedRoleChoicesByPath] = React.useState({});
   const [openAutoTabPath, setOpenAutoTabPath] = React.useState(null);
@@ -564,7 +558,19 @@ export function AppModalQuanLyTab({
                     };
                     const applyPracticalPreset = () => {
                       const roleToUse = practicalRole;
-                      if (!roleToUse) return;
+                      if (!roleToUse) {
+                        handleSetTabAutoSyncTargets?.(tabLon.id, tabNho.id, []);
+                        handleSetTabAutoSyncLevels?.(tabLon.id, tabNho.id, {
+                          ...autoLevelConfig,
+                          enabled: true,
+                          levels: {
+                            ...autoLevelConfig.levels,
+                            [AUTO_SYNC_LEVEL_3]: false,
+                            [AUTO_SYNC_LEVEL_4]: false,
+                          },
+                        });
+                        return;
+                      }
                       handleSetTabAutoSyncRole?.(tabLon.id, tabNho.id, roleToUse);
 
                       const roleLinkSupported = supportsAutoSyncLinkRole(roleToUse);
@@ -928,6 +934,7 @@ export function AppModalQuanLyTab({
                                 <div className="rounded-lg border border-slate-800/80 bg-slate-950/35 px-3 py-2 text-[11px] text-slate-400 font-serif">
                                   Preset thực dụng: Thế lực ưu tiên liên tab với Bản đồ; Nhân vật chính ưu tiên bậc 4 timeline;
                                   Hệ thống tu luyện chỉ bật bậc 3 khi cần liên tab khác tab lớn.
+                                  {!practicalRole && ' Tab chưa chọn vai trò: chỉ bật AUTO bậc 1–2 nội bộ, tắt 3–4 cho an toàn.'}
                                 </div>
                                 <div className="grid gap-2 md:grid-cols-2">
                                   <div className="rounded-xl border border-emerald-700/35 bg-emerald-950/20 px-3 py-2 text-xs font-semibold text-emerald-100">
@@ -1044,7 +1051,9 @@ export function AppModalQuanLyTab({
                                     <span>
                                       {tabReport?.warnings?.length
                                         ? `Chỉnh trường nâng cao (${tabReport.warnings.length} chỗ cần xem lại)`
-                                        : 'Chỉnh trường nâng cao nếu AUTO đang đọc sai dữ liệu'}
+                                        : effectiveRole
+                                          ? 'Chỉnh trường nâng cao nếu AUTO đang đọc sai dữ liệu'
+                                          : 'Chỉnh cột cơ bản (áp dụng cho mọi vai trò auto sau này)'}
                                     </span>
                                     {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                                   </button>
@@ -1150,10 +1159,11 @@ export function AppModalQuanLyTab({
                                   <div className="flex items-center justify-between gap-3">
                                     <div>
                                       <div className="text-[10px] uppercase tracking-wide text-amber-400 font-bold">
-                                        Trường hồ sơ &amp; gợi ý nhập
+                                        Bố cục Khởi Tạo Thẻ (3 ô gợi ý + Bản đồ)
                                       </div>
                                       <div className="text-[12px] text-slate-300 font-serif mt-1">
-                                        Phần nâng cao: thêm trường, đổi tên hiển thị và chỉnh list gợi ý.
+                                        Chọn trường cho 3 ô nhanh &amp; list Giới Diện / Đặc Tính Địa Vực.
+                                        Thêm trường tuỳ chỉnh và chỉnh list gợi ý chuyển sang modal «Khởi tạo thẻ».
                                       </div>
                                     </div>
                                     <div className="text-[11px] text-amber-200/90 font-semibold">
@@ -1328,120 +1338,12 @@ export function AppModalQuanLyTab({
                                     </div>
                                   )}
 
-                                  <div className="flex flex-wrap items-end gap-2">
-                                  <input
-                                    type="text"
-                                    value={extraFieldDraftByPath[tabPathKey] ?? ''}
-                                    onChange={(e) =>
-                                      setExtraFieldDraftByPath((prev) => ({
-                                        ...prev,
-                                        [tabPathKey]: e.target.value,
-                                      }))
-                                    }
-                                    placeholder="Tên trường mới (vd. Phẩm cấp, Tộc hệ)"
-                                    className="min-w-[200px] flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-100 font-serif outline-none focus:border-amber-600/50"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const raw = safeString(extraFieldDraftByPath[tabPathKey]).trim();
-                                      if (!raw) return;
-                                      handleAddTabTemplateField?.(tabLon.id, tabNho.id, raw);
-                                      setExtraFieldDraftByPath((prev) => ({ ...prev, [tabPathKey]: '' }));
-                                    }}
-                                    className="rounded-lg border border-amber-700/50 bg-amber-950/30 px-3 py-2 text-[11px] font-bold text-amber-100 hover:bg-amber-900/40"
-                                  >
-                                    Thêm trường
-                                  </button>
-                                  </div>
-
-                                  <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1 custom-scrollbar">
-                                  {templateFields.map((field) => {
-                                    const fid = safeString(field?.id).trim();
-                                    if (!fid) return null;
-                                    const isWiki = fid === WIKI_ALIAS_FIELD.id;
-                                    const suggestionLines = (tabNho.fieldSuggestionLists?.[fid] || []).join('\n');
-                                    const labelDomId = `ttc-field-label-${tabPathKey}-${fid.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-                                    return (
-                                      <div
-                                        key={fid}
-                                        className="rounded-lg border border-slate-800/90 bg-slate-950/50 p-2 space-y-2"
-                                      >
-                                        <div className="flex flex-wrap items-center gap-2">
-                                          <div className="min-w-0 flex-1 space-y-1">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                              <span className="text-[10px] font-bold uppercase tracking-wide text-amber-200/90">
-                                                Tên hiển thị (form / mốc)
-                                              </span>
-                                              <button
-                                                type="button"
-                                                title="Sửa tên hiển thị của trường này"
-                                                onClick={() => document.getElementById(labelDomId)?.focus()}
-                                                className="inline-flex items-center gap-1 rounded-md border border-amber-800/50 bg-amber-950/30 px-2 py-0.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/40"
-                                              >
-                                                <Edit2 size={12} /> Sửa tên
-                                              </button>
-                                            </div>
-                                            <input
-                                              id={labelDomId}
-                                              type="text"
-                                              defaultValue={safeString(field.label)}
-                                              key={`lab-${tabPathKey}-${fid}-${safeString(field.label)}`}
-                                              onBlur={(e) =>
-                                                handleRenameTabTemplateFieldLabel?.(
-                                                  tabLon.id,
-                                                  tabNho.id,
-                                                  fid,
-                                                  e.target.value
-                                                )
-                                              }
-                                              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100 font-serif"
-                                              aria-label={`Tên hiển thị trường ${fid}`}
-                                            />
-                                          </div>
-                                          <code className="text-[10px] text-slate-500 shrink-0 max-w-[8rem] truncate" title={fid}>
-                                            {fid}
-                                          </code>
-                                          {!isWiki && (
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                flushFocusedEditor();
-                                                setConfirmDialog({
-                                                  isOpen: true,
-                                                  title: 'Xóa trường',
-                                                  message: `Xóa trường <b>${safeString(field.label)}</b> khỏi tab này? Gợi ý gắn trường cũng sẽ xóa.`,
-                                                  onConfirm: () => handleRemoveTabTemplateField?.(tabLon.id, tabNho.id, fid),
-                                                });
-                                              }}
-                                              className="shrink-0 rounded-lg border border-rose-800/50 bg-rose-950/25 px-2 py-1 text-[10px] font-bold text-rose-100 hover:bg-rose-900/35"
-                                            >
-                                              Xóa
-                                            </button>
-                                          )}
-                                        </div>
-                                        <div>
-                                          <div className="text-[10px] text-slate-500 mb-1">
-                                            Danh sách gợi ý — mỗi dòng một mục (ô một dòng ở mốc timeline, khởi tạo thẻ)
-                                          </div>
-                                          <textarea
-                                            defaultValue={suggestionLines}
-                                            key={`sugg-${tabPathKey}-${fid}-${suggestionLines.length}`}
-                                            onBlur={(e) =>
-                                              handleMergeTabFieldSuggestionList?.(
-                                                tabLon.id,
-                                                tabNho.id,
-                                                fid,
-                                                e.target.value
-                                              )
-                                            }
-                                            rows={3}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono leading-relaxed"
-                                          />
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
+                                  <div className="rounded-lg border border-slate-800/80 bg-slate-950/40 px-3 py-2 text-[11px] text-slate-400 font-serif leading-relaxed">
+                                    Thêm trường mới, đổi tên hiển thị hoặc chỉnh danh sách gợi ý cho từng trường đã
+                                    chuyển sang khối «Trường hồ sơ &amp; danh sách gợi ý» trong modal{' '}
+                                    <strong className="text-amber-100">Khởi tạo thẻ</strong>. Mở tab con cần chỉnh →
+                                    bấm Khởi tạo thẻ → chọn chế độ lưu <em>Cục bộ</em> (chỉ tab con) hoặc{' '}
+                                    <em>Khu vực</em> (toàn bộ tab lớn).
                                   </div>
 
                                   {isMapTab && (
