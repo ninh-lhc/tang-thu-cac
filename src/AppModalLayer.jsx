@@ -180,10 +180,11 @@ export function AppModalLayer({
         showToast={showToast}
         geminiApiKey={geminiApiKeys}
         geminiMode={aiMode}
-        onPatchMapRealmScaleLists={(patch) => {
-          const nhoId = currentTabConfig?.id;
-          if (!activeTabLon || !nhoId) return;
-          const ok = handleSetTabMapEntrySuggestions(activeTabLon, nhoId, 'realmScaleLists', '', { patch });
+        onPatchMapRealmScaleLists={(patch, options = {}) => {
+          const lonId = options.lonId || activeTabLon;
+          const nhoId = options.nhoId || currentTabConfig?.id;
+          if (!lonId || !nhoId) return;
+          const ok = handleSetTabMapEntrySuggestions(lonId, nhoId, 'realmScaleLists', '', { patch });
           if (ok) {
             showToast?.('Đã lưu list «Quy mô địa vực» cho giới diện này (theo tab Bản đồ).', 'success');
           }

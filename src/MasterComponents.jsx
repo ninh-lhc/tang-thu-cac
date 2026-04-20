@@ -1170,35 +1170,18 @@ const FORCE_TYPE_SEED_OPTIONS = [
   'Quốc Gia',
 ];
 
-const MAP_REALM_SYSTEM_OPTIONS = ['Hạ giới', 'Tiên Ma giới', 'Nguyên giới'];
-
-function normalizeRealmSystemKey(value = '') {
-  const n = normalizeAsciiText(value);
-  if (n.includes('ha gioi')) return 'ha-gioi';
-  if (n.includes('tien ma gioi')) return 'tien-ma-gioi';
-  if (n.includes('nguyen gioi')) return 'nguyen-gioi';
-  return '';
-}
-
-function getMapHierarchyOptionsByRealm(realmSystem = '', baseOptions = []) {
-  const key = normalizeRealmSystemKey(realmSystem);
-  if (!key) return dedupeCaseInsensitive(baseOptions);
-  if (key === 'ha-gioi') return dedupeCaseInsensitive(['Cửu cấp']);
-  if (key === 'tien-ma-gioi') return dedupeCaseInsensitive(['Vương giới', 'Tôn giới']);
-  if (key === 'nguyen-gioi') return dedupeCaseInsensitive(['Đế giới']);
+function getMapHierarchyOptionsByRealm(_realmSystem = '', baseOptions = []) {
   return dedupeCaseInsensitive(baseOptions);
 }
 
-/** Gợi ý «Quy mô địa vực»: list do người dùng gắn theo «Giới diện», + mặc định cố định. */
+/** Gợi ý «Quy mô địa vực»: chỉ lấy list do người dùng gắn theo «Giới diện» (tab con Bản đồ). */
 function buildMapRealmSystemOptions(tabConfig, mapQuickTypeValue) {
   const lists = tabConfig?.mapEntrySuggestions?.realmScaleLists;
   const g = safeString(mapQuickTypeValue).trim();
-  let custom = [];
-  if (g && lists && typeof lists === 'object') {
-    const k = normalizeAsciiText(g);
-    if (Array.isArray(lists[k])) custom = dedupeCaseInsensitive(lists[k]);
-  }
-  return dedupeCaseInsensitive([...custom, ...MAP_REALM_SYSTEM_OPTIONS]);
+  if (!g || !lists || typeof lists !== 'object') return [];
+  const k = normalizeAsciiText(g);
+  const arr = Array.isArray(lists[k]) ? lists[k] : [];
+  return dedupeCaseInsensitive(arr);
 }
 
 function collectForceQuickHints(activeNovelData) {
@@ -1422,6 +1405,8 @@ export const ModalEntity = ({
   const [mapQuickParentPath, setMapQuickParentPath] = useState('');
   const [mapRealmListPanelOpen, setMapRealmListPanelOpen] = useState(false);
   const [mapRealmListDraft, setMapRealmListDraft] = useState('');
+  const [mapRealmListTargetLonId, setMapRealmListTargetLonId] = useState(parentTabId || '');
+  const [mapRealmListTargetNhoId, setMapRealmListTargetNhoId] = useState(tabConfig?.id || '');
   const mapRealmSystemOptions = useMemo(
     () => buildMapRealmSystemOptions(tabConfig, mapQuickType),
     [tabConfig, mapQuickType]
@@ -1442,6 +1427,26 @@ export const ModalEntity = ({
   const mapSubTabsForForce = useMemo(
     () => collectMapSubTabsForForceUi(activeNovelData),
     [activeNovelData]
+  );
+  const mapSubTabsForScaleList = useMemo(() => {
+    if (!parentTabId) return mapSubTabsForForce;
+    const scoped = mapSubTabsForForce.filter((t) => t.lonId === parentTabId);
+    return scoped.length ? scoped : mapSubTabsForForce;
+  }, [mapSubTabsForForce, parentTabId]);
+  const getMapSubTabFromNovel = useCallback(
+    (lonId, nhoId) => {
+      const lon = (activeNovelData?.tabsConfig || []).find((t) => t && t.id === lonId);
+      return (lon?.subTabs || []).find((s) => s && s.id === nhoId) || null;
+    },
+    [activeNovelData]
+  );
+  const mapRealmListTargetNho = useMemo(
+    () => getMapSubTabFromNovel(mapRealmListTargetLonId, mapRealmListTargetNhoId),
+    [getMapSubTabFromNovel, mapRealmListTargetLonId, mapRealmListTargetNhoId]
+  );
+  const mapRealmListTargetLabel = useMemo(
+    () => safeString(mapRealmListTargetNho?.label || '').trim(),
+    [mapRealmListTargetNho]
   );
   const matchedMapSubTab = useMemo(() => {
     const m = matchMapSubTabByRealmInput(forceQuickRealmSystem, mapSubTabsForForce);
@@ -1613,25 +1618,49 @@ export const ModalEntity = ({
     setMapQuickParentPath(value);
     patchDynamicData({ f_vi_tri: value });
   };
+  const loadRealmListDraftFor = useCallback(
+    (lonId, nhoId) => {
+      const nho = getMapSubTabFromNovel(lonId, nhoId);
+      const label = safeString(nho?.label || '').trim();
+      const k = normalizeAsciiText(label);
+      const lines = k ? nho?.mapEntrySuggestions?.realmScaleLists?.[k] : null;
+      setMapRealmListDraft(Array.isArray(lines) ? lines.join('\n') : '');
+    },
+    [getMapSubTabFromNovel]
+  );
+  const handleSelectRealmListTarget = (lonId, nhoId) => {
+    setMapRealmListTargetLonId(lonId);
+    setMapRealmListTargetNhoId(nhoId);
+    loadRealmListDraftFor(lonId, nhoId);
+  };
   const handleSaveMapRealmListDraft = () => {
-    const g = safeString(mapQuickType).trim();
-    if (!g || !onPatchMapRealmScaleLists) return;
-    onPatchMapRealmScaleLists({ [g]: linesToSuggestionArray(mapRealmListDraft) });
-    setMapRealmListPanelOpen(false);
+    if (!onPatchMapRealmScaleLists) return;
+    const lonId = mapRealmListTargetLonId || parentTabId || '';
+    const nhoId = mapRealmListTargetNhoId || tabConfig?.id || '';
+    const label = mapRealmListTargetLabel;
+    if (!lonId || !nhoId || !label) {
+      showToast?.('Chưa chọn tab con để gắn list.', 'warning');
+      return;
+    }
+    onPatchMapRealmScaleLists({ [label]: linesToSuggestionArray(mapRealmListDraft) }, { lonId, nhoId });
   };
   const toggleMapRealmListEditor = () => {
     if (mapRealmListPanelOpen) {
       setMapRealmListPanelOpen(false);
       return;
     }
-    const g = safeString(mapQuickType).trim();
-    if (!g) {
-      showToast?.('Nhập «Giới diện» trước (mặc định là tên tab con đang mở).', 'warning');
+    const fallbackLon = parentTabId || mapSubTabsForScaleList[0]?.lonId || '';
+    const fallbackNho = tabConfig?.id || mapSubTabsForScaleList[0]?.nhoId || '';
+    const current = getMapSubTabFromNovel(fallbackLon, fallbackNho);
+    const lonId = current ? fallbackLon : mapSubTabsForScaleList[0]?.lonId || '';
+    const nhoId = current ? fallbackNho : mapSubTabsForScaleList[0]?.nhoId || '';
+    if (!lonId || !nhoId) {
+      showToast?.('Truyện chưa có tab Bản đồ nào để gán list «Quy mô».', 'warning');
       return;
     }
-    const k = normalizeAsciiText(g);
-    const lines = tabConfig?.mapEntrySuggestions?.realmScaleLists?.[k];
-    setMapRealmListDraft(Array.isArray(lines) ? lines.join('\n') : '');
+    setMapRealmListTargetLonId(lonId);
+    setMapRealmListTargetNhoId(nhoId);
+    loadRealmListDraftFor(lonId, nhoId);
     setMapRealmListPanelOpen(true);
   };
   const handleForceLocationChange = (value) => {
@@ -1879,9 +1908,39 @@ export const ModalEntity = ({
               {mapRealmListPanelOpen && (
                 <div className="rounded-xl border border-cyan-900/45 bg-slate-950/55 p-3 space-y-2">
                   <p className="text-[11px] text-slate-400 font-serif leading-relaxed">
-                    Giới diện đang nhập:{' '}
-                    <strong className="text-cyan-100/95">{safeString(mapQuickType).trim() || '—'}</strong>
-                    <span className="text-slate-500"> — mỗi dòng một «Quy mô địa vực» cho giới diện này (ghi nhớ theo tab Bản đồ).</span>
+                    Chọn «Giới diện» (tab con) để chỉnh list «Quy mô» — lưu xong cho tab này, chọn tab khác để nhập tiếp.
+                  </p>
+                  {mapSubTabsForScaleList.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {mapSubTabsForScaleList.map((sub) => {
+                        const active =
+                          sub.lonId === mapRealmListTargetLonId && sub.nhoId === mapRealmListTargetNhoId;
+                        return (
+                          <button
+                            key={`${sub.lonId}:${sub.nhoId}`}
+                            type="button"
+                            onClick={() => handleSelectRealmListTarget(sub.lonId, sub.nhoId)}
+                            className={
+                              active
+                                ? 'px-2.5 py-1 rounded-lg border border-cyan-400/70 bg-cyan-900/45 text-[11px] font-bold text-cyan-50'
+                                : 'px-2.5 py-1 rounded-lg border border-cyan-900/45 bg-slate-950/50 text-[11px] font-bold text-cyan-200/70 hover:border-cyan-500/55 hover:text-cyan-100'
+                            }
+                            aria-pressed={active}
+                          >
+                            {sub.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-amber-200/80 font-serif">
+                      Truyện chưa có tab Bản đồ con nào để gán list.
+                    </p>
+                  )}
+                  <p className="text-[11px] text-slate-500 font-serif">
+                    Đang chỉnh cho:{' '}
+                    <strong className="text-cyan-100/95">{mapRealmListTargetLabel || '—'}</strong>
+                    <span> — mỗi dòng một «Quy mô địa vực»; lưu theo tab Bản đồ.</span>
                   </p>
                   <textarea
                     value={mapRealmListDraft}
@@ -1911,9 +1970,6 @@ export const ModalEntity = ({
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
                   <label className={entityModalQuickLabel}>Giới Diện</label>
-                  <p className="text-[10px] text-slate-500 font-serif leading-snug -mt-1">
-                    Mặc định = tên tab con đang mở; đổi nếu cần gắn «Quy mô» cho giới khác.
-                  </p>
                   <input
                     aria-label="Giới Diện bản đồ"
                     list="ttc-map-type-options"
@@ -1922,6 +1978,9 @@ export const ModalEntity = ({
                     className={entityModalQuickInput}
                     placeholder={mapFieldPlaceholders.mapType}
                   />
+                  <p className="text-[10px] text-slate-500 font-serif leading-snug">
+                    Mặc định = tên tab con đang mở; đổi nếu cần gắn «Quy mô» cho giới khác.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <label className={entityModalQuickLabel}>Quy Mô Địa Vực</label>

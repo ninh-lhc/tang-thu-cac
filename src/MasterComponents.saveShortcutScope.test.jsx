@@ -218,27 +218,6 @@ describe('modal ttc-save scope', () => {
     expect(options).not.toContain('Tiên tinh');
   });
 
-  it('filters map hierarchy options by selected realm system', () => {
-    const activeNovelData = { tabsConfig: [], data: {} };
-    const { getByLabelText } = render(
-      <ModalEntity
-        {...entityProps({
-          initialData: null,
-          parentTabId: 'ban-do',
-          parentLabel: 'Ban do',
-          tabConfig: { id: 'ha-gioi', label: 'Ha Gioi', viewType: 'collection-track' },
-          activeNovelData,
-        })}
-      />
-    );
-    fireEvent.change(getByLabelText('Quy Mô Địa Vực bản đồ'), { target: { value: 'Nguyên giới' } });
-    const mapSystemInput = getByLabelText('Đặc Tính Địa Vực bản đồ');
-    const listEl = document.getElementById(mapSystemInput.getAttribute('list') || '');
-    const options = Array.from(listEl?.querySelectorAll('option') || []).map((item) => item.getAttribute('value') || '');
-    expect(options).toContain('Đế giới');
-    expect(options).not.toContain('Cửu cấp');
-  });
-
   it('suggests custom map systems from existing novel entities', async () => {
     const activeNovelData = {
       tabsConfig: [
