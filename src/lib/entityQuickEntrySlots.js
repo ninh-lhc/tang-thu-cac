@@ -5,6 +5,7 @@
  */
 import { resolveMapFieldPresetFlavor, MAP_FIELD_PRESET_FLAVOR } from './mapEntityFieldPresets.js';
 import { normalizeAsciiText } from './statusHierarchyParser.js';
+import { suggestionRowsToValues } from './suggestionRowFormat.js';
 
 const PREFERRED_FIELD_ORDER = ['f_status', 'f_title', 'f_desc', 'f_cap', 'f_vi_tri', 'f_dia_ban'];
 
@@ -149,13 +150,17 @@ export function resolveEntityQuickSlots({
   const tabNhoLabel = String(tabConfig?.label || '').trim();
   const lists = tabConfig?.fieldSuggestionLists && typeof tabConfig.fieldSuggestionLists === 'object' ? tabConfig.fieldSuggestionLists : {};
 
+  const idToPrefix = new Map(
+    templateList.map((f) => [f.id, String(f?.sortPrefix || '').trim()])
+  );
   const slots = slotFields.map((fieldId, idx) => {
-    const userList = Array.isArray(lists[fieldId]) ? lists[fieldId] : [];
+    const userList = Array.isArray(lists[fieldId]) ? suggestionRowsToValues(lists[fieldId]) : [];
     const seeds = getQuickEntrySeedLines(fieldId, flavor, tabLonLabel, tabNhoLabel);
     const suggestions = dedupeCaseInsensitive([...userList, ...seeds]);
     const baseLabel = idToLabel.get(fieldId) || String(fieldId || '');
     const label = slotLabels[idx] || baseLabel;
-    return { fieldId, label, suggestions };
+    const sortPrefix = idToPrefix.get(fieldId) || '';
+    return { fieldId, label, suggestions, sortPrefix };
   });
 
   const dualFirstRow = eq.dualFirstRow === true;

@@ -1,10 +1,12 @@
 /**
  * AppEntityTemplateFieldEditor.jsx
- * UI them/doi ten/xoa truong va chinh list goi y — dung trong Quan ly tab (khong con trong modal Khoi tao the).
- * Ho tro 2 che do luu: 'nho' (chi cho tab nho dang chon) va 'lon' (toan bo tab con
- * trong cung tab lon, dung propagateWithinLon cua handler).
+ * UI thêm/đổi tên/xoá trường + chỉnh ký hiệu sắp xếp + list gợi ý.
+ * Hiện CHỈ nhúng trong modal «Khởi tạo thẻ» (ModalEntity) — không còn xuất hiện trong
+ * «Quản lý tab» (cải tạo thư mục) để tránh lặp UI; user chỉnh template ngay khi đang tạo/sửa thẻ.
+ * Hỗ trợ 2 chế độ lưu: 'nho' (chỉ tab con đang chọn) và 'lon' (toàn bộ tab con trong cùng tab lớn,
+ * dùng `propagateWithinLon` của handler).
  */
-import React, { useId, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { Plus, ChevronDown, ChevronUp, Edit2 } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
 import { WIKI_ALIAS_FIELD } from './MasterEngines.js';
@@ -16,6 +18,10 @@ import {
   getFieldSourceDescriptor,
 } from './lib/fieldValueSources.js';
 import { getGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
+import {
+  normalizeSuggestionRows,
+  serializeSuggestionRows,
+} from './lib/suggestionRowFormat.js';
 
 const NOVEL_METADATA_OPTIONS = [
   { key: NOVEL_METADATA_KEYS.GENRES, label: 'Thể loại truyện' },
@@ -33,6 +39,7 @@ export function AppEntityTemplateFieldEditor({
   handleAddTabTemplateField,
   handleRemoveTabTemplateField,
   handleRenameTabTemplateFieldLabel,
+  handleSetTabTemplateFieldSortPrefix,
   handleMergeTabFieldSuggestionList,
   /** Pha 2: đặt nguồn giá trị (manual / subTabLabel / siblingTabs / entityNames / mapTypes / mapHierarchy / novelMetadata). */
   handleSetTabFieldSource,
@@ -57,13 +64,14 @@ export function AppEntityTemplateFieldEditor({
     const list = Array.isArray(tabConfig?.fieldsTemplate) ? tabConfig.fieldsTemplate : [];
     return list.filter((f) => f && safeString(f.id).trim());
   }, [tabConfig]);
-  const suggestionLists = tabConfig?.fieldSuggestionLists || {};
+  const suggestionLists = tabConfig?.fieldSuggestionLists;
 
   /** Mặc định thu gọn để modal ngắn; mở khi cần chỉnh mẫu tab / list gợi ý.
    *  `defaultOpen=true` khi nhúng ngay dưới «Gợi ý nhanh» — dễ CRUD trường. */
   const [isOpen, setIsOpen] = useState(Boolean(defaultOpen));
   const [scope, setScope] = useState(SCOPE_LOCAL);
   const [draft, setDraft] = useState('');
+  const [suggestionRowsByField, setSuggestionRowsByField] = useState({});
   const pathKey = `${lonId}::${nhoId}`;
   const outlineDlId = useId().replace(/:/g, '');
   const outlineOid = outlineMeta && safeString(outlineMeta.oid).trim() ? safeString(outlineMeta.oid).trim() : '';
@@ -71,6 +79,34 @@ export function AppEntityTemplateFieldEditor({
   const outlineSuggestions = Array.isArray(outlineMeta?.sug) ? outlineMeta.sug : [];
   const patchEntity =
     typeof onPatchEntityDynamic === 'function' ? onPatchEntityDynamic : null;
+
+  // Chữ ký nội dung các list hiện lưu trên tab (ổn định qua render).
+  // Chỉ đồng bộ lại draft-rows khi nội dung thật sự đổi — tránh `|| {}` tạo ref mới
+  // làm useEffect chạy lại và xoá mất dòng user vừa bấm "+ Dòng".
+  const suggestionListsSignature = useMemo(() => {
+    const src = suggestionLists && typeof suggestionLists === 'object' ? suggestionLists : {};
+    const out = {};
+    templateFields.forEach((field) => {
+      const fid = safeString(field?.id).trim();
+      if (!fid) return;
+      const list = Array.isArray(src[fid]) ? src[fid] : [];
+      out[fid] = list.map((x) => safeString(x)).join('\n');
+    });
+    return JSON.stringify(out);
+  }, [suggestionLists, templateFields]);
+
+  useEffect(() => {
+    const src = suggestionLists && typeof suggestionLists === 'object' ? suggestionLists : {};
+    const next = {};
+    templateFields.forEach((field) => {
+      const fid = safeString(field?.id).trim();
+      if (!fid) return;
+      const list = Array.isArray(src[fid]) ? src[fid] : [];
+      next[fid] = normalizeSuggestionRows(list);
+    });
+    setSuggestionRowsByField(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestionListsSignature, pathKey]);
 
   if (tabConfig?.viewType !== 'collection-track') return null;
   if (!lonId || !nhoId) return null;
@@ -233,13 +269,15 @@ export function AppEntityTemplateFieldEditor({
                 if (!fid) return null;
                 const isWiki = fid === WIKI_ALIAS_FIELD.id;
                 const isOutlineField = outlineOid && fid === outlineOid;
-                const suggestionLines = Array.isArray(suggestionLists[fid])
-                  ? suggestionLists[fid].join('\n')
-                  : '';
+                const storedList = Array.isArray(suggestionLists?.[fid]) ? suggestionLists[fid] : [];
+                const suggestionRows = Array.isArray(suggestionRowsByField[fid])
+                  ? suggestionRowsByField[fid]
+                  : normalizeSuggestionRows(storedList);
                 const labelDomId = `ttc-entity-field-label-${pathKey}-${fid.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
                 const outlineVal = safeString(
                   entityDynamicData && typeof entityDynamicData === 'object' ? entityDynamicData[fid] : ''
                 );
+                const sortPrefixId = `ttc-entity-field-sort-prefix-${pathKey}-${fid.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
                 return (
                   <div
                     key={fid}
@@ -277,6 +315,25 @@ export function AppEntityTemplateFieldEditor({
                       </div>
                     )}
                     <div className="flex flex-wrap items-center gap-2">
+                      <div className="w-20 shrink-0 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-200/90">
+                          Ký hiệu
+                        </span>
+                        <input
+                          id={sortPrefixId}
+                          type="text"
+                          defaultValue={safeString(field.sortPrefix)}
+                          key={`entity-prefix-${pathKey}-${fid}-${safeString(field.sortPrefix)}`}
+                          onBlur={(e) =>
+                            typeof handleSetTabTemplateFieldSortPrefix === 'function'
+                              ? handleSetTabTemplateFieldSortPrefix(lonId, nhoId, fid, e.target.value, opts)
+                              : null
+                          }
+                          className="w-full bg-slate-950 border border-emerald-800/50 rounded-lg px-2 py-1.5 text-xs text-emerald-100 font-mono"
+                          aria-label={`Ký hiệu sắp xếp của trường ${fid}`}
+                          placeholder="I / 1 / 1.1"
+                        />
+                      </div>
                       <div className="min-w-0 flex-1 space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-[10px] font-bold uppercase tracking-wide text-amber-200/90">
@@ -351,18 +408,90 @@ export function AppEntityTemplateFieldEditor({
                     )}
                     <div>
                       <div className="text-[10px] text-slate-500 mb-1">
-                        Danh sách gợi ý — mỗi dòng một mục (hiện ở form / mốc timeline / khởi tạo thẻ)
+                        Danh sách gợi ý — nhập ký hiệu ở ô nhỏ trước từng dòng.
                       </div>
-                      <textarea
-                        defaultValue={suggestionLines}
-                        key={`entity-sugg-${pathKey}-${fid}-${suggestionLines.length}`}
-                        onBlur={(e) =>
-                          handleMergeTabFieldSuggestionList(lonId, nhoId, fid, e.target.value, opts)
-                        }
-                        rows={2}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-md px-2 py-1 text-[10px] text-slate-200 font-mono leading-relaxed"
-                        placeholder="Mỗi dòng một giá trị gợi ý…"
-                      />
+                      <div className="space-y-1">
+                        {suggestionRows.map((row, rowIdx) => (
+                          <div key={`${fid}-row-${rowIdx}`} className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={safeString(row.prefix)}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setSuggestionRowsByField((prev) => {
+                                  const list = Array.isArray(prev[fid]) ? [...prev[fid]] : [];
+                                  list[rowIdx] = { ...list[rowIdx], prefix: val };
+                                  return { ...prev, [fid]: list };
+                                });
+                              }}
+                              className="w-20 bg-slate-950 border border-emerald-800/45 rounded-md px-2 py-1 text-[10px] text-emerald-100 font-mono"
+                              placeholder="I / 1 / 1.1"
+                              aria-label={`Ký hiệu dòng gợi ý ${rowIdx + 1} của ${fid}`}
+                            />
+                            <input
+                              type="text"
+                              value={safeString(row.value)}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setSuggestionRowsByField((prev) => {
+                                  const list = Array.isArray(prev[fid]) ? [...prev[fid]] : [];
+                                  list[rowIdx] = { ...list[rowIdx], value: val };
+                                  return { ...prev, [fid]: list };
+                                });
+                              }}
+                              className="flex-1 bg-slate-950 border border-slate-800 rounded-md px-2 py-1 text-[10px] text-slate-200 font-mono"
+                              placeholder="Nội dung gợi ý..."
+                              aria-label={`Nội dung dòng gợi ý ${rowIdx + 1} của ${fid}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSuggestionRowsByField((prev) => {
+                                  const list = Array.isArray(prev[fid]) ? [...prev[fid]] : [];
+                                  list.splice(rowIdx, 1);
+                                  return { ...prev, [fid]: list };
+                                });
+                              }}
+                              className="rounded-md border border-rose-800/50 bg-rose-950/20 px-2 py-1 text-[10px] font-bold text-rose-100"
+                            >
+                              X
+                            </button>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSuggestionRowsByField((prev) => {
+                                const list = Array.isArray(prev[fid]) ? [...prev[fid]] : [];
+                                list.push({ prefix: '', value: '' });
+                                return { ...prev, [fid]: list };
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/50 px-2 py-1 text-[10px] font-bold text-slate-200"
+                          >
+                            <Plus size={10} /> Dòng
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const serialized = serializeSuggestionRows(suggestionRows);
+                              handleMergeTabFieldSuggestionList(lonId, nhoId, fid, serialized, opts);
+                              const count = serialized ? serialized.split('\n').filter(Boolean).length : 0;
+                              const fieldLabel = safeString(field.label).trim() || fid;
+                              showToast?.(
+                                count > 0
+                                  ? `Đã lưu ${count} dòng gợi ý cho «${fieldLabel}».`
+                                  : `Đã xoá list gợi ý của «${fieldLabel}».`,
+                                'success'
+                              );
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-amber-700/55 bg-amber-950/35 px-2 py-1 text-[10px] font-bold text-amber-100 hover:bg-amber-900/40"
+                          >
+                            Lưu list
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 );

@@ -2532,6 +2532,38 @@ export default function App() {
     }
   };
 
+  const handleSetTabTemplateFieldSortPrefix = (lonId, nhoId, fieldId, nextPrefix, options = {}) => {
+    const propagate = Boolean(options?.propagateWithinLon);
+    const fid = safeString(fieldId).trim();
+    if (!fid || fid === 'f_alias') return;
+    const prefix = safeString(nextPrefix).trim();
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const targets = propagate
+      ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
+      : [nho];
+    targets.forEach((sub) => {
+      const hasField = (sub.fieldsTemplate || []).some((f) => f.id === fid);
+      if (!hasField) return;
+      const nextFields = (sub.fieldsTemplate || []).map((f) => {
+        if (f.id !== fid) return f;
+        const next = { ...f };
+        if (!prefix) delete next.sortPrefix;
+        else next.sortPrefix = prefix;
+        return next;
+      });
+      sub.fieldsTemplate = ensureWikiAliasInFieldsTemplate(nextFields);
+    });
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: propagate ? buildFullAutoSyncPlan() : buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: propagate ? 'tab_propagate_set_field_sort_prefix' : 'tab_set_field_sort_prefix',
+      autoSyncScopeLabel: propagate ? safeString(lon?.label || lonId) : buildTabScopeLabel(lonId, nhoId, current),
+    });
+  };
+
   const handleSetTabTemplateFieldListMergeOrder = (lonId, nhoId, fieldId, rawValue, options = {}) => {
     const propagate = Boolean(options?.propagateWithinLon);
     const fid = safeString(fieldId).trim();
@@ -3005,6 +3037,7 @@ export default function App() {
     handleEnsureTabTemplateFields,
     handleRemoveTabTemplateField,
     handleRenameTabTemplateFieldLabel,
+    handleSetTabTemplateFieldSortPrefix,
     handleSetTabTemplateFieldListMergeOrder,
     handleSetTabEntityQuickEntry,
     handleSetTabFieldSource,

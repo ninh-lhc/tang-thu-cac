@@ -111,11 +111,13 @@ export function resolveQuickSlotLabels(fieldsTemplate, slots) {
   list.forEach((slot) => {
     if (!slot || !slot.key) return;
     const label = resolveQuickSlotLabel(fieldsTemplate, slot);
+    const tpl = findTemplateField(fieldsTemplate, slot.fieldId);
     out[slot.key] = {
       label,
       ariaLabel: safeString(slot.ariaLabel).trim() || label,
       fieldId: safeString(slot.fieldId).trim() || '',
       defaultLabel: safeString(slot.defaultLabel).trim() || '',
+      sortPrefix: safeString(tpl?.sortPrefix).trim(),
     };
   });
   return out;

@@ -22,6 +22,12 @@ import {
 } from './MasterEngines.js';
 import { AppEntityTemplateFieldEditor } from './AppEntityTemplateFieldEditor.jsx';
 import {
+  normalizeSuggestionRows,
+  serializeSuggestionRows,
+  countSuggestionRows,
+  suggestionRowsToValues,
+} from './lib/suggestionRowFormat.js';
+import {
   safeString, getTerms, AsyncLocalImage,
   handleToolbarClick,
   handleToolbarSmartWrap,
@@ -51,7 +57,6 @@ import { isCultivationRelationScope } from './lib/cultivationRelationSync.js';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
 import { isForceCollectionScope } from './lib/theLucBanDoSync.js';
 import { inferForceSystemLabel } from './lib/forceRankLadder.js';
-import { linesToSuggestionArray } from './lib/tabFieldSuggestions.js';
 import {
   collectMapSubTabsForForceUi,
   getMapSubTabForceRankSuggestions,
@@ -1273,14 +1278,18 @@ function getMapHierarchyOptionsByRealm(_realmSystem = '', baseOptions = []) {
   return dedupeCaseInsensitive(baseOptions);
 }
 
-/** Gợi ý «Quy mô địa vực»: chỉ lấy list do người dùng gắn theo «Giới diện» (tab con Bản đồ). */
+/** Gợi ý «Quy mô địa vực»: ưu tiên list theo giới diện (`realmScaleLists[k]`), fallback sang
+ *  `fieldSuggestionLists.f_he_gioi_ban_do` để đồng bộ với editor «Trường thông tin» ở dưới. */
 function buildMapRealmSystemOptions(tabConfig, mapQuickTypeValue) {
   const lists = tabConfig?.mapEntrySuggestions?.realmScaleLists;
   const g = safeString(mapQuickTypeValue).trim();
-  if (!g || !lists || typeof lists !== 'object') return [];
-  const k = normalizeAsciiText(g);
-  const arr = Array.isArray(lists[k]) ? lists[k] : [];
-  return dedupeCaseInsensitive(arr);
+  const k = g ? normalizeAsciiText(g) : '';
+  const perGioi = k && lists && typeof lists === 'object' && Array.isArray(lists[k]) ? lists[k] : [];
+  if (perGioi.length > 0) return dedupeCaseInsensitive(suggestionRowsToValues(perGioi));
+  const fromField = Array.isArray(tabConfig?.fieldSuggestionLists?.f_he_gioi_ban_do)
+    ? tabConfig.fieldSuggestionLists.f_he_gioi_ban_do
+    : [];
+  return dedupeCaseInsensitive(suggestionRowsToValues(fromField));
 }
 
 function collectForceQuickHints(activeNovelData) {
@@ -1376,7 +1385,7 @@ function collectMapEntityHints(activeNovelData, mapTabConfig = null, mapLonScope
   const extraMap = mapTabConfig?.mapEntrySuggestions;
   if (extraMap && typeof extraMap === 'object') {
     // Cố ý bỏ extraMap.types để ô "Giới Diện" luôn trống khi tạo/tu bổ.
-    if (Array.isArray(extraMap.hierarchy)) forceSystemList.push(...extraMap.hierarchy);
+    if (Array.isArray(extraMap.hierarchy)) forceSystemList.push(...suggestionRowsToValues(extraMap.hierarchy));
   }
   return {
     mapNames: dedupeCaseInsensitive(mapNameList),
@@ -1424,6 +1433,7 @@ export const ModalEntity = ({
   handleEnsureTabTemplateFields,
   handleRemoveTabTemplateField,
   handleRenameTabTemplateFieldLabel,
+  handleSetTabTemplateFieldSortPrefix,
   handleMergeTabFieldSuggestionList,
   handleSetTabFieldSource,
   setConfirmDialog,
@@ -1557,8 +1567,10 @@ export const ModalEntity = ({
     setMapListEditorMode((prev) => (next ? 'realm' : prev === 'realm' ? null : prev));
   const setMapHierarchyListPanelOpen = (next) =>
     setMapListEditorMode((prev) => (next ? 'hierarchy' : prev === 'hierarchy' ? null : prev));
-  const [mapRealmListDraft, setMapRealmListDraft] = useState('');
-  const [mapHierarchyListDraft, setMapHierarchyListDraft] = useState('');
+  // Cấu trúc row {prefix, value}[] — cùng format với editor «Trường thông tin» ở dưới,
+  // để hai nơi có thể đồng bộ dữ liệu + tính năng (prefix/ký hiệu sắp xếp).
+  const [mapRealmListDraft, setMapRealmListDraft] = useState([]);
+  const [mapHierarchyListDraft, setMapHierarchyListDraft] = useState([]);
   const [mapRealmListTargetLonId, setMapRealmListTargetLonId] = useState(parentTabId || '');
   const [mapRealmListTargetNhoId, setMapRealmListTargetNhoId] = useState(tabConfig?.id || '');
   const mapRealmSystemOptions = useMemo(
@@ -1659,6 +1671,21 @@ export const ModalEntity = ({
   const quickUseSelect = Boolean(tabConfig?.entityQuickEntry?.useSelectUi);
   const entityModalQuickSurface = 'rounded-lg border border-amber-900/45 bg-amber-950/10 p-3 space-y-2.5';
   const entityModalQuickLabel = 'block text-[10px] font-bold text-amber-200 uppercase tracking-widest';
+  const renderLabelWithPrefix = (labelObj) => {
+    const prefix = safeString(labelObj?.sortPrefix).trim();
+    const text = safeString(labelObj?.label);
+    return (
+      <>
+        {prefix ? <span className="text-emerald-300 mr-1">{prefix}.</span> : null}
+        {text}
+      </>
+    );
+  };
+  const joinLabelWithPrefix = (labelObj) => {
+    const prefix = safeString(labelObj?.sortPrefix).trim();
+    const text = safeString(labelObj?.label);
+    return prefix ? `${prefix}. ${text}` : text;
+  };
   const entityModalQuickInput =
     'w-full bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none';
   const entityModalHintCallout = 'rounded-lg border border-slate-800/70 bg-slate-950/35 px-2.5 py-1.5';
@@ -1850,13 +1877,19 @@ export const ModalEntity = ({
     mapQuickParentTier3,
     mapQuickParentPath,
   ]);
+  // Nạp list «Quy mô theo giới diện» ưu tiên từ `realmScaleLists` (keyed theo tên giới diện),
+  // fallback sang `fieldSuggestionLists.f_he_gioi_ban_do` để đồng bộ dữ liệu với editor dưới.
   const loadRealmListDraftFor = useCallback(
     (lonId, nhoId) => {
       const nho = getMapSubTabFromNovel(lonId, nhoId);
       const label = safeString(nho?.label || '').trim();
       const k = normalizeAsciiText(label);
-      const lines = k ? nho?.mapEntrySuggestions?.realmScaleLists?.[k] : null;
-      setMapRealmListDraft(Array.isArray(lines) ? lines.join('\n') : '');
+      const scaleLines = k ? nho?.mapEntrySuggestions?.realmScaleLists?.[k] : null;
+      const fieldLines = Array.isArray(nho?.fieldSuggestionLists?.f_he_gioi_ban_do)
+        ? nho.fieldSuggestionLists.f_he_gioi_ban_do
+        : [];
+      const source = Array.isArray(scaleLines) && scaleLines.length > 0 ? scaleLines : fieldLines;
+      setMapRealmListDraft(normalizeSuggestionRows(source));
     },
     [getMapSubTabFromNovel, setMapRealmListDraft]
   );
@@ -1874,19 +1907,46 @@ export const ModalEntity = ({
       showToast?.('Chưa chọn tab con để gắn list.', 'warning');
       return;
     }
-    onPatchMapRealmScaleLists({ [label]: linesToSuggestionArray(mapRealmListDraft) }, { lonId, nhoId });
+    const serialized = serializeSuggestionRows(mapRealmListDraft);
+    const arr = serialized ? serialized.split('\n') : [];
+    onPatchMapRealmScaleLists({ [label]: arr }, { lonId, nhoId });
+    if (typeof handleMergeTabFieldSuggestionList === 'function') {
+      handleMergeTabFieldSuggestionList(lonId, nhoId, 'f_he_gioi_ban_do', serialized);
+    }
+    showToast?.(
+      `Đã lưu ${countSuggestionRows(mapRealmListDraft)} dòng «Quy mô» cho giới diện «${label}».`,
+      'success'
+    );
   };
   const handleSaveMapHierarchyListDraft = () => {
     if (!onSaveMapHierarchySharedList) return;
-    onSaveMapHierarchySharedList(mapHierarchyListDraft);
+    const serialized = serializeSuggestionRows(mapHierarchyListDraft);
+    onSaveMapHierarchySharedList(serialized);
+    if (typeof handleMergeTabFieldSuggestionList === 'function') {
+      const lonId = parentTabId || '';
+      const nhoId = tabConfig?.id || '';
+      if (lonId && nhoId) {
+        handleMergeTabFieldSuggestionList(lonId, nhoId, 'f_status', serialized, {
+          propagateWithinLon: true,
+        });
+      }
+    }
+    showToast?.(
+      `Đã lưu ${countSuggestionRows(mapHierarchyListDraft)} dòng «Đặc tính địa vực» dùng chung.`,
+      'success'
+    );
   };
   const toggleMapHierarchyListEditor = () => {
     if (mapHierarchyListPanelOpen) {
       setMapHierarchyListPanelOpen(false);
       return;
     }
-    const lines = tabConfig?.mapEntrySuggestions?.hierarchy;
-    setMapHierarchyListDraft(Array.isArray(lines) ? lines.join('\n') : '');
+    const scale = tabConfig?.mapEntrySuggestions?.hierarchy;
+    const fieldLines = Array.isArray(tabConfig?.fieldSuggestionLists?.f_status)
+      ? tabConfig.fieldSuggestionLists.f_status
+      : [];
+    const source = Array.isArray(scale) && scale.length > 0 ? scale : fieldLines;
+    setMapHierarchyListDraft(normalizeSuggestionRows(source));
     setMapHierarchyListPanelOpen(true);
   };
   const toggleMapRealmListEditor = () => {
@@ -2143,8 +2203,8 @@ export const ModalEntity = ({
                   const fid = slot.fieldId;
                   return (
                     <div key={`${fid}-${idx}`} className="space-y-1 min-w-0">
-                      <label className={`${entityModalQuickLabel} truncate`} title={slot.label}>
-                        {slot.label}
+                      <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(slot)}>
+                        {renderLabelWithPrefix(slot)}
                       </label>
                       {renderGenericQuickValueEditors(slot, idx)}
                     </div>
@@ -2259,13 +2319,74 @@ export const ModalEntity = ({
                     <strong className="text-cyan-100/95">{mapRealmListTargetLabel || '—'}</strong>
                     <span> — mỗi dòng một «Quy mô địa vực»; lưu theo tab Bản đồ.</span>
                   </p>
-                  <textarea
-                    value={mapRealmListDraft}
-                    onChange={(e) => setMapRealmListDraft(e.target.value)}
-                    rows={4}
-                    className="w-full bg-slate-950/90 border border-cyan-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-cyan-500/70 outline-none resize-y min-h-[4rem]"
-                    placeholder={'Hạ giới\nTiên giới\n…'}
-                  />
+                  <div className="space-y-1">
+                    {mapRealmListDraft.length === 0 && (
+                      <p className="text-[11px] text-slate-500 font-serif italic">
+                        Chưa có dòng nào — bấm «+ Dòng» để thêm.
+                      </p>
+                    )}
+                    {mapRealmListDraft.map((row, rowIdx) => (
+                      <div key={`realm-row-${rowIdx}`} className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={safeString(row.prefix)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMapRealmListDraft((prev) => {
+                              const next = Array.isArray(prev) ? [...prev] : [];
+                              next[rowIdx] = { ...next[rowIdx], prefix: val };
+                              return next;
+                            });
+                          }}
+                          className="w-20 bg-slate-950 border border-emerald-800/45 rounded-md px-2 py-1 text-[10px] text-emerald-100 font-mono"
+                          placeholder="I / 1"
+                          aria-label={`Ký hiệu dòng ${rowIdx + 1}`}
+                        />
+                        <input
+                          type="text"
+                          value={safeString(row.value)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMapRealmListDraft((prev) => {
+                              const next = Array.isArray(prev) ? [...prev] : [];
+                              next[rowIdx] = { ...next[rowIdx], value: val };
+                              return next;
+                            });
+                          }}
+                          className="flex-1 bg-slate-950 border border-cyan-900/40 rounded-md px-2 py-1 text-[11px] text-slate-100 font-serif focus:border-cyan-500/70 outline-none"
+                          placeholder="Ví dụ: Đại Khu, Tiểu Thiên Giới…"
+                          aria-label={`Nội dung dòng ${rowIdx + 1}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMapRealmListDraft((prev) => {
+                              const next = Array.isArray(prev) ? [...prev] : [];
+                              next.splice(rowIdx, 1);
+                              return next;
+                            })
+                          }
+                          className="rounded-md border border-rose-800/50 bg-rose-950/20 px-2 py-1 text-[10px] font-bold text-rose-100"
+                          aria-label={`Xóa dòng ${rowIdx + 1}`}
+                        >
+                          X
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMapRealmListDraft((prev) => {
+                          const next = Array.isArray(prev) ? [...prev] : [];
+                          next.push({ prefix: '', value: '' });
+                          return next;
+                        })
+                      }
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/50 px-2 py-1 text-[10px] font-bold text-slate-200"
+                    >
+                      <Plus size={10} /> Dòng
+                    </button>
+                  </div>
                   <div className="flex flex-wrap justify-end gap-2">
                     <button
                       type="button"
@@ -2289,13 +2410,74 @@ export const ModalEntity = ({
                   <p className="text-[11px] text-slate-400 font-serif leading-relaxed">
                     List «Đặc Tính Địa Vực» dùng chung cho tất cả tab con trong nhánh Bản đồ hiện tại.
                   </p>
-                  <textarea
-                    value={mapHierarchyListDraft}
-                    onChange={(e) => setMapHierarchyListDraft(e.target.value)}
-                    rows={4}
-                    className="w-full bg-slate-950/90 border border-violet-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-violet-500/70 outline-none resize-y min-h-[4rem]"
-                    placeholder={'Đại lục\nTinh cầu\nTây Châu\n…'}
-                  />
+                  <div className="space-y-1">
+                    {mapHierarchyListDraft.length === 0 && (
+                      <p className="text-[11px] text-slate-500 font-serif italic">
+                        Chưa có dòng nào — bấm «+ Dòng» để thêm.
+                      </p>
+                    )}
+                    {mapHierarchyListDraft.map((row, rowIdx) => (
+                      <div key={`hier-row-${rowIdx}`} className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={safeString(row.prefix)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMapHierarchyListDraft((prev) => {
+                              const next = Array.isArray(prev) ? [...prev] : [];
+                              next[rowIdx] = { ...next[rowIdx], prefix: val };
+                              return next;
+                            });
+                          }}
+                          className="w-20 bg-slate-950 border border-emerald-800/45 rounded-md px-2 py-1 text-[10px] text-emerald-100 font-mono"
+                          placeholder="I / 1"
+                          aria-label={`Ký hiệu dòng ${rowIdx + 1}`}
+                        />
+                        <input
+                          type="text"
+                          value={safeString(row.value)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMapHierarchyListDraft((prev) => {
+                              const next = Array.isArray(prev) ? [...prev] : [];
+                              next[rowIdx] = { ...next[rowIdx], value: val };
+                              return next;
+                            });
+                          }}
+                          className="flex-1 bg-slate-950 border border-violet-900/40 rounded-md px-2 py-1 text-[11px] text-slate-100 font-serif focus:border-violet-500/70 outline-none"
+                          placeholder="Ví dụ: Đại lục, Tinh cầu…"
+                          aria-label={`Nội dung dòng ${rowIdx + 1}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMapHierarchyListDraft((prev) => {
+                              const next = Array.isArray(prev) ? [...prev] : [];
+                              next.splice(rowIdx, 1);
+                              return next;
+                            })
+                          }
+                          className="rounded-md border border-rose-800/50 bg-rose-950/20 px-2 py-1 text-[10px] font-bold text-rose-100"
+                          aria-label={`Xóa dòng ${rowIdx + 1}`}
+                        >
+                          X
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMapHierarchyListDraft((prev) => {
+                          const next = Array.isArray(prev) ? [...prev] : [];
+                          next.push({ prefix: '', value: '' });
+                          return next;
+                        })
+                      }
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/50 px-2 py-1 text-[10px] font-bold text-slate-200"
+                    >
+                      <Plus size={10} /> Dòng
+                    </button>
+                  </div>
                   <p className="text-[11px] text-slate-500 font-serif">
                     Mỗi dòng là một nhãn. Khi gán vào thẻ, nhãn sẽ hiện cạnh tên thẻ với màu tự phân biệt.
                   </p>
@@ -2319,8 +2501,8 @@ export const ModalEntity = ({
               )}
               <div className="grid gap-2 md:grid-cols-3 md:gap-3">
                 <div className="min-w-0 space-y-1">
-                  <label className={`${entityModalQuickLabel} truncate`} title={mapQuickLabels.gioiDien?.label}>
-                    {mapQuickLabels.gioiDien?.label}
+                  <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(mapQuickLabels.gioiDien)}>
+                    {renderLabelWithPrefix(mapQuickLabels.gioiDien)}
                   </label>
                   <input
                     aria-label={mapQuickLabels.gioiDien?.ariaLabel}
@@ -2333,8 +2515,8 @@ export const ModalEntity = ({
                   />
                 </div>
                 <div className="min-w-0 space-y-1">
-                  <label className={`${entityModalQuickLabel} truncate`} title={mapQuickLabels.quyMo?.label}>
-                    {mapQuickLabels.quyMo?.label}
+                  <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(mapQuickLabels.quyMo)}>
+                    {renderLabelWithPrefix(mapQuickLabels.quyMo)}
                   </label>
                   <input
                     aria-label={mapQuickLabels.quyMo?.ariaLabel}
@@ -2346,8 +2528,8 @@ export const ModalEntity = ({
                   />
                 </div>
                 <div className="min-w-0 space-y-1">
-                  <label className={`${entityModalQuickLabel} truncate`} title={mapQuickLabels.dacTinh?.label}>
-                    {mapQuickLabels.dacTinh?.label}
+                  <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(mapQuickLabels.dacTinh)}>
+                    {renderLabelWithPrefix(mapQuickLabels.dacTinh)}
                   </label>
                   <input
                     aria-label={mapQuickLabels.dacTinh?.ariaLabel}
@@ -2362,8 +2544,8 @@ export const ModalEntity = ({
               </div>
               <div className="rounded-lg border border-amber-900/40 bg-slate-950/45 p-2.5 space-y-1.5">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <label className={`${entityModalQuickLabel} mb-0 truncate`} title={mapQuickLabels.trucThuoc?.label}>
-                    {mapQuickLabels.trucThuoc?.label}
+                  <label className={`${entityModalQuickLabel} mb-0 truncate`} title={joinLabelWithPrefix(mapQuickLabels.trucThuoc)}>
+                    {renderLabelWithPrefix(mapQuickLabels.trucThuoc)}
                   </label>
                   {safeString(mapQuickRealmSystem).trim() ? (
                     <span className="text-[10px] text-amber-200/85 font-serif">
@@ -2461,8 +2643,8 @@ export const ModalEntity = ({
               </p>
               <div className="grid gap-2 md:grid-cols-3 md:gap-3">
                 <div className="min-w-0 space-y-1">
-                  <label className={`${entityModalQuickLabel} truncate`} title={forceQuickLabels.loaiHinh?.label}>
-                    {forceQuickLabels.loaiHinh?.label}
+                  <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(forceQuickLabels.loaiHinh)}>
+                    {renderLabelWithPrefix(forceQuickLabels.loaiHinh)}
                   </label>
                   <input
                     aria-label={forceQuickLabels.loaiHinh?.ariaLabel}
@@ -2474,8 +2656,8 @@ export const ModalEntity = ({
                   />
                 </div>
                 <div className="min-w-0 space-y-1">
-                  <label className={`${entityModalQuickLabel} truncate`} title={forceQuickLabels.heCapBac?.label}>
-                    {forceQuickLabels.heCapBac?.label}
+                  <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(forceQuickLabels.heCapBac)}>
+                    {renderLabelWithPrefix(forceQuickLabels.heCapBac)}
                   </label>
                   <select
                     aria-label={forceQuickLabels.heCapBac?.ariaLabel}
@@ -2492,8 +2674,8 @@ export const ModalEntity = ({
                   </select>
                 </div>
                 <div className="min-w-0 space-y-1">
-                  <label className={`${entityModalQuickLabel} truncate`} title={forceQuickLabels.capBac?.label}>
-                    {forceQuickLabels.capBac?.label}
+                  <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(forceQuickLabels.capBac)}>
+                    {renderLabelWithPrefix(forceQuickLabels.capBac)}
                   </label>
                   <input
                     aria-label={forceQuickLabels.capBac?.ariaLabel}
@@ -2511,8 +2693,8 @@ export const ModalEntity = ({
                 </div>
               </div>
               <div className="min-w-0 space-y-1">
-                <label className={`${entityModalQuickLabel} truncate`} title={forceQuickLabels.diaChi?.label}>
-                  {forceQuickLabels.diaChi?.label}
+                <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(forceQuickLabels.diaChi)}>
+                  {renderLabelWithPrefix(forceQuickLabels.diaChi)}
                 </label>
                 <input
                   aria-label={forceQuickLabels.diaChi?.ariaLabel}
@@ -2556,6 +2738,7 @@ export const ModalEntity = ({
             handleAddTabTemplateField={handleAddTabTemplateField}
             handleRemoveTabTemplateField={handleRemoveTabTemplateField}
             handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
+            handleSetTabTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
             handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
             handleSetTabFieldSource={handleSetTabFieldSource}
             setConfirmDialog={setConfirmDialog}
@@ -2774,10 +2957,17 @@ export const ModalMilestone = ({
   autoLinkToastEnabled = true,
 }) => {
   const fieldsTemplate = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
-  const fieldSuggestions =
-    tabConfig?.fieldSuggestionLists && typeof tabConfig.fieldSuggestionLists === 'object'
-      ? tabConfig.fieldSuggestionLists
-      : {};
+  const fieldSuggestions = useMemo(() => {
+    const raw =
+      tabConfig?.fieldSuggestionLists && typeof tabConfig.fieldSuggestionLists === 'object'
+        ? tabConfig.fieldSuggestionLists
+        : {};
+    const out = {};
+    Object.entries(raw).forEach(([fid, list]) => {
+      out[fid] = suggestionRowsToValues(list);
+    });
+    return out;
+  }, [tabConfig]);
   const milestoneHintListPrefix = useId().replace(/:/g, '');
   const terms = getTerms(parentTabId);
   const EVENT_EDITOR_ID = 'milestone-event-editor';
@@ -3728,7 +3918,9 @@ Yêu cầu trả về:
                   const fieldId = safeString(field?.id);
                   if (!fieldId) return null;
                   const isMultiline = fieldId === WIKI_ALIAS_FIELD.id || fieldId === 'f_desc';
-                  const label = safeString(field?.label || fieldId);
+                  const rawLabel = safeString(field?.label || fieldId);
+                  const prefix = safeString(field?.sortPrefix).trim();
+                  const label = prefix ? `${prefix}. ${rawLabel}` : rawLabel;
                   const value = safeString(snapshotData.dynamicData?.[fieldId]);
                   const hintOpts = Array.isArray(fieldSuggestions[fieldId])
                     ? fieldSuggestions[fieldId].filter((h) => safeString(h).trim())

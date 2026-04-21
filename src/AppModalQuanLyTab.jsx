@@ -24,7 +24,6 @@ import {
 import { safeString, getIconComponent } from './MasterUtils.jsx';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
 import { pickDefaultQuickFieldIds } from './lib/entityQuickEntrySlots.js';
-import { AppEntityTemplateFieldEditor } from './AppEntityTemplateFieldEditor.jsx';
 import { useFocusTrap } from './lib/useFocusTrap.js';
 import {
   getEffectiveAutoSyncRole,
@@ -79,12 +78,7 @@ export function AppModalQuanLyTab({
   handleSetTabAutoSyncLevels,
   handleSetTabAutoSyncFieldMap,
   handleSetTabMapEntrySuggestions,
-  handleMergeTabFieldSuggestionList,
-  handleAddTabTemplateField,
-  handleRemoveTabTemplateField,
-  handleRenameTabTemplateFieldLabel,
   handleSetTabEntityQuickEntry,
-  handleSetTabFieldSource,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
   handleSaveCurrentTabsAsGenreTemplate,
@@ -839,23 +833,6 @@ export function AppModalQuanLyTab({
                               </div>
                             )}
                           </div>
-
-                          {tabNho.viewType === 'collection-track' && (
-                            <AppEntityTemplateFieldEditor
-                              tabConfig={tabNho}
-                              parentTabId={tabLon.id}
-                              parentLabel={tabLon.label || ''}
-                              handleAddTabTemplateField={handleAddTabTemplateField}
-                              handleRemoveTabTemplateField={handleRemoveTabTemplateField}
-                              handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
-                              handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
-                              handleSetTabFieldSource={handleSetTabFieldSource}
-                              activeNovelData={activeNovelData}
-                              setConfirmDialog={setConfirmDialog}
-                              showToast={showToast}
-                              contextHint="Điểm chỉnh hàng loạt: chế độ «Khu vực» ghi cho mọi tab con. Có thể chỉnh nhanh ngay trong modal «Khởi tạo thẻ»."
-                            />
-                          )}
 
                           {tabNho.viewType === 'collection-track' && isAutoPanelOpen && (
                             <div className="border-t border-slate-800/80 pt-3 space-y-3">

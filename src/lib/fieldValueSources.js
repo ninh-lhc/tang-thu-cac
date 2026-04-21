@@ -5,6 +5,7 @@
  */
 import { safeString } from '../MasterUtils.jsx';
 import { normalizeAsciiText } from './statusHierarchyParser.js';
+import { suggestionRowsToValues } from './suggestionRowFormat.js';
 
 export const FIELD_SOURCE_KIND = Object.freeze({
   MANUAL: 'manual',
@@ -274,7 +275,7 @@ export function resolveFieldValueSource({
   void parentLabel; // để sẵn mở rộng về sau (ví dụ tên tab lớn)
   const descriptor = getFieldSourceDescriptor(tabConfig, fid);
   const manualList = Array.isArray(tabConfig?.fieldSuggestionLists?.[fid])
-    ? tabConfig.fieldSuggestionLists[fid].map((x) => safeString(x).trim()).filter(Boolean)
+    ? suggestionRowsToValues(tabConfig.fieldSuggestionLists[fid])
     : [];
   const kind = descriptor.kind;
 

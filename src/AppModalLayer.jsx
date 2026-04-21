@@ -155,6 +155,7 @@ export function AppModalLayer({
   handleEnsureTabTemplateFields,
   handleRemoveTabTemplateField,
   handleRenameTabTemplateFieldLabel,
+  handleSetTabTemplateFieldSortPrefix,
   handleSetTabEntityQuickEntry,
   handleSetTabFieldSource,
   handleApplySuggestedAutoSyncSetup,
@@ -203,6 +204,7 @@ export function AppModalLayer({
         handleEnsureTabTemplateFields={handleEnsureTabTemplateFields}
         handleRemoveTabTemplateField={handleRemoveTabTemplateField}
         handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
+        handleSetTabTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
         handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
         handleSetTabFieldSource={handleSetTabFieldSource}
         setConfirmDialog={setConfirmDialog}
@@ -388,12 +390,7 @@ export function AppModalLayer({
           handleSetTabListGroupOrder={handleSetTabListGroupOrder}
           handleSetTabAutoListOutlineFieldId={handleSetTabAutoListOutlineFieldId}
           handleSetTabMapEntrySuggestions={handleSetTabMapEntrySuggestions}
-          handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
-          handleAddTabTemplateField={handleAddTabTemplateField}
-          handleRemoveTabTemplateField={handleRemoveTabTemplateField}
-          handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
           handleSetTabEntityQuickEntry={handleSetTabEntityQuickEntry}
-          handleSetTabFieldSource={handleSetTabFieldSource}
           handleApplySuggestedAutoSyncSetup={handleApplySuggestedAutoSyncSetup}
           handleResyncAutoTabs={handleResyncAutoTabs}
           handleSaveCurrentTabsAsGenreTemplate={handleSaveCurrentTabsAsGenreTemplate}

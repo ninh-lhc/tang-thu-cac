@@ -34,6 +34,8 @@ export function sanitizeFieldsTemplate(fields) {
       const id = safeString(f.id).trim();
       const label = safeString(f.label).trim() || id;
       const out = { id, label };
+      const sortPrefix = safeString(f.sortPrefix).trim();
+      if (sortPrefix) out.sortPrefix = sortPrefix;
       const o = f.listMergeOrder;
       if (typeof o === 'number' && Number.isFinite(o)) out.listMergeOrder = Math.trunc(o);
       return out;

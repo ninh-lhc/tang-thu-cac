@@ -30,6 +30,13 @@ describe('tabFieldSuggestions', () => {
     expect(out.find((f) => f.id === 'f_title')?.listMergeOrder).toBe(1);
   });
 
+  it('ensureWikiAliasInFieldsTemplate giữ sortPrefix nếu có', () => {
+    const out = ensureWikiAliasInFieldsTemplate([
+      { id: 'f_status', label: 'X', sortPrefix: 'I' },
+    ]);
+    expect(out.find((f) => f.id === 'f_status')?.sortPrefix).toBe('I');
+  });
+
   it('pruneFieldSuggestionLists lọc theo field id', () => {
     const pruned = pruneFieldSuggestionLists(
       { f_status: ['A'], f_removed: ['B'] },
