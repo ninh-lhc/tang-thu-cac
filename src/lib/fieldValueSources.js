@@ -13,6 +13,8 @@ export const FIELD_SOURCE_KIND = Object.freeze({
   ENTITY_NAMES: 'entityNames',
   MAP_TYPES: 'mapTypes',
   MAP_HIERARCHY: 'mapHierarchy',
+  GENRE_MAP_TYPES: 'genreMapTypes',
+  GENRE_MAP_HIERARCHY: 'genreMapHierarchy',
   NOVEL_METADATA: 'novelMetadata',
 });
 
@@ -42,12 +44,22 @@ export const FIELD_SOURCE_OPTIONS = [
   {
     kind: FIELD_SOURCE_KIND.MAP_TYPES,
     label: 'List «Giới Diện» của Bản đồ',
-    hint: 'Dùng chung danh sách loại địa danh trong mapEntrySuggestions.types.',
+    hint: 'Dùng chung danh sách loại địa danh trong mapEntrySuggestions.types của tab hiện tại.',
   },
   {
     kind: FIELD_SOURCE_KIND.MAP_HIERARCHY,
     label: 'List «Đặc Tính» của Bản đồ',
-    hint: 'Dùng chung danh sách đặc tính trong mapEntrySuggestions.hierarchy.',
+    hint: 'Dùng chung danh sách đặc tính trong mapEntrySuggestions.hierarchy của tab hiện tại.',
+  },
+  {
+    kind: FIELD_SOURCE_KIND.GENRE_MAP_TYPES,
+    label: 'List «Giới Diện» theo mẫu thể loại',
+    hint: 'Gộp list «types» từ các tab Bản đồ trong mẫu thể loại (localStorage, đồng bộ với «Lưu mẫu thể loại»).',
+  },
+  {
+    kind: FIELD_SOURCE_KIND.GENRE_MAP_HIERARCHY,
+    label: 'List «Đặc Tính» theo mẫu thể loại',
+    hint: 'Gộp list «hierarchy» từ các tab Bản đồ trong mẫu thể loại (localStorage, đồng bộ với «Lưu mẫu thể loại»).',
   },
   {
     kind: FIELD_SOURCE_KIND.NOVEL_METADATA,
@@ -55,6 +67,59 @@ export const FIELD_SOURCE_OPTIONS = [
     hint: 'Lấy giá trị từ thông tin truyện (thể loại, tác giả, tên truyện…).',
   },
 ];
+
+/**
+ * Kiểm tra tab hiện tại có cấu hình Bản đồ (mapEntrySuggestions) hay không.
+ * Dùng để ẩn 2 option MAP_TYPES / MAP_HIERARCHY trên các tab không phải Bản đồ.
+ */
+export function tabHasMapEntrySuggestions(tabConfig) {
+  const ms = tabConfig?.mapEntrySuggestions;
+  return Boolean(ms && typeof ms === 'object' && !Array.isArray(ms));
+}
+
+/**
+ * Kiểm tra mẫu thể loại (tabsConfig đã lưu) có tab Bản đồ nào chứa `which` (types/hierarchy) hay không.
+ * @param {object|null} genreTemplate - record trả về từ `getGenreTabsTemplate(genres)`, có thuộc tính `tabsConfig`.
+ * @param {'types'|'hierarchy'} which
+ */
+export function genreTemplateHasMapList(genreTemplate, which) {
+  if (!genreTemplate || !Array.isArray(genreTemplate.tabsConfig)) return false;
+  const key = which === 'hierarchy' ? 'hierarchy' : 'types';
+  return genreTemplate.tabsConfig.some((lon) =>
+    Array.isArray(lon?.subTabs) &&
+    lon.subTabs.some((sub) => {
+      const ms = sub?.mapEntrySuggestions;
+      return ms && typeof ms === 'object' && Array.isArray(ms[key]) && ms[key].length > 0;
+    })
+  );
+}
+
+/**
+ * Lọc FIELD_SOURCE_OPTIONS theo context hiện tại.
+ * - MAP_TYPES / MAP_HIERARCHY: chỉ khả dụng khi tab hiện tại có mapEntrySuggestions.
+ * - GENRE_MAP_TYPES / GENRE_MAP_HIERARCHY: chỉ khả dụng khi mẫu thể loại của truyện (nếu truyền vào)
+ *   có ít nhất 1 tab con chứa list tương ứng.
+ * Các option còn lại luôn hiển thị.
+ */
+export function filterFieldSourceOptions({ tabConfig = null, genreTemplate = null } = {}) {
+  const hasMapCfg = tabHasMapEntrySuggestions(tabConfig);
+  const genreHasTypes = genreTemplateHasMapList(genreTemplate, 'types');
+  const genreHasHierarchy = genreTemplateHasMapList(genreTemplate, 'hierarchy');
+  return FIELD_SOURCE_OPTIONS.filter((o) => {
+    switch (o.kind) {
+      case FIELD_SOURCE_KIND.MAP_TYPES:
+        return hasMapCfg;
+      case FIELD_SOURCE_KIND.MAP_HIERARCHY:
+        return hasMapCfg;
+      case FIELD_SOURCE_KIND.GENRE_MAP_TYPES:
+        return genreHasTypes;
+      case FIELD_SOURCE_KIND.GENRE_MAP_HIERARCHY:
+        return genreHasHierarchy;
+      default:
+        return true;
+    }
+  });
+}
 
 export const NOVEL_METADATA_KEYS = Object.freeze({
   GENRES: 'genres',
@@ -148,6 +213,29 @@ function collectMapList(tabConfig, which) {
   return arr.map((x) => safeString(x).trim()).filter(Boolean);
 }
 
+/**
+ * Gom list map (types/hierarchy) từ mọi tab con trong mẫu thể loại.
+ * Dùng cho GENRE_MAP_TYPES / GENRE_MAP_HIERARCHY — cho phép các tab non-Map
+ * của truyện mới vẫn đọc list dùng chung đã lưu theo thể loại.
+ */
+function collectGenreMapList(genreTemplate, which) {
+  if (!genreTemplate || !Array.isArray(genreTemplate.tabsConfig)) return [];
+  const key = which === 'hierarchy' ? 'hierarchy' : 'types';
+  const bag = [];
+  genreTemplate.tabsConfig.forEach((lon) => {
+    (Array.isArray(lon?.subTabs) ? lon.subTabs : []).forEach((sub) => {
+      const ms = sub?.mapEntrySuggestions;
+      if (!ms || typeof ms !== 'object') return;
+      const arr = Array.isArray(ms[key]) ? ms[key] : [];
+      arr.forEach((x) => {
+        const v = safeString(x).trim();
+        if (v) bag.push(v);
+      });
+    });
+  });
+  return bag;
+}
+
 function collectNovelMetadata(activeNovelData, metadataKey) {
   if (!activeNovelData || typeof activeNovelData !== 'object') return { defaultValue: '', list: [] };
   const key = safeString(metadataKey).trim() || NOVEL_METADATA_KEYS.GENRES;
@@ -180,6 +268,7 @@ export function resolveFieldValueSource({
   parentTabId = '',
   parentLabel = '',
   activeNovelData = null,
+  genreTemplate = null,
 }) {
   const fid = safeString(fieldId).trim();
   void parentLabel; // để sẵn mở rộng về sau (ví dụ tên tab lớn)
@@ -231,6 +320,24 @@ export function resolveFieldValueSource({
       suggestions: dedupeStrings([...manualList, ...list]),
       defaultValue: '',
       sourceLabel: 'List «Đặc Tính» của Bản đồ',
+    };
+  }
+
+  if (kind === FIELD_SOURCE_KIND.GENRE_MAP_TYPES) {
+    const list = collectGenreMapList(genreTemplate, 'types');
+    return {
+      suggestions: dedupeStrings([...manualList, ...list]),
+      defaultValue: '',
+      sourceLabel: 'List «Giới Diện» theo mẫu thể loại',
+    };
+  }
+
+  if (kind === FIELD_SOURCE_KIND.GENRE_MAP_HIERARCHY) {
+    const list = collectGenreMapList(genreTemplate, 'hierarchy');
+    return {
+      suggestions: dedupeStrings([...manualList, ...list]),
+      defaultValue: '',
+      sourceLabel: 'List «Đặc Tính» theo mẫu thể loại',
     };
   }
 

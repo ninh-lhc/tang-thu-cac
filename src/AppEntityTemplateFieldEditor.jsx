@@ -12,8 +12,10 @@ import {
   FIELD_SOURCE_KIND,
   FIELD_SOURCE_OPTIONS,
   NOVEL_METADATA_KEYS,
+  filterFieldSourceOptions,
   getFieldSourceDescriptor,
 } from './lib/fieldValueSources.js';
+import { getGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
 
 const NOVEL_METADATA_OPTIONS = [
   { key: NOVEL_METADATA_KEYS.GENRES, label: 'Thể loại truyện' },
@@ -47,7 +49,6 @@ export function AppEntityTemplateFieldEditor({
   /** Cho phép gọi mở sẵn khi nhúng gần «Gợi ý nhanh» trong Khởi tạo thẻ. */
   defaultOpen = false,
 }) {
-  void activeNovelData;
   const lonId = safeString(parentTabId).trim();
   const nhoId = safeString(tabConfig?.id).trim();
   const nhoLabel = safeString(tabConfig?.label).trim();
@@ -343,6 +344,7 @@ export function AppEntityTemplateFieldEditor({
                         nhoId={nhoId}
                         fid={fid}
                         tabConfig={tabConfig}
+                        activeNovelData={activeNovelData}
                         opts={opts}
                         handleSetTabFieldSource={handleSetTabFieldSource}
                       />
@@ -377,11 +379,45 @@ export function AppEntityTemplateFieldEditor({
   );
 }
 
-function FieldSourceRow({ lonId, nhoId, fid, tabConfig, opts, handleSetTabFieldSource }) {
+function FieldSourceRow({ lonId, nhoId, fid, tabConfig, activeNovelData, opts, handleSetTabFieldSource }) {
   const descriptor = getFieldSourceDescriptor(tabConfig, fid);
   const currentKind = descriptor.kind || FIELD_SOURCE_KIND.MANUAL;
   const currentMetaKey = safeString(descriptor.metadataKey).trim() || NOVEL_METADATA_KEYS.GENRES;
-  const option = FIELD_SOURCE_OPTIONS.find((o) => o.kind === currentKind);
+
+  /** Pha 6 — lọc option theo ngữ cảnh truyện/tab; nếu kind đã lưu không còn khả dụng
+   *  (vd. truyện mới không có tab Bản đồ), vẫn giữ trong select kèm nhãn cảnh báo
+   *  để người dùng thấy và đổi sang nguồn khác. */
+  const genres = useMemo(() => {
+    const raw = activeNovelData?.genres;
+    if (Array.isArray(raw)) return raw.map((x) => safeString(x).trim()).filter(Boolean);
+    const one = safeString(raw || activeNovelData?.genre || '').trim();
+    return one ? [one] : [];
+  }, [activeNovelData]);
+  const genreTemplate = useMemo(
+    () => (genres.length > 0 ? getGenreTabsTemplate(genres) : null),
+    [genres]
+  );
+  const availableOptions = useMemo(
+    () => filterFieldSourceOptions({ tabConfig, genreTemplate }),
+    [tabConfig, genreTemplate]
+  );
+  const isOrphanKind = !availableOptions.some((o) => o.kind === currentKind);
+  const displayOptions = useMemo(() => {
+    if (!isOrphanKind) return availableOptions;
+    const orphanBase = FIELD_SOURCE_OPTIONS.find((o) => o.kind === currentKind);
+    const orphanLabel = orphanBase
+      ? `${orphanBase.label} (không khả dụng)`
+      : `${currentKind} (không khả dụng)`;
+    return [
+      ...availableOptions,
+      {
+        kind: currentKind,
+        label: orphanLabel,
+        hint: 'Tab/truyện hiện tại không có dữ liệu cho nguồn này. Chọn nguồn khác hoặc Thủ công.',
+      },
+    ];
+  }, [availableOptions, isOrphanKind, currentKind]);
+  const option = displayOptions.find((o) => o.kind === currentKind);
 
   const commit = (kind, metadataKey) => {
     const payload = { kind };
@@ -398,10 +434,14 @@ function FieldSourceRow({ lonId, nhoId, fid, tabConfig, opts, handleSetTabFieldS
         <select
           value={currentKind}
           onChange={(e) => commit(e.target.value, currentMetaKey)}
-          className="bg-slate-950 border border-slate-700 rounded-md px-1.5 py-0.5 text-[11px] text-slate-100 font-serif outline-none focus:border-sky-600/55"
+          className={`bg-slate-950 border rounded-md px-1.5 py-0.5 text-[11px] font-serif outline-none focus:border-sky-600/55 ${
+            isOrphanKind
+              ? 'border-amber-700/70 text-amber-200'
+              : 'border-slate-700 text-slate-100'
+          }`}
           aria-label={`Nguồn giá trị của trường ${fid}`}
         >
-          {FIELD_SOURCE_OPTIONS.map((o) => (
+          {displayOptions.map((o) => (
             <option key={o.kind} value={o.kind}>
               {o.label}
             </option>
@@ -423,7 +463,13 @@ function FieldSourceRow({ lonId, nhoId, fid, tabConfig, opts, handleSetTabFieldS
         )}
       </div>
       {option?.hint && (
-        <p className="text-[9.5px] text-sky-100/75 leading-snug font-serif">{option.hint}</p>
+        <p
+          className={`text-[9.5px] leading-snug font-serif ${
+            isOrphanKind ? 'text-amber-200/85' : 'text-sky-100/75'
+          }`}
+        >
+          {option.hint}
+        </p>
       )}
     </div>
   );
