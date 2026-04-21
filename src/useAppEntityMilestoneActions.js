@@ -81,7 +81,7 @@ export function useAppEntityMilestoneActions({
     setIsEntityModalOpen(true);
   }, [
     activeTabNho,
-    currentTabConfig?.subTabs,
+    currentTabConfig,
     setActiveTabNho,
     setEditingEntityData,
     setIsEntityModalOpen,
@@ -499,7 +499,6 @@ export function useAppEntityMilestoneActions({
       activeTabLon,
       activeTabNho,
       currentTabConfig,
-      setActiveTabNho,
       getStatusLineForCurrentTab,
       mergeAliasForCurrentTab,
       updateActiveNovelData,

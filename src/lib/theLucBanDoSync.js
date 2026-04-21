@@ -271,13 +271,6 @@ function isDetailedMapLayout(locationName) {
   return detectLocationLevelName(locationName).label !== 'Tinh Cầu';
 }
 
-function buildLocationHierarchyLines(locations) {
-  const enriched = (locations || [])
-    .map((loc) => ({ raw: loc, ...detectLocationLevelName(loc) }))
-    .sort((a, b) => b.rank - a.rank || normalizeAscii(a.raw).localeCompare(normalizeAscii(b.raw)));
-  return enriched.map((x, idx) => `${idx + 1}. ${x.label}: [[${x.raw}]]`);
-}
-
 function buildForceWikiLabel(row, duplicateNameCounts) {
   const baseName = safeString(row?.name).trim();
   if (!baseName) return '';

@@ -1,13 +1,25 @@
 /**
  * AppEntityTemplateFieldEditor.jsx
- * UI tu do them/doi ten/xoa truong va chinh list goi y ngay trong modal Khoi tao the.
+ * UI them/doi ten/xoa truong va chinh list goi y — dung trong Quan ly tab (khong con trong modal Khoi tao the).
  * Ho tro 2 che do luu: 'nho' (chi cho tab nho dang chon) va 'lon' (toan bo tab con
  * trong cung tab lon, dung propagateWithinLon cua handler).
  */
-import React, { useMemo, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { Plus, ChevronDown, ChevronUp, Edit2 } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
 import { WIKI_ALIAS_FIELD } from './MasterEngines.js';
+import {
+  FIELD_SOURCE_KIND,
+  FIELD_SOURCE_OPTIONS,
+  NOVEL_METADATA_KEYS,
+  getFieldSourceDescriptor,
+} from './lib/fieldValueSources.js';
+
+const NOVEL_METADATA_OPTIONS = [
+  { key: NOVEL_METADATA_KEYS.GENRES, label: 'Thể loại truyện' },
+  { key: NOVEL_METADATA_KEYS.AUTHOR, label: 'Tác giả' },
+  { key: NOVEL_METADATA_KEYS.TITLE, label: 'Tên truyện' },
+];
 
 const SCOPE_LOCAL = 'nho';
 const SCOPE_AREA = 'lon';
@@ -20,9 +32,20 @@ export function AppEntityTemplateFieldEditor({
   handleRemoveTabTemplateField,
   handleRenameTabTemplateFieldLabel,
   handleMergeTabFieldSuggestionList,
+  /** Pha 2: đặt nguồn giá trị (manual / subTabLabel / siblingTabs / entityNames / mapTypes / mapHierarchy / novelMetadata). */
+  handleSetTabFieldSource,
+  /** Dùng để biết tên truyện / thể loại khi preview nguồn NOVEL_METADATA. */
+  activeNovelData = null,
   setConfirmDialog,
   showToast,
+  /** Gộp ô nhập «Mục lục danh sách (AUTO)» vào đúng trường + list gợi ý tab (không tách rời form). */
+  outlineMeta = null,
+  entityDynamicData = {},
+  onPatchEntityDynamic,
+  /** Dòng ngữ cảnh nhỏ hiển thị trong panel đã mở (để phân biệt điểm vào: Khởi tạo thẻ vs Quản lý tab). */
+  contextHint = '',
 }) {
+  void activeNovelData;
   const lonId = safeString(parentTabId).trim();
   const nhoId = safeString(tabConfig?.id).trim();
   const nhoLabel = safeString(tabConfig?.label).trim();
@@ -33,10 +56,17 @@ export function AppEntityTemplateFieldEditor({
   }, [tabConfig]);
   const suggestionLists = tabConfig?.fieldSuggestionLists || {};
 
+  /** Mặc định thu gọn để modal ngắn; mở khi cần chỉnh mẫu tab / list gợi ý. */
   const [isOpen, setIsOpen] = useState(false);
   const [scope, setScope] = useState(SCOPE_LOCAL);
   const [draft, setDraft] = useState('');
   const pathKey = `${lonId}::${nhoId}`;
+  const outlineDlId = useId().replace(/:/g, '');
+  const outlineOid = outlineMeta && safeString(outlineMeta.oid).trim() ? safeString(outlineMeta.oid).trim() : '';
+  const outlineLabel = outlineOid ? safeString(outlineMeta.label || outlineOid).trim() : '';
+  const outlineSuggestions = Array.isArray(outlineMeta?.sug) ? outlineMeta.sug : [];
+  const patchEntity =
+    typeof onPatchEntityDynamic === 'function' ? onPatchEntityDynamic : null;
 
   if (tabConfig?.viewType !== 'collection-track') return null;
   if (!lonId || !nhoId) return null;
@@ -102,32 +132,36 @@ export function AppEntityTemplateFieldEditor({
     }`;
 
   return (
-    <div className="rounded-xl border border-amber-900/45 bg-amber-950/10 p-4 space-y-3">
+    <div className="rounded-lg border border-amber-900/45 bg-amber-950/10 p-2.5 space-y-2">
       <button
         type="button"
         onClick={() => setIsOpen((v) => !v)}
-        className="w-full flex items-center justify-between gap-3 text-left"
+        className="w-full flex items-center justify-between gap-2 text-left min-h-0"
         aria-expanded={isOpen}
       >
-        <div>
+        <div className="min-w-0">
           <div className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
-            Trường hồ sơ & danh sách gợi ý
+            Trường dữ liệu &amp; list gợi ý (mẫu tab)
           </div>
-          <div className="text-[12px] text-slate-300 font-serif mt-1">
-            Thêm trường tuỳ chỉnh, đổi tên và chỉnh list gợi ý ngay khi khởi tạo thẻ —
-            áp dụng cho tab con hiện tại hoặc toàn bộ tab lớn. Trường «Mục lục danh sách (AUTO)» dùng quy ước I / 1 / 1.1 để sắp thứ tự trong thẻ Danh sách.
+          <div className="text-[11px] text-slate-400 font-serif mt-0.5 leading-snug">
+            Một nguồn cho form, ô «Gợi ý nhanh» và mốc — ô mục lục (AUTO) chỉnh list gợi ý của trường tương ứng.
           </div>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-800/50 bg-amber-950/40 px-2.5 py-1.5 text-[11px] font-bold text-amber-100 shrink-0">
-          {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          {isOpen ? 'Thu gọn' : 'Mở chỉnh'}
+        <span className="inline-flex items-center gap-1 rounded-md border border-amber-800/50 bg-amber-950/40 px-2 py-1 text-[10px] font-bold text-amber-100 shrink-0">
+          {isOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          {isOpen ? 'Thu' : 'Mở'}
         </span>
       </button>
 
       {isOpen && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
+        <div className="space-y-2 pt-0.5 border-t border-amber-900/30">
+          {safeString(contextHint).trim() && (
+            <p className="text-[10px] text-amber-200/75 font-serif leading-snug">
+              {contextHint}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[9px] font-bold text-amber-300 uppercase tracking-widest">
               Chế độ lưu
             </span>
             <div className="inline-flex rounded-lg border border-amber-900/55 overflow-hidden">
@@ -150,15 +184,15 @@ export function AppEntityTemplateFieldEditor({
                 Khu vực (tab lớn)
               </button>
             </div>
-            <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${scopeTone}`}>
+            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${scopeTone}`}>
               {scopeLabel}
             </span>
           </div>
 
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="min-w-[220px] flex-1">
-              <label className="block text-[10px] font-bold text-amber-200 uppercase tracking-widest mb-1">
-                Thêm trường mới
+          <div className="flex flex-wrap items-end gap-1.5">
+            <div className="min-w-[180px] flex-1">
+              <label className="block text-[9px] font-bold text-amber-200 uppercase tracking-widest mb-0.5">
+                Thêm trường
               </label>
               <input
                 type="text"
@@ -170,16 +204,16 @@ export function AppEntityTemplateFieldEditor({
                     handleAdd();
                   }
                 }}
-                placeholder="Ví dụ: Phẩm cấp, Tộc hệ, Chức nghiệp…"
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-100 font-serif outline-none focus:border-amber-600/55"
+                placeholder="Ví dụ: Phẩm cấp, Tộc hệ…"
+                className="w-full bg-slate-950 border border-slate-700 rounded-md px-2 py-1.5 text-xs text-slate-100 font-serif outline-none focus:border-amber-600/55"
               />
             </div>
             <button
               type="button"
               onClick={handleAdd}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-700/55 bg-amber-950/35 px-3 py-2 text-[11px] font-bold text-amber-100 hover:bg-amber-900/45"
+              className="inline-flex items-center gap-1 rounded-md border border-amber-700/55 bg-amber-950/35 px-2.5 py-1.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/45"
             >
-              <Plus size={12} /> Thêm
+              <Plus size={11} /> Thêm
             </button>
           </div>
 
@@ -188,20 +222,55 @@ export function AppEntityTemplateFieldEditor({
               Chưa có trường nào. Thêm trường đầu tiên để bắt đầu khởi tạo thẻ theo ý bạn.
             </p>
           ) : (
-            <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1 custom-scrollbar">
+            <div className="space-y-1.5 max-h-[min(40vh,260px)] overflow-y-auto pr-0.5 custom-scrollbar">
               {templateFields.map((field) => {
                 const fid = safeString(field?.id).trim();
                 if (!fid) return null;
                 const isWiki = fid === WIKI_ALIAS_FIELD.id;
+                const isOutlineField = outlineOid && fid === outlineOid;
                 const suggestionLines = Array.isArray(suggestionLists[fid])
                   ? suggestionLists[fid].join('\n')
                   : '';
                 const labelDomId = `ttc-entity-field-label-${pathKey}-${fid.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+                const outlineVal = safeString(
+                  entityDynamicData && typeof entityDynamicData === 'object' ? entityDynamicData[fid] : ''
+                );
                 return (
                   <div
                     key={fid}
-                    className="rounded-lg border border-slate-800/90 bg-slate-950/55 p-2.5 space-y-2"
+                    className="rounded-md border border-slate-800/90 bg-slate-950/55 p-2 space-y-1.5"
                   >
+                    {isOutlineField && patchEntity && (
+                      <div className="rounded-md border border-emerald-800/50 bg-emerald-950/20 p-2 space-y-1.5">
+                        <div className="text-[9px] font-bold uppercase tracking-wide text-emerald-300">
+                          Giá trị khi tạo thẻ — {outlineLabel || fid}
+                        </div>
+                        <input
+                          aria-label={outlineLabel || 'Mục lục danh sách'}
+                          type="text"
+                          list={outlineSuggestions.length ? outlineDlId : undefined}
+                          value={outlineVal}
+                          onChange={(e) => patchEntity({ [fid]: e.target.value })}
+                          className="w-full bg-slate-950 border border-emerald-800/55 rounded-md px-2 py-1.5 text-sm text-slate-100 font-serif outline-none focus:border-emerald-500/80"
+                          placeholder="I / 1 / 1.1 — cùng mục xếp theo tên thẻ"
+                          title="Quy ước I·II·1·1.1 — list mẫu chỉnh ở ô dưới"
+                        />
+                        {outlineSuggestions.length > 0 && (
+                          <datalist id={outlineDlId}>
+                            {outlineSuggestions.map((item) => (
+                              <option key={item} value={item} />
+                            ))}
+                          </datalist>
+                        )}
+                        <p className="text-[10px] text-slate-500 font-serif leading-snug">
+                          List gợi ý mẫu (I, 1, 1.1…) sửa ở khung dưới cùng trường.
+                        </p>
+                        <div className="h-px bg-slate-800/80" />
+                        <div className="text-[9px] font-bold uppercase tracking-wide text-amber-200/90">
+                          Mẫu tab: nhãn &amp; list gợi ý
+                        </div>
+                      </div>
+                    )}
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="min-w-0 flex-1 space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -250,6 +319,16 @@ export function AppEntityTemplateFieldEditor({
                         </button>
                       )}
                     </div>
+                    {!isWiki && typeof handleSetTabFieldSource === 'function' && (
+                      <FieldSourceRow
+                        lonId={lonId}
+                        nhoId={nhoId}
+                        fid={fid}
+                        tabConfig={tabConfig}
+                        opts={opts}
+                        handleSetTabFieldSource={handleSetTabFieldSource}
+                      />
+                    )}
                     <div>
                       <div className="text-[10px] text-slate-500 mb-1">
                         Danh sách gợi ý — mỗi dòng một mục (hiện ở form / mốc timeline / khởi tạo thẻ)
@@ -260,8 +339,8 @@ export function AppEntityTemplateFieldEditor({
                         onBlur={(e) =>
                           handleMergeTabFieldSuggestionList(lonId, nhoId, fid, e.target.value, opts)
                         }
-                        rows={3}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono leading-relaxed"
+                        rows={2}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-md px-2 py-1 text-[10px] text-slate-200 font-mono leading-relaxed"
                         placeholder="Mỗi dòng một giá trị gợi ý…"
                       />
                     </div>
@@ -271,12 +350,62 @@ export function AppEntityTemplateFieldEditor({
             </div>
           )}
 
-          <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
-            Lưu ý: đổi tên hiển thị / danh sách gợi ý áp dụng ngay khi rời ô (blur). Chế độ
-            «Khu vực» sẽ ghi đè cùng trường trên mọi tab con thu thập trong tab lớn — hữu ích
-            khi muốn các tab con chia sẻ cùng một bộ trường.
+          <p className="text-[10px] text-slate-500 font-serif leading-snug">
+            Blur để lưu nhãn/list. «Khu vực» = ghi đè mọi tab con trong tab lớn.
           </p>
         </div>
+      )}
+    </div>
+  );
+}
+
+function FieldSourceRow({ lonId, nhoId, fid, tabConfig, opts, handleSetTabFieldSource }) {
+  const descriptor = getFieldSourceDescriptor(tabConfig, fid);
+  const currentKind = descriptor.kind || FIELD_SOURCE_KIND.MANUAL;
+  const currentMetaKey = safeString(descriptor.metadataKey).trim() || NOVEL_METADATA_KEYS.GENRES;
+  const option = FIELD_SOURCE_OPTIONS.find((o) => o.kind === currentKind);
+
+  const commit = (kind, metadataKey) => {
+    const payload = { kind };
+    if (kind === FIELD_SOURCE_KIND.NOVEL_METADATA) payload.metadataKey = metadataKey || NOVEL_METADATA_KEYS.GENRES;
+    handleSetTabFieldSource(lonId, nhoId, fid, payload, opts);
+  };
+
+  return (
+    <div className="rounded-md border border-sky-900/40 bg-sky-950/20 p-1.5 space-y-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[9px] font-bold uppercase tracking-wide text-sky-200/90">
+          Nguồn giá trị
+        </span>
+        <select
+          value={currentKind}
+          onChange={(e) => commit(e.target.value, currentMetaKey)}
+          className="bg-slate-950 border border-slate-700 rounded-md px-1.5 py-0.5 text-[11px] text-slate-100 font-serif outline-none focus:border-sky-600/55"
+          aria-label={`Nguồn giá trị của trường ${fid}`}
+        >
+          {FIELD_SOURCE_OPTIONS.map((o) => (
+            <option key={o.kind} value={o.kind}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        {currentKind === FIELD_SOURCE_KIND.NOVEL_METADATA && (
+          <select
+            value={currentMetaKey}
+            onChange={(e) => commit(currentKind, e.target.value)}
+            className="bg-slate-950 border border-slate-700 rounded-md px-1.5 py-0.5 text-[11px] text-slate-100 font-serif outline-none focus:border-sky-600/55"
+            aria-label={`Khoá metadata của trường ${fid}`}
+          >
+            {NOVEL_METADATA_OPTIONS.map((o) => (
+              <option key={o.key} value={o.key}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      {option?.hint && (
+        <p className="text-[9.5px] text-sky-100/75 leading-snug font-serif">{option.hint}</p>
       )}
     </div>
   );

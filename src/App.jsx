@@ -138,6 +138,11 @@ import {
   dedupeCaseInsensitiveLines,
 } from './lib/tabFieldSuggestions.js';
 import { normalizeAsciiText } from './lib/statusHierarchyParser.js';
+import {
+  FIELD_SOURCE_KIND,
+  normalizeFieldSource,
+  sanitizeTabFieldSourceMap,
+} from './lib/fieldValueSources.js';
 
 export default function App() {
   const {
@@ -2433,6 +2438,12 @@ export default function App() {
       if (eq && Array.isArray(eq.slotFields) && eq.slotFields.includes(fid)) {
         delete sub.entityQuickEntry;
       }
+      if (sub.fieldSource && typeof sub.fieldSource === 'object' && sub.fieldSource[fid]) {
+        const nextSource = { ...sub.fieldSource };
+        delete nextSource[fid];
+        if (Object.keys(nextSource).length === 0) delete sub.fieldSource;
+        else sub.fieldSource = nextSource;
+      }
     });
     setTabsConfig(current, {
       resyncAuto: true,
@@ -2511,6 +2522,40 @@ export default function App() {
       autoSyncReason: propagate ? 'tab_propagate_field_list_merge_order' : 'tab_field_list_merge_order',
       autoSyncScopeLabel: propagate ? safeString(lon?.label || lonId) : buildTabScopeLabel(lonId, nhoId, current),
     });
+  };
+
+  const handleSetTabFieldSource = (lonId, nhoId, fieldId, nextSource, options = {}) => {
+    const propagate = Boolean(options?.propagateWithinLon);
+    const fid = safeString(fieldId).trim();
+    if (!fid || fid === 'f_alias') return;
+    const normalized = normalizeFieldSource(nextSource);
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const targets = propagate
+      ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
+      : [nho];
+    targets.forEach((sub) => {
+      const hasField = (sub.fieldsTemplate || []).some((f) => safeString(f?.id).trim() === fid);
+      if (!hasField) return;
+      const prev = sub.fieldSource && typeof sub.fieldSource === 'object' ? { ...sub.fieldSource } : {};
+      if (!normalized) {
+        delete prev[fid];
+      } else {
+        prev[fid] = normalized;
+      }
+      const sanitized = sanitizeTabFieldSourceMap(
+        prev,
+        (sub.fieldsTemplate || []).map((f) => safeString(f?.id).trim()).filter(Boolean),
+      );
+      if (Object.keys(sanitized).length === 0) delete sub.fieldSource;
+      else sub.fieldSource = sanitized;
+    });
+    setTabsConfig(current, { resyncAuto: false });
+    if (propagate) {
+      showToast(`Đã đặt nguồn giá trị cho mọi tab thu thập trong «${safeString(lon?.label || lonId)}».`, 'success');
+    }
   };
 
   const handleSetTabEntityQuickEntry = (lonId, nhoId, slotFields, slotLabels, options = {}) => {
@@ -2914,6 +2959,7 @@ export default function App() {
     handleRenameTabTemplateFieldLabel,
     handleSetTabTemplateFieldListMergeOrder,
     handleSetTabEntityQuickEntry,
+    handleSetTabFieldSource,
     handleApplySuggestedAutoSyncSetup,
     handleResyncAutoTabs,
     handleSaveCurrentTabsAsGenreTemplate,

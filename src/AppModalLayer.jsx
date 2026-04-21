@@ -147,17 +147,15 @@ export function AppModalLayer({
   handleSetTabAutoSyncTargets,
   handleSetTabAutoSyncLevels,
   handleSetTabAutoSyncFieldMap,
-  handleSetTabListGroupStrategy,
   handleSetTabAutoListOutlineFieldId,
   handleSetTabListGroupOrder,
-  handleSaveTabListGroupOrderToGenreTemplate,
   handleSetTabMapEntrySuggestions,
   handleMergeTabFieldSuggestionList,
   handleAddTabTemplateField,
   handleRemoveTabTemplateField,
   handleRenameTabTemplateFieldLabel,
-  handleSetTabTemplateFieldListMergeOrder,
   handleSetTabEntityQuickEntry,
+  handleSetTabFieldSource,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
   handleSaveCurrentTabsAsGenreTemplate,
@@ -204,6 +202,7 @@ export function AppModalLayer({
         handleRemoveTabTemplateField={handleRemoveTabTemplateField}
         handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
         handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
+        handleSetTabFieldSource={handleSetTabFieldSource}
         setConfirmDialog={setConfirmDialog}
       />
       <ModalMilestone
@@ -392,10 +391,12 @@ export function AppModalLayer({
           handleRemoveTabTemplateField={handleRemoveTabTemplateField}
           handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
           handleSetTabEntityQuickEntry={handleSetTabEntityQuickEntry}
+          handleSetTabFieldSource={handleSetTabFieldSource}
           handleApplySuggestedAutoSyncSetup={handleApplySuggestedAutoSyncSetup}
           handleResyncAutoTabs={handleResyncAutoTabs}
           handleSaveCurrentTabsAsGenreTemplate={handleSaveCurrentTabsAsGenreTemplate}
           setConfirmDialog={setConfirmDialog}
+          showToast={showToast}
         />
       )}
     </Suspense>

@@ -19,9 +19,8 @@ import {
   FALLBACK_IMG, GENRES, THEMES,
   resolveFieldsTemplate,
   WIKI_ALIAS_FIELD,
-  OUTLINE_LIST_FIELD,
 } from './MasterEngines.js';
-import { resolveAutoListOutlineFieldId } from './lib/outlineListOrder.js';
+import { AppEntityTemplateFieldEditor } from './AppEntityTemplateFieldEditor.jsx';
 import {
   safeString, getTerms, AsyncLocalImage,
   handleToolbarClick,
@@ -61,7 +60,13 @@ import {
 } from './lib/mapTabForceBridge.js';
 import { getMapFieldPlaceholders, resolveMapFieldPresetFlavor } from './lib/mapEntityFieldPresets.js';
 import { resolveEntityQuickSlots } from './lib/entityQuickEntrySlots.js';
-import { AppEntityTemplateFieldEditor } from './AppEntityTemplateFieldEditor.jsx';
+import { resolveFieldValueSource } from './lib/fieldValueSources.js';
+import {
+  FORCE_QUICK_SLOTS,
+  MAP_QUICK_SLOTS,
+  resolveMainFormLabels,
+  resolveQuickSlotLabels,
+} from './lib/modalEntityQuickLabels.js';
 import { normalizeAsciiText, splitStatusHierarchyTokens } from './lib/statusHierarchyParser.js';
 import { inferOrgTypeFromContext, inferOrgTypeFromTabSlug } from './lib/forceOrgTypeInfer.js';
 import { mergeTabsByGenres } from './genreTabsMap.js';
@@ -1420,6 +1425,7 @@ export const ModalEntity = ({
   handleRemoveTabTemplateField,
   handleRenameTabTemplateFieldLabel,
   handleMergeTabFieldSuggestionList,
+  handleSetTabFieldSource,
   setConfirmDialog,
 }) => {
   void onUpdateTemplate;
@@ -1484,31 +1490,59 @@ export const ModalEntity = ({
     [showGenericQuickEntry, tabConfig, fieldsTemplate, activeNovelData, parentTabId, parentLabel]
   );
   const genericQuickListPrefix = useId().replace(/:/g, '');
-  const entityOutlineListPrefix = useId().replace(/:/g, '');
+  const extraFieldListPrefix = useId().replace(/:/g, '');
   const hideLegacyStatusInput = Boolean(
     showGenericQuickEntry && genericQuickResolved?.slotFields?.includes('f_status')
   );
-  const outlineMeta = useMemo(() => {
-    if (tabConfig?.viewType !== 'collection-track') return null;
-    const oid = resolveAutoListOutlineFieldId(tabConfig || {});
-    if (!oid) return null;
-    const label = fieldsTemplate.find((x) => x.id === oid)?.label || OUTLINE_LIST_FIELD.label;
-    const fromTab = Array.isArray(tabConfig?.fieldSuggestionLists?.[oid]) ? tabConfig.fieldSuggestionLists[oid] : [];
-    const sug = dedupeCaseInsensitive([
-      ...fromTab,
-      'I',
-      'II',
-      'III',
-      'IV',
-      '1',
-      '2',
-      '3',
-      '1.1',
-      '1.2',
-      '2.1',
-    ]);
-    return { oid, label, sug };
-  }, [tabConfig, fieldsTemplate]);
+  /** Tập field đã có ô nhập riêng trong modal — phần còn lại sẽ render ở khối «Trường bổ sung». */
+  const coveredFieldIds = useMemo(() => {
+    const set = new Set([WIKI_ALIAS_FIELD.id]);
+    if (!hideLegacyStatusInput) set.add('f_status');
+    if (showGenericQuickEntry && Array.isArray(genericQuickResolved?.slotFields)) {
+      genericQuickResolved.slotFields.forEach((fid) => set.add(fid));
+    }
+    if (showMapQuickSection) {
+      ['f_title', 'f_he_gioi_ban_do', 'f_vi_tri', 'f_status', 'f_dia_ban'].forEach((fid) => set.add(fid));
+    }
+    if (showForceQuickSection) {
+      ['f_loai_to_chuc', 'f_he_cap_the_luc', 'f_status', 'f_dia_ban'].forEach((fid) => set.add(fid));
+    }
+    return set;
+  }, [genericQuickResolved, hideLegacyStatusInput, showGenericQuickEntry, showMapQuickSection, showForceQuickSection]);
+  const extraFields = useMemo(() => {
+    return (fieldsTemplate || []).filter((f) => {
+      const fid = safeString(f?.id).trim();
+      return fid && !coveredFieldIds.has(fid);
+    });
+  }, [fieldsTemplate, coveredFieldIds]);
+  const mapQuickLabels = useMemo(
+    () => resolveQuickSlotLabels(fieldsTemplate, MAP_QUICK_SLOTS),
+    [fieldsTemplate]
+  );
+  const forceQuickLabels = useMemo(
+    () => resolveQuickSlotLabels(fieldsTemplate, FORCE_QUICK_SLOTS),
+    [fieldsTemplate]
+  );
+  /** Pha 5 — nhãn các ô chính trên modal (Biệt danh, Chuỗi hiển thị / trạng thái). */
+  const mainFormLabels = useMemo(
+    () => resolveMainFormLabels(fieldsTemplate, { isMapScope, isForceScope }),
+    [fieldsTemplate, isMapScope, isForceScope]
+  );
+  const extraFieldResolvers = useMemo(() => {
+    const map = {};
+    extraFields.forEach((f) => {
+      const fid = safeString(f?.id).trim();
+      if (!fid) return;
+      map[fid] = resolveFieldValueSource({
+        fieldId: fid,
+        tabConfig,
+        parentTabId,
+        parentLabel: parentLabel || '',
+        activeNovelData,
+      });
+    });
+    return map;
+  }, [extraFields, tabConfig, parentTabId, parentLabel, activeNovelData]);
   const mapEntityHints = useMemo(
     () => collectMapEntityHints(activeNovelData, isMapScope ? tabConfig : null, isMapScope ? parentTabId : ''),
     [activeNovelData, tabConfig, isMapScope, parentTabId]
@@ -1518,9 +1552,19 @@ export const ModalEntity = ({
     [mapEntityHints.presetFlavor]
   );
   const mapNameSuggestions = mapEntityHints.mapNames;
-  const mapParentTier1Suggestions = mapEntityHints.parentTier1Options || [];
-  const mapParentTier2Suggestions = mapEntityHints.parentTier2Options || [];
-  const mapParentTier3Suggestions = mapEntityHints.parentTier3Options || [];
+  /** Gộp tên thẻ Bản đồ vào gợi ý tầng Trực thuộc để không tách khỏi dữ liệu đã có. */
+  const mapParentTier1Datalist = useMemo(
+    () => dedupeCaseInsensitive([...(mapEntityHints.parentTier1Options || []), ...mapNameSuggestions]),
+    [mapEntityHints.parentTier1Options, mapNameSuggestions]
+  );
+  const mapParentTier2Datalist = useMemo(
+    () => dedupeCaseInsensitive([...(mapEntityHints.parentTier2Options || []), ...mapNameSuggestions]),
+    [mapEntityHints.parentTier2Options, mapNameSuggestions]
+  );
+  const mapParentTier3Datalist = useMemo(
+    () => dedupeCaseInsensitive([...(mapEntityHints.parentTier3Options || []), ...mapNameSuggestions]),
+    [mapEntityHints.parentTier3Options, mapNameSuggestions]
+  );
   const mapTypeSuggestions = mapEntityHints.mapTypes;
   const forceSystemSuggestions = mapEntityHints.forceSystems;
   const statusFieldPlaceholder = isMapScope
@@ -1645,12 +1689,12 @@ export const ModalEntity = ({
       return { ...(prev || {}), ...nextPatch };
     });
   const quickUseSelect = Boolean(tabConfig?.entityQuickEntry?.useSelectUi);
-  const entityModalQuickSurface = 'rounded-xl border border-amber-900/45 bg-amber-950/10 p-4 space-y-4';
+  const entityModalQuickSurface = 'rounded-lg border border-amber-900/45 bg-amber-950/10 p-3 space-y-2.5';
   const entityModalQuickLabel = 'block text-[10px] font-bold text-amber-200 uppercase tracking-widest';
   const entityModalQuickInput =
-    'w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none';
-  const entityModalHintCallout = 'rounded-xl border border-slate-800/70 bg-slate-950/35 px-3 py-2';
-  const entityModalHintTitle = 'text-[10px] font-bold uppercase tracking-widest text-amber-300/95 mb-1';
+    'w-full bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none';
+  const entityModalHintCallout = 'rounded-lg border border-slate-800/70 bg-slate-950/35 px-2.5 py-1.5';
+  const entityModalHintTitle = 'text-[10px] font-bold uppercase tracking-widest text-amber-300/95 mb-0.5';
 
   const renderGenericQuickValueEditors = (slot, idx) => {
     const fid = slot.fieldId;
@@ -1663,20 +1707,20 @@ export const ModalEntity = ({
           aria-label={slot.label}
           value={val}
           onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-          rows={3}
-          className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none resize-y min-h-[4.5rem]"
+          rows={2}
+          className="w-full bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none resize-y min-h-[3.25rem]"
           placeholder="Ghi mô tả ngắn…"
         />
       );
     }
     if (quickUseSelect) {
       return (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <select
             aria-label={`${slot.label} — chọn nhanh`}
             value={slot.suggestions.includes(val) ? val : ''}
             onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-            className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
+            className="w-full bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
           >
             <option value="">— Chọn từ list (hoặc gõ ở ô dưới) —</option>
             {slot.suggestions.map((item) => (
@@ -1690,7 +1734,7 @@ export const ModalEntity = ({
             type="text"
             value={val}
             onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-            className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
+            className="w-full bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
             placeholder="Gõ tay / giá trị ngoài list (cùng trường dữ liệu)"
           />
         </div>
@@ -1703,7 +1747,7 @@ export const ModalEntity = ({
           list={slot.suggestions.length ? listDomId : undefined}
           value={val}
           onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-          className="w-full bg-slate-950/80 border border-amber-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
+          className="w-full bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
           placeholder={`Gõ hoặc chọn gợi ý — ${fid}`}
         />
         {slot.suggestions.length > 0 && (
@@ -1776,24 +1820,20 @@ export const ModalEntity = ({
     setMapQuickParentPath(nextPath);
     patchDynamicData({ f_vi_tri: nextPath });
   };
-  const handleMapParentTier3Change = (value) => {
-    setMapQuickParentTier3(value);
-    const nextPath = composeParentPathFromTiers(mapQuickParentTier1, mapQuickParentTier2, value);
-    setMapQuickParentPath(nextPath);
-    patchDynamicData({ f_vi_tri: nextPath });
-  };
   useEffect(() => {
     if (!isOpen || !showMapQuickSection) return;
     const tier1 = safeString(mapQuickParentTier1).trim();
     const tier2 = mapParentTierRequiredCount >= 2 ? safeString(mapQuickParentTier2).trim() : '';
     const tier3 = mapParentTierRequiredCount >= 3 ? safeString(mapQuickParentTier3).trim() : '';
     const nextPath = composeParentPathFromTiers(tier1, tier2, tier3);
+    /* eslint-disable react-hooks/set-state-in-effect -- đồng bộ giá trị tầng với yêu cầu của quy mô mới */
     if (mapParentTierRequiredCount < 3 && mapQuickParentTier3) setMapQuickParentTier3('');
     if (mapParentTierRequiredCount < 2 && mapQuickParentTier2) setMapQuickParentTier2('');
     if (mapQuickParentPath !== nextPath) {
       setMapQuickParentPath(nextPath);
       patchDynamicData({ f_vi_tri: nextPath });
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [
     isOpen,
     showMapQuickSection,
@@ -2012,9 +2052,9 @@ export const ModalEntity = ({
       aria-modal="true"
       aria-label={initialData ? `Tu bổ ${terms.entity}` : `Khởi tạo ${terms.entity}`}
     >
-      <div data-testid="modal-entity-root" ref={trapRef} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-2xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col max-h-[85vh] min-h-0">
-        <div className="px-6 pt-6 pb-4 flex-shrink-0 border-b border-slate-800 flex justify-between items-center gap-3 bg-slate-900">
-          <h2 className="text-2xl font-heading font-bold text-slate-100">{initialData ? `Tu Bổ ${terms.entity}` : `Khởi Tạo ${terms.entity}`}</h2>
+      <div data-testid="modal-entity-root" ref={trapRef} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-2xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col max-h-[90vh] min-h-0">
+        <div className="px-4 pt-4 pb-3 flex-shrink-0 border-b border-slate-800 flex justify-between items-center gap-3 bg-slate-900">
+          <h2 className="text-xl md:text-2xl font-heading font-bold text-slate-100 leading-tight">{initialData ? `Tu Bổ ${terms.entity}` : `Khởi Tạo ${terms.entity}`}</h2>
           <div className="flex items-center gap-2 flex-shrink-0">
             {onOpenAutoSyncGuide && (
               <button
@@ -2031,15 +2071,15 @@ export const ModalEntity = ({
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 custom-scrollbar space-y-5 bg-slate-900">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 custom-scrollbar space-y-3 bg-slate-900">
           <div>
-            <label className="block text-xs font-bold text-amber-500 mb-1 uppercase tracking-widest">Danh xưng / Tên gọi *</label>
+            <label className="block text-[11px] font-bold text-amber-500 mb-0.5 uppercase tracking-widest">Danh xưng / Tên gọi *</label>
             <input
               autoFocus
               aria-label="Danh xưng / Tên gọi"
               value={safeString(formData.name)}
               onChange={(e) => patchFormData({ name: e.target.value })}
-              className="w-full bg-slate-950 border border-amber-600/50 rounded-xl p-3 text-amber-100 font-serif focus:border-amber-500 outline-none shadow-inner"
+              className="w-full bg-slate-950 border border-amber-600/50 rounded-lg py-2 px-3 text-sm text-amber-100 font-serif focus:border-amber-500 outline-none shadow-inner"
               placeholder="Bắt buộc nhập..."
             />
           </div>
@@ -2047,7 +2087,7 @@ export const ModalEntity = ({
           <div className="h-px bg-slate-800/80" />
 
           <div>
-            <label className="block text-[10px] font-bold text-emerald-500 mb-2 uppercase tracking-widest flex items-center gap-2">
+            <label className="block text-[10px] font-bold text-emerald-500 mb-1 uppercase tracking-widest flex items-center gap-2">
               <Upload size={12}/> {terms.image}
             </label>
             <div className="flex gap-4 items-center">
@@ -2084,7 +2124,7 @@ export const ModalEntity = ({
                     Chọn File
                   </button>
                 </div>
-                <p className="mt-1 text-[11px] text-slate-500 font-serif">Mẹo: có thể kéo thả ảnh vào ô vuông bên trái.</p>
+                <p className="mt-0.5 text-[10px] text-slate-500 font-serif leading-snug">Kéo thả ảnh vào ô vuông.</p>
               </div>
             </div>
           </div>
@@ -2094,29 +2134,27 @@ export const ModalEntity = ({
               <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
                 Gợi ý nhanh ({safeString(tabConfig?.label).trim() || 'tab con'})
               </p>
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-2 md:grid-cols-3 md:gap-3">
                 {genericQuickResolved.slots.map((slot, idx) => {
                   const fid = slot.fieldId;
                   return (
-                    <div key={`${fid}-${idx}`} className="space-y-2 min-w-0">
+                    <div key={`${fid}-${idx}`} className="space-y-1 min-w-0">
                       <label className={entityModalQuickLabel}>{slot.label}</label>
                       {renderGenericQuickValueEditors(slot, idx)}
                     </div>
                   );
                 })}
               </div>
-              <p className="text-[11px] text-slate-400 font-serif">
-                Chuỗi auto sẽ lưu:{' '}
-                <code className="text-amber-200">
+              <p className="text-[10px] text-slate-500 font-serif leading-snug">
+                Auto:{' '}
+                <code className="text-amber-200/90">
                   {genericQuickResolved.slots
                     .map((s) => safeString(dynamicData[s.fieldId]).trim())
                     .filter(Boolean)
-                    .join(' · ') || 'Chưa đủ dữ liệu'}
+                    .join(' · ') || '—'}
                 </code>
-              </p>
-              <p className="text-[11px] text-slate-500 font-serif">
-                Đổi 3 ô, nhãn hoặc menu select: Trận pháp → Quản lý tab.
-                {quickUseSelect ? ' Đang bật chế độ select.' : ''} Thêm trường &amp; chỉnh list gợi ý ở khối «Trường hồ sơ &amp; danh sách gợi ý» phía dưới.
+                <span className="text-slate-600"> · </span>
+                <span className="text-slate-500">3 ô: Quản lý tab · mẫu trường: khối dưới</span>
               </p>
             </div>
           )}
@@ -2151,7 +2189,7 @@ export const ModalEntity = ({
                 </div>
               </div>
               {mapRealmListPanelOpen && (
-                <div className="rounded-xl border border-cyan-900/45 bg-slate-950/55 p-3 space-y-2">
+                <div className="rounded-lg border border-cyan-900/45 bg-slate-950/55 p-2 space-y-1.5">
                   <p className="text-[11px] text-slate-400 font-serif leading-relaxed">
                     Chọn «Giới diện» (tab con) để chỉnh list «Quy mô» — lưu xong cho tab này, chọn tab khác để nhập tiếp.
                   </p>
@@ -2190,8 +2228,8 @@ export const ModalEntity = ({
                   <textarea
                     value={mapRealmListDraft}
                     onChange={(e) => setMapRealmListDraft(e.target.value)}
-                    rows={5}
-                    className="w-full bg-slate-950/90 border border-cyan-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-cyan-500/70 outline-none resize-y min-h-[5rem]"
+                    rows={4}
+                    className="w-full bg-slate-950/90 border border-cyan-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-cyan-500/70 outline-none resize-y min-h-[4rem]"
                     placeholder={'Hạ giới\nTiên giới\n…'}
                   />
                   <div className="flex flex-wrap justify-end gap-2">
@@ -2213,15 +2251,15 @@ export const ModalEntity = ({
                 </div>
               )}
               {mapHierarchyListPanelOpen && (
-                <div className="rounded-xl border border-violet-900/45 bg-slate-950/55 p-3 space-y-2">
+                <div className="rounded-lg border border-violet-900/45 bg-slate-950/55 p-2 space-y-1.5">
                   <p className="text-[11px] text-slate-400 font-serif leading-relaxed">
                     List «Đặc Tính Địa Vực» dùng chung cho tất cả tab con trong nhánh Bản đồ hiện tại.
                   </p>
                   <textarea
                     value={mapHierarchyListDraft}
                     onChange={(e) => setMapHierarchyListDraft(e.target.value)}
-                    rows={5}
-                    className="w-full bg-slate-950/90 border border-violet-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-violet-500/70 outline-none resize-y min-h-[5rem]"
+                    rows={4}
+                    className="w-full bg-slate-950/90 border border-violet-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-violet-500/70 outline-none resize-y min-h-[4rem]"
                     placeholder={'Đại lục\nTinh cầu\nTây Châu\n…'}
                   />
                   <p className="text-[11px] text-slate-500 font-serif">
@@ -2245,25 +2283,23 @@ export const ModalEntity = ({
                   </div>
                 </div>
               )}
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <label className={entityModalQuickLabel}>Giới Diện</label>
+              <div className="grid gap-2 md:grid-cols-3 md:gap-3">
+                <div className="space-y-1">
+                  <label className={entityModalQuickLabel}>{mapQuickLabels.gioiDien?.label}</label>
                   <input
-                    aria-label="Giới Diện bản đồ"
+                    aria-label={mapQuickLabels.gioiDien?.ariaLabel}
                     list="ttc-map-type-options"
                     value={mapQuickType}
                     onChange={(e) => handleMapTypeChange(e.target.value)}
                     className={entityModalQuickInput}
                     placeholder={mapFieldPlaceholders.mapType}
+                    title="Mặc định = tên tab con; đổi nếu gắn Quy mô cho giới khác"
                   />
-                  <p className="text-[10px] text-slate-500 font-serif leading-snug">
-                    Mặc định = tên tab con đang mở; đổi nếu cần gắn «Quy mô» cho giới khác.
-                  </p>
                 </div>
-                <div className="space-y-2">
-                  <label className={entityModalQuickLabel}>Quy Mô Địa Vực</label>
+                <div className="space-y-1">
+                  <label className={entityModalQuickLabel}>{mapQuickLabels.quyMo?.label}</label>
                   <input
-                    aria-label="Quy Mô Địa Vực bản đồ"
+                    aria-label={mapQuickLabels.quyMo?.ariaLabel}
                     list="ttc-map-realm-options"
                     value={mapQuickRealmSystem}
                     onChange={(e) => handleMapRealmSystemChange(e.target.value)}
@@ -2271,23 +2307,40 @@ export const ModalEntity = ({
                     placeholder={mapRealmSystemOptions[0] || 'Ví dụ: Hạ giới'}
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className={entityModalQuickLabel}>Đặc Tính Địa Vực</label>
+                <div className="space-y-1">
+                  <label className={entityModalQuickLabel}>{mapQuickLabels.dacTinh?.label}</label>
                   <input
-                    aria-label="Đặc Tính Địa Vực bản đồ"
+                    aria-label={mapQuickLabels.dacTinh?.ariaLabel}
                     list="ttc-force-system-options"
                     value={mapQuickSystem}
                     onChange={(e) => handleMapSystemChange(e.target.value)}
                     className={entityModalQuickInput}
                     placeholder="Không bắt buộc (có thể để trống)"
+                    title="Tùy chọn; nếu có sẽ hiện cạnh tên thẻ"
                   />
-                  <p className="text-[10px] text-slate-500 font-serif leading-snug">
-                    Nhãn tùy chọn; có thể để trống. Nếu có, sẽ hiển thị cạnh tên thẻ.
-                  </p>
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className={entityModalQuickLabel}>Trực thuộc</label>
+              <div className="rounded-lg border border-amber-900/40 bg-slate-950/45 p-2.5 space-y-1.5">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <label className={`${entityModalQuickLabel} mb-0`}>{mapQuickLabels.trucThuoc?.label}</label>
+                  {safeString(mapQuickRealmSystem).trim() ? (
+                    <span className="text-[10px] text-amber-200/85 font-serif">
+                      «{mapQuickLabels.quyMo?.label}»: <strong>{safeString(mapQuickRealmSystem).trim()}</strong>
+                      {safeString(mapQuickType).trim() ? (
+                        <>
+                          {' '}
+                          · «{mapQuickLabels.gioiDien?.label}»: <strong>{safeString(mapQuickType).trim()}</strong>
+                        </>
+                      ) : null}
+                    </span>
+                  ) : null}
+                </div>
+                <p
+                  className="text-[9px] text-slate-500 font-serif leading-snug"
+                  title="Tên thẻ Bản đồ đã có và tầng đã dùng trong Trực thuộc trước đó"
+                >
+                  Nguồn gợi ý: thẻ đã tạo + tầng cũ (cùng tên thẻ).
+                </p>
                 {mapParentTierRequiredCount === 0 ? (
                   <p className="text-[11px] text-slate-400 font-serif">
                     Quy mô hiện tại là tầng cao nhất, không cần chọn «Trực thuộc».
@@ -2297,7 +2350,7 @@ export const ModalEntity = ({
                     <div className={`grid gap-2 ${mapParentTierRequiredCount === 1 ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}>
                       {mapParentTierRequiredCount >= 1 && (
                         <input
-                          aria-label="Trực thuộc tầng 1 bản đồ"
+                          aria-label={`${mapQuickLabels.trucThuoc?.label} tầng 1`}
                           list="ttc-map-parent-tier1-options"
                           autoComplete="off"
                           value={mapQuickParentTier1}
@@ -2308,7 +2361,7 @@ export const ModalEntity = ({
                       )}
                       {mapParentTierRequiredCount >= 2 && (
                         <input
-                          aria-label="Trực thuộc tầng 2 bản đồ"
+                          aria-label={`${mapQuickLabels.trucThuoc?.label} tầng 2`}
                           list="ttc-map-parent-tier2-options"
                           autoComplete="off"
                           value={mapQuickParentTier2}
@@ -2318,18 +2371,27 @@ export const ModalEntity = ({
                         />
                       )}
                     </div>
-                    <p className="text-[10px] text-slate-500 font-serif leading-snug">
-                      Chuỗi auto ghép: <code className="text-slate-300">{mapQuickParentPath || 'Chưa chọn'}</code>
+                    <p className="text-[10px] text-slate-400 font-serif leading-snug">
+                      Chuỗi lưu vào <code className="text-amber-200/90">f_vi_tri</code>:{' '}
+                      <code className="text-slate-200">{mapQuickParentPath || 'Chưa chọn'}</code>
                     </p>
-                    <input
-                      aria-label="Trực thuộc bản đồ"
-                      list="ttc-map-name-options"
-                      autoComplete="off"
-                      value={mapQuickParentPath}
-                      onChange={(e) => handleMapParentPathChange(e.target.value)}
-                      className={entityModalQuickInput}
-                      placeholder="Có thể nhập/sửa tay chuỗi trực thuộc"
-                    />
+                    <details className="rounded-lg border border-slate-800/90 bg-slate-950/55 px-2 py-1.5">
+                      <summary className="cursor-pointer text-[11px] font-semibold text-slate-400 font-serif hover:text-slate-200">
+                        Nâng cao: sửa chuỗi «Trực thuộc» đầy đủ (cùng dữ liệu, khác cách nhập)
+                      </summary>
+                      <p className="mt-2 text-[10px] text-slate-500 font-serif mb-1">
+                        Dùng khi cần định dạng đặc biệt; mặc định nên chọn từ các ô phía trên.
+                      </p>
+                      <input
+                        aria-label="Trực thuộc bản đồ — sửa tay đầy đủ"
+                        list="ttc-map-name-options"
+                        autoComplete="off"
+                        value={mapQuickParentPath}
+                        onChange={(e) => handleMapParentPathChange(e.target.value)}
+                        className={entityModalQuickInput}
+                        placeholder="Có thể nhập/sửa tay (gợi ý = tên thẻ Bản đồ)"
+                      />
+                    </details>
                   </>
                 )}
                 {mapParentTierRequiredCount > 0 && !mapQuickParentPath.trim() && /(dai luc|chau|thanh|tran|de quoc|vuc|khu|tinh cau)/.test(normalizeAsciiText(mapQuickRealmSystem)) && (
@@ -2343,9 +2405,9 @@ export const ModalEntity = ({
                   </p>
                 )}
               </div>
-              <p className="text-[11px] text-slate-400 font-serif">
-                Chuỗi auto sẽ lưu:{' '}
-                <code className="text-amber-200">{composeMapStatusLine(mapQuickType, mapQuickSystem) || 'Chưa đủ dữ liệu'}</code>
+              <p className="text-[10px] text-slate-400 font-serif leading-snug">
+                Auto lưu:{' '}
+                <code className="text-amber-200">{composeMapStatusLine(mapQuickType, mapQuickSystem) || '—'}</code>
               </p>
             </div>
           )}
@@ -2355,11 +2417,11 @@ export const ModalEntity = ({
               <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
                 Gợi ý nhanh ({safeString(tabConfig?.label).trim() || 'Thế lực'})
               </p>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <label className={entityModalQuickLabel}>Loại hình</label>
+              <div className="grid gap-2 md:grid-cols-3 md:gap-3">
+                <div className="space-y-1">
+                  <label className={entityModalQuickLabel}>{forceQuickLabels.loaiHinh?.label}</label>
                   <input
-                    aria-label="Loại hình thế lực"
+                    aria-label={forceQuickLabels.loaiHinh?.ariaLabel}
                     list="ttc-force-type-options"
                     value={forceQuickType}
                     onChange={(e) => handleForceTypeChange(e.target.value)}
@@ -2367,10 +2429,10 @@ export const ModalEntity = ({
                     placeholder={forceTypeOptions[0] || 'Ví dụ: Tông Môn'}
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className={entityModalQuickLabel}>Hệ cấp bậc</label>
+                <div className="space-y-1">
+                  <label className={entityModalQuickLabel}>{forceQuickLabels.heCapBac?.label}</label>
                   <select
-                    aria-label="Hệ cấp bậc thế lực"
+                    aria-label={forceQuickLabels.heCapBac?.ariaLabel}
                     value={forceRealmSelectValue}
                     onChange={(e) => handleForceRealmSystemChange(e.target.value)}
                     className={`${entityModalQuickInput} cursor-pointer`}
@@ -2383,10 +2445,10 @@ export const ModalEntity = ({
                     ))}
                   </select>
                 </div>
-                <div className="space-y-2">
-                  <label className={entityModalQuickLabel}>Cấp bậc</label>
+                <div className="space-y-1">
+                  <label className={entityModalQuickLabel}>{forceQuickLabels.capBac?.label}</label>
                   <input
-                    aria-label="Cấp bậc thế lực"
+                    aria-label={forceQuickLabels.capBac?.ariaLabel}
                     list="ttc-force-rank-options"
                     value={forceQuickRank}
                     onChange={(e) => handleForceRankChange(e.target.value)}
@@ -2398,10 +2460,10 @@ export const ModalEntity = ({
                   />
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className={entityModalQuickLabel}>Địa chỉ</label>
+              <div className="space-y-1">
+                <label className={entityModalQuickLabel}>{forceQuickLabels.diaChi?.label}</label>
                 <input
-                  aria-label="Địa chỉ thế lực"
+                  aria-label={forceQuickLabels.diaChi?.ariaLabel}
                   list="ttc-force-location-options"
                   value={forceQuickLocation}
                   onChange={(e) => handleForceLocationChange(e.target.value)}
@@ -2415,63 +2477,41 @@ export const ModalEntity = ({
                   }
                 />
                 {matchedMapSubTab && mapTabNamesForForceLocation.length > 0 && (
-                  <p className="text-[11px] text-slate-400 font-serif leading-relaxed">
-                    <span className="text-amber-200/90 font-semibold">Thẻ trong tab «{matchedMapSubTab.label}»:</span>{' '}
+                  <p className="text-[10px] text-slate-400 font-serif leading-snug line-clamp-2" title={mapTabNamesForForceLocation.join(' · ')}>
+                    <span className="text-amber-200/90 font-semibold">«{matchedMapSubTab.label}»:</span>{' '}
                     {mapTabNamesForForceLocation.join(' · ')}
                   </p>
                 )}
                 {matchedMapSubTab && mapTabNamesForForceLocation.length === 0 && (
-                  <p className="text-[11px] text-slate-500 font-serif">Chưa có thẻ nào trong tab Bản đồ này (ngoài thẻ Danh sách).</p>
+                  <p className="text-[10px] text-slate-500 font-serif">Chưa có thẻ trong tab Bản đồ này.</p>
                 )}
               </div>
-              <p className="text-[11px] text-slate-400 font-serif">
-                Chuỗi auto sẽ lưu:{' '}
+              <p className="text-[10px] text-slate-400 font-serif leading-snug">
+                Auto:{' '}
                 <code className="text-amber-200">
                   {[forceQuickType, forceQuickRealmSystem, forceQuickRank, forceQuickLocation].filter(Boolean).join(' · ') ||
-                    'Chưa đủ dữ liệu'}
+                    '—'}
                 </code>
               </p>
             </div>
           )}
 
           {!hideLegacyStatusInput && (
-            <div className="space-y-2">
+            <div className="space-y-1">
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-snug">
-                {isMapScope || isForceScope ? 'Chuỗi hiển thị / dữ liệu auto' : safeString(fStatusLabel)}
+                {mainFormLabels.statusLine.label}
               </label>
               <input
-                aria-label={isMapScope || isForceScope ? 'Chuỗi hiển thị / dữ liệu auto' : safeString(fStatusLabel)}
+                aria-label={mainFormLabels.statusLine.label}
                 value={safeString(dynamicData.f_status)}
                 onChange={(e) => handleStatusFieldChange(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-3 text-sm text-slate-200 font-serif focus:border-amber-600/60 outline-none"
+                className="w-full bg-slate-950/80 border border-slate-700 rounded-lg py-2 px-2.5 text-sm text-slate-200 font-serif focus:border-amber-600/60 outline-none"
                 placeholder={resolvedStatusFieldPlaceholder}
+                title={resolvedStatusFieldHint}
               />
-              <p className="text-[11px] text-slate-500 font-serif">{resolvedStatusFieldHint}</p>
-            </div>
-          )}
-
-          {outlineMeta && (
-            <div className="pt-2 border-t border-slate-800/60 space-y-2">
-              <label className="block text-[10px] font-bold text-emerald-400/95 uppercase tracking-widest leading-snug">
-                {outlineMeta.label}
-              </label>
-              <input
-                aria-label={outlineMeta.label}
-                type="text"
-                list={`${entityOutlineListPrefix}-outline-dl`}
-                value={safeString(dynamicData[outlineMeta.oid])}
-                onChange={(e) => patchDynamicData({ [outlineMeta.oid]: e.target.value })}
-                className="w-full bg-slate-950/80 border border-emerald-900/40 rounded-xl p-3 text-sm text-slate-100 font-serif focus:border-emerald-500/70 outline-none"
-                placeholder="Ví dụ: I  hoặc  1  hoặc  1.1 — cùng mục xếp theo tên thẻ"
-              />
-              <datalist id={`${entityOutlineListPrefix}-outline-dl`}>
-                {outlineMeta.sug.map((item) => (
-                  <option key={item} value={item} />
-                ))}
-              </datalist>
-              <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
-                Quy ước chung: La Mã I, II là mục lớn; 1, 2 là mục con cấp 1; 1.1, 2.3 là cấp sâu hơn; cùng mục thì xếp theo tên thẻ. List gợi ý từng tab chỉnh ở khối «Trường hồ sơ &amp; danh sách gợi ý» bên dưới.
-              </p>
+              {!isMapScope && !isForceScope && (
+                <p className="text-[10px] text-slate-500 font-serif leading-snug">{resolvedStatusFieldHint}</p>
+              )}
             </div>
           )}
 
@@ -2496,17 +2536,17 @@ export const ModalEntity = ({
             ))}
           </datalist>
           <datalist id="ttc-map-parent-tier1-options">
-            {mapParentTier1Suggestions.map((item) => (
+            {mapParentTier1Datalist.map((item) => (
               <option key={`tier1-${item}`} value={item} />
             ))}
           </datalist>
           <datalist id="ttc-map-parent-tier2-options">
-            {mapParentTier2Suggestions.map((item) => (
+            {mapParentTier2Datalist.map((item) => (
               <option key={`tier2-${item}`} value={item} />
             ))}
           </datalist>
           <datalist id="ttc-map-parent-tier3-options">
-            {mapParentTier3Suggestions.map((item) => (
+            {mapParentTier3Datalist.map((item) => (
               <option key={`tier3-${item}`} value={item} />
             ))}
           </datalist>
@@ -2525,81 +2565,150 @@ export const ModalEntity = ({
               <option key={item} value={item} />
             ))}
           </datalist>
-          <div className="pt-2 border-t border-slate-800/80 space-y-2">
-            <label className="block text-[10px] font-bold text-indigo-400 uppercase tracking-widest leading-snug">{WIKI_ALIAS_FIELD.label}</label>
+          <div className="pt-1 border-t border-slate-800/80 space-y-1.5">
+            <label className="block text-[10px] font-bold text-indigo-400 uppercase tracking-widest leading-snug">{mainFormLabels.alias.label}</label>
             <textarea
+              aria-label={mainFormLabels.alias.ariaLabel}
               value={safeString(dynamicData.f_alias)}
               onChange={(e) => patchDynamicData({ f_alias: e.target.value })}
-              rows={3}
-              className="w-full bg-slate-950/80 border border-indigo-800/50 rounded-xl p-3 text-sm text-slate-200 font-serif focus:border-indigo-500 outline-none resize-y min-h-[4.5rem]"
+              rows={2}
+              className="w-full bg-slate-950/80 border border-indigo-800/50 rounded-lg py-2 px-2.5 text-sm text-slate-200 font-serif focus:border-indigo-500 outline-none resize-y min-h-[3.25rem]"
               placeholder="Nhiều tên: dùng dấu phẩy, / hoặc | — ví dụ: Kim Đan, Hệ Thống / Boss"
+              title="Không dùng [[...]] trong ô biệt danh"
             />
-            <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
-              Mỗi tên tách ra sẽ cùng mở thẻ này khi bấm liên kết trong ghi chép. Gõ tên thường; <strong className="text-slate-400">không dùng [[...]]</strong> trong ô biệt danh.
+            <p className="text-[10px] text-slate-500 font-serif leading-snug">
+              Tách bằng phẩy / / | — không dùng <strong className="text-slate-400">[[...]]</strong> ở đây.
             </p>
           </div>
 
           {parentTabId !== 'nhan-vat' && (
-            <div className="rounded-xl border border-cyan-800/40 bg-cyan-950/15 px-3 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-300 mb-1">Token nhãn cuối dòng (auto mốc Nhân Vật)</p>
-              <p className="text-[11px] text-slate-300 font-serif leading-relaxed">
-                <strong className="text-cyan-200">Chuẩn chung:</strong>{' '}
-                <code className="text-cyan-300">{OWNER_HINT_INPUT_FORMAT_TEXT}</code>
-              </p>
-              <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
-                {OWNER_HINT_PREFIX_GUIDE_TEXT}
-              </p>
-              <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
-                {OWNER_TOKEN_GUIDE_TEXT}
-              </p>
-            </div>
+            <details className={`${entityModalHintCallout} group`}>
+              <summary className="cursor-pointer list-none text-[10px] font-bold uppercase tracking-widest text-cyan-300 [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
+                <span>Token nhãn (mốc Nhân Vật)</span>
+                <span className="text-[9px] font-normal text-slate-500 group-open:hidden">Mở</span>
+              </summary>
+              <div className="mt-1.5 space-y-1 border-t border-cyan-900/25 pt-1.5">
+                <p className="text-[10px] text-slate-300 font-serif leading-relaxed">
+                  <strong className="text-cyan-200">Chuẩn:</strong>{' '}
+                  <code className="text-cyan-300">{OWNER_HINT_INPUT_FORMAT_TEXT}</code>
+                </p>
+                <p className="text-[10px] text-slate-400 font-serif leading-relaxed">{OWNER_HINT_PREFIX_GUIDE_TEXT}</p>
+                <p className="text-[10px] text-slate-400 font-serif leading-relaxed">{OWNER_TOKEN_GUIDE_TEXT}</p>
+              </div>
+            </details>
           )}
 
           {showMapQuickSection && !initialData && (
-            <div className={entityModalHintCallout}>
-              <p className={entityModalHintTitle}>Ghi nhanh cho thẻ Bản Đồ</p>
-              <p className="text-[11px] text-slate-300 font-serif leading-relaxed">
-                Thẻ bản đồ chỉ ghi nơi chốn: tên địa bàn + <strong className="text-amber-200/95">{safeString(fStatusLabel)}</strong> theo mẫu{' '}
-                <code className="text-amber-200">Giới Diện · Đặc Tính Địa Vực</code>.
-              </p>
-              <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
-                Gợi ý điền nhanh: <code className="text-amber-200">{statusFieldPlaceholder}</code>
-              </p>
-              <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
-                Ví dụ: <code className="text-amber-200">{mapFieldPlaceholders.exampleA}</code>,{' '}
-                <code className="text-amber-200">{mapFieldPlaceholders.exampleB}</code>.
-              </p>
-              <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
-                {statusFieldHint} Các nhãn như <code className="text-amber-200">Thiên Tôn cấp thế lực</code> không ghi ở đây; chúng thuộc thẻ{' '}
-                <strong className="text-amber-200/95">Thế lực</strong>, ví dụ{' '}
-                <code className="text-amber-200">Bách Thú Cung = Tông môn · Thiên Tôn cấp thế lực · Hoang Thú giới</code>.
-              </p>
-            </div>
+            <details className={`${entityModalHintCallout} group`}>
+              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
+                <span className={entityModalHintTitle}>Ghi nhanh thẻ Bản Đồ</span>
+                <span className="text-[9px] text-slate-500 group-open:hidden">Mở</span>
+              </summary>
+              <div className="mt-1.5 space-y-1 border-t border-slate-800/80 pt-1.5 text-[10px] text-slate-400 font-serif leading-relaxed">
+                <p>
+                  Mẫu <code className="text-amber-200">{mapQuickLabels.gioiDien?.label} · {mapQuickLabels.dacTinh?.label}</code> — ô{' '}
+                  <strong className="text-amber-200/90">{safeString(fStatusLabel)}</strong>.
+                </p>
+                <p>
+                  Gợi ý: <code className="text-amber-200">{statusFieldPlaceholder}</code> · Vd:{' '}
+                  <code className="text-amber-200">{mapFieldPlaceholders.exampleA}</code>,{' '}
+                  <code className="text-amber-200">{mapFieldPlaceholders.exampleB}</code>
+                </p>
+                <p>
+                  {statusFieldHint} Thế lực (vd. Thiên Tôn cấp) ghi ở thẻ Thế lực, không ở đây.
+                </p>
+              </div>
+            </details>
           )}
 
           {showForceQuickSection && (
-            <div className={entityModalHintCallout}>
-              <p className={entityModalHintTitle}>Chuẩn AUTO thế lực ↔ bản đồ</p>
-              <p className="text-[11px] text-slate-300 font-serif leading-relaxed">
-                Khởi tạo nhanh theo 4 ô: <code className="text-amber-200">Loại hình</code> -{' '}
-                <code className="text-amber-200">Hệ cấp bậc</code> - <code className="text-amber-200">Cấp bậc</code> -{' '}
-                <code className="text-amber-200">Địa chỉ</code>.
-              </p>
-              <p className="text-[11px] text-slate-400 font-serif leading-relaxed mt-1">
-                AUTO đọc dữ liệu tách trường: <code className="text-amber-200">f_loai_to_chuc</code> (loại hình),{' '}
-                <code className="text-amber-200">f_he_cap_the_luc</code> (hệ cấp bậc),{' '}
-                <code className="text-amber-200">f_status</code> (cấp bậc), <code className="text-amber-200">f_dia_ban</code> (địa chỉ).
-              </p>
-            </div>
+            <details className={`${entityModalHintCallout} group`}>
+              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
+                <span className={entityModalHintTitle}>AUTO thế lực ↔ bản đồ</span>
+                <span className="text-[9px] text-slate-500 group-open:hidden">Mở</span>
+              </summary>
+              <div className="mt-1.5 space-y-1 border-t border-slate-800/80 pt-1.5 text-[10px] text-slate-400 font-serif leading-relaxed">
+                <p>
+                  4 ô:{' '}
+                  <code className="text-amber-200">{forceQuickLabels.loaiHinh?.label}</code> ·{' '}
+                  <code className="text-amber-200">{forceQuickLabels.heCapBac?.label}</code> ·{' '}
+                  <code className="text-amber-200">{forceQuickLabels.capBac?.label}</code> ·{' '}
+                  <code className="text-amber-200">{forceQuickLabels.diaChi?.label}</code>
+                </p>
+                <p>
+                  Trường: <code className="text-amber-200">f_loai_to_chuc</code>, <code className="text-amber-200">f_he_cap_the_luc</code>,{' '}
+                  <code className="text-amber-200">f_status</code>, <code className="text-amber-200">f_dia_ban</code>
+                </p>
+              </div>
+            </details>
           )}
 
           {isCultivationScope && (
-            <div className={entityModalHintCallout}>
-              <p className={entityModalHintTitle}>Chuẩn AUTO hệ thống ↔ cảnh giới</p>
-              <p className="text-[11px] text-slate-300 font-serif leading-relaxed">
-                Ở tab Cảnh Giới, nhập <code className="text-amber-200">f_status</code> theo mẫu{' '}
-                <code className="text-amber-200">De Nhat - Linh Canh Bat Bo</code> để app tự ghép sang Hệ Thống Tu Luyện.
+            <details className={`${entityModalHintCallout} group`}>
+              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
+                <span className={entityModalHintTitle}>AUTO hệ thống ↔ cảnh giới</span>
+                <span className="text-[9px] text-slate-500 group-open:hidden">Mở</span>
+              </summary>
+              <p className="mt-1.5 border-t border-slate-800/80 pt-1.5 text-[10px] text-slate-400 font-serif leading-relaxed">
+                Cảnh Giới: <code className="text-amber-200">f_status</code> kiểu{' '}
+                <code className="text-amber-200">De Nhat - Linh Canh Bat Bo</code> để ghép sang Hệ Thống Tu Luyện.
               </p>
+            </details>
+          )}
+
+          {extraFields.length > 0 && (
+            <div className="rounded-lg border border-slate-800/80 bg-slate-950/45 p-2.5 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-300">
+                    Trường bổ sung
+                  </div>
+                  <div className="text-[10.5px] text-slate-500 font-serif leading-snug mt-0.5">
+                    Các trường trong mẫu tab chưa có ô nhập ở trên — giá trị sẽ lưu vào dữ liệu thẻ.
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                {extraFields.map((field) => {
+                  const fid = safeString(field?.id).trim();
+                  if (!fid) return null;
+                  const resolver = extraFieldResolvers[fid] || { suggestions: [], defaultValue: '', sourceLabel: 'Thủ công' };
+                  const suggestions = Array.isArray(resolver.suggestions) ? resolver.suggestions : [];
+                  const defaultValue = safeString(resolver.defaultValue);
+                  const sourceLabel = safeString(resolver.sourceLabel) || 'Thủ công';
+                  const listId = `${extraFieldListPrefix}-${fid}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+                  const inputId = `ttc-extra-input-${fid}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+                  const value = safeString(dynamicData[fid]);
+                  return (
+                    <div key={fid} className="space-y-1 rounded-md border border-slate-800/70 bg-slate-950/55 px-2 py-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label htmlFor={inputId} className="text-[10px] font-bold uppercase tracking-wide text-slate-300">
+                          {safeString(field.label) || fid}
+                        </label>
+                        <span className="text-[9px] text-slate-500 italic" title={`Nguồn: ${sourceLabel}`}>
+                          {sourceLabel}
+                        </span>
+                      </div>
+                      <input
+                        id={inputId}
+                        type="text"
+                        list={suggestions.length ? listId : undefined}
+                        value={value}
+                        onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
+                        placeholder={defaultValue || 'Để trống nếu không dùng'}
+                        className="w-full bg-slate-900/80 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-100 font-serif outline-none focus:border-amber-600/55"
+                      />
+                      {suggestions.length > 0 && (
+                        <datalist id={listId}>
+                          {suggestions.map((s) => (
+                            <option key={s} value={s} />
+                          ))}
+                        </datalist>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -2607,24 +2716,27 @@ export const ModalEntity = ({
             tabConfig={tabConfig}
             parentTabId={parentTabId}
             parentLabel={parentLabel}
+            activeNovelData={activeNovelData}
             handleAddTabTemplateField={handleAddTabTemplateField}
             handleRemoveTabTemplateField={handleRemoveTabTemplateField}
             handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
             handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
+            handleSetTabFieldSource={handleSetTabFieldSource}
             setConfirmDialog={setConfirmDialog}
             showToast={showToast}
+            contextHint="Chỉnh nhanh mẫu tab ngay khi tạo thẻ. Muốn sửa hàng loạt nhiều tab con → mở «Trận Pháp Cải Tạo»."
           />
         </div>
 
-        <div className="p-6 pt-4 border-t border-slate-800 flex flex-shrink-0 justify-end gap-3 bg-slate-900">
-          <button type="button" onClick={onClose} className="px-6 py-2.5 text-slate-400 hover:text-white font-serif transition-colors rounded-xl">Hủy bỏ</button>
+        <div className="px-4 py-3 border-t border-slate-800 flex flex-shrink-0 justify-end gap-2 bg-slate-900">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white font-serif transition-colors rounded-lg text-sm">Hủy bỏ</button>
           <button
             type="button"
             onClick={() => { if (formData.name.trim()) { onSave(formData, dynamicData, null); onClose(); } }}
             disabled={!formData.name.trim()}
-            className="px-8 py-2.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl font-bold font-serif shadow-lg transition-all flex items-center gap-2"
+            className="px-5 py-2 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-lg font-bold font-serif text-sm shadow-lg transition-all flex items-center gap-2"
           >
-            <Save size={18}/> Lưu thông tin
+            <Save size={16}/> Lưu thông tin
           </button>
         </div>
       </div>

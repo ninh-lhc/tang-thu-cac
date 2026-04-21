@@ -24,6 +24,7 @@ import {
 import { safeString, getIconComponent } from './MasterUtils.jsx';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
 import { pickDefaultQuickFieldIds } from './lib/entityQuickEntrySlots.js';
+import { AppEntityTemplateFieldEditor } from './AppEntityTemplateFieldEditor.jsx';
 import { useFocusTrap } from './lib/useFocusTrap.js';
 import {
   getEffectiveAutoSyncRole,
@@ -78,12 +79,18 @@ export function AppModalQuanLyTab({
   handleSetTabAutoSyncLevels,
   handleSetTabAutoSyncFieldMap,
   handleSetTabMapEntrySuggestions,
+  handleMergeTabFieldSuggestionList,
+  handleAddTabTemplateField,
+  handleRemoveTabTemplateField,
+  handleRenameTabTemplateFieldLabel,
   handleSetTabEntityQuickEntry,
+  handleSetTabFieldSource,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
   handleSaveCurrentTabsAsGenreTemplate,
   handleSetTabAutoListOutlineFieldId,
   setConfirmDialog,
+  showToast,
 }) {
   const trapRef = useFocusTrap(true);
   const [advancedOpenByPath, setAdvancedOpenByPath] = React.useState({});
@@ -833,6 +840,23 @@ export function AppModalQuanLyTab({
                             )}
                           </div>
 
+                          {tabNho.viewType === 'collection-track' && (
+                            <AppEntityTemplateFieldEditor
+                              tabConfig={tabNho}
+                              parentTabId={tabLon.id}
+                              parentLabel={tabLon.label || ''}
+                              handleAddTabTemplateField={handleAddTabTemplateField}
+                              handleRemoveTabTemplateField={handleRemoveTabTemplateField}
+                              handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
+                              handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
+                              handleSetTabFieldSource={handleSetTabFieldSource}
+                              activeNovelData={activeNovelData}
+                              setConfirmDialog={setConfirmDialog}
+                              showToast={showToast}
+                              contextHint="Điểm chỉnh hàng loạt: chế độ «Khu vực» ghi cho mọi tab con. Có thể chỉnh nhanh ngay trong modal «Khởi tạo thẻ»."
+                            />
+                          )}
+
                           {tabNho.viewType === 'collection-track' && isAutoPanelOpen && (
                             <div className="border-t border-slate-800/80 pt-3 space-y-3">
                               <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3 space-y-3">
@@ -1188,8 +1212,9 @@ export function AppModalQuanLyTab({
                                         Bố cục Khởi Tạo Thẻ (3 ô gợi ý + Bản đồ)
                                       </div>
                                       <div className="text-[12px] text-slate-300 font-serif mt-1">
-                                        Chọn trường cho 3 ô nhanh &amp; list Giới Diện / Đặc Tính Địa Vực.
-                                        Thêm trường tuỳ chỉnh và chỉnh list gợi ý chuyển sang modal «Khởi tạo thẻ».
+                                        Định nghĩa trường <code className="text-amber-200/90">f_*</code> và list gợi ý ở khối ngay trên
+                                        mục AUTO (mặc định thu gọn), rồi gán 3 ô nhanh và list Bản đồ tại đây — cùng nguồn với «Gợi ý
+                                        nhanh» khi khởi tạo thẻ.
                                       </div>
                                     </div>
                                     <div className="text-[11px] text-amber-200/90 font-semibold">
@@ -1204,11 +1229,12 @@ export function AppModalQuanLyTab({
                                       3 ô gợi ý — Khởi tạo thẻ (không phải Bản đồ)
                                     </div>
                                     <p className="text-[11px] text-slate-400 font-serif leading-relaxed">
-                                      Chọn trường dữ liệu cho từng ô và (tuỳ chọn) đổi nhãn hiển thị. Danh mục gợi ý sửa ở từng trường bên
-                                      dưới; app ghép thêm gợi ý theo thể loại và tên tab. Với pháp bảo / đồ vật: gán ô 1 = cấp bậc (
-                                      vd. <code className="text-amber-200/90">f_cap</code>), ô 2 = phẩm chất (
-                                      <code className="text-amber-200/90">f_status</code> hoặc trường tùy chỉnh), rồi bật &quot;hai ô
-                                      song song&quot;.
+                                      Chọn trường dữ liệu cho từng ô và (tuỳ chọn) đổi nhãn hiển thị. Danh sách gợi ý từng{' '}
+                                      <code className="text-amber-200/90">f_*</code> chỉnh ở khối «Trường &amp; list gợi ý» phía trên; app
+                                      ghép thêm gợi ý theo thể loại và tên tab. Với pháp bảo / đồ vật: gán ô 1 = cấp bậc (vd.{' '}
+                                      <code className="text-amber-200/90">f_cap</code>), ô 2 = phẩm chất (
+                                      <code className="text-amber-200/90">f_status</code> hoặc trường tùy chỉnh), rồi bật &quot;hai ô song
+                                      song&quot;.
                                     </p>
                                     {(() => {
                                       const selectable = templateFields.filter((f) => f && f.id && f.id !== 'f_alias');
@@ -1225,7 +1251,7 @@ export function AppModalQuanLyTab({
                                       if (selectable.length === 0) {
                                         return (
                                           <p className="text-[11px] text-amber-100/90 font-serif">
-                                            Thêm ít nhất một trường hồ sơ (ngoài wiki) để gán 3 ô gợi ý.
+                                            Thêm ít nhất một trường trong khối «Trường &amp; list gợi ý» (ngoài wiki) để gán 3 ô.
                                           </p>
                                         );
                                       }
@@ -1363,14 +1389,6 @@ export function AppModalQuanLyTab({
                                     })()}
                                     </div>
                                   )}
-
-                                  <div className="rounded-lg border border-slate-800/80 bg-slate-950/40 px-3 py-2 text-[11px] text-slate-400 font-serif leading-relaxed">
-                                    Thêm trường mới, đổi tên hiển thị hoặc chỉnh danh sách gợi ý cho từng trường đã
-                                    chuyển sang khối «Trường hồ sơ &amp; danh sách gợi ý» trong modal{' '}
-                                    <strong className="text-amber-100">Khởi tạo thẻ</strong>. Mở tab con cần chỉnh →
-                                    bấm Khởi tạo thẻ → chọn chế độ lưu <em>Cục bộ</em> (chỉ tab con) hoặc{' '}
-                                    <em>Khu vực</em> (toàn bộ tab lớn).
-                                  </div>
 
                                   {isMapTab && (
                                     <div className="space-y-2 border-t border-amber-800/35 pt-3">

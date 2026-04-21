@@ -88,10 +88,11 @@ describe('modal ttc-save scope', () => {
     const entityNameInput = entityRoot.querySelector('input[placeholder]');
     expect(entityNameInput).toBeTruthy();
 
-    await waitFor(() => expect(getByText('Ghi nhanh cho thẻ Bản Đồ')).toBeTruthy());
-    expect(getByText(/Gợi ý điền nhanh:/)).toBeTruthy();
-    expect(getByText(/Dạ Lang Tiên Tinh = Tiên tinh · Vương giới/)).toBeTruthy();
-    expect(getByText(/Bách Thú Cung = Tông môn · Thiên Tôn cấp thế lực · Hoang Thú giới/)).toBeTruthy();
+    const mapHintSummary = await waitFor(() => getByText(/Ghi nhanh thẻ Bản Đồ/));
+    fireEvent.click(mapHintSummary);
+    await waitFor(() => expect(getByText(/Dạ Lang Tiên Tinh = Tiên tinh · Vương giới/)).toBeTruthy());
+    expect(getByText(/Gợi ý:/)).toBeTruthy();
+    expect(getByText(/Thế lực \(vd\. Thiên Tôn cấp\) ghi ở thẻ Thế lực/)).toBeTruthy();
   });
 
   it('defaults Giới Diện to the active map sub-tab label when creating a map entity', () => {
@@ -127,7 +128,7 @@ describe('modal ttc-save scope', () => {
     fireEvent.change(getByLabelText('Giới Diện bản đồ'), { target: { value: 'Giới' } });
     fireEvent.change(getByLabelText('Quy Mô Địa Vực bản đồ'), { target: { value: 'Đại lục' } });
     fireEvent.change(getByLabelText('Đặc Tính Địa Vực bản đồ'), { target: { value: 'Tôn giới' } });
-    fireEvent.change(getByLabelText('Trực thuộc tầng 1 bản đồ'), { target: { value: 'Trung Tiên giới' } });
+    fireEvent.change(getByLabelText('Trực thuộc tầng 1'), { target: { value: 'Trung Tiên giới' } });
     fireEvent.click(getByRole('button', { name: /lưu thông tin/i }));
 
     expect(onEntitySave).toHaveBeenCalledTimes(1);
@@ -165,7 +166,7 @@ describe('modal ttc-save scope', () => {
         },
       },
     };
-    const { getByLabelText, getByRole, getByText } = render(
+    const { getByLabelText, getByRole } = render(
       <ModalEntity
         {...entityProps({
           onSave: onEntitySave,
