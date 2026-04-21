@@ -2413,6 +2413,53 @@ export default function App() {
     }
   };
 
+  /**
+   * Đảm bảo các trường cố định (vd. slot «Gợi ý nhanh» của Bản đồ/Thế lực) tồn tại trong
+   * `fieldsTemplate` của tab. Idempotent: chỉ thêm khi thiếu, không ghi đè nhãn đã tuỳ biến.
+   * Dùng để đồng bộ 2 phần «Gợi ý nhanh» ↔ «Trường thông tin» trong modal Khởi tạo thẻ.
+   */
+  const handleEnsureTabTemplateFields = (lonId, nhoId, fields, options = {}) => {
+    const propagate = Boolean(options?.propagateWithinLon);
+    const list = Array.isArray(fields) ? fields : [];
+    const wanted = list
+      .map((f) => ({ id: safeString(f?.id).trim(), label: safeString(f?.label).trim() }))
+      .filter((f) => f.id && f.id !== 'f_alias');
+    if (wanted.length === 0) return;
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const targets = propagate
+      ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
+      : [nho];
+    let changed = false;
+    targets.forEach((sub) => {
+      const fieldsArr = ensureWikiAliasInFieldsTemplate(sub.fieldsTemplate || []);
+      let next = fieldsArr;
+      let touched = false;
+      wanted.forEach(({ id, label }) => {
+        if (next.some((f) => f.id === id)) return;
+        const aliasIdx = next.findIndex((f) => f.id === 'f_alias');
+        const newField = { id, label: label || id };
+        next = aliasIdx === -1
+          ? [...next, newField]
+          : [...next.slice(0, aliasIdx), newField, ...next.slice(aliasIdx)];
+        touched = true;
+      });
+      if (touched) {
+        sub.fieldsTemplate = next;
+        changed = true;
+      }
+    });
+    if (!changed) return;
+    setTabsConfig(current, {
+      resyncAuto: true,
+      autoSyncPlan: propagate ? buildFullAutoSyncPlan() : buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
+      autoSyncReason: propagate ? 'tab_propagate_ensure_fields' : 'tab_ensure_fields',
+      autoSyncScopeLabel: propagate ? safeString(lon?.label || lonId) : buildTabScopeLabel(lonId, nhoId, current),
+    });
+  };
+
   const handleRemoveTabTemplateField = (lonId, nhoId, fieldId, options = {}) => {
     const propagate = Boolean(options?.propagateWithinLon);
     const fid = safeString(fieldId).trim();
@@ -2955,6 +3002,7 @@ export default function App() {
     handleSetTabMapEntrySuggestions,
     handleMergeTabFieldSuggestionList,
     handleAddTabTemplateField,
+    handleEnsureTabTemplateFields,
     handleRemoveTabTemplateField,
     handleRenameTabTemplateFieldLabel,
     handleSetTabTemplateFieldListMergeOrder,

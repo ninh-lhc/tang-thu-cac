@@ -152,6 +152,7 @@ export function AppModalLayer({
   handleSetTabMapEntrySuggestions,
   handleMergeTabFieldSuggestionList,
   handleAddTabTemplateField,
+  handleEnsureTabTemplateFields,
   handleRemoveTabTemplateField,
   handleRenameTabTemplateFieldLabel,
   handleSetTabEntityQuickEntry,
@@ -199,6 +200,7 @@ export function AppModalLayer({
           }
         }}
         handleAddTabTemplateField={handleAddTabTemplateField}
+        handleEnsureTabTemplateFields={handleEnsureTabTemplateFields}
         handleRemoveTabTemplateField={handleRemoveTabTemplateField}
         handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
         handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}

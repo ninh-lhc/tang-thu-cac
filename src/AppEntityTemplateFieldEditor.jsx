@@ -44,6 +44,8 @@ export function AppEntityTemplateFieldEditor({
   onPatchEntityDynamic,
   /** Dòng ngữ cảnh nhỏ hiển thị trong panel đã mở (để phân biệt điểm vào: Khởi tạo thẻ vs Quản lý tab). */
   contextHint = '',
+  /** Cho phép gọi mở sẵn khi nhúng gần «Gợi ý nhanh» trong Khởi tạo thẻ. */
+  defaultOpen = false,
 }) {
   void activeNovelData;
   const lonId = safeString(parentTabId).trim();
@@ -56,8 +58,9 @@ export function AppEntityTemplateFieldEditor({
   }, [tabConfig]);
   const suggestionLists = tabConfig?.fieldSuggestionLists || {};
 
-  /** Mặc định thu gọn để modal ngắn; mở khi cần chỉnh mẫu tab / list gợi ý. */
-  const [isOpen, setIsOpen] = useState(false);
+  /** Mặc định thu gọn để modal ngắn; mở khi cần chỉnh mẫu tab / list gợi ý.
+   *  `defaultOpen=true` khi nhúng ngay dưới «Gợi ý nhanh» — dễ CRUD trường. */
+  const [isOpen, setIsOpen] = useState(Boolean(defaultOpen));
   const [scope, setScope] = useState(SCOPE_LOCAL);
   const [draft, setDraft] = useState('');
   const pathKey = `${lonId}::${nhoId}`;
@@ -141,10 +144,11 @@ export function AppEntityTemplateFieldEditor({
       >
         <div className="min-w-0">
           <div className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
-            Trường dữ liệu &amp; list gợi ý (mẫu tab)
+            Trường thông tin (thêm · sửa · xoá)
           </div>
           <div className="text-[11px] text-slate-400 font-serif mt-0.5 leading-snug">
-            Một nguồn cho form, ô «Gợi ý nhanh» và mốc — ô mục lục (AUTO) chỉnh list gợi ý của trường tương ứng.
+            Mỗi trường có <strong className="text-amber-200">Tên hiển thị</strong> (sửa tuỳ ý) &amp;{' '}
+            <strong className="text-amber-200">ID hệ thống</strong> (sinh khi thêm, bất biến — chỉ mất khi xoá trường).
           </div>
         </div>
         <span className="inline-flex items-center gap-1 rounded-md border border-amber-800/50 bg-amber-950/40 px-2 py-1 text-[10px] font-bold text-amber-100 shrink-0">
@@ -275,7 +279,7 @@ export function AppEntityTemplateFieldEditor({
                       <div className="min-w-0 flex-1 space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-[10px] font-bold uppercase tracking-wide text-amber-200/90">
-                            Tên hiển thị (form / mốc)
+                            Tên hiển thị
                           </span>
                           <button
                             type="button"
@@ -298,12 +302,26 @@ export function AppEntityTemplateFieldEditor({
                           aria-label={`Tên hiển thị trường ${fid}`}
                         />
                       </div>
-                      <code
-                        className="text-[10px] text-slate-500 shrink-0 max-w-[8rem] truncate"
-                        title={fid}
-                      >
-                        {fid}
-                      </code>
+                      <div className="shrink-0 flex flex-col items-end gap-0.5 max-w-[10rem]">
+                        <span className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                          ID hệ thống
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try {
+                              navigator.clipboard?.writeText(fid);
+                              showToast?.(`Đã copy ID hệ thống: ${fid}`, 'info');
+                            } catch {
+                              /* ignore */
+                            }
+                          }}
+                          title={`ID hệ thống (bất biến): ${fid} — click để copy`}
+                          className="font-mono text-[10px] text-slate-400 bg-slate-950/70 border border-slate-800 rounded px-1.5 py-0.5 hover:text-amber-200 hover:border-amber-800/55 truncate max-w-full"
+                        >
+                          {fid}
+                        </button>
+                      </div>
                       {!isWiki && (
                         <button
                           type="button"

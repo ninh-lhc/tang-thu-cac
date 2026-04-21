@@ -60,7 +60,6 @@ import {
 } from './lib/mapTabForceBridge.js';
 import { getMapFieldPlaceholders, resolveMapFieldPresetFlavor } from './lib/mapEntityFieldPresets.js';
 import { resolveEntityQuickSlots } from './lib/entityQuickEntrySlots.js';
-import { resolveFieldValueSource } from './lib/fieldValueSources.js';
 import {
   FORCE_QUICK_SLOTS,
   MAP_QUICK_SLOTS,
@@ -1422,6 +1421,7 @@ export const ModalEntity = ({
   onPatchMapRealmScaleLists,
   onSaveMapHierarchySharedList,
   handleAddTabTemplateField,
+  handleEnsureTabTemplateFields,
   handleRemoveTabTemplateField,
   handleRenameTabTemplateFieldLabel,
   handleMergeTabFieldSuggestionList,
@@ -1490,31 +1490,9 @@ export const ModalEntity = ({
     [showGenericQuickEntry, tabConfig, fieldsTemplate, activeNovelData, parentTabId, parentLabel]
   );
   const genericQuickListPrefix = useId().replace(/:/g, '');
-  const extraFieldListPrefix = useId().replace(/:/g, '');
   const hideLegacyStatusInput = Boolean(
     showGenericQuickEntry && genericQuickResolved?.slotFields?.includes('f_status')
   );
-  /** Tập field đã có ô nhập riêng trong modal — phần còn lại sẽ render ở khối «Trường bổ sung». */
-  const coveredFieldIds = useMemo(() => {
-    const set = new Set([WIKI_ALIAS_FIELD.id]);
-    if (!hideLegacyStatusInput) set.add('f_status');
-    if (showGenericQuickEntry && Array.isArray(genericQuickResolved?.slotFields)) {
-      genericQuickResolved.slotFields.forEach((fid) => set.add(fid));
-    }
-    if (showMapQuickSection) {
-      ['f_title', 'f_he_gioi_ban_do', 'f_vi_tri', 'f_status', 'f_dia_ban'].forEach((fid) => set.add(fid));
-    }
-    if (showForceQuickSection) {
-      ['f_loai_to_chuc', 'f_he_cap_the_luc', 'f_status', 'f_dia_ban'].forEach((fid) => set.add(fid));
-    }
-    return set;
-  }, [genericQuickResolved, hideLegacyStatusInput, showGenericQuickEntry, showMapQuickSection, showForceQuickSection]);
-  const extraFields = useMemo(() => {
-    return (fieldsTemplate || []).filter((f) => {
-      const fid = safeString(f?.id).trim();
-      return fid && !coveredFieldIds.has(fid);
-    });
-  }, [fieldsTemplate, coveredFieldIds]);
   const mapQuickLabels = useMemo(
     () => resolveQuickSlotLabels(fieldsTemplate, MAP_QUICK_SLOTS),
     [fieldsTemplate]
@@ -1528,21 +1506,6 @@ export const ModalEntity = ({
     () => resolveMainFormLabels(fieldsTemplate, { isMapScope, isForceScope }),
     [fieldsTemplate, isMapScope, isForceScope]
   );
-  const extraFieldResolvers = useMemo(() => {
-    const map = {};
-    extraFields.forEach((f) => {
-      const fid = safeString(f?.id).trim();
-      if (!fid) return;
-      map[fid] = resolveFieldValueSource({
-        fieldId: fid,
-        tabConfig,
-        parentTabId,
-        parentLabel: parentLabel || '',
-        activeNovelData,
-      });
-    });
-    return map;
-  }, [extraFields, tabConfig, parentTabId, parentLabel, activeNovelData]);
   const mapEntityHints = useMemo(
     () => collectMapEntityHints(activeNovelData, isMapScope ? tabConfig : null, isMapScope ? parentTabId : ''),
     [activeNovelData, tabConfig, isMapScope, parentTabId]
@@ -1587,9 +1550,14 @@ export const ModalEntity = ({
     [mapQuickRealmSystem]
   );
   const mapParentTierRequiredCount = mapParentTierSchema.length;
-  const [mapRealmListPanelOpen, setMapRealmListPanelOpen] = useState(false);
+  const [mapListEditorMode, setMapListEditorMode] = useState(null);
+  const mapRealmListPanelOpen = mapListEditorMode === 'realm';
+  const mapHierarchyListPanelOpen = mapListEditorMode === 'hierarchy';
+  const setMapRealmListPanelOpen = (next) =>
+    setMapListEditorMode((prev) => (next ? 'realm' : prev === 'realm' ? null : prev));
+  const setMapHierarchyListPanelOpen = (next) =>
+    setMapListEditorMode((prev) => (next ? 'hierarchy' : prev === 'hierarchy' ? null : prev));
   const [mapRealmListDraft, setMapRealmListDraft] = useState('');
-  const [mapHierarchyListPanelOpen, setMapHierarchyListPanelOpen] = useState(false);
   const [mapHierarchyListDraft, setMapHierarchyListDraft] = useState('');
   const [mapRealmListTargetLonId, setMapRealmListTargetLonId] = useState(parentTabId || '');
   const [mapRealmListTargetNhoId, setMapRealmListTargetNhoId] = useState(tabConfig?.id || '');
@@ -1820,6 +1788,45 @@ export const ModalEntity = ({
     setMapQuickParentPath(nextPath);
     patchDynamicData({ f_vi_tri: nextPath });
   };
+  // Đồng bộ 2 phần: bảo đảm các slot «Gợi ý nhanh» map/force có mặt trong `fieldsTemplate`
+  // để khung «Trường thông tin (thêm · sửa · xoá)» ở dưới cũng hiển thị và cho sửa/xoá.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (typeof handleEnsureTabTemplateFields !== 'function') return;
+    const lonId = safeString(parentTabId).trim();
+    const nhoId = safeString(tabConfig?.id).trim();
+    if (!lonId || !nhoId) return;
+    if (tabConfig?.viewType !== 'collection-track') return;
+    const want = [];
+    if (showMapQuickSection) {
+      MAP_QUICK_SLOTS.forEach((slot) => {
+        const fid = safeString(slot.fieldId).trim();
+        if (!fid) return;
+        want.push({ id: fid, label: safeString(slot.defaultLabel).trim() || fid });
+      });
+    }
+    if (showForceQuickSection) {
+      FORCE_QUICK_SLOTS.forEach((slot) => {
+        const fid = safeString(slot.fieldId).trim();
+        if (!fid) return;
+        want.push({ id: fid, label: safeString(slot.defaultLabel).trim() || fid });
+      });
+    }
+    if (want.length === 0) return;
+    const existing = new Set(
+      (tabConfig?.fieldsTemplate || []).map((f) => safeString(f?.id).trim()).filter(Boolean)
+    );
+    const missing = want.filter((w) => !existing.has(w.id));
+    if (missing.length === 0) return;
+    handleEnsureTabTemplateFields(lonId, nhoId, missing);
+  }, [
+    isOpen,
+    showMapQuickSection,
+    showForceQuickSection,
+    tabConfig,
+    parentTabId,
+    handleEnsureTabTemplateFields,
+  ]);
   useEffect(() => {
     if (!isOpen || !showMapQuickSection) return;
     const tier1 = safeString(mapQuickParentTier1).trim();
@@ -2165,29 +2172,59 @@ export const ModalEntity = ({
                 <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
                   Gợi ý nhanh ({safeString(tabConfig?.label).trim() || 'Bản đồ'})
                 </p>
-                <div className="flex flex-wrap items-center gap-2">
+                {(onPatchMapRealmScaleLists || onSaveMapHierarchySharedList) && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (mapListEditorMode) {
+                          setMapListEditorMode(null);
+                          return;
+                        }
+                        if (onPatchMapRealmScaleLists) toggleMapRealmListEditor();
+                        else toggleMapHierarchyListEditor();
+                      }}
+                      aria-expanded={Boolean(mapListEditorMode)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-amber-800/55 bg-amber-950/25 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-amber-200/95 transition-colors hover:border-amber-500/55 hover:bg-amber-900/35"
+                    >
+                      <ListIcon size={14} aria-hidden />
+                      {mapListEditorMode ? 'Đóng list gợi ý' : 'Chỉnh list gợi ý'}
+                    </button>
+                  </div>
+                )}
+              </div>
+              {mapListEditorMode && (onPatchMapRealmScaleLists || onSaveMapHierarchySharedList) && (
+                <div className="flex flex-wrap gap-1.5">
                   {onPatchMapRealmScaleLists && (
                     <button
                       type="button"
                       onClick={toggleMapRealmListEditor}
-                      className="inline-flex items-center gap-2 rounded-xl border border-cyan-800/50 bg-cyan-950/25 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-cyan-200/95 transition-colors hover:border-cyan-500/55 hover:bg-cyan-900/35"
+                      className={
+                        mapRealmListPanelOpen
+                          ? 'inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/70 bg-cyan-900/45 px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest text-cyan-50'
+                          : 'inline-flex items-center gap-1.5 rounded-lg border border-cyan-900/45 bg-slate-950/50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest text-cyan-200/70 hover:border-cyan-500/55 hover:text-cyan-100'
+                      }
+                      aria-pressed={mapRealmListPanelOpen}
                     >
-                      <ListIcon size={14} aria-hidden />
-                      List «Quy mô» theo giới diện
+                      <ListIcon size={12} aria-hidden /> Quy mô theo giới diện
                     </button>
                   )}
                   {onSaveMapHierarchySharedList && (
                     <button
                       type="button"
                       onClick={toggleMapHierarchyListEditor}
-                      className="inline-flex items-center gap-2 rounded-xl border border-violet-800/50 bg-violet-950/25 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-violet-200/95 transition-colors hover:border-violet-500/55 hover:bg-violet-900/35"
+                      className={
+                        mapHierarchyListPanelOpen
+                          ? 'inline-flex items-center gap-1.5 rounded-lg border border-violet-400/70 bg-violet-900/45 px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest text-violet-50'
+                          : 'inline-flex items-center gap-1.5 rounded-lg border border-violet-900/45 bg-slate-950/50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest text-violet-200/70 hover:border-violet-500/55 hover:text-violet-100'
+                      }
+                      aria-pressed={mapHierarchyListPanelOpen}
                     >
-                      <ListIcon size={14} aria-hidden />
-                      List «Đặc tính» dùng chung
+                      <ListIcon size={12} aria-hidden /> Đặc tính dùng chung
                     </button>
                   )}
                 </div>
-              </div>
+              )}
               {mapRealmListPanelOpen && (
                 <div className="rounded-lg border border-cyan-900/45 bg-slate-950/55 p-2 space-y-1.5">
                   <p className="text-[11px] text-slate-400 font-serif leading-relaxed">
@@ -2235,7 +2272,7 @@ export const ModalEntity = ({
                   <div className="flex flex-wrap justify-end gap-2">
                     <button
                       type="button"
-                      onClick={() => setMapRealmListPanelOpen(false)}
+                      onClick={() => setMapListEditorMode(null)}
                       className="px-3 py-1.5 rounded-lg border border-slate-700 text-[11px] font-bold text-slate-400 hover:text-slate-200"
                     >
                       Đóng
@@ -2268,7 +2305,7 @@ export const ModalEntity = ({
                   <div className="flex flex-wrap justify-end gap-2">
                     <button
                       type="button"
-                      onClick={() => setMapHierarchyListPanelOpen(false)}
+                      onClick={() => setMapListEditorMode(null)}
                       className="px-3 py-1.5 rounded-lg border border-slate-700 text-[11px] font-bold text-slate-400 hover:text-slate-200"
                     >
                       Đóng
@@ -2496,6 +2533,22 @@ export const ModalEntity = ({
             </div>
           )}
 
+          <AppEntityTemplateFieldEditor
+            tabConfig={tabConfig}
+            parentTabId={parentTabId}
+            parentLabel={parentLabel}
+            activeNovelData={activeNovelData}
+            handleAddTabTemplateField={handleAddTabTemplateField}
+            handleRemoveTabTemplateField={handleRemoveTabTemplateField}
+            handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
+            handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
+            handleSetTabFieldSource={handleSetTabFieldSource}
+            setConfirmDialog={setConfirmDialog}
+            showToast={showToast}
+            defaultOpen
+            contextHint="Tên hiển thị sửa tuỳ ý; ID hệ thống cố định khi trường được tạo, chỉ mất khi xoá trường. Chọn chế độ Cục bộ / Khu vực bên dưới."
+          />
+
           {!hideLegacyStatusInput && (
             <div className="space-y-1">
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-snug">
@@ -2656,76 +2709,6 @@ export const ModalEntity = ({
             </details>
           )}
 
-          {extraFields.length > 0 && (
-            <div className="rounded-lg border border-slate-800/80 bg-slate-950/45 p-2.5 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-300">
-                    Trường bổ sung
-                  </div>
-                  <div className="text-[10.5px] text-slate-500 font-serif leading-snug mt-0.5">
-                    Các trường trong mẫu tab chưa có ô nhập ở trên — giá trị sẽ lưu vào dữ liệu thẻ.
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                {extraFields.map((field) => {
-                  const fid = safeString(field?.id).trim();
-                  if (!fid) return null;
-                  const resolver = extraFieldResolvers[fid] || { suggestions: [], defaultValue: '', sourceLabel: 'Thủ công' };
-                  const suggestions = Array.isArray(resolver.suggestions) ? resolver.suggestions : [];
-                  const defaultValue = safeString(resolver.defaultValue);
-                  const sourceLabel = safeString(resolver.sourceLabel) || 'Thủ công';
-                  const listId = `${extraFieldListPrefix}-${fid}`.replace(/[^a-zA-Z0-9_-]/g, '_');
-                  const inputId = `ttc-extra-input-${fid}`.replace(/[^a-zA-Z0-9_-]/g, '_');
-                  const value = safeString(dynamicData[fid]);
-                  return (
-                    <div key={fid} className="space-y-1 rounded-md border border-slate-800/70 bg-slate-950/55 px-2 py-1.5">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <label htmlFor={inputId} className="text-[10px] font-bold uppercase tracking-wide text-slate-300">
-                          {safeString(field.label) || fid}
-                        </label>
-                        <span className="text-[9px] text-slate-500 italic" title={`Nguồn: ${sourceLabel}`}>
-                          {sourceLabel}
-                        </span>
-                      </div>
-                      <input
-                        id={inputId}
-                        type="text"
-                        list={suggestions.length ? listId : undefined}
-                        value={value}
-                        onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-                        placeholder={defaultValue || 'Để trống nếu không dùng'}
-                        className="w-full bg-slate-900/80 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-100 font-serif outline-none focus:border-amber-600/55"
-                      />
-                      {suggestions.length > 0 && (
-                        <datalist id={listId}>
-                          {suggestions.map((s) => (
-                            <option key={s} value={s} />
-                          ))}
-                        </datalist>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <AppEntityTemplateFieldEditor
-            tabConfig={tabConfig}
-            parentTabId={parentTabId}
-            parentLabel={parentLabel}
-            activeNovelData={activeNovelData}
-            handleAddTabTemplateField={handleAddTabTemplateField}
-            handleRemoveTabTemplateField={handleRemoveTabTemplateField}
-            handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
-            handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
-            handleSetTabFieldSource={handleSetTabFieldSource}
-            setConfirmDialog={setConfirmDialog}
-            showToast={showToast}
-            contextHint="Chỉnh nhanh mẫu tab ngay khi tạo thẻ. Muốn sửa hàng loạt nhiều tab con → mở «Trận Pháp Cải Tạo»."
-          />
         </div>
 
         <div className="px-4 py-3 border-t border-slate-800 flex flex-shrink-0 justify-end gap-2 bg-slate-900">
