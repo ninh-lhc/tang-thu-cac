@@ -66,6 +66,10 @@ import {
 import { getMapFieldPlaceholders, resolveMapFieldPresetFlavor } from './lib/mapEntityFieldPresets.js';
 import { resolveEntityQuickSlots } from './lib/entityQuickEntrySlots.js';
 import {
+  composeMapTemplateDisplayLine,
+  inferMapQuickSystemFromStoredStatus,
+} from './lib/composeMapTemplateDisplayLine.js';
+import {
   FORCE_QUICK_SLOTS,
   MAP_QUICK_SLOTS,
   resolveMainFormLabels,
@@ -1189,10 +1193,6 @@ function splitDotMetaTokens(value) {
     .filter(Boolean);
 }
 
-function composeMapStatusLine(mapType, forceSystem) {
-  return [safeString(mapType).trim(), safeString(forceSystem).trim()].filter(Boolean).join(' · ');
-}
-
 function parseParentPathTiers(pathLine = '') {
   const tokens = splitStatusHierarchyTokens(pathLine);
   return {
@@ -1226,7 +1226,7 @@ function resolveMapParentTierSchema(realmScale = '') {
 
 function parseMapQuickState(dynamicData) {
   const statusTokens = splitDotMetaTokens(dynamicData?.f_status);
-  const mapSystem = statusTokens.length > 1 ? statusTokens.slice(1).join(' · ') : '';
+  const mapSystem = inferMapQuickSystemFromStoredStatus(dynamicData);
   return {
     mapType: safeString(dynamicData?.f_title).trim() || statusTokens[0] || '',
     mapSystem,
@@ -1555,6 +1555,10 @@ export const ModalEntity = ({
   const [mapQuickParentTier1, setMapQuickParentTier1] = useState('');
   const [mapQuickParentTier2, setMapQuickParentTier2] = useState('');
   const [mapQuickParentTier3, setMapQuickParentTier3] = useState('');
+  const mapQuickSystemRef = useRef('');
+  useEffect(() => {
+    mapQuickSystemRef.current = mapQuickSystem;
+  }, [mapQuickSystem]);
   const mapParentTierSchema = useMemo(
     () => resolveMapParentTierSchema(mapQuickRealmSystem),
     [mapQuickRealmSystem]
@@ -1665,8 +1669,21 @@ export const ModalEntity = ({
     });
   const patchDynamicData = (patch) =>
     setDynamicData((prev) => {
-      const nextPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
-      return { ...(prev || {}), ...nextPatch };
+      const rawPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
+      const nextPatch = rawPatch && typeof rawPatch === 'object' ? rawPatch : {};
+      const merged = { ...(prev || {}), ...nextPatch };
+      if (isMapScope && !isForceScope) {
+        const patchKeys = Object.keys(nextPatch);
+        const onlyStatus = patchKeys.length === 1 && patchKeys[0] === 'f_status';
+        if (patchKeys.length > 0 && !onlyStatus) {
+          merged.f_status = composeMapTemplateDisplayLine(
+            fieldsTemplate,
+            merged,
+            mapQuickSystemRef.current
+          );
+        }
+      }
+      return merged;
     });
   const quickUseSelect = Boolean(tabConfig?.entityQuickEntry?.useSelectUi);
   const entityModalQuickSurface = 'rounded-lg border border-amber-900/45 bg-amber-950/10 p-3 space-y-2.5';
@@ -1773,16 +1790,19 @@ export const ModalEntity = ({
         ? mapQuickSystem
         : '';
     setMapQuickSystem(nextSystem);
+    mapQuickSystemRef.current = nextSystem;
     patchDynamicData({
       f_title: value,
       f_he_gioi_ban_do: nextRealm,
-      f_status: composeMapStatusLine(value, nextSystem),
     });
   };
   const handleMapSystemChange = (value) => {
     setMapQuickSystem(value);
-    patchDynamicData({
-      f_status: composeMapStatusLine(mapQuickType, value),
+    mapQuickSystemRef.current = value;
+    setDynamicData((prev) => {
+      const merged = { ...(prev || {}) };
+      merged.f_status = composeMapTemplateDisplayLine(fieldsTemplate, merged, value);
+      return merged;
     });
   };
   const handleMapRealmSystemChange = (value) => {
@@ -1790,9 +1810,9 @@ export const ModalEntity = ({
     const scoped = getMapHierarchyOptionsByRealm(value, forceSystemSuggestions);
     const nextSystem = scoped.includes(mapQuickSystem) ? mapQuickSystem : '';
     setMapQuickSystem(nextSystem);
+    mapQuickSystemRef.current = nextSystem;
     patchDynamicData({
       f_he_gioi_ban_do: value,
-      f_status: composeMapStatusLine(mapQuickType, nextSystem),
     });
   };
   const handleMapParentPathChange = (value) => {
@@ -2044,7 +2064,11 @@ export const ModalEntity = ({
       };
       if (isMapScope && !isForceScope) {
         initialDyn.f_he_gioi_ban_do = mapQuickState.realmSystem;
-        initialDyn.f_status = composeMapStatusLine(mapQuickState.mapType, mapQuickState.mapSystem);
+        initialDyn.f_status = composeMapTemplateDisplayLine(
+          fieldsTemplate,
+          initialDyn,
+          mapQuickState.mapSystem
+        );
       }
       const forceQuickState = parseForceQuickState(initialDyn);
       const mapBanDoLabels = dedupeCaseInsensitive(
@@ -2073,10 +2097,9 @@ export const ModalEntity = ({
       const subTabLabel = safeString(tabConfig?.label).trim();
       const defaultMapTypeFromSubTab = isMapScope && !isForceScope && subTabLabel ? subTabLabel : '';
       if (defaultMapTypeFromSubTab) {
-        setDynamicData({
-          f_title: defaultMapTypeFromSubTab,
-          f_status: composeMapStatusLine(defaultMapTypeFromSubTab, ''),
-        });
+        const seedDyn = { f_title: defaultMapTypeFromSubTab };
+        seedDyn.f_status = composeMapTemplateDisplayLine(fieldsTemplate, seedDyn, '');
+        setDynamicData(seedDyn);
       } else {
         setDynamicData({});
       }
@@ -2094,7 +2117,7 @@ export const ModalEntity = ({
     }
     setMapRealmListPanelOpen(false);
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [isOpen, initialData, activeNovelData, tabConfig, isMapScope, isForceScope]);
+  }, [isOpen, initialData, activeNovelData, tabConfig, isMapScope, isForceScope, fieldsTemplate]);
 
   useEffect(() => {
     const handler = (event) => {
@@ -2631,7 +2654,9 @@ export const ModalEntity = ({
               </div>
               <p className="text-[10px] text-slate-400 font-serif leading-snug">
                 Auto lưu:{' '}
-                <code className="text-amber-200">{composeMapStatusLine(mapQuickType, mapQuickSystem) || '—'}</code>
+                <code className="text-amber-200">
+                  {composeMapTemplateDisplayLine(fieldsTemplate, dynamicData, mapQuickSystem) || '—'}
+                </code>
               </p>
             </div>
           )}

@@ -135,9 +135,13 @@ describe('modal ttc-save scope', () => {
     const [, dynamicData] = onEntitySave.mock.calls[0];
     expect(dynamicData).toMatchObject({
       f_title: 'Giới',
-      f_status: 'Giới · Tôn giới',
+      f_he_gioi_ban_do: 'Đại lục',
       f_vi_tri: 'Trung Tiên giới',
     });
+    // Chuỗi hiển thị: các trường theo mẫu tab + «Đặc tính» trước f_vi_tri (dedupe trùng Giới trong f_status cũ).
+    expect(dynamicData.f_status).toContain('Giới');
+    expect(dynamicData.f_status).toContain('Tôn giới');
+    expect(dynamicData.f_status).toContain('Trung Tiên giới');
   });
 
   it('infers force ladder from selected map location', async () => {
