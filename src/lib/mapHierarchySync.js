@@ -234,7 +234,7 @@ export function isMapCollectionScope({ activeTabLon = '', activeTabNho = '', cur
   const parent = normalizeAscii(parentLabel || currentTabConfig?._parentLabel || '');
   if (nho === 'dia-danh' || lon === 'ban-do') return true;
   if (label.includes('ban do') || label.includes('dia danh') || label.includes('bi canh')) return true;
-  return parent.includes('ban do');
+  return parent.includes('ban do') || parent.includes('dia danh') || parent.includes('bi canh');
 }
 
 function findMapTabPaths(nov) {

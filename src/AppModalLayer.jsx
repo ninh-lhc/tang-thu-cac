@@ -147,8 +147,6 @@ export function AppModalLayer({
   handleSetTabAutoSyncTargets,
   handleSetTabAutoSyncLevels,
   handleSetTabAutoSyncFieldMap,
-  handleSetTabAutoListOutlineFieldId,
-  handleSetTabListGroupOrder,
   handleSetTabMapEntrySuggestions,
   handleMergeTabFieldSuggestionList,
   handleAddTabTemplateField,
@@ -387,8 +385,6 @@ export function AppModalLayer({
           handleSetTabAutoSyncTargets={handleSetTabAutoSyncTargets}
           handleSetTabAutoSyncLevels={handleSetTabAutoSyncLevels}
           handleSetTabAutoSyncFieldMap={handleSetTabAutoSyncFieldMap}
-          handleSetTabListGroupOrder={handleSetTabListGroupOrder}
-          handleSetTabAutoListOutlineFieldId={handleSetTabAutoListOutlineFieldId}
           handleSetTabMapEntrySuggestions={handleSetTabMapEntrySuggestions}
           handleSetTabEntityQuickEntry={handleSetTabEntityQuickEntry}
           handleApplySuggestedAutoSyncSetup={handleApplySuggestedAutoSyncSetup}

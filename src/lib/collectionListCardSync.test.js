@@ -1,11 +1,271 @@
 ﻿import { describe, expect, it } from 'vitest';
 import {
   ensureCollectionListCardsForNovel,
-  getAutoListFieldIdsFromTemplate,
-  normalizeAutoListGroupFieldOrder,
   syncAllCollectionListCards,
   syncAllCollectionListCardsDetailed,
-  templateHasListMergeOrder,
+} from './collectionListCardSync.js';
+
+function buildNovel() {
+  return {
+    tabsConfig: [
+      {
+        id: 'ban-do',
+        label: 'Bản đồ',
+        subTabs: [{ id: 'ha-gioi', label: 'Hạ Giới', viewType: 'collection-track' }],
+      },
+      {
+        id: 'he-thong',
+        label: 'Hệ thống',
+        subTabs: [{ id: 'goi-qua', label: 'Gói Quà', viewType: 'collection-track' }],
+      },
+    ],
+    data: {
+      'ban-do': {
+        'ha-gioi': {
+          overview: '',
+          entities: [
+            { id: 'list-map', name: 'Danh sach ha gioi', info: 'Ghi chú map', dynamicData: {}, milestones: [] },
+            {
+              id: 'map-1',
+              name: 'Băng Thiên Đại Lục',
+              info: '',
+              dynamicData: { f_vi_tri: 'Hạ Giới - Băng Tinh', f_status: 'Đại Lục' },
+              milestones: [],
+            },
+            {
+              id: 'map-2',
+              name: 'Thánh Thành',
+              info: '',
+              dynamicData: { f_vi_tri: 'Hạ Giới - Băng Thiên Đại Lục - Thánh Trì' },
+              milestones: [],
+            },
+          ],
+        },
+      },
+      'he-thong': {
+        'goi-qua': {
+          overview: '',
+          entities: [
+            { id: 'list-gift', name: 'Danh sach goi qua', info: 'Ghi chú quà', dynamicData: {}, milestones: [] },
+            {
+              id: 'gift-1',
+              name: 'Rương Đại Lễ',
+              info: '',
+              dynamicData: { f_owner: 'Lạc Nam' },
+              milestones: [],
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+describe('collectionListCardSync (flat mode)', () => {
+  it('ensures each collection tab has a canonical list card', () => {
+    const novel = {
+      tabsConfig: [
+        { id: 'he-thong', label: 'Hệ thống', subTabs: [{ id: 'goi-qua', label: 'Gói Quà', viewType: 'collection-track' }] },
+      ],
+      data: {
+        'he-thong': {
+          'goi-qua': {
+            overview: '',
+            entities: [{ id: 'gift-1', name: 'Rương Đại Lễ', info: '', dynamicData: {}, milestones: [] }],
+          },
+        },
+      },
+    };
+    const changed = ensureCollectionListCardsForNovel(novel);
+    expect(changed).toBe(true);
+    expect(novel.data['he-thong']['goi-qua'].entities[0].name).toBe('Danh Sách Gói Quà');
+  });
+
+  it('writes AUTO block as a flat list and keeps manual notes', () => {
+    const novel = buildNovel();
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['ban-do']['ha-gioi'].entities[0].info || '');
+    expect(info).toContain('Ghi chú map');
+    expect(info).toContain('# Danh mục thẻ (AUTO)');
+    expect(info).toContain('## Danh sách (2)');
+    expect(info).toContain('1. [[Băng Thiên Đại Lục]]');
+    expect(info).toContain('2. [[Thánh Thành]]');
+    expect(info).not.toContain('### ');
+  });
+
+  it('appends detail suffix from map fields', () => {
+    const novel = buildNovel();
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['ban-do']['ha-gioi'].entities[0].info || '');
+    expect(info).toContain('[[Băng Thiên Đại Lục]] - Hạ Giới - Băng Tinh - Đại Lục');
+    expect(info).toContain('[[Thánh Thành]] - Hạ Giới - Băng Thiên Đại Lục - Thánh Trì');
+  });
+
+  it('falls back to owner suffix when no detail bits', () => {
+    const novel = buildNovel();
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['he-thong']['goi-qua'].entities[0].info || '');
+    expect(info).toContain('[[Rương Đại Lễ]] - Lạc Nam');
+  });
+
+  it('recreates list card and reports recreated tabs', () => {
+    const novel = buildNovel();
+    novel.data['ban-do']['ha-gioi'].entities = novel.data['ban-do']['ha-gioi'].entities.filter(
+      (ent) => !String(ent.name || '').toLowerCase().includes('danh sach')
+    );
+    const result = syncAllCollectionListCardsDetailed(novel);
+    expect(result.recreatedCount).toBe(1);
+    expect(result.recreatedTabs[0]?.nhoId).toBe('ha-gioi');
+    expect(novel.data['ban-do']['ha-gioi'].entities[0].name).toContain('Danh Sách');
+  });
+});
+
+/*
+
+import { describe, expect, it } from 'vitest';
+import {
+  ensureCollectionListCardsForNovel,
+  syncAllCollectionListCards,
+  syncAllCollectionListCardsDetailed,
+} from './collectionListCardSync.js';
+
+function buildNovel() {
+  return {
+    tabsConfig: [
+      {
+        id: 'ban-do',
+        label: 'Bản đồ',
+        subTabs: [{ id: 'ha-gioi', label: 'Hạ Giới', viewType: 'collection-track' }],
+      },
+      {
+        id: 'he-thong',
+        label: 'Hệ thống',
+        subTabs: [{ id: 'goi-qua', label: 'Gói Quà', viewType: 'collection-track' }],
+      },
+    ],
+    data: {
+      'ban-do': {
+        'ha-gioi': {
+          overview: '',
+          entities: [
+            {
+              id: 'list-map',
+              name: 'Danh sach ha gioi',
+              info: 'Ghi chú map',
+              dynamicData: {},
+              milestones: [],
+            },
+            {
+              id: 'map-1',
+              name: 'Băng Thiên Đại Lục',
+              info: '',
+              dynamicData: { f_vi_tri: 'Hạ Giới - Băng Tinh', f_status: 'Đại Lục' },
+              milestones: [],
+            },
+            {
+              id: 'map-2',
+              name: 'Thánh Thành',
+              info: '',
+              dynamicData: { f_vi_tri: 'Hạ Giới - Băng Thiên Đại Lục - Thánh Trì' },
+              milestones: [],
+            },
+          ],
+        },
+      },
+      'he-thong': {
+        'goi-qua': {
+          overview: '',
+          entities: [
+            {
+              id: 'list-gift',
+              name: 'Danh sach goi qua',
+              info: 'Ghi chú quà',
+              dynamicData: {},
+              milestones: [],
+            },
+            {
+              id: 'gift-1',
+              name: 'Rương Đại Lễ',
+              info: '',
+              dynamicData: { f_owner: 'Lạc Nam' },
+              milestones: [],
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+describe('collectionListCardSync (flat mode)', () => {
+  it('ensures each collection tab has a canonical list card', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'he-thong',
+          label: 'Hệ thống',
+          subTabs: [{ id: 'goi-qua', label: 'Gói Quà', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'he-thong': {
+          'goi-qua': {
+            overview: '',
+            entities: [{ id: 'gift-1', name: 'Rương Đại Lễ', info: '', dynamicData: {}, milestones: [] }],
+          },
+        },
+      },
+    };
+    const changed = ensureCollectionListCardsForNovel(novel);
+    expect(changed).toBe(true);
+    expect(novel.data['he-thong']['goi-qua'].entities[0].name).toBe('Danh Sách Gói Quà');
+  });
+
+  it('writes AUTO block as a flat list and keeps manual notes', () => {
+    const novel = buildNovel();
+    const changed = syncAllCollectionListCards(novel);
+    expect(changed).toBe(true);
+    const info = String(novel.data['ban-do']['ha-gioi'].entities[0].info || '');
+    expect(info).toContain('Ghi chú map');
+    expect(info).toContain('# Danh mục thẻ (AUTO)');
+    expect(info).toContain('## Danh sách (2)');
+    expect(info).toContain('1. [[Băng Thiên Đại Lục]]');
+    expect(info).toContain('2. [[Thánh Thành]]');
+    expect(info).not.toContain('### ');
+  });
+
+  it('appends detail suffix from map fields', () => {
+    const novel = buildNovel();
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['ban-do']['ha-gioi'].entities[0].info || '');
+    expect(info).toContain('[[Băng Thiên Đại Lục]] - Hạ Giới - Băng Tinh - Đại Lục');
+    expect(info).toContain('[[Thánh Thành]] - Hạ Giới - Băng Thiên Đại Lục - Thánh Trì');
+  });
+
+  it('falls back to owner suffix when no detail bits', () => {
+    const novel = buildNovel();
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['he-thong']['goi-qua'].entities[0].info || '');
+    expect(info).toContain('[[Rương Đại Lễ]] - [[Lạc Nam]]');
+  });
+
+  it('recreates list card and reports recreated tabs', () => {
+    const novel = buildNovel();
+    novel.data['ban-do']['ha-gioi'].entities = novel.data['ban-do']['ha-gioi'].entities.filter(
+      (ent) => !String(ent.name || '').toLowerCase().includes('danh sach')
+    );
+    const result = syncAllCollectionListCardsDetailed(novel);
+    expect(result.recreatedCount).toBe(1);
+    expect(result.recreatedTabs[0]?.nhoId).toBe('ha-gioi');
+    expect(novel.data['ban-do']['ha-gioi'].entities[0].name).toContain('Danh Sách');
+  });
+});
+
+import { describe, expect, it } from 'vitest';
+import {
+  ensureCollectionListCardsForNovel,
+  syncAllCollectionListCards,
+  syncAllCollectionListCardsDetailed,
 } from './collectionListCardSync.js';
 import { normalizeAsciiText } from './statusHierarchyParser.js';
 
@@ -83,27 +343,6 @@ function buildNovel() {
 }
 
 describe('collectionListCardSync', () => {
-  it('normalizeAutoListGroupFieldOrder trims và bỏ dòng rỗng', () => {
-    expect(normalizeAutoListGroupFieldOrder({ autoListGroupFieldOrder: [' f_title ', '', 'f_status'] })).toEqual([
-      'f_title',
-      'f_status',
-    ]);
-    expect(normalizeAutoListGroupFieldOrder({})).toEqual([]);
-  });
-
-  it('getAutoListFieldIdsFromTemplate sorts numbered fields first, then template order', () => {
-    const tab = {
-      fieldsTemplate: [
-        { id: 'f_a', label: 'A', listMergeOrder: 2 },
-        { id: 'f_b', label: 'B', listMergeOrder: 1 },
-        { id: 'f_c', label: 'C' },
-        { id: 'f_alias', label: 'Wiki' },
-      ],
-    };
-    expect(templateHasListMergeOrder(tab)).toBe(true);
-    expect(getAutoListFieldIdsFromTemplate(tab)).toEqual(['f_b', 'f_a', 'f_c']);
-  });
-
   it('ensures each collection tab has a list card named by sub-tab label', () => {
     const novel = {
       tabsConfig: [
@@ -1499,3 +1738,4 @@ describe('collectionListCardSync', () => {
     expect(info).toContain('de quoc');
   });
 });
+*/

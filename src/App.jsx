@@ -64,7 +64,6 @@ import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
 import { resolveEntityPageForSelection } from './lib/entitySelectionPage.js';
 import {
   ensureCollectionListCardsForNovel,
-  normalizeListGroupStrategy,
   syncAllCollectionListCards,
 } from './lib/collectionListCardSync.js';
 import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
@@ -486,6 +485,12 @@ export default function App() {
     activeTabNho,
     entityFilterFields,
   });
+  useEffect(() => {
+    if (currentTabConfig?.viewType !== 'collection-track') return;
+    if (collectionSubTab !== 'list') return;
+    setEntityGroupBy((prev) => (prev === 'none' ? prev : 'none'));
+    setEntitySortMode((prev) => (prev === 'name_asc' ? prev : 'name_asc'));
+  }, [collectionSubTab, currentTabConfig?.viewType, setEntityGroupBy, setEntitySortMode]);
   const {
     menu2Expanded,
     setMenu2Expanded,
@@ -1288,6 +1293,12 @@ export default function App() {
       syncNovel,
     ]
   );
+  useEffect(() => {
+    if (!activeNovelData?.id) return;
+    updateActiveNovelData((nov) => {
+      syncAllCollectionListCards(nov);
+    });
+  }, [activeNovelData?.id, updateActiveNovelData]);
 
   const {
     openOverviewHub,
@@ -2208,86 +2219,6 @@ export default function App() {
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
   };
-  const handleSetTabListGroupStrategy = (lonId, nhoId, nextStrategyValue) => {
-    const current = structuredClone(getTabsToUpdate());
-    const lon = current.find((tab) => tab.id === lonId);
-    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
-    if (!nho || nho.viewType !== 'collection-track') return;
-    const normalized = normalizeListGroupStrategy(nextStrategyValue);
-    if (normalized === 'auto') delete nho.autoListGroupStrategy;
-    else nho.autoListGroupStrategy = normalized;
-    setTabsConfig(current, {
-      resyncAuto: true,
-      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
-      autoSyncReason: 'set_list_group_strategy',
-      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
-    });
-  };
-  const handleSetTabAutoListOutlineFieldId = (lonId, nhoId, nextValue) => {
-    const current = structuredClone(getTabsToUpdate());
-    const lon = current.find((tab) => tab.id === lonId);
-    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
-    if (!nho || nho.viewType !== 'collection-track') return;
-    const t = safeString(nextValue).trim();
-    if (!t) delete nho.autoListOutlineFieldId;
-    else if (t === '__off__' || t === '-') nho.autoListOutlineFieldId = '__off__';
-    else nho.autoListOutlineFieldId = t;
-    setTabsConfig(current, {
-      resyncAuto: true,
-      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
-      autoSyncReason: 'set_auto_list_outline_field',
-      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
-    });
-  };
-
-  const handleSetTabListGroupOrder = (lonId, nhoId, text) => {
-    const current = structuredClone(getTabsToUpdate());
-    const lon = current.find((tab) => tab.id === lonId);
-    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
-    if (!nho || nho.viewType !== 'collection-track') return;
-    const parsed = linesToSuggestionArray(text);
-    if (parsed.length === 0) delete nho.autoListGroupOrder;
-    else nho.autoListGroupOrder = parsed;
-    setTabsConfig(current, {
-      resyncAuto: true,
-      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
-      autoSyncReason: 'set_list_group_order',
-      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
-    });
-  };
-  const handleSaveTabListGroupOrderToGenreTemplate = (lonId, nhoId, text) => {
-    const current = structuredClone(getTabsToUpdate());
-    const lon = current.find((tab) => tab.id === lonId);
-    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
-    if (!nho || nho.viewType !== 'collection-track') return;
-    const parsed = linesToSuggestionArray(text);
-    if (parsed.length === 0) delete nho.autoListGroupOrder;
-    else nho.autoListGroupOrder = parsed;
-
-    setTabsConfig(current, {
-      resyncAuto: true,
-      autoSyncPlan: buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
-      autoSyncReason: 'set_list_group_order_and_save_template',
-      autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
-    });
-
-    const genres = Array.isArray(activeNovelData?.genres)
-      ? activeNovelData.genres.filter(Boolean)
-      : typeof activeNovelData?.genres === 'string'
-        ? [activeNovelData.genres]
-        : activeNovelData?.genre
-          ? [activeNovelData.genre]
-          : [];
-    if (genres.length === 0) {
-      showToast('Đã lưu list cho tab hiện tại, nhưng truyện chưa có thể loại để cập nhật mẫu.', 'warning');
-      return;
-    }
-    if (!saveGenreTabsTemplate(genres, current)) {
-      showToast('Đã lưu list cho tab hiện tại, nhưng cập nhật mẫu thể loại thất bại.', 'error');
-      return;
-    }
-    showToast(`Đã lưu list cho tab này và cập nhật luôn mẫu thể loại: ${genres.join(', ')}.`, 'success');
-  };
 
   const handleSetTabMapEntrySuggestions = (lonId, nhoId, which, text, options = {}) => {
     const current = structuredClone(getTabsToUpdate());
@@ -2560,45 +2491,6 @@ export default function App() {
       resyncAuto: true,
       autoSyncPlan: propagate ? buildFullAutoSyncPlan() : buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
       autoSyncReason: propagate ? 'tab_propagate_set_field_sort_prefix' : 'tab_set_field_sort_prefix',
-      autoSyncScopeLabel: propagate ? safeString(lon?.label || lonId) : buildTabScopeLabel(lonId, nhoId, current),
-    });
-  };
-
-  const handleSetTabTemplateFieldListMergeOrder = (lonId, nhoId, fieldId, rawValue, options = {}) => {
-    const propagate = Boolean(options?.propagateWithinLon);
-    const fid = safeString(fieldId).trim();
-    if (!fid || fid === 'f_alias') return;
-    const trimmed = safeString(rawValue).trim();
-    let orderValue;
-    if (trimmed === '') orderValue = undefined;
-    else {
-      const n = Number(trimmed);
-      if (!Number.isFinite(n)) return;
-      orderValue = Math.trunc(n);
-    }
-    const current = structuredClone(getTabsToUpdate());
-    const lon = current.find((tab) => tab.id === lonId);
-    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
-    if (!nho || nho.viewType !== 'collection-track') return;
-    const targets = propagate
-      ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
-      : [nho];
-    targets.forEach((sub) => {
-      const hasField = (sub.fieldsTemplate || []).some((f) => f.id === fid);
-      if (!hasField) return;
-      const nextFields = (sub.fieldsTemplate || []).map((f) => {
-        if (f.id !== fid) return f;
-        const next = { ...f };
-        if (orderValue === undefined) delete next.listMergeOrder;
-        else next.listMergeOrder = orderValue;
-        return next;
-      });
-      sub.fieldsTemplate = ensureWikiAliasInFieldsTemplate(nextFields);
-    });
-    setTabsConfig(current, {
-      resyncAuto: true,
-      autoSyncPlan: propagate ? buildFullAutoSyncPlan() : buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
-      autoSyncReason: propagate ? 'tab_propagate_field_list_merge_order' : 'tab_field_list_merge_order',
       autoSyncScopeLabel: propagate ? safeString(lon?.label || lonId) : buildTabScopeLabel(lonId, nhoId, current),
     });
   };
@@ -3027,10 +2919,6 @@ export default function App() {
     handleSetTabAutoSyncTargets,
     handleSetTabAutoSyncLevels,
     handleSetTabAutoSyncFieldMap,
-    handleSetTabListGroupStrategy,
-    handleSetTabAutoListOutlineFieldId,
-    handleSetTabListGroupOrder,
-    handleSaveTabListGroupOrderToGenreTemplate,
     handleSetTabMapEntrySuggestions,
     handleMergeTabFieldSuggestionList,
     handleAddTabTemplateField,
@@ -3038,7 +2926,6 @@ export default function App() {
     handleRemoveTabTemplateField,
     handleRenameTabTemplateFieldLabel,
     handleSetTabTemplateFieldSortPrefix,
-    handleSetTabTemplateFieldListMergeOrder,
     handleSetTabEntityQuickEntry,
     handleSetTabFieldSource,
     handleApplySuggestedAutoSyncSetup,

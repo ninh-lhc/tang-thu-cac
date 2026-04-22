@@ -1081,6 +1081,26 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
   const mapTypeLabel = isMapCardScope ? safeString(mapCardQuick.mapType).trim() : '';
   const mapSystemBadgeStyle = buildMapTraitBadgeStyle(mapSystemBadgeLabel);
   const mapParentPath = isMapCardScope ? safeString(entity?.dynamicData?.f_vi_tri).trim() : '';
+  const normEquals = (a, b) =>
+    normalizeAsciiText(safeString(a).trim()) === normalizeAsciiText(safeString(b).trim());
+  const sanitizeMapParentPath = (pathLine, bannedValues = []) => {
+    const banned = new Set(
+      (bannedValues || [])
+        .map((v) => normalizeAsciiText(safeString(v).trim()))
+        .filter(Boolean)
+    );
+    const tokens = splitStatusHierarchyTokens(pathLine);
+    const deduped = [];
+    const seen = new Set();
+    tokens.forEach((token) => {
+      const raw = safeString(token).trim();
+      const key = normalizeAsciiText(raw);
+      if (!key || banned.has(key) || seen.has(key)) return;
+      seen.add(key);
+      deduped.push(raw);
+    });
+    return deduped.join(' > ');
+  };
   let f1DisplayResolved = f1Display;
   if (isMapCardScope && !isListCardEntity && mapSystemBadgeLabel) {
     const statusParts = safeString(f1Display).split('·').map((x) => safeString(x).trim()).filter(Boolean);
@@ -1088,6 +1108,10 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
       // Badge đã thể hiện "Đặc Tính", nên dòng tím chỉ giữ "Giới Diện".
       f1DisplayResolved = statusParts[0];
     }
+  }
+  if (isMapCardScope && mapSystemBadgeLabel && normEquals(f1DisplayResolved, mapSystemBadgeLabel)) {
+    // Tránh lặp cùng nội dung đã hiển thị trên badge map.
+    f1DisplayResolved = '';
   }
   let f2DisplayResolved = f2Display;
   if (isMapCardScope) {
@@ -1103,6 +1127,12 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
       // Tránh lặp cùng nội dung với dòng trên; ưu tiên hiện "Trực thuộc" nếu có.
       f2DisplayResolved = mapParentPath;
     }
+    f2DisplayResolved = sanitizeMapParentPath(f2DisplayResolved, [
+      entity?.name,
+      mapTypeLabel,
+      mapSystemBadgeLabel,
+      f1DisplayResolved,
+    ]) || f2DisplayResolved;
   }
   const f3Trim = safeString(f3).trim();
   const f2Trim = safeString(f2DisplayResolved).trim();
