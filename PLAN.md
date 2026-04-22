@@ -35,3 +35,39 @@ Tài liệu này dùng để **đánh dấu đã làm tới đâu** khi bạn ho
 
 - Chi tiết kỹ thuật & checklist: [`docs/PLAN-khoi-tao-tab-config.md`](docs/PLAN-khoi-tao-tab-config.md)
 - Lộ trình hiệu năng (chủ đề khác): [`PERFORMANCE_ROADMAP.md`](PERFORMANCE_ROADMAP.md)
+
+---
+
+## Kế hoạch triển khai AUTO Danh Sách (v2)
+
+Mục tiêu: tái xây dựng logic AUTO cho thẻ Danh sách theo hướng data-driven, áp dụng đồng nhất cho mọi tab `collection-track`, có checklist kiểm thử rõ ràng để đối chiếu.
+
+### Trạng thái theo bước
+
+| Bước | Hạng mục | Trạng thái | Tiêu chí hoàn tất |
+|---|---|---|---|
+| 0 | Chốt phạm vi và contract v2 | **Xong** | Đã thống nhất bỏ logic group/sort cũ, giữ AUTO dạng phẳng + detail suffix |
+| 1 | Dọn sạch mã/test legacy còn sót | **Xong** | Đã gỡ khối test legacy comment ở `collectionListCardSync.test.js`; giữ bộ test flat-mode gọn |
+| 2 | Chuẩn hóa pipeline build dòng AUTO (entry -> detail -> render) | **Xong** | Đã tách payload dòng AUTO, lọc trùng detail theo tên/owner, fallback owner rõ ràng |
+| 3 | Chuẩn hóa cấu hình theo tab (field/template/suggestion) | **Xong** | Pipeline AUTO đã đọc `fieldsTemplate` theo tab để suy ra field owner/detail, giảm hardcode |
+| 4 | Đồng bộ trải nghiệm giữa tab Bản đồ và tab khác | **Xong** | Cùng pipeline detail suffix cho mọi tab; khác nhau bởi `fieldsTemplate`/field data của từng tab |
+| 5 | Bổ sung test bao phủ behavior v2 | **Xong** | Đã thêm test cho fieldsTemplate-order, owner fallback plain text, format đồng nhất map/non-map |
+| 6 | Chạy kiểm thử + chốt nghiệm thu | **Xong** | `npm run test` pass tại checkpoint hiện tại (68 files / 422 tests) |
+
+### Checklist kiểm tra đối chiếu
+
+- [ ] Mỗi tab `collection-track` luôn có đúng 1 thẻ `Danh Sách ...` canonical.
+- [ ] Khối AUTO luôn được replace an toàn, không đè ghi chú tay của user.
+- [ ] Danh sách AUTO hiển thị dạng phẳng (`## Danh sách (N)` + `1..N`), không còn heading nhóm cũ.
+- [ ] Mỗi item có hậu tố detail ưu tiên từ field dữ liệu của entity; nếu trống thì fallback owner hợp lệ.
+- [ ] Detail suffix không lặp dữ liệu đã có trong tên/chuỗi chính.
+- [ ] Áp dụng đồng nhất cho tất cả tab con thuộc nhóm Bản đồ và các tab collection khác.
+- [x] File test không còn legacy block comment dài gây nhiễu.
+- [x] `npm run test` pass toàn bộ.
+
+### Cách thực thi từng bước
+
+1. Hoàn tất bước 1 (cleanup legacy) rồi commit logical checkpoint.
+2. Triển khai bước 2-4 theo từng patch nhỏ, mỗi patch có test đi kèm.
+3. Hoàn tất bước 5, chạy test cuối bước 6.
+4. Cập nhật lại bảng trạng thái để đối chiếu nhanh trước khi chốt.

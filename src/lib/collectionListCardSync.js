@@ -831,8 +831,49 @@ function extractOwnerName(rawValue) {
   return base.replace(/^[^\p{L}\p{N}\u005b]+/u, '').trim();
 }
 
-function resolveOwnerLabel(entity, ownerLookupEntities = []) {
+function getTabTemplateFields(tabConfig) {
+  return Array.isArray(tabConfig?.fieldsTemplate) ? tabConfig.fieldsTemplate : [];
+}
+
+function collectTemplateFieldIds(tabConfig) {
+  return getTabTemplateFields(tabConfig)
+    .map((field) => safeString(field?.id).trim())
+    .filter(Boolean);
+}
+
+function collectTemplateOwnerFieldIds(tabConfig) {
+  return getTabTemplateFields(tabConfig)
+    .filter((field) => {
+      const fieldId = safeString(field?.id).trim();
+      const label = safeString(field?.label).trim();
+      return isOwnerLikeFieldId(fieldId) || /(chủ|owner|sở hữu|phái|tổ chức|thế lực|phe)/i.test(label);
+    })
+    .map((field) => safeString(field?.id).trim())
+    .filter(Boolean);
+}
+
+function collectTemplateDetailFieldIds(tabConfig) {
+  const ownerFieldIds = new Set(collectTemplateOwnerFieldIds(tabConfig));
+  const highPriority = [];
+  const normalPriority = [];
+  getTabTemplateFields(tabConfig).forEach((field) => {
+    const fieldId = safeString(field?.id).trim();
+    const label = safeString(field?.label).trim();
+    if (!fieldId || ownerFieldIds.has(fieldId)) return;
+    if (/^(f_alias|f_desc|f_mo_ta|f_ghi_chu|f_note|f_notes|f_noi_dung|f_content)$/i.test(fieldId)) return;
+    const signature = `${fieldId} ${label}`;
+    if (/(vi_tri|dia_ban|status|cap|title|vị trí|địa bàn|trạng thái|cấp|tiêu đề)/i.test(signature)) {
+      highPriority.push(fieldId);
+    } else {
+      normalPriority.push(fieldId);
+    }
+  });
+  return [...highPriority, ...normalPriority];
+}
+
+function resolveOwnerLabel(entity, ownerLookupEntities = [], tabConfig = null) {
   const rawDirect = pickFirstFilled(entity, [
+    ...collectTemplateOwnerFieldIds(tabConfig),
     'f_chu',
     'f_owner',
     'f_phai',
@@ -867,7 +908,7 @@ function resolveOwnerLabel(entity, ownerLookupEntities = []) {
   if (!ownerName) {
     const parsed = parseOwnerTimelineHint({
       dynamicData: entity?.dynamicData || {},
-      fieldsTemplate: [],
+      fieldsTemplate: getTabTemplateFields(tabConfig),
       rawText: safeString(entity?.info || entity?.rawText),
     });
     ownerName = safeString(parsed?.ownerName).trim();
@@ -877,7 +918,14 @@ function resolveOwnerLabel(entity, ownerLookupEntities = []) {
   return safeString(matched?.entity?.name).trim() || ownerName;
 }
 
-function collectDefaultEntityDetailBits(entity) {
+function isOwnerLikeFieldId(fieldId) {
+  const fid = safeString(fieldId).trim().toLowerCase();
+  if (!fid) return false;
+  if (/loai_to_chuc/.test(fid)) return false;
+  return /(chu|owner|so_huu|phai|to_chuc|the_luc|phe)/.test(fid);
+}
+
+function collectDefaultEntityDetailBits(entity, tabConfig = null) {
   const bits = [];
   const seen = new Set();
   const pushBit = (raw) => {
@@ -889,19 +937,32 @@ function collectDefaultEntityDetailBits(entity) {
     bits.push(value);
   };
 
-  const locationChain = pickFirstFilled(entity, ['f_vi_tri', 'f_dia_ban']);
+  const templateDetailFieldIds = collectTemplateDetailFieldIds(tabConfig);
+  const locationCandidateFieldIds = [
+    ...templateDetailFieldIds.filter((fieldId) => /(vi_tri|dia_ban)/i.test(fieldId)),
+    'f_vi_tri',
+    'f_dia_ban',
+  ];
+  const statusCandidateFieldIds = [
+    ...templateDetailFieldIds.filter((fieldId) => /(status|cap|title)/i.test(fieldId)),
+    'f_status',
+    'f_cap',
+    'f_title',
+  ];
+  const locationChain = pickFirstFilled(entity, locationCandidateFieldIds);
   if (locationChain) {
     splitMapHierarchyTokens(locationChain).forEach(pushBit);
   }
 
-  const statusChain = pickFirstFilled(entity, ['f_status', 'f_cap', 'f_title']);
+  const statusChain = pickFirstFilled(entity, statusCandidateFieldIds);
   if (statusChain) {
     extractMapStatusSegments(statusChain).forEach(pushBit);
   }
 
-  // Fallback: nhiều tab tùy chỉnh không dùng f_vi_tri/f_status,
-  // nên lấy thêm từ dynamicData để tránh dòng chỉ còn tên thẻ.
-  if (bits.length === 0 && entity?.dynamicData && typeof entity.dynamicData === 'object') {
+  // Đồng bộ trải nghiệm giữa tab bản đồ và tab khác:
+  // luôn bổ sung detail theo thứ tự field của tab hiện tại (nếu có),
+  // không chỉ fallback khi rỗng. Nhờ đó mọi tab cùng chung format hiển thị.
+  if (entity?.dynamicData && typeof entity.dynamicData === 'object') {
     const skipKeys = new Set([
       'f_alias',
       'f_desc',
@@ -912,9 +973,14 @@ function collectDefaultEntityDetailBits(entity) {
       'f_noi_dung',
       'f_content',
     ]);
-    Object.entries(entity.dynamicData).forEach(([fieldId, rawValue]) => {
+    const preferredFieldIds = templateDetailFieldIds.length > 0
+      ? templateDetailFieldIds
+      : Object.keys(entity.dynamicData || {});
+    preferredFieldIds.forEach((fieldId) => {
+      const rawValue = entity.dynamicData?.[fieldId];
       const fid = safeString(fieldId).trim().toLowerCase();
       if (!fid || skipKeys.has(fid)) return;
+      if (isOwnerLikeFieldId(fid)) return;
       const value = safeString(rawValue).trim();
       if (!value) return;
       if (value.length > 80) return;
@@ -930,17 +996,31 @@ function collectDefaultEntityDetailBits(entity) {
   return bits.slice(0, 3);
 }
 
-function renderAutoListEntry(entity, ownerLookupEntities = []) {
+function buildAutoListEntryPayload(entity, ownerLookupEntities = [], tabConfig = null) {
   const name = safeString(entity?.name).trim();
-  if (!name) return '';
-  const detailBits = collectDefaultEntityDetailBits(entity);
+  if (!name) return null;
+  const ownerLabel = resolveOwnerLabel(entity, ownerLookupEntities, tabConfig);
+  const ownerNorm = normalize(ownerLabel);
+  const detailBits = collectDefaultEntityDetailBits(entity, tabConfig).filter((bit) => {
+    const bitNorm = normalize(bit);
+    if (!bitNorm) return false;
+    if (bitNorm === normalize(name)) return false;
+    if (ownerNorm && bitNorm === ownerNorm) return false;
+    return true;
+  });
+  return { name, detailBits, ownerLabel };
+}
+
+function renderAutoListEntry(entity, ownerLookupEntities = [], tabConfig = null) {
+  const payload = buildAutoListEntryPayload(entity, ownerLookupEntities, tabConfig);
+  if (!payload) return '';
+  const { name, detailBits, ownerLabel } = payload;
   if (detailBits.length > 0) return `[[${name}]] - ${detailBits.join(' - ')}`;
-  const owner = resolveOwnerLabel(entity, ownerLookupEntities);
-  const ownerSuffix = owner ? ` - [[${owner}]]` : '';
+  const ownerSuffix = ownerLabel ? ` - ${ownerLabel}` : '';
   return `[[${name}]]${ownerSuffix}`;
 }
 
-function buildAutoLines(records, ownerLookupEntities = []) {
+function buildAutoLines(records, ownerLookupEntities = [], tabConfig = null) {
   let items = Array.isArray(records) ? [...records] : [];
   const lines = [AUTO_LIST_TITLE, '', `- T\u1ed5ng s\u1ed1 th\u1ebb: ${items.length}`, ''];
 
@@ -955,7 +1035,7 @@ function buildAutoLines(records, ownerLookupEntities = []) {
   lines.push('');
   let visibleIdx = 0;
   items.forEach((entity) => {
-    const lineContent = renderAutoListEntry(entity, ownerLookupEntities);
+    const lineContent = renderAutoListEntry(entity, ownerLookupEntities, tabConfig);
     if (!lineContent) return;
     visibleIdx += 1;
     lines.push(`${visibleIdx}. ${lineContent}`);
@@ -970,7 +1050,7 @@ function syncListCardsInTab(tabData, context, ownerLookupEntities) {
   if (listCards.length === 0) return false;
 
   const normalEntities = entities.filter((entity) => !isListCardEntity(entity));
-  const blockText = buildAutoLines(normalEntities, ownerLookupEntities).join('\n');
+  const blockText = buildAutoLines(normalEntities, ownerLookupEntities, context?.tabConfig || null).join('\n');
   let changed = false;
 
   listCards.forEach((listCard) => {
