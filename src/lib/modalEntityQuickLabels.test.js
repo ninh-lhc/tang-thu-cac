@@ -95,6 +95,12 @@ describe('resolveMainFormLabels (Pha 5)', () => {
     expect(out.statusLine.label).toBe('Tóm tắt dưới tên');
   });
 
+  it('statusLine tab có gợi ý nhanh chung: baseline → "Chuỗi hiển thị / dữ liệu auto"', () => {
+    const tpl = [{ id: 'f_status', label: 'Phẩm cấp' }];
+    const out = resolveMainFormLabels(tpl, { useComposeStatusLabel: true });
+    expect(out.statusLine.label).toBe('Chuỗi hiển thị / dữ liệu auto');
+  });
+
   it('statusLine scope thường: label tuỳ chỉnh → dùng nhãn template', () => {
     const tpl = [{ id: 'f_status', label: 'Trạng thái đặc biệt' }];
     const out = resolveMainFormLabels(tpl, {});

@@ -167,11 +167,17 @@ export const MAIN_FORM_SLOTS = Object.freeze({
  * Resolve nhãn cho main-form theo scope hiện tại.
  * - Map/Force scope: ô status hiển thị "Chuỗi hiển thị / dữ liệu auto" làm default (hint rằng
  *   giá trị được auto-compose từ khối Gợi ý nhanh).
+ * - Tab sưu tập có «Gợi ý nhanh» chung (`useComposeStatusLabel`): cùng default map/force để
+ *   thống nhất với ô tự ghép từ các slot nhanh.
  * - Các scope khác: dùng "Tóm tắt dưới tên".
  * - Trong cả 2 trường hợp, nếu user đã tuỳ chỉnh nhãn template (khác baseline) → dùng nhãn đó.
  */
-export function resolveMainFormLabels(fieldsTemplate, { isMapScope = false, isForceScope = false } = {}) {
-  const statusDefault = isMapScope || isForceScope ? 'Chuỗi hiển thị / dữ liệu auto' : 'Tóm tắt dưới tên';
+export function resolveMainFormLabels(
+  fieldsTemplate,
+  { isMapScope = false, isForceScope = false, useComposeStatusLabel = false } = {}
+) {
+  const statusDefault =
+    isMapScope || isForceScope || useComposeStatusLabel ? 'Chuỗi hiển thị / dữ liệu auto' : 'Tóm tắt dưới tên';
   const statusSlot = { ...MAIN_FORM_SLOTS.statusLine, defaultLabel: statusDefault };
   const aliasSlot = MAIN_FORM_SLOTS.alias;
   return {

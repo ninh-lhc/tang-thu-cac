@@ -1530,9 +1530,17 @@ export const ModalEntity = ({
     [showGenericQuickEntry, tabConfig, fieldsTemplate, activeNovelData, parentTabId, parentLabel]
   );
   const genericQuickListPrefix = useId().replace(/:/g, '');
-  const hideLegacyStatusInput = Boolean(
-    showGenericQuickEntry && genericQuickResolved?.slotFields?.includes('f_status')
-  );
+  /** Các slot dùng để ghép `f_status` (bỏ `f_status` nếu có trong 3 slot — ô chính xử lý). */
+  const genericQuickStatusSourceFieldIds = useMemo(() => {
+    if (!genericQuickResolved?.slots) return [];
+    return genericQuickResolved.slots
+      .map((s) => safeString(s.fieldId).trim())
+      .filter((fid) => fid && fid !== 'f_status');
+  }, [genericQuickResolved]);
+  const genericQuickSlotsVisible = useMemo(() => {
+    if (!genericQuickResolved?.slots) return [];
+    return genericQuickResolved.slots.filter((s) => safeString(s.fieldId).trim() && s.fieldId !== 'f_status');
+  }, [genericQuickResolved]);
   const mapQuickLabels = useMemo(
     () => resolveQuickSlotLabels(fieldsTemplate, MAP_QUICK_SLOTS),
     [fieldsTemplate]
@@ -1543,8 +1551,13 @@ export const ModalEntity = ({
   );
   /** Pha 5 — nhãn các ô chính trên modal (Biệt danh, Chuỗi hiển thị / trạng thái). */
   const mainFormLabels = useMemo(
-    () => resolveMainFormLabels(fieldsTemplate, { isMapScope, isForceScope }),
-    [fieldsTemplate, isMapScope, isForceScope]
+    () =>
+      resolveMainFormLabels(fieldsTemplate, {
+        isMapScope,
+        isForceScope,
+        useComposeStatusLabel: showGenericQuickEntry,
+      }),
+    [fieldsTemplate, isMapScope, isForceScope, showGenericQuickEntry]
   );
   const mapEntityHints = useMemo(
     () => collectMapEntityHints(activeNovelData, isMapScope ? tabConfig : null, isMapScope ? parentTabId : ''),
@@ -1578,6 +1591,13 @@ export const ModalEntity = ({
     : 'Nhãn ô theo mục sưu tập (cảnh giới, cấp độ, loại chức năng...). Có thể để trống.';
   const [formData, setFormData] = useState({ id: null, name: '', avatar: '', rawText: '' });
   const [dynamicData, setDynamicData] = useState({});
+  const genericQuickComposeKey = useMemo(
+    () =>
+      genericQuickStatusSourceFieldIds
+        .map((id) => `${id}:${safeString(dynamicData[id]).trim()}`)
+        .join('|'),
+    [genericQuickStatusSourceFieldIds, dynamicData]
+  );
   const [mapQuickType, setMapQuickType] = useState('');
   const [mapQuickRealmSystem, setMapQuickRealmSystem] = useState('');
   const [mapQuickSystem, setMapQuickSystem] = useState('');
@@ -1586,6 +1606,8 @@ export const ModalEntity = ({
   const [mapQuickParentTier2, setMapQuickParentTier2] = useState('');
   const [mapQuickParentTier3, setMapQuickParentTier3] = useState('');
   const mapQuickSystemRef = useRef('');
+  /** true = người dùng đang giữ chuỗi hiển thị khác bản ghép từ ô nhanh; sửa ô nhanh hoặc xóa trống ô chuỗi → tắt. */
+  const genericQuickFStatusUserOverrideRef = useRef(false);
   useEffect(() => {
     mapQuickSystemRef.current = mapQuickSystem;
   }, [mapQuickSystem]);
@@ -1690,7 +1712,9 @@ export const ModalEntity = ({
       : statusFieldPlaceholder;
   const resolvedStatusFieldHint = showForceQuickSection
     ? 'Ở thẻ Thế lực, nên để ô này là cấp thế lực; địa bàn nhập riêng ở ô phía trên để AUTO đẩy sang Bản đồ.'
-    : statusFieldHint;
+    : showGenericQuickEntry
+      ? 'Tự ghép từ các ô Gợi ý nhanh (theo thứ tự ô). Khởi tạo / Tu bổ: sửa ô nhanh sẽ đồng bộ lại; gõ khác bản ghép thì giữ tay cho đến khi xóa trống ô này hoặc chỉnh ô nhanh.'
+      : statusFieldHint;
   const trapRef = useFocusTrap(isOpen);
   const patchFormData = (patch) =>
     setFormData((prev) => {
@@ -1701,6 +1725,15 @@ export const ModalEntity = ({
     setDynamicData((prev) => {
       const rawPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
       const nextPatch = rawPatch && typeof rawPatch === 'object' ? rawPatch : {};
+      if (
+        showGenericQuickEntry &&
+        !isMapScope &&
+        !isForceScope &&
+        genericQuickStatusSourceFieldIds.length &&
+        Object.keys(nextPatch).some((k) => genericQuickStatusSourceFieldIds.includes(k))
+      ) {
+        genericQuickFStatusUserOverrideRef.current = false;
+      }
       const merged = { ...(prev || {}), ...nextPatch };
       if (isMapScope && !isForceScope) {
         const patchKeys = Object.keys(nextPatch);
@@ -2040,6 +2073,15 @@ export const ModalEntity = ({
     patchDynamicData({ f_status: value });
   };
   const handleStatusFieldChange = (value) => {
+    if (showGenericQuickEntry && !isMapScope && !isForceScope && genericQuickStatusSourceFieldIds.length) {
+      const line = genericQuickStatusSourceFieldIds
+        .map((id) => safeString(dynamicData[id]).trim())
+        .filter(Boolean)
+        .join(' · ');
+      const trimmed = safeString(value).trim();
+      if (!trimmed) genericQuickFStatusUserOverrideRef.current = false;
+      else genericQuickFStatusUserOverrideRef.current = trimmed !== line;
+    }
     patchDynamicData({ f_status: value });
     if (isMapScope) {
       const parsed = parseMapQuickState({ ...dynamicData, f_status: value });
@@ -2052,6 +2094,26 @@ export const ModalEntity = ({
       setForceQuickRank(value);
     }
   };
+
+  useEffect(() => {
+    if (!isOpen || !showGenericQuickEntry || isMapScope || isForceScope) return;
+    if (!genericQuickStatusSourceFieldIds.length) return;
+    const parts = genericQuickStatusSourceFieldIds
+      .map((id) => safeString(dynamicData[id]).trim())
+      .filter(Boolean);
+    const line = parts.join(' · ');
+    if (!line) return;
+    if (genericQuickFStatusUserOverrideRef.current) {
+      const cur = safeString(dynamicData.f_status).trim();
+      if (cur) return;
+      genericQuickFStatusUserOverrideRef.current = false;
+    }
+    setDynamicData((prev) => {
+      const cur = safeString(prev?.f_status).trim();
+      if (cur === line) return prev;
+      return { ...(prev || {}), f_status: line };
+    });
+  }, [isOpen, showGenericQuickEntry, isMapScope, isForceScope, genericQuickComposeKey, dynamicData.f_status]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -2109,6 +2171,18 @@ export const ModalEntity = ({
         delete initialDyn.f_he_cap_the_luc;
         delete initialDyn.f_he_phan_cap;
       }
+      if (showGenericQuickEntry && !isMapScope && !isForceScope && genericQuickStatusSourceFieldIds.length) {
+        const gParts = genericQuickStatusSourceFieldIds
+          .map((id) => safeString(initialDyn[id]).trim())
+          .filter(Boolean);
+        const composed = gParts.join(' · ');
+        const curSt = safeString(initialDyn.f_status).trim();
+        if (!curSt) genericQuickFStatusUserOverrideRef.current = false;
+        else if (!composed) genericQuickFStatusUserOverrideRef.current = true;
+        else genericQuickFStatusUserOverrideRef.current = curSt !== composed;
+      } else {
+        genericQuickFStatusUserOverrideRef.current = false;
+      }
       setDynamicData(initialDyn);
       setMapQuickType(mapQuickState.mapType);
       setMapQuickRealmSystem(mapQuickState.realmSystem);
@@ -2123,6 +2197,7 @@ export const ModalEntity = ({
       setForceQuickRank(forceQuickState.rankLabel);
       setForceQuickLocation(forceQuickState.locationLine);
     } else {
+      genericQuickFStatusUserOverrideRef.current = false;
       setFormData({ id: null, name: '', avatar: '', rawText: '' });
       const subTabLabel = safeString(tabConfig?.label).trim();
       const defaultMapTypeFromSubTab = isMapScope && !isForceScope && subTabLabel ? subTabLabel : '';
@@ -2147,7 +2222,17 @@ export const ModalEntity = ({
     }
     setMapRealmListPanelOpen(false);
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [isOpen, initialData, activeNovelData, tabConfig, isMapScope, isForceScope, fieldsTemplate]);
+  }, [
+    isOpen,
+    initialData,
+    activeNovelData,
+    tabConfig,
+    isMapScope,
+    isForceScope,
+    fieldsTemplate,
+    showGenericQuickEntry,
+    genericQuickStatusSourceFieldIds,
+  ]);
 
   useEffect(() => {
     const handler = (event) => {
@@ -2251,8 +2336,16 @@ export const ModalEntity = ({
               <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
                 Gợi ý nhanh ({safeString(tabConfig?.label).trim() || 'tab con'})
               </p>
-              <div className="grid gap-2 md:grid-cols-3 md:gap-3">
-                {genericQuickResolved.slots.map((slot, idx) => {
+              <div
+                className={`grid gap-2 md:gap-3 ${
+                  genericQuickSlotsVisible.length >= 3
+                    ? 'md:grid-cols-3'
+                    : genericQuickSlotsVisible.length === 2
+                      ? 'md:grid-cols-2'
+                      : 'md:grid-cols-1'
+                }`}
+              >
+                {genericQuickSlotsVisible.map((slot, idx) => {
                   const fid = slot.fieldId;
                   return (
                     <div key={`${fid}-${idx}`} className="space-y-1 min-w-0">
@@ -2267,8 +2360,8 @@ export const ModalEntity = ({
               <p className="text-[10px] text-slate-500 font-serif leading-snug">
                 Auto:{' '}
                 <code className="text-amber-200/90">
-                  {genericQuickResolved.slots
-                    .map((s) => safeString(dynamicData[s.fieldId]).trim())
+                  {genericQuickStatusSourceFieldIds
+                    .map((id) => safeString(dynamicData[id]).trim())
                     .filter(Boolean)
                     .join(' · ') || '—'}
                 </code>
@@ -2801,7 +2894,7 @@ export const ModalEntity = ({
             contextHint="Tên hiển thị sửa tuỳ ý; ID hệ thống cố định khi trường được tạo, chỉ mất khi xoá trường. Chọn chế độ Cục bộ / Khu vực bên dưới."
           />
 
-          <div className={`grid gap-2.5 items-start ${hideLegacyStatusInput ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}>
+          <div className="grid gap-2.5 items-start md:grid-cols-2">
             <div className="min-w-0 space-y-1">
               <label
                 className="block text-[10px] font-bold text-indigo-400 uppercase tracking-widest leading-snug truncate"
@@ -2821,29 +2914,27 @@ export const ModalEntity = ({
                 Tách bằng phẩy / / | — không dùng <strong className="text-slate-400">[[...]]</strong>.
               </p>
             </div>
-            {!hideLegacyStatusInput && (
-              <div className="min-w-0 space-y-1">
-                <label
-                  className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-snug truncate"
-                  title={mainFormLabels.statusLine.label}
-                >
-                  {mainFormLabels.statusLine.label}
-                </label>
-                <input
-                  aria-label={mainFormLabels.statusLine.label}
-                  value={safeString(dynamicData.f_status)}
-                  onChange={(e) => handleStatusFieldChange(e.target.value)}
-                  className="w-full bg-slate-950/80 border border-slate-700 rounded-lg py-2 px-2.5 text-sm text-slate-200 font-serif focus:border-amber-600/60 outline-none"
-                  placeholder={resolvedStatusFieldPlaceholder}
-                  title={resolvedStatusFieldHint}
-                />
-                {!isMapScope && !isForceScope && (
-                  <p className="text-[10px] text-slate-500 font-serif leading-snug line-clamp-2" title={resolvedStatusFieldHint}>
-                    {resolvedStatusFieldHint}
-                  </p>
-                )}
-              </div>
-            )}
+            <div className="min-w-0 space-y-1">
+              <label
+                className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-snug truncate"
+                title={mainFormLabels.statusLine.label}
+              >
+                {mainFormLabels.statusLine.label}
+              </label>
+              <input
+                aria-label={mainFormLabels.statusLine.label}
+                value={safeString(dynamicData.f_status)}
+                onChange={(e) => handleStatusFieldChange(e.target.value)}
+                className="w-full bg-slate-950/80 border border-slate-700 rounded-lg py-2 px-2.5 text-sm text-slate-200 font-serif focus:border-amber-600/60 outline-none"
+                placeholder={resolvedStatusFieldPlaceholder}
+                title={resolvedStatusFieldHint}
+              />
+              {!isMapScope && !isForceScope && (
+                <p className="text-[10px] text-slate-500 font-serif leading-snug line-clamp-2" title={resolvedStatusFieldHint}>
+                  {resolvedStatusFieldHint}
+                </p>
+              )}
+            </div>
           </div>
 
           <datalist id="ttc-map-type-options">
