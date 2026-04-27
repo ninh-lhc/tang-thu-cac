@@ -155,6 +155,9 @@ export function AppModalLayer({
   handleRenameTabTemplateFieldLabel,
   handleSetTabTemplateFieldSortPrefix,
   handleSetTabEntityQuickEntry,
+  handleSetTabFieldSuggestionDependencies,
+  requestPropagateEntityQuickEntryToLon,
+  requestPropagateEntityQuickEntryToAllLons,
   handleSetTabFieldSource,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
@@ -206,6 +209,10 @@ export function AppModalLayer({
         handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
         handleSetTabFieldSource={handleSetTabFieldSource}
         setConfirmDialog={setConfirmDialog}
+        handleSetTabEntityQuickEntry={handleSetTabEntityQuickEntry}
+        handleSetTabFieldSuggestionDependencies={handleSetTabFieldSuggestionDependencies}
+        requestPropagateEntityQuickEntryToLon={requestPropagateEntityQuickEntryToLon}
+        requestPropagateEntityQuickEntryToAllLons={requestPropagateEntityQuickEntryToAllLons}
       />
       <ModalMilestone
         isOpen={isMilestoneModalOpen}
@@ -386,7 +393,7 @@ export function AppModalLayer({
           handleSetTabAutoSyncLevels={handleSetTabAutoSyncLevels}
           handleSetTabAutoSyncFieldMap={handleSetTabAutoSyncFieldMap}
           handleSetTabMapEntrySuggestions={handleSetTabMapEntrySuggestions}
-          handleSetTabEntityQuickEntry={handleSetTabEntityQuickEntry}
+          handleSetTabTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
           handleApplySuggestedAutoSyncSetup={handleApplySuggestedAutoSyncSetup}
           handleResyncAutoTabs={handleResyncAutoTabs}
           handleSaveCurrentTabsAsGenreTemplate={handleSaveCurrentTabsAsGenreTemplate}

@@ -3,10 +3,15 @@ import {
   isBeyondRankLabel,
   parseRankNumber,
   parseStatusHierarchy,
+  splitMapHierarchyTokens,
   splitStatusHierarchyTokens,
 } from './statusHierarchyParser.js';
 
 describe('statusHierarchyParser', () => {
+  it('splits on map-style hierarchy delimiters (dot and angle)', () => {
+    expect(splitMapHierarchyTokens('A · B > C')).toEqual(['A', 'B', 'C']);
+  });
+
   it('splits hierarchy by delimiter but keeps hyphenated names intact', () => {
     expect(splitStatusHierarchyTokens('Gia Toc - Bat Cap the luc - Tay-Bac Chau - Tran-An')).toEqual([
       'Gia Toc',

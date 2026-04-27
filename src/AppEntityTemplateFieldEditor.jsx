@@ -66,8 +66,7 @@ export function AppEntityTemplateFieldEditor({
   }, [tabConfig]);
   const suggestionLists = tabConfig?.fieldSuggestionLists;
 
-  /** Mặc định thu gọn để modal ngắn; mở khi cần chỉnh mẫu tab / list gợi ý.
-   *  `defaultOpen=true` khi nhúng ngay dưới «Gợi ý nhanh» — dễ CRUD trường. */
+  /** Mặc định thu gọn (vd. tổng quan) hoặc mở theo `defaultOpen` (tab sưu tập: đồng bộ giao diện Khởi tạo thẻ). */
   const [isOpen, setIsOpen] = useState(Boolean(defaultOpen));
   const [scope, setScope] = useState(SCOPE_LOCAL);
   const [draft, setDraft] = useState('');
@@ -165,47 +164,42 @@ export function AppEntityTemplateFieldEditor({
   };
 
   const scopeButtonClass = (active) =>
-    `px-3 py-1.5 text-[11px] font-bold transition-colors ${
+    `flex-1 min-w-0 min-h-[2.35rem] px-1.5 sm:px-2 py-1 text-[10px] font-bold leading-tight text-center transition-colors ${
       active
         ? 'bg-amber-700/80 text-white'
         : 'bg-slate-950/60 text-slate-300 hover:bg-slate-900/70'
     }`;
 
   return (
-    <div className="rounded-lg border border-amber-900/45 bg-amber-950/10 p-2.5 space-y-2">
+    <div className="rounded-lg border border-amber-900/40 bg-amber-950/10 p-2 space-y-1.5">
       <button
         type="button"
         onClick={() => setIsOpen((v) => !v)}
         className="w-full flex items-center justify-between gap-2 text-left min-h-0"
         aria-expanded={isOpen}
+        title="Tên hiển thị sửa tùy ý; ID hệ thống sinh khi thêm, không đổi trừ khi xoá trường."
       >
         <div className="min-w-0">
           <div className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
             Trường thông tin (thêm · sửa · xoá)
           </div>
-          <div className="text-[11px] text-slate-400 font-serif mt-0.5 leading-snug">
-            Mỗi trường có <strong className="text-amber-200">Tên hiển thị</strong> (sửa tuỳ ý) &amp;{' '}
-            <strong className="text-amber-200">ID hệ thống</strong> (sinh khi thêm, bất biến — chỉ mất khi xoá trường).
-          </div>
         </div>
-        <span className="inline-flex items-center gap-1 rounded-md border border-amber-800/50 bg-amber-950/40 px-2 py-1 text-[10px] font-bold text-amber-100 shrink-0">
-          {isOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        <span className="inline-flex items-center gap-0.5 rounded-md border border-amber-800/45 bg-amber-950/35 px-1.5 py-0.5 text-[9px] font-bold text-amber-100/95 shrink-0">
+          {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           {isOpen ? 'Thu' : 'Mở'}
         </span>
       </button>
 
       {isOpen && (
-        <div className="space-y-2 pt-0.5 border-t border-amber-900/30">
+        <div className="space-y-1.5 pt-1.5 border-t border-amber-900/30">
           {safeString(contextHint).trim() && (
-            <p className="text-[10px] text-amber-200/75 font-serif leading-snug">
+            <p className="text-[9px] text-amber-200/80 font-serif leading-snug line-clamp-2" title={contextHint}>
               {contextHint}
             </p>
           )}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[9px] font-bold text-amber-300 uppercase tracking-widest">
-              Chế độ lưu
-            </span>
-            <div className="inline-flex rounded-lg border border-amber-900/55 overflow-hidden">
+          <div className="space-y-1">
+            <div className="text-[8px] font-bold text-amber-300/90 uppercase tracking-widest">Chế độ lưu</div>
+            <div className="grid grid-cols-2 gap-0 rounded-lg border border-amber-900/50 overflow-hidden w-full min-h-[2.35rem]">
               <button
                 type="button"
                 onClick={() => setScope(SCOPE_LOCAL)}
@@ -213,26 +207,26 @@ export function AppEntityTemplateFieldEditor({
                 aria-pressed={scope === SCOPE_LOCAL}
                 title="Chỉ lưu cho tab con đang mở"
               >
-                Cục bộ (tab con)
+                Cục bộ
               </button>
               <button
                 type="button"
                 onClick={() => setScope(SCOPE_AREA)}
                 className={scopeButtonClass(scope === SCOPE_AREA)}
                 aria-pressed={scope === SCOPE_AREA}
-                title="Lưu cho tất cả tab con trong cùng tab lớn"
+                title="Lưu mọi tab con cùng tab lớn"
               >
-                Khu vực (tab lớn)
+                Khu vực
               </button>
             </div>
-            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${scopeTone}`}>
+            <p className={`text-[8px] font-medium leading-tight break-words rounded border px-1.5 py-0.5 ${scopeTone}`}>
               {scopeLabel}
-            </span>
+            </p>
           </div>
 
-          <div className="flex flex-wrap items-end gap-1.5">
-            <div className="min-w-[180px] flex-1">
-              <label className="block text-[9px] font-bold text-amber-200 uppercase tracking-widest mb-0.5">
+          <div className="flex flex-wrap items-stretch gap-1.5">
+            <div className="min-w-[min(100%,10rem)] flex-1">
+              <label className="block text-[8px] font-bold text-amber-200/90 uppercase tracking-widest mb-0.5">
                 Thêm trường
               </label>
               <input
@@ -249,13 +243,17 @@ export function AppEntityTemplateFieldEditor({
                 className="w-full bg-slate-950 border border-slate-700 rounded-md px-2 py-1.5 text-xs text-slate-100 font-serif outline-none focus:border-amber-600/55"
               />
             </div>
-            <button
-              type="button"
-              onClick={handleAdd}
-              className="inline-flex items-center gap-1 rounded-md border border-amber-700/55 bg-amber-950/35 px-2.5 py-1.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/45"
-            >
-              <Plus size={11} /> Thêm
-            </button>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={handleAdd}
+                className="inline-flex h-8 items-center gap-0.5 rounded-md border border-amber-700/55 bg-amber-950/40 px-2 text-[10px] font-bold text-amber-100 hover:bg-amber-900/45"
+                title="Thêm trường vào mẫu (theo chế độ lưu)"
+              >
+                <Plus size={12} />
+                <span>Thêm</span>
+              </button>
+            </div>
           </div>
 
           {templateFields.length === 0 ? (
@@ -281,7 +279,7 @@ export function AppEntityTemplateFieldEditor({
                 return (
                   <div
                     key={fid}
-                    className="rounded-md border border-slate-800/90 bg-slate-950/55 p-2 space-y-1.5"
+                    className="rounded-md border border-slate-800/90 bg-slate-950/55 p-1.5 space-y-1.5"
                   >
                     {isOutlineField && patchEntity && (
                       <div className="rounded-md border border-emerald-800/50 bg-emerald-950/20 p-2 space-y-1.5">
@@ -319,6 +317,9 @@ export function AppEntityTemplateFieldEditor({
                         <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-200/90">
                           Ký hiệu
                         </span>
+                        <p className="text-[8px] text-slate-500 font-serif leading-tight">
+                          Chung cả tab — không lưu theo từng thẻ.
+                        </p>
                         <input
                           id={sortPrefixId}
                           type="text"

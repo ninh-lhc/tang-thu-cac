@@ -73,7 +73,7 @@ afterEach(() => {
 
 describe('modal ttc-save scope', () => {
   it('shows map-specific quick guidance when creating a new map entity', async () => {
-    const { getByTestId, getByText } = render(
+    const { getByTestId, getByText, getByRole } = render(
       <ModalEntity
         {...entityProps({
           initialData: null,
@@ -88,11 +88,12 @@ describe('modal ttc-save scope', () => {
     const entityNameInput = entityRoot.querySelector('input[placeholder]');
     expect(entityNameInput).toBeTruthy();
 
-    const mapHintSummary = await waitFor(() => getByText(/Ghi nhanh thẻ Bản Đồ/));
-    fireEvent.click(mapHintSummary);
-    await waitFor(() => expect(getByText(/Dạ Lang Tiên Tinh = Tiên tinh · Vương giới/)).toBeTruthy());
-    expect(getByText(/Gợi ý:/)).toBeTruthy();
-    expect(getByText(/Thế lực \(vd\. Thiên Tôn cấp\) ghi ở thẻ Thế lực/)).toBeTruthy();
+    const guideTab = await waitFor(() => getByRole('tab', { name: 'Tổng quan' }));
+    fireEvent.click(guideTab);
+    await waitFor(() => expect(getByText(/Gợi ý nhanh \(Tien gioi\)/i)).toBeTruthy());
+    expect(getByRole('combobox', { name: 'Giới Diện bản đồ' })).toBeTruthy();
+    expect(getByRole('combobox', { name: 'Quy Mô Địa Vực bản đồ' })).toBeTruthy();
+    expect(getByRole('combobox', { name: 'Đặc Tính Địa Vực bản đồ' })).toBeTruthy();
   });
 
   it('defaults Giới Diện to the active map sub-tab label when creating a map entity', () => {

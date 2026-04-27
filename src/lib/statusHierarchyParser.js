@@ -19,6 +19,20 @@ export function normalizeAsciiText(value) {
     .trim();
 }
 
+/**
+ * Tách chuỗi địa bản đồ theo dấu phân tầng (· > → —) — đồng bộ với f_vi_tri / f_status
+ * (tránh lưu cả «A > B» nguyên khối lẫn từng mảnh A, B khi gộp AUTO).
+ */
+export function splitMapHierarchyTokens(value) {
+  const raw = String(value ?? '')
+    .trim();
+  if (!raw) return [];
+  return raw
+    .split(/\s*(?:[·•>→»|/]|\s-\s|\s–\s|\s—\s)\s*/u)
+    .map((token) => String(token).trim())
+    .filter(Boolean);
+}
+
 export function splitStatusHierarchyTokens(statusLine) {
   const src = String(statusLine || '');
   if (!src.trim()) return [];

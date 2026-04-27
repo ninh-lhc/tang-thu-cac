@@ -1,0 +1,575 @@
+/**
+ * Cấu hình bố cục ô «Gợi ý nhanh» (entityQuickEntry) — nháp + Lưu tab này / Áp cả tab lớn / Áp mọi mục lớn.
+ * Nhúng trong modal Khởi tạo thẻ (ModalEntity).
+ * Import bởi: MasterComponents.jsx
+ */
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowLeftRight, Edit2, Plus, Save, Trash2 } from 'lucide-react';
+import { safeString } from './MasterUtils.jsx';
+import { normalizeAsciiText } from './lib/statusHierarchyParser.js';
+import {
+  getEffectiveQuickEntrySlotFields,
+  MAX_QUICK_ENTRY_SLOTS,
+} from './lib/entityQuickEntrySlots.js';
+
+function buildQuickEntryState(entityQuickEntry, templateList) {
+  const tabStub = { entityQuickEntry };
+  const slotFields = getEffectiveQuickEntrySlotFields(tabStub, templateList);
+  const slotLabels = slotFields.map((_, i) => safeString(entityQuickEntry?.slotLabels?.[i] ?? '').trim());
+  return {
+    slotFields,
+    slotLabels,
+    dualFirstRow: entityQuickEntry?.dualFirstRow === true,
+    useSelectUi: entityQuickEntry?.useSelectUi === true,
+  };
+}
+
+function statesEqual(a, b) {
+  if (!a || !b) return a === b;
+  if (a.dualFirstRow !== b.dualFirstRow) return false;
+  if (a.useSelectUi !== b.useSelectUi) return false;
+  if (a.slotFields.length !== b.slotFields.length) return false;
+  for (let i = 0; i < a.slotFields.length; i += 1) {
+    if (a.slotFields[i] !== b.slotFields[i]) return false;
+    if (a.slotLabels[i] !== b.slotLabels[i]) return false;
+  }
+  return true;
+}
+
+function buildDependencyDraft(raw, templateList) {
+  const allowed = new Set((Array.isArray(templateList) ? templateList : []).map((f) => safeString(f?.id).trim()).filter(Boolean));
+  const toCases = (casesRaw) => {
+    if (Array.isArray(casesRaw)) return casesRaw;
+    if (!casesRaw || typeof casesRaw !== 'object') return [];
+    return Object.entries(casesRaw).map(([whenValue, suggestions]) => ({ whenValue, suggestions }));
+  };
+  return (Array.isArray(raw) ? raw : []).map((rule) => {
+    const sourceFieldId = safeString(rule?.sourceFieldId).trim();
+    const targetFieldId = safeString(rule?.targetFieldId).trim();
+    const cases = toCases(rule?.cases)
+      .map((entry) => {
+        const whenValue = safeString(entry?.whenValue).trim();
+        const suggestions = (Array.isArray(entry?.suggestions) ? entry.suggestions : [])
+          .map((x) => safeString(x).trim())
+          .filter(Boolean)
+          .join('\n');
+        return { whenValue, suggestions };
+      })
+      .filter((entry) => entry.whenValue || entry.suggestions);
+    return {
+      sourceFieldId: allowed.has(sourceFieldId) ? sourceFieldId : '',
+      targetFieldId: allowed.has(targetFieldId) ? targetFieldId : '',
+      cases: cases.length > 0 ? cases : [{ whenValue: '', suggestions: '' }],
+    };
+  });
+}
+
+function serializeDependencyDraft(draft, templateList) {
+  const allowed = new Set(
+    (Array.isArray(templateList) ? templateList : [])
+      .map((f) => safeString(f?.id).trim())
+      .filter((id) => id && id !== 'f_alias')
+  );
+  const dedupeValues = (text) => {
+    const out = [];
+    const seen = new Set();
+    safeString(text)
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .forEach((value) => {
+        const key = normalizeAsciiText(value);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        out.push(value);
+      });
+    return out;
+  };
+  const out = [];
+  (Array.isArray(draft) ? draft : []).forEach((rule) => {
+    const sourceFieldId = safeString(rule?.sourceFieldId).trim();
+    const targetFieldId = safeString(rule?.targetFieldId).trim();
+    if (!sourceFieldId || !targetFieldId || sourceFieldId === targetFieldId) return;
+    if (!allowed.has(sourceFieldId) || !allowed.has(targetFieldId)) return;
+    const cases = [];
+    (Array.isArray(rule?.cases) ? rule.cases : []).forEach((entry) => {
+      const whenValue = safeString(entry?.whenValue).trim();
+      const suggestions = dedupeValues(entry?.suggestions);
+      if (!whenValue || suggestions.length < 1) return;
+      cases.push({ whenValue, suggestions });
+    });
+    if (cases.length < 1) return;
+    out.push({ sourceFieldId, targetFieldId, cases });
+  });
+  return out;
+}
+
+export function AppEntityQuickEntryConfig({
+  tabLonId,
+  tabNhoId,
+  fieldsTemplate,
+  entityQuickEntry,
+  fieldSuggestionDependencies,
+  onSetEntityQuickEntry,
+  onSetFieldSuggestionDependencies,
+  onSetTemplateFieldSortPrefix,
+  onRequestPropagateToLon,
+  onRequestPropagateToAllLons,
+  showToast,
+}) {
+  const lon = safeString(tabLonId).trim();
+  const nho = safeString(tabNhoId).trim();
+  if (!lon || !nho || typeof onSetEntityQuickEntry !== 'function') return null;
+
+  const templateList = useMemo(
+    () => (Array.isArray(fieldsTemplate) ? fieldsTemplate : []),
+    [fieldsTemplate]
+  );
+  const pathKey = `${lon}-${nho}`;
+
+  const saved = useMemo(
+    () => buildQuickEntryState(entityQuickEntry, templateList),
+    [entityQuickEntry, templateList]
+  );
+  const savedSig = useMemo(() => JSON.stringify(saved), [saved]);
+  const savedDeps = useMemo(
+    () => buildDependencyDraft(fieldSuggestionDependencies, templateList),
+    [fieldSuggestionDependencies, templateList]
+  );
+  const savedDepsSig = useMemo(() => JSON.stringify(savedDeps), [savedDeps]);
+
+  const [draft, setDraft] = useState(() => saved);
+  const [draftDeps, setDraftDeps] = useState(() => savedDeps);
+
+  useEffect(() => {
+    setDraft(saved);
+  }, [pathKey, savedSig]);
+  useEffect(() => {
+    setDraftDeps(savedDeps);
+  }, [pathKey, savedDepsSig]);
+
+  const dirty = !statesEqual(draft, saved);
+  const selectable = templateList.filter((f) => f && f.id && f.id !== 'f_alias');
+  const { slotFields, slotLabels } = draft;
+  const optIds = new Set(selectable.map((f) => f.id));
+  const canAdd =
+    slotFields.length < MAX_QUICK_ENTRY_SLOTS && selectable.some((f) => f && !slotFields.includes(f.id));
+
+  const commitTabThis = useCallback(() => {
+    onSetEntityQuickEntry(lon, nho, draft.slotFields, draft.slotLabels, {
+      dualFirstRow: draft.dualFirstRow,
+      useSelectUi: draft.useSelectUi,
+    });
+    showToast?.('Đã lưu cấu hình ô gợi ý nhanh cho tab này (mẫu tab nhỏ).', 'success');
+  }, [lon, nho, draft, onSetEntityQuickEntry, showToast]);
+
+  const handleRevert = useCallback(() => {
+    setDraft(saved);
+  }, [saved]);
+
+  const handlePropagateClick = useCallback(() => {
+    if (typeof onRequestPropagateToLon !== 'function') return;
+    onRequestPropagateToLon(lon, draft.slotFields, draft.slotLabels, {
+      dualFirstRow: draft.dualFirstRow,
+      useSelectUi: draft.useSelectUi,
+    });
+  }, [lon, onRequestPropagateToLon, draft]);
+
+  const handlePropagateAllLonsClick = useCallback(() => {
+    if (typeof onRequestPropagateToAllLons !== 'function') return;
+    onRequestPropagateToAllLons(draft.slotFields, draft.slotLabels, {
+      dualFirstRow: draft.dualFirstRow,
+      useSelectUi: draft.useSelectUi,
+    });
+  }, [onRequestPropagateToAllLons, draft]);
+  const depsDirty = useMemo(() => {
+    return JSON.stringify(draftDeps) !== savedDepsSig;
+  }, [draftDeps, savedDepsSig]);
+  const handleSaveDependencies = useCallback(() => {
+    if (typeof onSetFieldSuggestionDependencies !== 'function') return;
+    const normalized = serializeDependencyDraft(draftDeps, templateList);
+    onSetFieldSuggestionDependencies(lon, nho, normalized);
+    showToast?.('Đã lưu phụ thuộc gợi ý theo trường trong tab này.', 'success');
+  }, [onSetFieldSuggestionDependencies, draftDeps, templateList, lon, nho, showToast]);
+
+  return (
+    <details className="rounded-xl border border-amber-800/40 bg-amber-950/12 p-2.5">
+      <summary className="cursor-pointer list-none">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-[9px] font-bold text-amber-300/95 uppercase tracking-widest">
+              Cấu hình mẫu: các ô gợi ý nhanh
+            </div>
+            <div className="text-[10px] text-slate-400 font-serif mt-0.5 leading-snug line-clamp-2">
+              Chỉnh tại đây, rồi <strong className="text-amber-200/90">Lưu (tab này)</strong> — chưa lưu thì cấu hình mẫu trên
+              truyện chưa đổi. Tối đa {MAX_QUICK_ENTRY_SLOTS} trường; thêm{' '}
+              <code className="text-amber-200/90">f_*</code> ở «Trường thông tin (mẫu tab)» cùng mục nâng cao, phía trên khối cấu hình ô.
+            </div>
+          </div>
+          <div className="text-[9px] text-amber-200/80 font-semibold shrink-0">Mở</div>
+        </div>
+      </summary>
+      <div className="mt-2 space-y-2">
+        {dirty && (
+          <p className="text-[10px] text-amber-200/90 font-serif rounded-md border border-amber-800/50 bg-amber-950/30 px-2 py-1">
+            Có thay đổi chưa lưu mẫu tab.
+          </p>
+        )}
+        <details className="rounded-lg border border-violet-900/35 bg-slate-950/45 p-2">
+          <summary className="cursor-pointer text-[10px] font-bold text-violet-200 uppercase tracking-widest">
+            Phụ thuộc gợi ý (Trường A → Trường B)
+          </summary>
+          <div className="mt-2 space-y-2">
+            <p className="text-[10px] text-slate-400 font-serif leading-snug">
+              Ví dụ: A = «Hạ giới» thì B gợi ý «Nhất tinh…Cửu tinh»; A = «Tiên giới» thì B gợi ý «Cực tiên…Tiên đế».
+            </p>
+            {draftDeps.map((rule, ridx) => (
+              <div key={`dep-rule-${pathKey}-${ridx}`} className="rounded-lg border border-violet-900/30 bg-slate-950/50 p-2 space-y-2">
+                <div className="grid gap-2 md:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-violet-200/85">Trường nguồn (A)</span>
+                    <select
+                      value={rule.sourceFieldId}
+                      onChange={(e) => {
+                        const v = safeString(e.target.value).trim();
+                        setDraftDeps((prev) => prev.map((it, i) => (i === ridx ? { ...it, sourceFieldId: v } : it)));
+                      }}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 font-mono outline-none focus:border-violet-600/50"
+                    >
+                      <option value="">-- Chọn trường nguồn --</option>
+                      {selectable.map((f) => (
+                        <option key={`src-${f.id}`} value={f.id}>{safeString(f.label) || f.id} ({f.id})</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-violet-200/85">Trường đích (B)</span>
+                    <select
+                      value={rule.targetFieldId}
+                      onChange={(e) => {
+                        const v = safeString(e.target.value).trim();
+                        setDraftDeps((prev) => prev.map((it, i) => (i === ridx ? { ...it, targetFieldId: v } : it)));
+                      }}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 font-mono outline-none focus:border-violet-600/50"
+                    >
+                      <option value="">-- Chọn trường đích --</option>
+                      {selectable.map((f) => (
+                        <option key={`dst-${f.id}`} value={f.id}>{safeString(f.label) || f.id} ({f.id})</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                {rule.cases.map((entry, cidx) => (
+                  <div key={`dep-case-${pathKey}-${ridx}-${cidx}`} className="rounded-md border border-slate-800/80 bg-slate-950/65 p-2 space-y-1.5">
+                    <input
+                      type="text"
+                      value={entry.whenValue}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setDraftDeps((prev) =>
+                          prev.map((it, i) => {
+                            if (i !== ridx) return it;
+                            const nextCases = it.cases.map((ce, j) => (j === cidx ? { ...ce, whenValue: v } : ce));
+                            return { ...it, cases: nextCases };
+                          })
+                        );
+                      }}
+                      placeholder="Khi A = ... (ví dụ: Hạ giới)"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 outline-none focus:border-violet-600/50"
+                    />
+                    <textarea
+                      value={entry.suggestions}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setDraftDeps((prev) =>
+                          prev.map((it, i) => {
+                            if (i !== ridx) return it;
+                            const nextCases = it.cases.map((ce, j) => (j === cidx ? { ...ce, suggestions: v } : ce));
+                            return { ...it, cases: nextCases };
+                          })
+                        );
+                      }}
+                      rows={3}
+                      placeholder="Gợi ý cho B, mỗi dòng 1 giá trị"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 font-serif outline-none focus:border-violet-600/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDraftDeps((prev) =>
+                          prev.map((it, i) => {
+                            if (i !== ridx) return it;
+                            const nextCases = it.cases.filter((_, j) => j !== cidx);
+                            return { ...it, cases: nextCases.length > 0 ? nextCases : [{ whenValue: '', suggestions: '' }] };
+                          })
+                        );
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-950/70 px-2 py-1 text-[10px] font-bold text-slate-300 hover:bg-slate-800/50"
+                    >
+                      <Trash2 size={12} /> Xóa nhánh
+                    </button>
+                  </div>
+                ))}
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftDeps((prev) =>
+                        prev.map((it, i) => (i === ridx ? { ...it, cases: [...it.cases, { whenValue: '', suggestions: '' }] } : it))
+                      );
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md border border-violet-800/50 bg-violet-950/35 px-2 py-1 text-[10px] font-bold text-violet-100 hover:bg-violet-900/40"
+                  >
+                    <Plus size={12} /> Thêm nhánh
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDraftDeps((prev) => prev.filter((_, i) => i !== ridx))}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-950/60 px-2 py-1 text-[10px] font-bold text-slate-300 hover:bg-slate-800/50"
+                  >
+                    <Trash2 size={12} /> Xóa rule
+                  </button>
+                </div>
+              </div>
+            ))}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftDeps((prev) => [...prev, { sourceFieldId: '', targetFieldId: '', cases: [{ whenValue: '', suggestions: '' }] }]);
+                }}
+                className="inline-flex items-center gap-1 rounded-md border border-violet-800/50 bg-violet-950/35 px-2 py-1 text-[10px] font-bold text-violet-100 hover:bg-violet-900/40"
+              >
+                <Plus size={12} /> Thêm rule phụ thuộc
+              </button>
+              <button
+                type="button"
+                disabled={!depsDirty}
+                onClick={handleSaveDependencies}
+                className="inline-flex items-center gap-1 rounded-md border border-emerald-800/50 bg-emerald-950/40 px-2 py-1 text-[10px] font-bold text-emerald-100 hover:bg-emerald-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Save size={12} /> Lưu phụ thuộc
+              </button>
+            </div>
+          </div>
+        </details>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={commitTabThis}
+            disabled={!dirty}
+            className="inline-flex items-center gap-1 rounded-md border border-emerald-800/50 bg-emerald-950/40 px-2 py-1 text-[9px] font-bold text-emerald-100 hover:bg-emerald-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Save size={12} /> Lưu (tab này)
+          </button>
+          <button
+            type="button"
+            onClick={handleRevert}
+            disabled={!dirty}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-600 bg-slate-950/60 px-2 py-1 text-[9px] font-bold text-slate-300 hover:bg-slate-800/50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Hoàn tác
+          </button>
+          {typeof onRequestPropagateToLon === 'function' && (
+            <button
+              type="button"
+              onClick={handlePropagateClick}
+              className="inline-flex items-center gap-1 rounded-md border border-cyan-800/50 bg-cyan-950/35 px-2 py-1 text-[9px] font-bold text-cyan-100 hover:bg-cyan-900/40"
+            >
+              Áp cả tab lớn
+            </button>
+          )}
+          {typeof onRequestPropagateToAllLons === 'function' && (
+            <button
+              type="button"
+              onClick={handlePropagateAllLonsClick}
+              className="inline-flex items-center gap-1 rounded-md border border-violet-800/50 bg-violet-950/35 px-2 py-1 text-[9px] font-bold text-violet-100 hover:bg-violet-900/40"
+            >
+              Áp mọi mục lớn
+            </button>
+          )}
+        </div>
+        <p
+          className="text-[9px] text-slate-500 font-serif leading-snug line-clamp-2"
+          title="«Áp cả tab lớn» / «Áp mọi mục lớn» dùng nháp hiện tại (kể cả chưa Lưu) — xác nhận rồi ghi đè mọi tab sưu tập theo phạm vi. Thứ tự từng dòng trong «Danh sách (AUTO)» chỉnh trên từng mục con."
+        >
+          «Áp cả / Áp mọi mục lớn» dùng nháp hiện tại; xác nhận rồi ghi đè. Danh sách (AUTO) từng mục: chỉnh riêng từng
+          mục con.
+        </p>
+        {selectable.length === 0 ? (
+          <p className="text-[11px] text-amber-100/90 font-serif">
+            Thêm trường ở «Trường thông tin (mẫu tab)» trong cùng mục nâng cao (trên) để gán ô gợi ý.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {slotFields.map((fieldId, idx) => {
+              const qlabId = `ttc-entity-quick-slot-label-${pathKey}-${idx}`;
+              const fieldForSlot = templateList.find((f) => f && f.id === fieldId);
+              const sortPrefixValue = safeString(fieldForSlot?.sortPrefix).trim();
+              const sortPrefixInputId = `ttc-entity-quick-sort-${pathKey}-${idx}`;
+              return (
+                <div
+                  key={`quick-slot-${pathKey}-${fieldId}-${idx}`}
+                  className="rounded-lg border border-amber-900/25 bg-slate-950/40 p-2 space-y-2"
+                >
+                  <div className="flex flex-wrap items-end gap-2">
+                    <span className="text-[10px] font-bold text-slate-500 w-8 shrink-0 pb-2">Ô {idx + 1}</span>
+                    <select
+                      value={fieldId}
+                      onChange={(e) => {
+                        const v = safeString(e.target.value).trim();
+                        setDraft((d) => {
+                          const next = { ...d, slotFields: [...d.slotFields], slotLabels: [...d.slotLabels] };
+                          const twin = next.slotFields.findIndex((x, j) => x === v && j !== idx);
+                          if (twin >= 0) next.slotFields[twin] = next.slotFields[idx];
+                          next.slotFields[idx] = v;
+                          return next;
+                        });
+                      }}
+                      className="min-w-[160px] flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 font-mono outline-none focus:border-amber-600/50"
+                    >
+                      {!optIds.has(fieldId) && <option value={fieldId}>{fieldId} (cần khớp template)</option>}
+                      {selectable.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {safeString(f.label) || f.id} ({f.id})
+                        </option>
+                      ))}
+                    </select>
+                    <div className="shrink-0 w-[4.5rem] space-y-0.5">
+                      <div className="text-[9px] font-bold uppercase tracking-wide text-emerald-200/80">Thứ tự</div>
+                      <input
+                        id={sortPrefixInputId}
+                        type="text"
+                        key={`qsp-${pathKey}-${fieldId}-${sortPrefixValue}`}
+                        defaultValue={sortPrefixValue}
+                        onBlur={(e) => {
+                          if (typeof onSetTemplateFieldSortPrefix !== 'function') return;
+                          onSetTemplateFieldSortPrefix(lon, nho, fieldId, e.target.value);
+                        }}
+                        disabled={!fieldId}
+                        title="Lưu khi rời ô — mẫu trường chung cả tab; hiển thị trước nhãn ở khối gợi ý."
+                        placeholder="I / 1"
+                        aria-label={`Ký hiệu thứ tự cho trường ${fieldId || 'ô gợi ý'}`}
+                        className="w-full bg-slate-950 border border-emerald-800/50 rounded-lg px-2 py-1.5 text-[11px] text-emerald-100 font-mono outline-none focus:border-emerald-500/70 disabled:opacity-40"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1 pl-0 md:pl-10">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-amber-200/85">
+                        Nhãn hiển thị (ô gợi ý)
+                      </span>
+                      <button
+                        type="button"
+                        title="Gõ vào ô dưới"
+                        onClick={() => document.getElementById(qlabId)?.focus()}
+                        className="inline-flex items-center gap-1 rounded-md border border-amber-800/50 bg-amber-950/35 px-2 py-0.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/45"
+                      >
+                        <Edit2 size={12} /> Sửa nhãn
+                      </button>
+                    </div>
+                    <input
+                      id={qlabId}
+                      type="text"
+                      value={slotLabels[idx] ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setDraft((d) => {
+                          const nextLabels = [...d.slotLabels];
+                          while (nextLabels.length < d.slotFields.length) nextLabels.push('');
+                          nextLabels[idx] = val;
+                          return { ...d, slotLabels: nextLabels };
+                        });
+                      }}
+                      placeholder="Để trống = dùng tên trường trong hồ sơ tab"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-serif outline-none focus:border-amber-600/45"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={!canAdd}
+                onClick={() => {
+                  const used = new Set(slotFields);
+                  const pick = selectable.find((f) => f.id && !used.has(f.id));
+                  if (!pick) return;
+                  setDraft((d) => ({
+                    ...d,
+                    slotFields: [...d.slotFields, pick.id],
+                    slotLabels: [...d.slotLabels, ''],
+                  }));
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-800/50 bg-amber-950/40 px-2.5 py-1.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus size={14} /> Thêm ô
+              </button>
+              <button
+                type="button"
+                disabled={slotFields.length <= 1}
+                onClick={() => {
+                  setDraft((d) => ({
+                    ...d,
+                    slotFields: d.slotFields.slice(0, -1),
+                    slotLabels: d.slotLabels.slice(0, -1),
+                  }));
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950/50 px-2.5 py-1.5 text-[10px] font-bold text-slate-300 hover:bg-slate-800/50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Trash2 size={14} /> Bớt một ô
+              </button>
+              <span className="text-[10px] text-slate-500 font-serif">
+                Tối đa {MAX_QUICK_ENTRY_SLOTS} ô · {slotFields.length} ô hiện tại
+              </span>
+            </div>
+            <div className="space-y-2 rounded-lg border border-amber-900/35 bg-slate-950/55 px-2.5 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="inline-flex cursor-pointer items-start gap-2 text-[11px] text-slate-300 font-serif leading-snug">
+                  <input
+                    type="checkbox"
+                    checked={draft.dualFirstRow}
+                    onChange={(e) => setDraft((d) => ({ ...d, dualFirstRow: e.target.checked }))}
+                    className="mt-0.5 rounded border-slate-600"
+                  />
+                  <span>
+                    Hai ô đầu <strong className="text-amber-200">song song</strong> (cạnh nhau trên màn hình rộng).
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  disabled={slotFields.length < 2}
+                  onClick={() => {
+                    setDraft((d) => {
+                      if (d.slotFields.length < 2) return d;
+                      const nextF = [d.slotFields[1], d.slotFields[0], ...d.slotFields.slice(2)];
+                      const nextL = [d.slotLabels[1], d.slotLabels[0], ...d.slotLabels.slice(2)];
+                      return { ...d, slotFields: nextF, slotLabels: nextL };
+                    });
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-800/50 bg-amber-950/40 px-2.5 py-1.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Hoán đổi trường và nhãn của ô 1 và ô 2"
+                >
+                  <ArrowLeftRight size={14} /> Đổi ô 1 ↔ 2
+                </button>
+              </div>
+              <label className="inline-flex cursor-pointer items-start gap-2 text-[11px] text-slate-300 font-serif leading-snug">
+                <input
+                  type="checkbox"
+                  checked={draft.useSelectUi}
+                  onChange={(e) => setDraft((d) => ({ ...d, useSelectUi: e.target.checked }))}
+                  className="mt-0.5 rounded border-slate-600"
+                />
+                <span>
+                  Dùng <strong className="text-amber-200">menu chọn (select)</strong> cho mọi ô (kèm ô gõ dưới mỗi ô); tắt = gõ + gợi
+                  ý datalist.
+                </span>
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}

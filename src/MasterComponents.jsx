@@ -21,6 +21,7 @@ import {
   WIKI_ALIAS_FIELD,
 } from './MasterEngines.js';
 import { AppEntityTemplateFieldEditor } from './AppEntityTemplateFieldEditor.jsx';
+import { AppEntityQuickEntryConfig } from './AppEntityQuickEntryConfig.jsx';
 import {
   normalizeSuggestionRows,
   serializeSuggestionRows,
@@ -63,8 +64,9 @@ import {
   listMapTabEntityNames,
   matchMapSubTabByRealmInput,
 } from './lib/mapTabForceBridge.js';
-import { getMapFieldPlaceholders, resolveMapFieldPresetFlavor } from './lib/mapEntityFieldPresets.js';
-import { resolveEntityQuickSlots } from './lib/entityQuickEntrySlots.js';
+import { getMapFieldPlaceholders } from './lib/mapEntityFieldPresets.js';
+import { collectMapEntityHints } from './lib/mapEntityHints.js';
+import { resolveEntityQuickSlots, getEffectiveQuickEntrySlotFields, MAX_QUICK_ENTRY_SLOTS } from './lib/entityQuickEntrySlots.js';
 import {
   composeMapTemplateDisplayLine,
   inferMapQuickSystemFromStoredStatus,
@@ -75,7 +77,11 @@ import {
   resolveMainFormLabels,
   resolveQuickSlotLabels,
 } from './lib/modalEntityQuickLabels.js';
-import { normalizeAsciiText, splitStatusHierarchyTokens } from './lib/statusHierarchyParser.js';
+import {
+  normalizeAsciiText,
+  splitMapHierarchyTokens,
+  splitStatusHierarchyTokens,
+} from './lib/statusHierarchyParser.js';
 import { inferOrgTypeFromContext, inferOrgTypeFromTabSlug } from './lib/forceOrgTypeInfer.js';
 import { mergeTabsByGenres } from './genreTabsMap.js';
 import { getGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
@@ -1031,6 +1037,24 @@ export const LandingScreen = memo(({ setIsAddNovelOpen, setIsManageTabsOpen }) =
   </div>
 ));
 
+/** Bỏ phần đầu «Trực thuộc» trùng với huy hiệu Đặc tính (tránh lặp badge + dòng Giới vực). */
+function stripMapPathDuplicateOfBadge(pathLine, badgeLabel) {
+  const p = safeString(pathLine).trim();
+  const b = safeString(badgeLabel).trim();
+  if (!p || !b) return p;
+  if (normalizeAsciiText(p) === normalizeAsciiText(b)) return '';
+  const pathTokens = splitMapHierarchyTokens(p);
+  const badgeTokens = splitMapHierarchyTokens(b);
+  if (badgeTokens.length === 0) return p;
+  let i = 0;
+  const n = Math.min(badgeTokens.length, pathTokens.length);
+  while (i < n && normalizeAsciiText(pathTokens[i]) === normalizeAsciiText(badgeTokens[i])) {
+    i += 1;
+  }
+  if (i === 0) return p;
+  return pathTokens.slice(i).join(' > ').trim();
+}
+
 export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, tabConfig, dirHandle, parentTabId, parentLabel }) => {
   const fields = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const terms = getTerms(parentTabId);
@@ -1133,6 +1157,7 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
       mapSystemBadgeLabel,
       f1DisplayResolved,
     ]) || f2DisplayResolved;
+    f2DisplayResolved = stripMapPathDuplicateOfBadge(f2DisplayResolved, mapSystemBadgeLabel);
   }
   const f3Trim = safeString(f3).trim();
   const f2Trim = safeString(f2DisplayResolved).trim();
@@ -1195,13 +1220,6 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
     </div>
   );
 });
-
-function normalizeNovelGenresForMapPresets(novel) {
-  if (!novel || typeof novel !== 'object') return [];
-  if (Array.isArray(novel.genres)) return novel.genres.filter(Boolean);
-  if (typeof novel.genre === 'string' && novel.genre.trim()) return [novel.genre.trim()];
-  return [];
-}
 
 function dedupeCaseInsensitive(values) {
   const out = [];
@@ -1360,75 +1378,6 @@ function collectForceQuickHints(activeNovelData) {
   };
 }
 
-function collectMapEntityHints(activeNovelData, mapTabConfig = null, mapLonScopeId = '') {
-  const mapNameList = [];
-  const parentTier1List = [];
-  const parentTier2List = [];
-  const parentTier3List = [];
-  const presetFlavor = resolveMapFieldPresetFlavor(normalizeNovelGenresForMapPresets(activeNovelData));
-  // "Giới Diện" để user nhập tay, không auto-gợi ý từ dữ liệu cũ.
-  let mapTypeList = [];
-  // "Đặc Tính Địa Vực" để user nhập tay hoàn toàn (không auto-gợi ý để tránh nhầm dữ liệu cũ).
-  let forceSystemList = [];
-  const recordsByName = new Map();
-  for (const lon of activeNovelData?.tabsConfig || []) {
-    if (mapLonScopeId && lon?.id !== mapLonScopeId) continue;
-    for (const nho of lon?.subTabs || []) {
-      if (
-        !isMapCollectionScope({
-          activeTabLon: lon.id,
-          activeTabNho: nho.id,
-          currentTabConfig: nho,
-          parentLabel: lon.label || '',
-        })
-      ) {
-        continue;
-      }
-      const entities = activeNovelData?.data?.[lon.id]?.[nho.id]?.entities || [];
-      entities.forEach((entity) => {
-        const name = safeString(entity?.name).trim();
-        if (!name) return;
-        // List cards are meta containers, not real map entities.
-        if (normalizeAsciiText(name).startsWith('danh sach')) return;
-        mapNameList.push(name);
-        const mapType = safeString(entity?.dynamicData?.f_title).trim();
-        const locationRaw = safeString(entity?.dynamicData?.f_vi_tri).trim();
-        const parentTokens = splitStatusHierarchyTokens(locationRaw);
-        if (parentTokens.length > 0) parentTier1List.push(parentTokens[0]);
-        if (parentTokens.length > 1) parentTier2List.push(parentTokens[1]);
-        if (parentTokens.length > 2) parentTier3List.push(parentTokens[2]);
-        // Cố ý không gom gợi ý "Giới Diện" từ entity cũ.
-        // Cố ý không gom gợi ý "Đặc Tính Địa Vực" từ entity cũ.
-        const key = normalizeAsciiText(name);
-        const nextList = recordsByName.get(key) || [];
-        nextList.push({
-          name,
-          tabLabel: safeString(nho.label || nho.id),
-          statusLine: safeString(entity?.dynamicData?.f_status || entity?.status).trim(),
-          mapType,
-          systemLabel: inferForceSystemLabel(entity?.dynamicData?.f_status || entity?.status),
-        });
-        recordsByName.set(key, nextList);
-      });
-    }
-  }
-  const extraMap = mapTabConfig?.mapEntrySuggestions;
-  if (extraMap && typeof extraMap === 'object') {
-    // Cố ý bỏ extraMap.types để ô "Giới Diện" luôn trống khi tạo/tu bổ.
-    if (Array.isArray(extraMap.hierarchy)) forceSystemList.push(...suggestionRowsToValues(extraMap.hierarchy));
-  }
-  return {
-    mapNames: dedupeCaseInsensitive(mapNameList),
-    parentTier1Options: dedupeCaseInsensitive(parentTier1List),
-    parentTier2Options: dedupeCaseInsensitive(parentTier2List),
-    parentTier3Options: dedupeCaseInsensitive(parentTier3List),
-    mapTypes: dedupeCaseInsensitive(mapTypeList),
-    forceSystems: dedupeCaseInsensitive(forceSystemList),
-    presetFlavor,
-    recordsByName,
-  };
-}
-
 function inferSystemFromMapLocation(locationText, mapHintRecordsByName) {
   const tokens = splitStatusHierarchyTokens(locationText);
   for (let idx = tokens.length - 1; idx >= 0; idx -= 1) {
@@ -1467,6 +1416,10 @@ export const ModalEntity = ({
   handleMergeTabFieldSuggestionList,
   handleSetTabFieldSource,
   setConfirmDialog,
+  handleSetTabEntityQuickEntry,
+  handleSetTabFieldSuggestionDependencies,
+  requestPropagateEntityQuickEntryToLon,
+  requestPropagateEntityQuickEntryToAllLons,
 }) => {
   void onUpdateTemplate;
   void geminiApiKey;
@@ -1530,7 +1483,7 @@ export const ModalEntity = ({
     [showGenericQuickEntry, tabConfig, fieldsTemplate, activeNovelData, parentTabId, parentLabel]
   );
   const genericQuickListPrefix = useId().replace(/:/g, '');
-  /** Các slot dùng để ghép `f_status` (bỏ `f_status` nếu có trong 3 slot — ô chính xử lý). */
+  /** Các slot dùng để ghép `f_status` (bỏ `f_status` nếu có — ô trạng thái chính vẫn ở form). */
   const genericQuickStatusSourceFieldIds = useMemo(() => {
     if (!genericQuickResolved?.slots) return [];
     return genericQuickResolved.slots
@@ -1560,7 +1513,13 @@ export const ModalEntity = ({
     [fieldsTemplate, isMapScope, isForceScope, showGenericQuickEntry]
   );
   const mapEntityHints = useMemo(
-    () => collectMapEntityHints(activeNovelData, isMapScope ? tabConfig : null, isMapScope ? parentTabId : ''),
+    () =>
+      collectMapEntityHints(
+        activeNovelData,
+        isMapScope ? tabConfig : null,
+        isMapScope ? parentTabId : '',
+        isMapScope ? safeString(tabConfig?.id).trim() : ''
+      ),
     [activeNovelData, tabConfig, isMapScope, parentTabId]
   );
   const mapFieldPlaceholders = useMemo(
@@ -1568,19 +1527,22 @@ export const ModalEntity = ({
     [mapEntityHints.presetFlavor]
   );
   const mapNameSuggestions = mapEntityHints.mapNames;
-  /** Gộp tên thẻ Bản đồ vào gợi ý tầng Trực thuộc để không tách khỏi dữ liệu đã có. */
-  const mapParentTier1Datalist = useMemo(
-    () => dedupeCaseInsensitive([...(mapEntityHints.parentTier1Options || []), ...mapNameSuggestions]),
-    [mapEntityHints.parentTier1Options, mapNameSuggestions]
-  );
-  const mapParentTier2Datalist = useMemo(
-    () => dedupeCaseInsensitive([...(mapEntityHints.parentTier2Options || []), ...mapNameSuggestions]),
-    [mapEntityHints.parentTier2Options, mapNameSuggestions]
-  );
-  const mapParentTier3Datalist = useMemo(
-    () => dedupeCaseInsensitive([...(mapEntityHints.parentTier3Options || []), ...mapNameSuggestions]),
-    [mapEntityHints.parentTier3Options, mapNameSuggestions]
-  );
+  /** Tên theo quy mô f_he (ô «Quy mô địa vực») + tầng từ f_vi_tri cũ (đã lọc loại). Không gộp mọi thẻ. */
+  const mapParentTier1Datalist = useMemo(() => {
+    const path = mapEntityHints.parentTier1Options || [];
+    const typed = mapEntityHints.mapNamesTrucParent1 || [];
+    return dedupeCaseInsensitive([...path, ...typed]);
+  }, [mapEntityHints.parentTier1Options, mapEntityHints.mapNamesTrucParent1]);
+  const mapParentTier2Datalist = useMemo(() => {
+    const path = mapEntityHints.parentTier2Options || [];
+    const typed = mapEntityHints.mapNamesTrucParent2 || [];
+    return dedupeCaseInsensitive([...path, ...typed]);
+  }, [mapEntityHints.parentTier2Options, mapEntityHints.mapNamesTrucParent2]);
+  const mapParentTier3Datalist = useMemo(() => {
+    const path = mapEntityHints.parentTier3Options || [];
+    const typed = mapEntityHints.mapNamesTrucParent3 || [];
+    return dedupeCaseInsensitive([...path, ...typed]);
+  }, [mapEntityHints.parentTier3Options, mapEntityHints.mapNamesTrucParent3]);
   const mapTypeSuggestions = mapEntityHints.mapTypes;
   const forceSystemSuggestions = mapEntityHints.forceSystems;
   const statusFieldPlaceholder = isMapScope
@@ -1590,14 +1552,10 @@ export const ModalEntity = ({
     ? mapFieldPlaceholders.mapProfileHint
     : 'Nhãn ô theo mục sưu tập (cảnh giới, cấp độ, loại chức năng...). Có thể để trống.';
   const [formData, setFormData] = useState({ id: null, name: '', avatar: '', rawText: '' });
+  /** Tab nội dung khi mục sưu tập: tổng quan / cấu hình mẫu / gợi ý */
+  const [entityCreatePanel, setEntityCreatePanel] = useState('overview');
   const [dynamicData, setDynamicData] = useState({});
-  const genericQuickComposeKey = useMemo(
-    () =>
-      genericQuickStatusSourceFieldIds
-        .map((id) => `${id}:${safeString(dynamicData[id]).trim()}`)
-        .join('|'),
-    [genericQuickStatusSourceFieldIds, dynamicData]
-  );
+  /** Lưới thường: giống bản đồ — bật hàng phụ (thêm cột, gợi ý chỉnh list). */
   const [mapQuickType, setMapQuickType] = useState('');
   const [mapQuickRealmSystem, setMapQuickRealmSystem] = useState('');
   const [mapQuickSystem, setMapQuickSystem] = useState('');
@@ -1725,16 +1683,22 @@ export const ModalEntity = ({
     setDynamicData((prev) => {
       const rawPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
       const nextPatch = rawPatch && typeof rawPatch === 'object' ? rawPatch : {};
-      if (
-        showGenericQuickEntry &&
-        !isMapScope &&
-        !isForceScope &&
-        genericQuickStatusSourceFieldIds.length &&
-        Object.keys(nextPatch).some((k) => genericQuickStatusSourceFieldIds.includes(k))
-      ) {
-        genericQuickFStatusUserOverrideRef.current = false;
-      }
       const merged = { ...(prev || {}), ...nextPatch };
+      if (showGenericQuickEntry && !isMapScope && !isForceScope && genericQuickStatusSourceFieldIds.length) {
+        const patchKeys = Object.keys(nextPatch);
+        const touchesQuickSource = patchKeys.some((k) => genericQuickStatusSourceFieldIds.includes(k));
+        if (touchesQuickSource) {
+          genericQuickFStatusUserOverrideRef.current = false;
+        }
+        const onlyStatus = patchKeys.length === 1 && patchKeys[0] === 'f_status';
+        if (patchKeys.length > 0 && !onlyStatus && !genericQuickFStatusUserOverrideRef.current) {
+          const line = genericQuickStatusSourceFieldIds
+            .map((id) => safeString(merged[id]).trim())
+            .filter(Boolean)
+            .join(' · ');
+          if (line) merged.f_status = line;
+        }
+      }
       if (isMapScope && !isForceScope) {
         const patchKeys = Object.keys(nextPatch);
         const onlyStatus = patchKeys.length === 1 && patchKeys[0] === 'f_status';
@@ -1749,8 +1713,15 @@ export const ModalEntity = ({
       return merged;
     });
   const quickUseSelect = Boolean(tabConfig?.entityQuickEntry?.useSelectUi);
-  const entityModalQuickSurface = 'rounded-lg border border-amber-900/45 bg-amber-950/10 p-3 space-y-2.5';
-  const entityModalQuickLabel = 'block text-[10px] font-bold text-amber-200 uppercase tracking-widest';
+  const quickEntryBlockTitle = safeString(tabConfig?.label).trim() || 'Mục sưu tập';
+  /** Chuẩn giao diện «Gợi ý nhanh» (đồng bộ mục bản đồ / thế lực / lưới) — đổi tên cột theo mẫu tab. */
+  /** Cùng «khung» với thẻ Danh xưng & khối Trạng thái (viền slate, bóng nhẹ) — nội dung bên trong vẫn dùng tông amber. */
+  const entityModalQuickSurface =
+    'rounded-xl border border-slate-800/55 bg-slate-950/30 p-2.5 sm:p-3 shadow-inner shadow-black/10 space-y-2.5';
+  const entityModalQuickGrid = 'grid gap-2.5 md:grid-cols-3 md:gap-3.5';
+  const entityModalQuickCol = 'min-w-0 flex h-full flex-col gap-1.5';
+  const entityModalQuickSubBlock = 'rounded-lg border border-amber-900/40 bg-slate-950/40 p-2.5 space-y-1.5';
+  const entityModalQuickLabel = 'block text-[10px] font-bold text-amber-200 uppercase tracking-widest leading-tight';
   const renderLabelWithPrefix = (labelObj) => {
     const prefix = safeString(labelObj?.sortPrefix).trim();
     const text = safeString(labelObj?.label);
@@ -1766,8 +1737,59 @@ export const ModalEntity = ({
     const text = safeString(labelObj?.label);
     return prefix ? `${prefix}. ${text}` : text;
   };
+  /** Sửa ký hiệu thứ tự (sortPrefix) tại chỗ trên mọi khối Gợi ý nhanh — lưu mẫu tab. */
+  const canEditQuickEntrySortPrefix =
+    typeof handleSetTabTemplateFieldSortPrefix === 'function' &&
+    safeString(parentTabId).trim() &&
+    safeString(tabConfig?.id).trim();
+
+  /**
+   * @param {{ label?: string, sortPrefix?: string, fieldId?: string }} labelObj
+   * @param {{ inline?: boolean }} [opts] — nếu true: không bọc cột, dùng trong lưới 3 cột
+   */
+  const renderQuickSlotLabelWithSortInput = (labelObj, opts = {}) => {
+    const fid = safeString(labelObj?.fieldId).trim();
+    const sp = safeString(labelObj?.sortPrefix).trim();
+    const showInput = canEditQuickEntrySortPrefix && fid;
+    const lab = safeString(labelObj?.label);
+    const inner = (
+      <>
+        {showInput && (
+          <div className="shrink-0 w-[2.75rem] space-y-0.5">
+            <div className="text-[7px] font-bold uppercase tracking-wide text-emerald-200/80 leading-tight">Số TT</div>
+            <input
+              type="text"
+              defaultValue={sp}
+              key={`qesort-${parentTabId}-${tabConfig.id}-${fid}-${sp}`}
+              onBlur={(e) => {
+                handleSetTabTemplateFieldSortPrefix(parentTabId, tabConfig.id, fid, e.target.value);
+              }}
+              maxLength={16}
+              title="Mẫu trường chung cả tab — I, 1, 1.1…; đổi ở đây sẽ áp cho mọi thẻ cùng tab nhỏ. Thứ tự riêng từng mục trong thẻ Danh sách (AUTO): dùng «Mục lục danh sách (AUTO)» trên từng mục."
+              aria-label={`Ký hiệu thứ tự gợi ý nhanh cho ${fid}`}
+              className="w-full bg-slate-950/90 border border-emerald-800/50 rounded-md px-1.5 py-1 text-[11px] text-emerald-100 font-mono focus:border-emerald-500/70 outline-none"
+              placeholder="·"
+            />
+          </div>
+        )}
+        <label
+          className={`${entityModalQuickLabel} ${showInput ? 'flex-1 min-w-0' : ''} truncate block`}
+          title={joinLabelWithPrefix(labelObj)}
+        >
+          {showInput ? lab : renderLabelWithPrefix(labelObj)}
+        </label>
+      </>
+    );
+    if (opts.inline) {
+      return <div className="flex items-center gap-1.5 min-w-0">{inner}</div>;
+    }
+    return <div className="flex items-center gap-1.5 min-w-0 w-full">{inner}</div>;
+  };
+
+  /** «Số TT»/Ký hiệu nằm trên mẫu trường (fieldsTemplate) — dùng chung mọi thẻ; không phải dữ liệu riêng từng thẻ. */
+
   const entityModalQuickInput =
-    'w-full bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none';
+    'w-full min-h-[2.75rem] bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none';
   const entityModalHintCallout = 'rounded-lg border border-slate-800/70 bg-slate-950/35 px-2.5 py-1.5';
   const entityModalHintTitle = 'text-[10px] font-bold uppercase tracking-widest text-amber-300/95 mb-0.5';
 
@@ -1782,8 +1804,8 @@ export const ModalEntity = ({
           aria-label={slot.label}
           value={val}
           onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-          rows={2}
-          className="w-full bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none resize-y min-h-[3.25rem]"
+          rows={1}
+          className={`${entityModalQuickInput} resize-y leading-snug`}
           placeholder="Ghi mô tả ngắn…"
         />
       );
@@ -1795,7 +1817,7 @@ export const ModalEntity = ({
             aria-label={`${slot.label} — chọn nhanh`}
             value={slot.suggestions.includes(val) ? val : ''}
             onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-            className="w-full bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
+            className={`${entityModalQuickInput} cursor-pointer`}
           >
             <option value="">— Chọn từ list (hoặc gõ ở ô dưới) —</option>
             {slot.suggestions.map((item) => (
@@ -1809,7 +1831,7 @@ export const ModalEntity = ({
             type="text"
             value={val}
             onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-            className="w-full bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
+            className={entityModalQuickInput}
             placeholder="Gõ tay / giá trị ngoài list (cùng trường dữ liệu)"
           />
         </div>
@@ -1822,7 +1844,7 @@ export const ModalEntity = ({
           list={slot.suggestions.length ? listDomId : undefined}
           value={val}
           onChange={(e) => patchDynamicData({ [fid]: e.target.value })}
-          className="w-full bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none"
+          className={entityModalQuickInput}
           placeholder={`Gõ hoặc chọn gợi ý — ${fid}`}
         />
         {slot.suggestions.length > 0 && (
@@ -1835,6 +1857,35 @@ export const ModalEntity = ({
       </>
     );
   };
+  const resolveDependentQuickSuggestions = useCallback(
+    (slot, baseSuggestions) => {
+      const rules = Array.isArray(tabConfig?.fieldSuggestionDependencies) ? tabConfig.fieldSuggestionDependencies : [];
+      if (!slot?.fieldId || rules.length < 1) return baseSuggestions;
+      const targetFieldId = safeString(slot.fieldId).trim();
+      for (const rule of rules) {
+        const target = safeString(rule?.targetFieldId).trim();
+        const source = safeString(rule?.sourceFieldId).trim();
+        if (!target || !source || target !== targetFieldId) continue;
+        const sourceValue = safeString(dynamicData?.[source]).trim();
+        if (!sourceValue) continue;
+        const sourceKey = normalizeAsciiText(sourceValue);
+        const cases = Array.isArray(rule?.cases) ? rule.cases : [];
+        for (const entry of cases) {
+          const whenValue = safeString(entry?.whenValue).trim();
+          if (!whenValue) continue;
+          if (normalizeAsciiText(whenValue) !== sourceKey) continue;
+          const override = dedupeCaseInsensitive(
+            (Array.isArray(entry?.suggestions) ? entry.suggestions : [])
+              .map((x) => safeString(x).trim())
+              .filter(Boolean)
+          );
+          if (override.length > 0) return override;
+        }
+      }
+      return baseSuggestions;
+    },
+    [tabConfig?.fieldSuggestionDependencies, dynamicData]
+  );
 
   /* Reset form khi mở modal (đồng bộ từ initialData) */
   const handleMapTypeChange = (value) => {
@@ -2019,6 +2070,12 @@ export const ModalEntity = ({
       'success'
     );
   };
+  /** Trước Lưu thông tin / ttc-save: ghi list gợi ý bản đồ (draft) nếu panel đang mở — tránh mất sửa khi quên bấm «Lưu list». */
+  const flushMapListDraftsForMainSaveRef = useRef(() => {});
+  flushMapListDraftsForMainSaveRef.current = () => {
+    if (mapRealmListPanelOpen) handleSaveMapRealmListDraft();
+    if (mapHierarchyListPanelOpen) handleSaveMapHierarchyListDraft();
+  };
   const toggleMapHierarchyListEditor = () => {
     if (mapHierarchyListPanelOpen) {
       setMapHierarchyListPanelOpen(false);
@@ -2096,26 +2153,6 @@ export const ModalEntity = ({
   };
 
   useEffect(() => {
-    if (!isOpen || !showGenericQuickEntry || isMapScope || isForceScope) return;
-    if (!genericQuickStatusSourceFieldIds.length) return;
-    const parts = genericQuickStatusSourceFieldIds
-      .map((id) => safeString(dynamicData[id]).trim())
-      .filter(Boolean);
-    const line = parts.join(' · ');
-    if (!line) return;
-    if (genericQuickFStatusUserOverrideRef.current) {
-      const cur = safeString(dynamicData.f_status).trim();
-      if (cur) return;
-      genericQuickFStatusUserOverrideRef.current = false;
-    }
-    setDynamicData((prev) => {
-      const cur = safeString(prev?.f_status).trim();
-      if (cur === line) return prev;
-      return { ...(prev || {}), f_status: line };
-    });
-  }, [isOpen, showGenericQuickEntry, isMapScope, isForceScope, genericQuickComposeKey, dynamicData.f_status]);
-
-  useEffect(() => {
     if (!isOpen) return;
     /* eslint-disable react-hooks/set-state-in-effect -- dialog cần hydrate state khi mở */
     if (initialData) {
@@ -2180,6 +2217,9 @@ export const ModalEntity = ({
         if (!curSt) genericQuickFStatusUserOverrideRef.current = false;
         else if (!composed) genericQuickFStatusUserOverrideRef.current = true;
         else genericQuickFStatusUserOverrideRef.current = curSt !== composed;
+        if (composed && !curSt) {
+          initialDyn.f_status = composed;
+        }
       } else {
         genericQuickFStatusUserOverrideRef.current = false;
       }
@@ -2221,6 +2261,7 @@ export const ModalEntity = ({
       setForceQuickLocation('');
     }
     setMapRealmListPanelOpen(false);
+    setEntityCreatePanel('overview');
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [
     isOpen,
@@ -2241,6 +2282,7 @@ export const ModalEntity = ({
       const activeEl = document.activeElement;
       if (event?.defaultPrevented) return;
       if (trapEl && activeEl && !trapEl.contains(activeEl)) return;
+      flushMapListDraftsForMainSaveRef.current();
       onSave(formData, dynamicData, null);
       onClose();
       if (event?.cancelable) event.preventDefault();
@@ -2249,6 +2291,27 @@ export const ModalEntity = ({
     window.addEventListener('ttc-save', handler);
     return () => window.removeEventListener('ttc-save', handler);
   }, [isOpen, formData, dynamicData, onSave, onClose, trapRef]);
+  const useEntityFormTabs = tabConfig?.viewType === 'collection-track';
+  const entityCreateTabs = [
+    { id: 'overview', label: 'Tổng quan' },
+    { id: 'template', label: 'Cấu hình mẫu' },
+  ];
+  const entityCreateTabBaseClass = 'tt-kbd-focus rounded-lg px-3 py-1.5 text-[11px] font-bold font-serif transition-colors';
+  const entityCreateTabActiveClass = 'bg-amber-900/50 text-amber-100 border border-amber-600/50 shadow-inner';
+  const entityCreateTabIdleClass = 'text-slate-400 border border-transparent hover:text-slate-200 hover:bg-slate-800/70';
+  const entityCreateModalMaxWidthClass = useEntityFormTabs ? 'max-w-3xl' : 'max-w-2xl';
+  const entityCreateTemplatePanelClass = 'rounded-xl border border-slate-800/70 bg-slate-950/45 text-left overflow-hidden';
+  const entityCreateTemplateTitle = 'Cấu hình mẫu (nâng cao)';
+  const entityCreateMetaFieldColClass = 'min-w-0 flex h-full min-h-0 flex-col gap-1';
+  const entityCreateMetaFieldLabelClass =
+    'block text-[10px] font-bold uppercase tracking-widest leading-snug truncate';
+  const entityCreateMetaFieldInputClass =
+    'w-full min-h-[2.75rem] bg-slate-950/80 border rounded-lg py-2 px-2.5 text-sm text-slate-200 font-serif outline-none';
+  const showInlineGuideHints =
+    !useEntityFormTabs &&
+    (parentTabId !== 'nhan-vat' || (showMapQuickSection && !initialData) || showForceQuickSection || isCultivationScope);
+  const showOverviewPanel = !useEntityFormTabs || entityCreatePanel === 'overview';
+  const showTemplatePanel = !useEntityFormTabs || entityCreatePanel === 'template';
   if (!isOpen) return null;
   return (
     <div
@@ -2257,8 +2320,12 @@ export const ModalEntity = ({
       aria-modal="true"
       aria-label={initialData ? `Tu bổ ${terms.entity}` : `Khởi tạo ${terms.entity}`}
     >
-      <div data-testid="modal-entity-root" ref={trapRef} className="bg-slate-900 border border-amber-700/50 rounded-2xl w-full max-w-2xl shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col max-h-[90vh] min-h-0">
-        <div className="px-4 pt-4 pb-3 flex-shrink-0 border-b border-slate-800 flex justify-between items-center gap-3 bg-slate-900">
+      <div
+        data-testid="modal-entity-root"
+        ref={trapRef}
+        className={`bg-slate-900 border border-amber-700/50 rounded-2xl w-full shadow-[0_0_50px_rgba(217,119,6,0.2)] overflow-hidden flex flex-col max-h-[90vh] min-h-0 ${entityCreateModalMaxWidthClass}`}
+      >
+        <div className="px-4 pt-3 pb-2.5 flex-shrink-0 border-b border-slate-800 flex justify-between items-center gap-2.5 bg-slate-900">
           <h2 className="text-xl md:text-2xl font-heading font-bold text-slate-100 leading-tight">{initialData ? `Tu Bổ ${terms.entity}` : `Khởi Tạo ${terms.entity}`}</h2>
           <div className="flex items-center gap-2 flex-shrink-0">
             {onOpenAutoSyncGuide && (
@@ -2275,9 +2342,40 @@ export const ModalEntity = ({
             </button>
           </div>
         </div>
+        {useEntityFormTabs && (
+          <div className="shrink-0 border-b border-slate-800/90 bg-slate-900 px-3 sm:px-4 py-1.5">
+            <div className="flex flex-wrap gap-1" role="tablist" aria-label="Khu vực khởi tạo thẻ">
+              {entityCreateTabs.map((t) => {
+                const isActive = entityCreatePanel === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    id={`ttc-entity-form-tab-${t.id}`}
+                    aria-selected={isActive}
+                    aria-controls={`ttc-entity-form-panel-${t.id}`}
+                    onClick={() => setEntityCreatePanel(t.id)}
+                    className={`${entityCreateTabBaseClass} ${isActive ? entityCreateTabActiveClass : entityCreateTabIdleClass}`}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 custom-scrollbar space-y-2.5 bg-slate-900">
-          <div className="flex gap-3 items-center">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-2.5 custom-scrollbar space-y-2.5 bg-slate-900">
+          {showOverviewPanel && (
+            <div
+              id="ttc-entity-form-panel-overview"
+              role="tabpanel"
+              aria-labelledby="ttc-entity-form-tab-overview"
+              className="space-y-4"
+            >
+          <div className="rounded-xl border border-slate-800/55 bg-slate-950/30 p-2.5 sm:p-3 shadow-inner shadow-black/10">
+            <div className="flex gap-2.5 items-center">
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => handleAvatarDrop && handleAvatarDrop(e, (url) => patchFormData({ avatar: url }))}
@@ -2303,7 +2401,7 @@ export const ModalEntity = ({
               <div>
                 <label className="block text-[10px] font-bold text-amber-500 mb-0.5 uppercase tracking-widest">Danh xưng / Tên gọi *</label>
                 <input
-                  autoFocus
+                  autoFocus={!useEntityFormTabs || entityCreatePanel === 'overview'}
                   aria-label="Danh xưng / Tên gọi"
                   value={safeString(formData.name)}
                   onChange={(e) => patchFormData({ name: e.target.value })}
@@ -2329,43 +2427,30 @@ export const ModalEntity = ({
                 </button>
               </div>
             </div>
+            </div>
           </div>
 
-          {showGenericQuickEntry && genericQuickResolved?.slots?.length === 3 && (
+          {showGenericQuickEntry && (
             <div className={entityModalQuickSurface}>
-              <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
-                Gợi ý nhanh ({safeString(tabConfig?.label).trim() || 'tab con'})
-              </p>
-              <div
-                className={`grid gap-2 md:gap-3 ${
-                  genericQuickSlotsVisible.length >= 3
-                    ? 'md:grid-cols-3'
-                    : genericQuickSlotsVisible.length === 2
-                      ? 'md:grid-cols-2'
-                      : 'md:grid-cols-1'
-                }`}
-              >
-                {genericQuickSlotsVisible.map((slot, idx) => {
-                  const fid = slot.fieldId;
-                  return (
-                    <div key={`${fid}-${idx}`} className="space-y-1 min-w-0">
-                      <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(slot)}>
-                        {renderLabelWithPrefix(slot)}
-                      </label>
-                      {renderGenericQuickValueEditors(slot, idx)}
-                    </div>
-                  );
-                })}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
+                  Gợi ý nhanh ({quickEntryBlockTitle})
+                </p>
               </div>
-              <p className="text-[10px] text-slate-500 font-serif leading-snug">
-                Auto:{' '}
-                <code className="text-amber-200/90">
-                  {genericQuickStatusSourceFieldIds
-                    .map((id) => safeString(dynamicData[id]).trim())
-                    .filter(Boolean)
-                    .join(' · ') || '—'}
-                </code>
-              </p>
+              {(genericQuickResolved?.slots?.length ?? 0) >= 1 ? (
+                <div className={entityModalQuickGrid}>
+                  {genericQuickSlotsVisible.map((slot, idx) => {
+                    const fid = slot.fieldId;
+                    const depSuggestions = resolveDependentQuickSuggestions(slot, slot.suggestions);
+                    return (
+                      <div key={`${fid}-${idx}`} className={entityModalQuickCol}>
+                        {renderQuickSlotLabelWithSortInput(slot, { inline: true })}
+                        {renderGenericQuickValueEditors({ ...slot, suggestions: depSuggestions }, idx)}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -2373,28 +2458,8 @@ export const ModalEntity = ({
             <div className={entityModalQuickSurface}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
-                  Gợi ý nhanh ({safeString(tabConfig?.label).trim() || 'Bản đồ'})
+                  Gợi ý nhanh ({quickEntryBlockTitle})
                 </p>
-                {(onPatchMapRealmScaleLists || onSaveMapHierarchySharedList) && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (mapListEditorMode) {
-                          setMapListEditorMode(null);
-                          return;
-                        }
-                        if (onPatchMapRealmScaleLists) toggleMapRealmListEditor();
-                        else toggleMapHierarchyListEditor();
-                      }}
-                      aria-expanded={Boolean(mapListEditorMode)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-amber-800/55 bg-amber-950/25 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-amber-200/95 transition-colors hover:border-amber-500/55 hover:bg-amber-900/35"
-                    >
-                      <ListIcon size={14} aria-hidden />
-                      {mapListEditorMode ? 'Đóng list gợi ý' : 'Chỉnh list gợi ý'}
-                    </button>
-                  </div>
-                )}
               </div>
               {mapListEditorMode && (onPatchMapRealmScaleLists || onSaveMapHierarchySharedList) && (
                 <div className="flex flex-wrap gap-1.5">
@@ -2645,11 +2710,9 @@ export const ModalEntity = ({
                   </div>
                 </div>
               )}
-              <div className="grid gap-2 md:grid-cols-3 md:gap-3">
-                <div className="min-w-0 space-y-1">
-                  <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(mapQuickLabels.gioiDien)}>
-                    {renderLabelWithPrefix(mapQuickLabels.gioiDien)}
-                  </label>
+              <div className={entityModalQuickGrid}>
+                <div className={entityModalQuickCol}>
+                  {renderQuickSlotLabelWithSortInput(mapQuickLabels.gioiDien, { inline: true })}
                   <input
                     aria-label={mapQuickLabels.gioiDien?.ariaLabel}
                     list="ttc-map-type-options"
@@ -2660,10 +2723,8 @@ export const ModalEntity = ({
                     title="Mặc định = tên tab con; đổi nếu gắn Quy mô cho giới khác"
                   />
                 </div>
-                <div className="min-w-0 space-y-1">
-                  <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(mapQuickLabels.quyMo)}>
-                    {renderLabelWithPrefix(mapQuickLabels.quyMo)}
-                  </label>
+                <div className={entityModalQuickCol}>
+                  {renderQuickSlotLabelWithSortInput(mapQuickLabels.quyMo, { inline: true })}
                   <input
                     aria-label={mapQuickLabels.quyMo?.ariaLabel}
                     list="ttc-map-realm-options"
@@ -2673,10 +2734,8 @@ export const ModalEntity = ({
                     placeholder={mapRealmSystemOptions[0] || 'Ví dụ: Hạ giới'}
                   />
                 </div>
-                <div className="min-w-0 space-y-1">
-                  <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(mapQuickLabels.dacTinh)}>
-                    {renderLabelWithPrefix(mapQuickLabels.dacTinh)}
-                  </label>
+                <div className={entityModalQuickCol}>
+                  {renderQuickSlotLabelWithSortInput(mapQuickLabels.dacTinh, { inline: true })}
                   <input
                     aria-label={mapQuickLabels.dacTinh?.ariaLabel}
                     list="ttc-force-system-options"
@@ -2688,11 +2747,9 @@ export const ModalEntity = ({
                   />
                 </div>
               </div>
-              <div className="rounded-lg border border-amber-900/40 bg-slate-950/45 p-2.5 space-y-1.5">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <label className={`${entityModalQuickLabel} mb-0 truncate`} title={joinLabelWithPrefix(mapQuickLabels.trucThuoc)}>
-                    {renderLabelWithPrefix(mapQuickLabels.trucThuoc)}
-                  </label>
+              <div className={entityModalQuickSubBlock}>
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <div className="min-w-0 flex-1">{renderQuickSlotLabelWithSortInput(mapQuickLabels.trucThuoc, { inline: true })}</div>
                   {safeString(mapQuickRealmSystem).trim() ? (
                     <span className="text-[10px] text-amber-200/85 font-serif">
                       «{mapQuickLabels.quyMo?.label}»: <strong>{safeString(mapQuickRealmSystem).trim()}</strong>
@@ -2705,12 +2762,6 @@ export const ModalEntity = ({
                     </span>
                   ) : null}
                 </div>
-                <p
-                  className="text-[9px] text-slate-500 font-serif leading-snug"
-                  title="Tên thẻ Bản đồ đã có và tầng đã dùng trong Trực thuộc trước đó"
-                >
-                  Nguồn gợi ý: thẻ đã tạo + tầng cũ (cùng tên thẻ).
-                </p>
                 {mapParentTierRequiredCount === 0 ? (
                   <p className="text-[11px] text-slate-400 font-serif">
                     Quy mô hiện tại là tầng cao nhất, không cần chọn «Trực thuộc».
@@ -2741,10 +2792,6 @@ export const ModalEntity = ({
                         />
                       )}
                     </div>
-                    <p className="text-[10px] text-slate-400 font-serif leading-snug">
-                      Chuỗi lưu vào <code className="text-amber-200/90">f_vi_tri</code>:{' '}
-                      <code className="text-slate-200">{mapQuickParentPath || 'Chưa chọn'}</code>
-                    </p>
                     <details className="rounded-lg border border-slate-800/90 bg-slate-950/55 px-2 py-1.5">
                       <summary className="cursor-pointer text-[11px] font-semibold text-slate-400 font-serif hover:text-slate-200">
                         Nâng cao: sửa chuỗi «Trực thuộc» đầy đủ (cùng dữ liệu, khác cách nhập)
@@ -2775,25 +2822,19 @@ export const ModalEntity = ({
                   </p>
                 )}
               </div>
-              <p className="text-[10px] text-slate-400 font-serif leading-snug">
-                Auto lưu:{' '}
-                <code className="text-amber-200">
-                  {composeMapTemplateDisplayLine(fieldsTemplate, dynamicData, mapQuickSystem) || '—'}
-                </code>
-              </p>
             </div>
           )}
 
           {showForceQuickSection && (
             <div className={entityModalQuickSurface}>
-              <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
-                Gợi ý nhanh ({safeString(tabConfig?.label).trim() || 'Thế lực'})
-              </p>
-              <div className="grid gap-2 md:grid-cols-3 md:gap-3">
-                <div className="min-w-0 space-y-1">
-                  <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(forceQuickLabels.loaiHinh)}>
-                    {renderLabelWithPrefix(forceQuickLabels.loaiHinh)}
-                  </label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
+                  Gợi ý nhanh ({quickEntryBlockTitle})
+                </p>
+              </div>
+              <div className={entityModalQuickGrid}>
+                <div className={entityModalQuickCol}>
+                  {renderQuickSlotLabelWithSortInput(forceQuickLabels.loaiHinh, { inline: true })}
                   <input
                     aria-label={forceQuickLabels.loaiHinh?.ariaLabel}
                     list="ttc-force-type-options"
@@ -2803,10 +2844,8 @@ export const ModalEntity = ({
                     placeholder={forceTypeOptions[0] || 'Ví dụ: Tông Môn'}
                   />
                 </div>
-                <div className="min-w-0 space-y-1">
-                  <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(forceQuickLabels.heCapBac)}>
-                    {renderLabelWithPrefix(forceQuickLabels.heCapBac)}
-                  </label>
+                <div className={entityModalQuickCol}>
+                  {renderQuickSlotLabelWithSortInput(forceQuickLabels.heCapBac, { inline: true })}
                   <select
                     aria-label={forceQuickLabels.heCapBac?.ariaLabel}
                     value={forceRealmSelectValue}
@@ -2821,10 +2860,8 @@ export const ModalEntity = ({
                     ))}
                   </select>
                 </div>
-                <div className="min-w-0 space-y-1">
-                  <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(forceQuickLabels.capBac)}>
-                    {renderLabelWithPrefix(forceQuickLabels.capBac)}
-                  </label>
+                <div className={entityModalQuickCol}>
+                  {renderQuickSlotLabelWithSortInput(forceQuickLabels.capBac, { inline: true })}
                   <input
                     aria-label={forceQuickLabels.capBac?.ariaLabel}
                     list="ttc-force-rank-options"
@@ -2840,10 +2877,8 @@ export const ModalEntity = ({
                   />
                 </div>
               </div>
-              <div className="min-w-0 space-y-1">
-                <label className={`${entityModalQuickLabel} truncate`} title={joinLabelWithPrefix(forceQuickLabels.diaChi)}>
-                  {renderLabelWithPrefix(forceQuickLabels.diaChi)}
-                </label>
+              <div className={entityModalQuickSubBlock}>
+                {renderQuickSlotLabelWithSortInput(forceQuickLabels.diaChi, { inline: true })}
                 <input
                   aria-label={forceQuickLabels.diaChi?.ariaLabel}
                   list="ttc-force-location-options"
@@ -2868,55 +2903,14 @@ export const ModalEntity = ({
                   <p className="text-[10px] text-slate-500 font-serif">Chưa có thẻ trong tab Bản đồ này.</p>
                 )}
               </div>
-              <p className="text-[10px] text-slate-400 font-serif leading-snug">
-                Auto:{' '}
-                <code className="text-amber-200">
-                  {[forceQuickType, forceQuickRealmSystem, forceQuickRank, forceQuickLocation].filter(Boolean).join(' · ') ||
-                    '—'}
-                </code>
-              </p>
             </div>
           )}
 
-          <AppEntityTemplateFieldEditor
-            tabConfig={tabConfig}
-            parentTabId={parentTabId}
-            parentLabel={parentLabel}
-            activeNovelData={activeNovelData}
-            handleAddTabTemplateField={handleAddTabTemplateField}
-            handleRemoveTabTemplateField={handleRemoveTabTemplateField}
-            handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
-            handleSetTabTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
-            handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
-            handleSetTabFieldSource={handleSetTabFieldSource}
-            setConfirmDialog={setConfirmDialog}
-            showToast={showToast}
-            contextHint="Tên hiển thị sửa tuỳ ý; ID hệ thống cố định khi trường được tạo, chỉ mất khi xoá trường. Chọn chế độ Cục bộ / Khu vực bên dưới."
-          />
-
-          <div className="grid gap-2.5 items-start md:grid-cols-2">
-            <div className="min-w-0 space-y-1">
+          <div className="rounded-xl border border-slate-800/55 bg-slate-950/30 p-2.5 sm:p-3 shadow-inner shadow-black/10">
+            <div className="grid gap-1.5 sm:grid-cols-1 sm:gap-2 sm:items-stretch sm:min-h-0">
+            <div className={entityCreateMetaFieldColClass}>
               <label
-                className="block text-[10px] font-bold text-indigo-400 uppercase tracking-widest leading-snug truncate"
-                title={mainFormLabels.alias.label}
-              >
-                {mainFormLabels.alias.label}
-              </label>
-              <input
-                aria-label={mainFormLabels.alias.ariaLabel}
-                value={safeString(dynamicData.f_alias)}
-                onChange={(e) => patchDynamicData({ f_alias: e.target.value })}
-                className="w-full bg-slate-950/80 border border-indigo-800/50 rounded-lg py-2 px-2.5 text-sm text-slate-200 font-serif focus:border-indigo-500 outline-none"
-                placeholder="Nhiều tên: dùng dấu phẩy, / hoặc | — ví dụ: Kim Đan, Hệ Thống / Boss"
-                title="Không dùng [[...]] trong ô biệt danh"
-              />
-              <p className="text-[10px] text-slate-500 font-serif leading-snug truncate" title="Tách bằng phẩy, / hoặc | — không dùng [[...]]">
-                Tách bằng phẩy / / | — không dùng <strong className="text-slate-400">[[...]]</strong>.
-              </p>
-            </div>
-            <div className="min-w-0 space-y-1">
-              <label
-                className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-snug truncate"
+                className={`${entityCreateMetaFieldLabelClass} text-slate-400`}
                 title={mainFormLabels.statusLine.label}
               >
                 {mainFormLabels.statusLine.label}
@@ -2925,17 +2919,133 @@ export const ModalEntity = ({
                 aria-label={mainFormLabels.statusLine.label}
                 value={safeString(dynamicData.f_status)}
                 onChange={(e) => handleStatusFieldChange(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-700 rounded-lg py-2 px-2.5 text-sm text-slate-200 font-serif focus:border-amber-600/60 outline-none"
+                className={`${entityCreateMetaFieldInputClass} border-slate-700 focus:border-amber-600/60`}
                 placeholder={resolvedStatusFieldPlaceholder}
                 title={resolvedStatusFieldHint}
               />
-              {!isMapScope && !isForceScope && (
-                <p className="text-[10px] text-slate-500 font-serif leading-snug line-clamp-2" title={resolvedStatusFieldHint}>
-                  {resolvedStatusFieldHint}
-                </p>
-              )}
+            </div>
+            <div className={entityCreateMetaFieldColClass}>
+              <label
+                className={`${entityCreateMetaFieldLabelClass} text-indigo-400`}
+                title={mainFormLabels.alias.label}
+              >
+                {mainFormLabels.alias.label}
+              </label>
+              <input
+                aria-label={mainFormLabels.alias.ariaLabel}
+                value={safeString(dynamicData.f_alias)}
+                onChange={(e) => patchDynamicData({ f_alias: e.target.value })}
+                className={`${entityCreateMetaFieldInputClass} border-indigo-800/50 focus:border-indigo-500`}
+                placeholder="Nhiều tên: dùng dấu phẩy, / hoặc | — ví dụ: Kim Đan, Hệ Thống / Boss"
+                title="Không dùng [[...]] trong ô biệt danh"
+              />
+            </div>
             </div>
           </div>
+            </div>
+          )}
+
+          {tabConfig?.viewType === 'collection-track' && showTemplatePanel && (
+            useEntityFormTabs ? (
+              <div
+                id="ttc-entity-form-panel-template"
+                role="tabpanel"
+                aria-labelledby="ttc-entity-form-tab-template"
+                className={entityCreateTemplatePanelClass}
+              >
+                <div className="px-3 py-2.5 border-b border-slate-800/70 bg-slate-900/40">
+                  <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                    {entityCreateTemplateTitle}
+                  </div>
+                  <div className="mt-0.5 line-clamp-2 text-[9px] font-serif leading-snug text-slate-500">
+                    Mẫu trường, list gợi ý, nguồn dữ liệu — cùng cho bản đồ, thế lực, lưới. Với mục lưới, bố cục ô
+                    gợi ý ở cuối mục.
+                  </div>
+                </div>
+                <div className="space-y-2 bg-slate-900/25 px-3 py-2.5">
+                  <AppEntityTemplateFieldEditor
+                    tabConfig={tabConfig}
+                    parentTabId={parentTabId}
+                    parentLabel={parentLabel}
+                    activeNovelData={activeNovelData}
+                    handleAddTabTemplateField={handleAddTabTemplateField}
+                    handleRemoveTabTemplateField={handleRemoveTabTemplateField}
+                    handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
+                    handleSetTabTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
+                    handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
+                    handleSetTabFieldSource={handleSetTabFieldSource}
+                    setConfirmDialog={setConfirmDialog}
+                    showToast={showToast}
+                    defaultOpen
+                    contextHint="Gợi ý nhanh (phần mở sẵn) để nhập. Chế độ Cục bộ / Khu vực: khối Trường dưới đây. Với lưới thường, thêm cấu hình bố cục ô ở cuối mục này."
+                  />
+                  {showGenericQuickEntry && (
+                    <AppEntityQuickEntryConfig
+                      tabLonId={parentTabId}
+                      tabNhoId={tabConfig?.id}
+                      fieldsTemplate={fieldsTemplate}
+                      entityQuickEntry={tabConfig?.entityQuickEntry}
+                      fieldSuggestionDependencies={tabConfig?.fieldSuggestionDependencies}
+                      onSetEntityQuickEntry={handleSetTabEntityQuickEntry}
+                      onSetFieldSuggestionDependencies={handleSetTabFieldSuggestionDependencies}
+                      onSetTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
+                      onRequestPropagateToLon={requestPropagateEntityQuickEntryToLon}
+                      onRequestPropagateToAllLons={requestPropagateEntityQuickEntryToAllLons}
+                      showToast={showToast}
+                    />
+                  )}
+                </div>
+              </div>
+            ) : (
+            <details className={`group ${entityCreateTemplatePanelClass}`}>
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 hover:bg-slate-900/50 [&::-webkit-details-marker]:hidden">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                    {entityCreateTemplateTitle}
+                  </div>
+                  <div className="mt-0.5 line-clamp-2 text-[9px] font-serif leading-snug text-slate-500">
+                    Mẫu trường, list gợi ý, nguồn dữ liệu — cùng cho bản đồ, thế lực, lưới. Với mục lưới, bố cục ô
+                    gợi ý ở cuối mục.
+                  </div>
+                </div>
+                <span className="shrink-0 text-[9px] font-bold text-amber-200/80">Mở</span>
+              </summary>
+              <div className="space-y-2 border-t border-slate-800/70 bg-slate-900/25 px-3 py-2.5">
+                <AppEntityTemplateFieldEditor
+                  tabConfig={tabConfig}
+                  parentTabId={parentTabId}
+                  parentLabel={parentLabel}
+                  activeNovelData={activeNovelData}
+                  handleAddTabTemplateField={handleAddTabTemplateField}
+                  handleRemoveTabTemplateField={handleRemoveTabTemplateField}
+                  handleRenameTabTemplateFieldLabel={handleRenameTabTemplateFieldLabel}
+                  handleSetTabTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
+                  handleMergeTabFieldSuggestionList={handleMergeTabFieldSuggestionList}
+                  handleSetTabFieldSource={handleSetTabFieldSource}
+                  setConfirmDialog={setConfirmDialog}
+                  showToast={showToast}
+                  defaultOpen
+                  contextHint="Gợi ý nhanh (phần mở sẵn) để nhập. Chế độ Cục bộ / Khu vực: khối Trường dưới đây. Với lưới thường, thêm cấu hình bố cục ô ở cuối mục này."
+                />
+                {showGenericQuickEntry && (
+                  <AppEntityQuickEntryConfig
+                    tabLonId={parentTabId}
+                    tabNhoId={tabConfig?.id}
+                    fieldsTemplate={fieldsTemplate}
+                    entityQuickEntry={tabConfig?.entityQuickEntry}
+                    fieldSuggestionDependencies={tabConfig?.fieldSuggestionDependencies}
+                    onSetEntityQuickEntry={handleSetTabEntityQuickEntry}
+                    onSetFieldSuggestionDependencies={handleSetTabFieldSuggestionDependencies}
+                    onSetTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
+                    onRequestPropagateToLon={requestPropagateEntityQuickEntryToLon}
+                    onRequestPropagateToAllLons={requestPropagateEntityQuickEntryToAllLons}
+                    showToast={showToast}
+                  />
+                )}
+              </div>
+            </details>
+            )
+          )}
 
           <datalist id="ttc-map-type-options">
             {mapTypeSuggestions.map((item) => (
@@ -2987,7 +3097,8 @@ export const ModalEntity = ({
               <option key={item} value={item} />
             ))}
           </datalist>
-          {(parentTabId !== 'nhan-vat' || (showMapQuickSection && !initialData) || showForceQuickSection || isCultivationScope) && (
+          {showInlineGuideHints && (
+            <div className="space-y-0">
             <div className="grid gap-1.5 md:grid-cols-2">
               {parentTabId !== 'nhan-vat' && (
                 <details className={`${entityModalHintCallout} group`}>
@@ -3064,15 +3175,21 @@ export const ModalEntity = ({
                 </details>
               )}
             </div>
+            </div>
           )}
 
         </div>
 
-        <div className="px-4 py-3 border-t border-slate-800 flex flex-shrink-0 justify-end gap-2 bg-slate-900">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white font-serif transition-colors rounded-lg text-sm">Hủy bỏ</button>
+        <div className="shrink-0 border-t border-slate-800/80 px-4 py-2.5 flex flex-shrink-0 justify-end gap-2 bg-slate-900/95">
+          <button type="button" onClick={onClose} className="px-4 py-2.5 text-slate-400 hover:text-white font-serif transition-colors rounded-lg text-sm">Hủy bỏ</button>
           <button
             type="button"
-            onClick={() => { if (formData.name.trim()) { onSave(formData, dynamicData, null); onClose(); } }}
+            onClick={() => {
+              if (!formData.name.trim()) return;
+              flushMapListDraftsForMainSaveRef.current();
+              onSave(formData, dynamicData, null);
+              onClose();
+            }}
             disabled={!formData.name.trim()}
             className="px-5 py-2 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded-lg font-bold font-serif text-sm shadow-lg transition-all flex items-center gap-2"
           >
@@ -4672,6 +4789,13 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
                            );
                        })}
                    </div>
+                   {mode === "create" && (
+                     <p className="mt-3 text-[11px] text-slate-500 font-serif leading-relaxed rounded-xl border border-slate-800/80 bg-slate-950/50 px-3 py-2.5">
+                       Sau khi mở truyện, cấu hình <strong className="text-amber-200/85">mẫu trường</strong> và{' '}
+                       <strong className="text-amber-200/85">ô gợi ý nhanh</strong> tại cùng luồng <strong className="text-slate-300">Khởi tạo thẻ</strong> trên
+                       mỗi tab sưu tập — không phụ thuộc tạo truyện từ màn này hay tổ hợp thể loại mới.
+                     </p>
+                   )}
                    {mode === "create" && (
                      <div className="mt-3 flex items-center gap-3">
                        <button

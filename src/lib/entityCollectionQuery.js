@@ -44,16 +44,11 @@ function comparePinnedListThenMilestones(a, b) {
   return safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
 }
 
+// Chỉ mục tìm theo tên thẻ (name), không dùng info/title/dynamicData — tránh trúng từ trong dữ liệu dài.
 export function buildEntitySearchIndexMap(collectionEntitiesRaw) {
   const map = new Map();
   collectionEntitiesRaw.forEach((e) => {
-    const dynamicPart = e.dynamicData
-      ? Object.values(e.dynamicData).map((v) => safeString(v)).filter(Boolean).join(' ')
-      : '';
-    map.set(
-      e.id,
-      normalizeSearchText(`${safeString(e.name)} ${safeString(e.title)} ${safeString(e.info)} ${dynamicPart}`)
-    );
+    map.set(e.id, normalizeSearchText(safeString(e.name)));
   });
   return map;
 }

@@ -18,6 +18,7 @@
 //   useAppDirectoryBackup.js - folder connect + import/export backup handlers
 //   useAppImageWorkflow.js - image upload/picker/modal workflow
 //   AppShellOverlays.jsx - lightbox, toast, spinner
+//   AppListCardInfoSearch.jsx - tìm trong nội dung thẻ Danh sách (AUTO)
 //   entityProfilePrint.js - template + popup print cho export hồ sơ PDF
 //   lib/appTabGroups, appDashboardStats, buildEntityLinkMap, filterNovelsForLibrary, buildCurrentContextDirHandle
 //   useAppNovelCrud.js - novel modal state + create/edit/delete handlers
@@ -46,6 +47,7 @@ import { AdvancedFieldSelect } from './AppAdvancedFieldSelect.jsx';
 import { AppLibrarySidebar } from './AppLibrarySidebar.jsx';
 import { getEntityFieldValue } from './lib/entityFieldValue.js';
 import { buildEntitySearchIndexMap, applyEntityCollectionFilters } from './lib/entityCollectionQuery.js';
+import { MAX_QUICK_ENTRY_SLOTS, applyEntityQuickEntryToNho } from './lib/entityQuickEntrySlots.js';
 import { useEntityCollectionQueryState } from './useEntityCollectionQueryState.js';
 import {
   buildNovelSearchIndex,
@@ -65,6 +67,7 @@ import { resolveEntityPageForSelection } from './lib/entitySelectionPage.js';
 import {
   ensureCollectionListCardsForNovel,
   syncAllCollectionListCards,
+  isListCardEntity,
 } from './lib/collectionListCardSync.js';
 import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
 import {
@@ -127,6 +130,7 @@ import {
   runNovelAutoSyncPlan,
 } from './lib/autoSyncManager.js';
 import { AppMainPane } from './AppMainPane.jsx';
+import { AppListCardInfoSearch } from './AppListCardInfoSearch.jsx';
 import { AppModalLayer } from './AppModalLayer.jsx';
 import { saveGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
 import {
@@ -1708,7 +1712,13 @@ export default function App() {
   };
 
   // Tab management helpers
-  const getTabsToUpdate = () => activeNovelData ? activeNovelData.tabsConfig : globalTabsConfig;
+  /** Luôn ưu tiên ref (cập nhật đồng bộ trong updateActiveNovelData) — tránh clone cây tab cũ khi gọi setTabsConfig liên tiếp trong cùng một lượt (vd. lưu realmScaleLists rồi merge fieldSuggestionLists). */
+  const getTabsToUpdate = () => {
+    const fromRef = activeNovelDataRef?.current;
+    if (Array.isArray(fromRef?.tabsConfig)) return fromRef.tabsConfig;
+    if (activeNovelData && Array.isArray(activeNovelData.tabsConfig)) return activeNovelData.tabsConfig;
+    return globalTabsConfig;
+  };
   const buildTabScopeLabel = (lonId, nhoId, currentTabs = getTabsToUpdate()) => {
     const lon = (currentTabs || []).find((tab) => tab.id === lonId);
     if (!lon) return 'Cây thư mục';
@@ -2535,10 +2545,10 @@ export default function App() {
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
     if (!nho || nho.viewType !== 'collection-track') return;
     const templateIds = new Set((nho.fieldsTemplate || []).map((f) => safeString(f?.id).trim()).filter(Boolean));
-    const ids = (Array.isArray(slotFields) ? slotFields : []).map((x) => safeString(x).trim()).slice(0, 3);
-    const labels = [0, 1, 2].map((i) => safeString(slotLabels?.[i] ?? '').trim());
-    if (ids.length !== 3 || new Set(ids).size !== 3) return;
+    const ids = (Array.isArray(slotFields) ? slotFields : []).map((x) => safeString(x).trim()).filter(Boolean).slice(0, MAX_QUICK_ENTRY_SLOTS);
+    if (ids.length < 1 || new Set(ids).size !== ids.length) return;
     if (!ids.every((id) => templateIds.has(id))) return;
+    const labels = ids.map((_, i) => safeString(slotLabels?.[i] ?? '').trim());
     const prev = nho.entityQuickEntry && typeof nho.entityQuickEntry === 'object' ? { ...nho.entityQuickEntry } : {};
     nho.entityQuickEntry = {
       ...prev,
@@ -2553,6 +2563,124 @@ export default function App() {
     }
     setTabsConfig(current, { resyncAuto: false });
   };
+
+  const handleSetTabFieldSuggestionDependencies = (lonId, nhoId, dependencies) => {
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!nho || nho.viewType !== 'collection-track') return;
+    const allowed = new Set(
+      (nho.fieldsTemplate || [])
+        .map((f) => safeString(f?.id).trim())
+        .filter((id) => id && id !== 'f_alias')
+    );
+    const dedupeValues = (arr) => {
+      const out = [];
+      const seen = new Set();
+      (Array.isArray(arr) ? arr : []).forEach((item) => {
+        const raw = safeString(item).trim();
+        const key = normalizeAsciiText(raw);
+        if (!raw || !key || seen.has(key)) return;
+        seen.add(key);
+        out.push(raw);
+      });
+      return out;
+    };
+    const sanitized = [];
+    (Array.isArray(dependencies) ? dependencies : []).forEach((rule) => {
+      const sourceFieldId = safeString(rule?.sourceFieldId).trim();
+      const targetFieldId = safeString(rule?.targetFieldId).trim();
+      if (!sourceFieldId || !targetFieldId || sourceFieldId === targetFieldId) return;
+      if (!allowed.has(sourceFieldId) || !allowed.has(targetFieldId)) return;
+      const cases = [];
+      const caseList = Array.isArray(rule?.cases)
+        ? rule.cases
+        : Object.entries(rule?.cases && typeof rule.cases === 'object' ? rule.cases : {}).map(([whenValue, suggestions]) => ({
+            whenValue,
+            suggestions,
+          }));
+      caseList.forEach((entry) => {
+        const whenValue = safeString(entry?.whenValue).trim();
+        const suggestions = dedupeValues(entry?.suggestions);
+        if (!whenValue || suggestions.length < 1) return;
+        cases.push({ whenValue, suggestions });
+      });
+      if (cases.length < 1) return;
+      sanitized.push({ sourceFieldId, targetFieldId, cases });
+    });
+    if (sanitized.length < 1) delete nho.fieldSuggestionDependencies;
+    else nho.fieldSuggestionDependencies = sanitized;
+    setTabsConfig(current, { resyncAuto: false });
+  };
+
+  const performPropagateEntityQuickEntryToLon = useCallback(
+    (lonId, slotFields, slotLabels, options = {}) => {
+      const current = structuredClone(getTabsToUpdate());
+      const lon = current.find((t) => t.id === lonId);
+      if (!lon || !Array.isArray(lon.subTabs)) return;
+      let count = 0;
+      lon.subTabs.forEach((nho) => {
+        if (applyEntityQuickEntryToNho(nho, slotFields, slotLabels, options)) count += 1;
+      });
+      if (count === 0) {
+        showToast('Không có tab sưu tập nào dưới tab lớn này.', 'warning');
+        return;
+      }
+      setTabsConfig(current, { resyncAuto: false });
+      const lab = safeString(lon?.label).trim() || 'tab lớn';
+      showToast(`Đã áp cấu hình ô gợi ý nhanh cho ${count} tab sưu tập dưới «${lab}».`, 'success');
+    },
+    [getTabsToUpdate, setTabsConfig, showToast]
+  );
+
+  const performPropagateEntityQuickEntryToAllLons = useCallback(
+    (slotFields, slotLabels, options = {}) => {
+      const current = structuredClone(getTabsToUpdate());
+      if (!Array.isArray(current) || current.length === 0) return;
+      let count = 0;
+      current.forEach((lon) => {
+        if (!Array.isArray(lon.subTabs)) return;
+        lon.subTabs.forEach((nho) => {
+          if (applyEntityQuickEntryToNho(nho, slotFields, slotLabels, options)) count += 1;
+        });
+      });
+      if (count === 0) {
+        showToast('Chưa có tab sưu tập nào trong cấu hình mục.', 'warning');
+        return;
+      }
+      setTabsConfig(current, { resyncAuto: false });
+      showToast(`Đã áp cấu hình ô gợi ý nhanh cho ${count} tab sưu tập (mọi mục lớn).`, 'success');
+    },
+    [getTabsToUpdate, setTabsConfig, showToast]
+  );
+
+  const requestPropagateEntityQuickEntryToLon = useCallback(
+    (lonId, slotFields, slotLabels, options = {}) => {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Áp cho cả tab lớn?',
+        message: `Ghi đè bố cục «ô gợi ý nhanh» lên mọi tab sưu tập (lưới thẻ) cùng tab lớn. Các f_* mà từng tab nhỏ không có sẽ bỏ qua; tab thiếu mẫu sẽ dùng ${MAX_QUICK_ENTRY_SLOTS} ô mặc định.`,
+        onConfirm: () => {
+          performPropagateEntityQuickEntryToLon(lonId, slotFields, slotLabels, options);
+        },
+      });
+    },
+    [setConfirmDialog, performPropagateEntityQuickEntryToLon]
+  );
+
+  const requestPropagateEntityQuickEntryToAllLons = useCallback(
+    (slotFields, slotLabels, options = {}) => {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Áp cho toàn bộ mục lớn?',
+        message: `Ghi đè bố cục «ô gợi ý nhanh» lên mọi tab sưu tập (lưới thẻ) dưới tất cả mục lớn trong cấu hình. Các f_* mà từng tab nhỏ không có sẽ bỏ qua; tab thiếu mẫu sẽ dùng ${MAX_QUICK_ENTRY_SLOTS} ô mặc định.`,
+        onConfirm: () => {
+          performPropagateEntityQuickEntryToAllLons(slotFields, slotLabels, options);
+        },
+      });
+    },
+    [setConfirmDialog, performPropagateEntityQuickEntryToAllLons]
+  );
 
   const handleSetTabAutoSyncLevels = (lonId, nhoId, updater) => {
     const current = structuredClone(getTabsToUpdate());
@@ -2616,8 +2744,22 @@ export default function App() {
 
   const memoizedEntityInfo = useMemo(() => {
       if (!selectedEntity || collectionSubTab !== 'detail' || isEntityEditing) return null;
+      if (isListCardEntity(selectedEntity)) {
+        return (
+          <AppListCardInfoSearch
+            info={selectedEntity.info}
+            dirHandle={currentContextDirHandle}
+            entityMap={entityMap}
+            linkRegex={globalLinkRegex}
+            onNavigate={(dest) => {
+              if (navFnRef.current) navFnRef.current(dest);
+            }}
+            selfEntityId={selectedEntity.id}
+          />
+        );
+      }
       return <div className="font-serif max-w-none animate-fade-in min-h-[200px]">{renderEntityNotesMarkdown(safeString(selectedEntity.info), currentContextDirHandle, entityMap, globalLinkRegex, (dest) => { if(navFnRef.current) navFnRef.current(dest); }, selectedEntity?.id)}</div>;
-  }, [selectedEntity, collectionSubTab, isEntityEditing, currentContextDirHandle, entityMap, globalLinkRegex]);
+  }, [selectedEntity, selectedEntity?.info, collectionSubTab, isEntityEditing, currentContextDirHandle, entityMap, globalLinkRegex]);
 
   const memoizedStandardData = useMemo(() => {
       if (isEditingMode || currentTabConfig?.viewType === 'collection-track') return null;
@@ -2927,6 +3069,9 @@ export default function App() {
     handleRenameTabTemplateFieldLabel,
     handleSetTabTemplateFieldSortPrefix,
     handleSetTabEntityQuickEntry,
+    handleSetTabFieldSuggestionDependencies,
+    requestPropagateEntityQuickEntryToLon,
+    requestPropagateEntityQuickEntryToAllLons,
     handleSetTabFieldSource,
     handleApplySuggestedAutoSyncSetup,
     handleResyncAutoTabs,

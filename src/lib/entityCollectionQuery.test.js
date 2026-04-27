@@ -65,7 +65,7 @@ describe('entityCollectionQuery', () => {
     const filtered = applyEntityCollectionFilters([e1, e2, e3], {
       entityFilterField: 'f_realm',
       entityFilterValue: 'dan dien',
-      entitySearchQuery: 'de tu',
+      entitySearchQuery: 'dao',
       entitySearchIndexById: index,
       entitySortMode: 'name_asc',
     });

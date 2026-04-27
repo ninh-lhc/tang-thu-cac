@@ -19,11 +19,9 @@ import {
   ChevronUp,
   Upload,
   ImageOff,
-  ArrowLeftRight,
 } from 'lucide-react';
 import { safeString, getIconComponent } from './MasterUtils.jsx';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
-import { pickDefaultQuickFieldIds } from './lib/entityQuickEntrySlots.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
 import {
   getEffectiveAutoSyncRole,
@@ -57,6 +55,12 @@ import {
   getTabHealthCopy,
   buildSimpleSetupSteps,
 } from './lib/appModalQuanLyTabHelpers.js';
+import {
+  getQuickAuto3SourceOptions,
+  getQuickAuto3TargetOptions,
+  getQuickAuto3DefaultPair,
+  validateQuickAuto3Pair,
+} from './lib/autoSyncQuickLinkSetup.js';
 
 export function AppModalQuanLyTab({
   activeNovelData,
@@ -78,7 +82,7 @@ export function AppModalQuanLyTab({
   handleSetTabAutoSyncLevels,
   handleSetTabAutoSyncFieldMap,
   handleSetTabMapEntrySuggestions,
-  handleSetTabEntityQuickEntry,
+  handleSetTabTemplateFieldSortPrefix,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
   handleSaveCurrentTabsAsGenreTemplate,
@@ -90,6 +94,8 @@ export function AppModalQuanLyTab({
   const [expandedRoleChoicesByPath, setExpandedRoleChoicesByPath] = React.useState({});
   const [openAutoTabPath, setOpenAutoTabPath] = React.useState(null);
   const [showAutoOverview, setShowAutoOverview] = React.useState(false);
+  const [quickAuto3SourcePathOverride, setQuickAuto3SourcePathOverride] = React.useState(null);
+  const [quickAuto3TargetPathOverride, setQuickAuto3TargetPathOverride] = React.useState(null);
   const novelGenres = React.useMemo(() => extractNovelGenres(activeNovelData), [activeNovelData]);
   const diagnostics = React.useMemo(
     () => (activeNovelData ? collectNovelAutoSyncDiagnostics(activeNovelData) : null),
@@ -100,6 +106,17 @@ export function AppModalQuanLyTab({
     [diagnostics]
   );
   const simpleSetupSteps = React.useMemo(() => buildSimpleSetupSteps(diagnostics), [diagnostics]);
+  const quickAuto3SourceOptions = React.useMemo(
+    () => getQuickAuto3SourceOptions(sortedTabs).map((row) => ({ pathKey: row.pathKey, label: row.label })),
+    [sortedTabs]
+  );
+  const quickAuto3TargetOptions = React.useMemo(
+    () => getQuickAuto3TargetOptions(sortedTabs).map((row) => ({ pathKey: row.pathKey, label: row.label })),
+    [sortedTabs]
+  );
+  const quickAuto3DefaultPair = React.useMemo(() => getQuickAuto3DefaultPair(sortedTabs), [sortedTabs]);
+  const quickAuto3SourcePath = quickAuto3SourcePathOverride ?? quickAuto3DefaultPair.sourcePath;
+  const quickAuto3TargetPath = quickAuto3TargetPathOverride ?? quickAuto3DefaultPair.targetPath;
   const lonIconInputRefById = React.useRef({});
   const nhoIconInputRefByPath = React.useRef({});
 
@@ -173,6 +190,47 @@ export function AppModalQuanLyTab({
       activeEl.blur();
     }
   }, [trapRef]);
+  const applyQuickAuto3Setup = React.useCallback(() => {
+    const sourcePath = safeString(quickAuto3SourcePath).trim();
+    const targetPath = safeString(quickAuto3TargetPath).trim();
+    const check = validateQuickAuto3Pair({ sourcePath, targetPath });
+    if (!check.ok) {
+      showToast?.(check.message);
+      return;
+    }
+    const [sourceLonId, sourceNhoId] = sourcePath.split('::');
+    const [targetLonId, targetNhoId] = targetPath.split('::');
+    const sourceLon = (sortedTabs || []).find((lon) => safeString(lon?.id) === safeString(sourceLonId));
+    const sourceNho = sourceLon?.subTabs?.find((nho) => safeString(nho?.id) === safeString(sourceNhoId));
+    const targetLon = (sortedTabs || []).find((lon) => safeString(lon?.id) === safeString(targetLonId));
+    const targetNho = targetLon?.subTabs?.find((nho) => safeString(nho?.id) === safeString(targetNhoId));
+    if (!sourceLon || !sourceNho || !targetLon || !targetNho) {
+      showToast?.('Không tìm thấy tab nguồn hoặc tab đích trong cây hiện tại.');
+      return;
+    }
+
+    handleSetTabAutoSyncRole?.(sourceLonId, sourceNhoId, 'the-luc');
+    handleSetTabAutoSyncRole?.(targetLonId, targetNhoId, 'ban-do');
+    handleSetTabAutoSyncTargets?.(sourceLonId, sourceNhoId, [targetPath]);
+    const sourceLevelConfig = getEffectiveTabAutoSyncLevelConfig(sourceNho);
+    handleSetTabAutoSyncLevels?.(sourceLonId, sourceNhoId, {
+      ...sourceLevelConfig,
+      enabled: true,
+      levels: {
+        ...sourceLevelConfig.levels,
+        [AUTO_SYNC_LEVEL_3]: true,
+      },
+    });
+    showToast?.('Đã áp dụng Auto 3: gán nguồn Thế lực -> đích Bản đồ và bật bậc 3.');
+  }, [
+    handleSetTabAutoSyncLevels,
+    handleSetTabAutoSyncRole,
+    handleSetTabAutoSyncTargets,
+    quickAuto3SourcePath,
+    quickAuto3TargetPath,
+    showToast,
+    sortedTabs,
+  ]);
 
   return (
     <div
@@ -284,6 +342,67 @@ export function AppModalQuanLyTab({
                 <span className="rounded-full border border-fuchsia-700/30 bg-fuchsia-950/20 px-3 py-1 text-[11px] font-semibold text-fuchsia-100">
                   Sẽ cập nhật: {diagnostics.preview.touchedEntityCount}
                 </span>
+              </div>
+              <div className="rounded-xl border border-indigo-800/40 bg-indigo-950/20 p-3 space-y-2">
+                <div className="text-[10px] uppercase tracking-wide text-indigo-300 font-bold">
+                  Auto 3 siêu nhanh
+                </div>
+                <div className="text-[12px] text-slate-300 font-serif">
+                  Chỉ chọn tab nguồn + tab đích. Hệ thống tự gán role, target và bật bậc 3 liên tab.
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <label className="flex flex-col gap-1 text-[11px] text-slate-300 font-semibold">
+                    Tab nguồn (Thế lực)
+                    <select
+                      value={quickAuto3SourcePath}
+                      onChange={(e) => setQuickAuto3SourcePathOverride(e.target.value)}
+                      className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 font-serif outline-none focus:border-indigo-500/60"
+                    >
+                      {quickAuto3SourceOptions.length === 0 && (
+                        <option value="">(Chưa có mục phù hợp — bật Lưới cho 2 mục)</option>
+                      )}
+                      {quickAuto3SourceOptions.map((option) => (
+                        <option key={`source-${option.pathKey}`} value={option.pathKey}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-[11px] text-slate-300 font-semibold">
+                    Tab đích (Bản đồ)
+                    <select
+                      value={quickAuto3TargetPath}
+                      onChange={(e) => setQuickAuto3TargetPathOverride(e.target.value)}
+                      className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 font-serif outline-none focus:border-indigo-500/60"
+                    >
+                      {quickAuto3TargetOptions.length === 0 && (
+                        <option value="">(Chưa có mục phù hợp — bật Lưới cho 2 mục)</option>
+                      )}
+                      {quickAuto3TargetOptions.map((option) => (
+                        <option key={`target-${option.pathKey}`} value={option.pathKey}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] text-slate-400 font-serif">
+                    Sau khi áp dụng, bạn chỉ cần bấm <strong className="text-indigo-100">Quét Lại AUTO</strong>.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={applyQuickAuto3Setup}
+                    disabled={quickAuto3SourceOptions.length === 0 || quickAuto3TargetOptions.length === 0}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold ${
+                      quickAuto3SourceOptions.length === 0 || quickAuto3TargetOptions.length === 0
+                        ? 'border-slate-700 bg-slate-900 text-slate-500 cursor-not-allowed'
+                        : 'border-indigo-700/55 bg-indigo-950/35 text-indigo-100 hover:bg-indigo-900/35'
+                    }`}
+                  >
+                    Tự cấu hình Auto 3
+                  </button>
+                </div>
               </div>
 
               {showAutoOverview && (
@@ -1160,12 +1279,12 @@ export function AppModalQuanLyTab({
                                   <div className="flex items-center justify-between gap-3">
                                     <div>
                                       <div className="text-[10px] uppercase tracking-wide text-amber-400 font-bold">
-                                        Bố cục Khởi Tạo Thẻ (3 ô gợi ý + Bản đồ)
+                                        Bản đồ — list gợi ý thêm (bố cục ô nhanh ở Khởi tạo thẻ)
                                       </div>
                                       <div className="text-[12px] text-slate-300 font-serif mt-1">
-                                        Định nghĩa trường <code className="text-amber-200/90">f_*</code> và list gợi ý ở khối ngay trên
-                                        mục AUTO (mặc định thu gọn), rồi gán 3 ô nhanh và list Bản đồ tại đây — cùng nguồn với «Gợi ý
-                                        nhanh» khi khởi tạo thẻ.
+                                        Với <strong className="text-amber-200/90">tab Bản đồ</strong>: nhập list dưới đây. Các ô «Gợi ý
+                                        nhanh» chung (không phải Bản đồ) — chỉnh tại <strong className="text-amber-200/90">Khởi tạo
+                                        thẻ</strong> → mở «Cấu hình mẫu: các ô gợi ý nhanh».
                                       </div>
                                     </div>
                                     <div className="text-[11px] text-amber-200/90 font-semibold">
@@ -1175,170 +1294,10 @@ export function AppModalQuanLyTab({
                                 </summary>
                                 <div className="mt-3 space-y-3">
                                   {!isMapTab && (
-                                    <div className="rounded-lg border border-amber-700/40 bg-amber-950/25 p-2 space-y-2">
-                                    <div className="text-[10px] font-bold text-amber-200 uppercase tracking-wide">
-                                      3 ô gợi ý — Khởi tạo thẻ (không phải Bản đồ)
-                                    </div>
-                                    <p className="text-[11px] text-slate-400 font-serif leading-relaxed">
-                                      Chọn trường dữ liệu cho từng ô và (tuỳ chọn) đổi nhãn hiển thị. Danh sách gợi ý từng{' '}
-                                      <code className="text-amber-200/90">f_*</code> chỉnh ở khối «Trường &amp; list gợi ý» phía trên; app
-                                      ghép thêm gợi ý theo thể loại và tên tab. Với pháp bảo / đồ vật: gán ô 1 = cấp bậc (vd.{' '}
-                                      <code className="text-amber-200/90">f_cap</code>), ô 2 = phẩm chất (
-                                      <code className="text-amber-200/90">f_status</code> hoặc trường tùy chỉnh), rồi bật &quot;hai ô song
-                                      song&quot;.
+                                    <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
+                                      Bố cục ô «Gợi ý nhanh» (mẫu tab) nằm trong <strong className="text-amber-200/90">Khởi tạo thẻ</strong>{' '}
+                                      — mở khối «Cấu hình mẫu: các ô gợi ý nhanh» ở đầu form.
                                     </p>
-                                    {(() => {
-                                      const selectable = templateFields.filter((f) => f && f.id && f.id !== 'f_alias');
-                                      const defaultSlots = pickDefaultQuickFieldIds(templateFields);
-                                      const configured =
-                                        Array.isArray(tabNho.entityQuickEntry?.slotFields) &&
-                                        tabNho.entityQuickEntry.slotFields.length === 3
-                                          ? tabNho.entityQuickEntry.slotFields
-                                          : defaultSlots;
-                                      const labelSlots = [0, 1, 2].map((i) =>
-                                        safeString(tabNho.entityQuickEntry?.slotLabels?.[i] ?? '').trim()
-                                      );
-                                      const optIds = new Set(selectable.map((f) => f.id));
-                                      if (selectable.length === 0) {
-                                        return (
-                                          <p className="text-[11px] text-amber-100/90 font-serif">
-                                            Thêm ít nhất một trường trong khối «Trường &amp; list gợi ý» (ngoài wiki) để gán 3 ô.
-                                          </p>
-                                        );
-                                      }
-                                      return (
-                                        <div className="space-y-3">
-                                          {[0, 1, 2].map((idx) => {
-                                            const qlabId = `ttc-quick-slot-label-${tabPathKey}-${idx}`;
-                                            return (
-                                              <div
-                                                key={`quick-slot-${tabPathKey}-${idx}`}
-                                                className="rounded-lg border border-amber-900/25 bg-slate-950/40 p-2 space-y-2"
-                                              >
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                  <span className="text-[10px] font-bold text-slate-500 w-8 shrink-0">
-                                                    Ô {idx + 1}
-                                                  </span>
-                                                  <select
-                                                    value={configured[idx]}
-                                                    onChange={(e) => {
-                                                      const v = safeString(e.target.value).trim();
-                                                      const next = [...configured];
-                                                      const twin = next.findIndex((x, j) => x === v && j !== idx);
-                                                      if (twin >= 0) {
-                                                        next[twin] = next[idx];
-                                                      }
-                                                      next[idx] = v;
-                                                      handleSetTabEntityQuickEntry?.(
-                                                        tabLon.id,
-                                                        tabNho.id,
-                                                        next,
-                                                        labelSlots
-                                                      );
-                                                    }}
-                                                    className="min-w-[160px] flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 font-mono outline-none focus:border-amber-600/50"
-                                                  >
-                                                    {!optIds.has(configured[idx]) && (
-                                                      <option value={configured[idx]}>
-                                                        {configured[idx]} (cần khớp template)
-                                                      </option>
-                                                    )}
-                                                    {selectable.map((f) => (
-                                                      <option key={f.id} value={f.id}>
-                                                        {safeString(f.label) || f.id} ({f.id})
-                                                      </option>
-                                                    ))}
-                                                  </select>
-                                                </div>
-                                                <div className="space-y-1 pl-0 md:pl-10">
-                                                  <div className="flex flex-wrap items-center gap-2">
-                                                    <span className="text-[10px] font-bold uppercase tracking-wide text-amber-200/85">
-                                                      Nhãn hiển thị (chỉ modal Khởi tạo thẻ)
-                                                    </span>
-                                                    <button
-                                                      type="button"
-                                                      title="Sửa nhãn hiển thị cho ô gợi ý này"
-                                                      onClick={() => document.getElementById(qlabId)?.focus()}
-                                                      className="inline-flex items-center gap-1 rounded-md border border-amber-800/50 bg-amber-950/35 px-2 py-0.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/45"
-                                                    >
-                                                      <Edit2 size={12} /> Sửa nhãn
-                                                    </button>
-                                                  </div>
-                                                  <input
-                                                    id={qlabId}
-                                                    type="text"
-                                                    defaultValue={labelSlots[idx]}
-                                                    key={`qlab-${tabPathKey}-${idx}-${labelSlots[idx]}`}
-                                                    onBlur={(e) => {
-                                                      const nextLabels = [...labelSlots];
-                                                      nextLabels[idx] = e.target.value;
-                                                      handleSetTabEntityQuickEntry?.(
-                                                        tabLon.id,
-                                                        tabNho.id,
-                                                        configured,
-                                                        nextLabels
-                                                      );
-                                                    }}
-                                                    placeholder="Để trống = dùng tên trường trong hồ sơ tab"
-                                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-serif outline-none focus:border-amber-600/45"
-                                                  />
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                          <div className="space-y-2 rounded-lg border border-amber-900/35 bg-slate-950/55 px-2.5 py-2">
-                                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                              <label className="inline-flex cursor-pointer items-start gap-2 text-[11px] text-slate-300 font-serif leading-snug">
-                                                <input
-                                                  type="checkbox"
-                                                  checked={tabNho.entityQuickEntry?.dualFirstRow === true}
-                                                  onChange={(e) =>
-                                                    handleSetTabEntityQuickEntry?.(tabLon.id, tabNho.id, configured, labelSlots, {
-                                                      dualFirstRow: e.target.checked,
-                                                    })
-                                                  }
-                                                  className="mt-0.5 rounded border-slate-600"
-                                                />
-                                                <span>
-                                                  Hai ô đầu <strong className="text-amber-200">song song</strong> (hai ô đầu hiển thị cạnh
-                                                  nhau).
-                                                </span>
-                                              </label>
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  const next = [configured[1], configured[0], configured[2]];
-                                                  const nextLabels = [labelSlots[1], labelSlots[0], labelSlots[2]];
-                                                  handleSetTabEntityQuickEntry?.(tabLon.id, tabNho.id, next, nextLabels);
-                                                }}
-                                                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-800/50 bg-amber-950/40 px-2.5 py-1.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/50"
-                                                title="Hoán đổi trường và nhãn của ô 1 và ô 2"
-                                              >
-                                                <ArrowLeftRight size={14} /> Đổi chỗ ô 1 ↔ 2
-                                              </button>
-                                            </div>
-                                            <label className="inline-flex cursor-pointer items-start gap-2 text-[11px] text-slate-300 font-serif leading-snug">
-                                              <input
-                                                type="checkbox"
-                                                checked={tabNho.entityQuickEntry?.useSelectUi === true}
-                                                onChange={(e) =>
-                                                  handleSetTabEntityQuickEntry?.(tabLon.id, tabNho.id, configured, labelSlots, {
-                                                    dualFirstRow: tabNho.entityQuickEntry?.dualFirstRow === true,
-                                                    useSelectUi: e.target.checked,
-                                                  })
-                                                }
-                                                className="mt-0.5 rounded border-slate-600"
-                                              />
-                                              <span>
-                                                Dùng <strong className="text-amber-200">menu chọn (select)</strong> cho 3 ô (kèm ô gõ tay
-                                                dưới mỗi ô); tắt = gõ + gợi ý datalist như mặc định.
-                                              </span>
-                                            </label>
-                                          </div>
-                                        </div>
-                                      );
-                                    })()}
-                                    </div>
                                   )}
 
                                   {isMapTab && (

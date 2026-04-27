@@ -270,7 +270,7 @@ export function AppCollectionSection({
     return detailProfileMode === 'current'
       ? buildTimelineCurrentNotesText(selectedEntity)
       : safeString(selectedEntity.info);
-  }, [detailProfileMode, selectedEntity]);
+  }, [detailProfileMode, selectedEntity, selectedEntity?.info]);
   const detailNotesEntity = React.useMemo(() => {
     if (!detailEntity) return detailEntity;
     return {
@@ -300,6 +300,7 @@ export function AppCollectionSection({
     globalLinkRegex,
     handleNavigate,
     isEntityEditing,
+    detailNotesText,
   ]);
   const handleOpenCurrentTimelineEdit = React.useCallback(() => {
     const latestMilestone = timelineCurrentProfile.latestMilestone;
@@ -377,11 +378,11 @@ export function AppCollectionSection({
                   spellCheck={false}
                   enterKeyHint="search"
                   defaultValue={safeString(entitySearch)}
-                  placeholder="Tìm kiếm nhanh..."
+                  placeholder="Tìm theo tên thẻ..."
                   onChange={scheduleEntitySearchDebounce}
                   onBlur={handleCollectionSearchBlur}
                   className={`${toolbarInputBase} bg-slate-900 border border-slate-800 pl-10 pr-4 outline-none focus:border-amber-600/50 w-48`}
-                  aria-label="Tìm kiếm nhanh trong danh sách thẻ"
+                  aria-label="Tìm theo tên thẻ trong danh sách thẻ"
                   role="searchbox"
                 />
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
@@ -494,7 +495,7 @@ export function AppCollectionSection({
                 </div>
               )}
               <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
-                Lưu ý: <span className="text-slate-400">Tìm kiếm nhanh</span> và{' '}
+                Lưu ý: <span className="text-slate-400">Tìm theo tên thẻ</span> và{' '}
                 <span className="text-slate-400">Lọc theo trường</span> được áp dụng đồng thời.
               </p>
             </div>

@@ -1,6 +1,6 @@
 /**
  * Preset gợi ý form Bản Đồ (Giới Diện / Đặc Tính Địa Vực) theo `genres` của truyện.
- * `MasterComponents` / `collectMapEntityHints` import để hạt giống datalist + placeholder.
+ * `MasterComponents` / `mapEntityHints.js` (`collectMapEntityHints`) import để hạt giống datalist + placeholder.
  * Ưu tiên Đô Thị trước Tiên Hiệp khi cả hai có trong danh sách thể loại.
  */
 import { normalizeAsciiText } from './statusHierarchyParser.js';

@@ -802,8 +802,9 @@ export const processPlainTextWithLinks = (text, lookup, linkRegex, onNavigate, s
 };
 
 const INLINE_COLOR_RE = /^\[color=(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)\]([\s\S]*?)\[\/color\]$/;
+/** Thứ tự: màu → wiki [[…]] (trước in đậm/italic) → các mark khác. */
 const INLINE_MARK_SPLIT =
-  /(\[color=(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]+)\][\s\S]*?\[\/color\]|\*\*[\s\S]*?\*\*|`[^`\n]+`|~~[\s\S]*?~~|==[\s\S]*?==|<u>[\s\S]*?<\/u>|\*[^*\n]+?\*|!\[.*?\]\(.*?\)|\[\[.*?\]\])/g;
+  /(\[color=(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]+)\][\s\S]*?\[\/color\]|\[\[.*?\]\]|\*\*[\s\S]*?\*\*|`[^`\n]+`|~~[\s\S]*?~~|==[\s\S]*?==|<u>[\s\S]*?<\/u>|\*[^*\n]+?\*|!\[.*?\]\(.*?\))/g;
 
 const sanitizeInlineColor = (rawColor) => {
   const value = safeString(rawColor).trim();
