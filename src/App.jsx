@@ -1827,6 +1827,21 @@ export default function App() {
     }
     showToast(`Đã lưu cây mẫu cho: ${genres.join(', ')} (kèm quy chuẩn nhóm và cấu hình tab).`, 'success');
   }, [activeNovelData, showToast]);
+  const persistGenreTemplateFromTabs = useCallback(
+    (tabsConfig) => {
+      if (!activeNovelData || !Array.isArray(tabsConfig) || tabsConfig.length === 0) return;
+      const genres = Array.isArray(activeNovelData.genres)
+        ? activeNovelData.genres.filter(Boolean)
+        : typeof activeNovelData.genres === 'string'
+          ? [activeNovelData.genres]
+          : activeNovelData.genre
+            ? [activeNovelData.genre]
+            : [];
+      if (genres.length === 0) return;
+      saveGenreTabsTemplate(genres, tabsConfig);
+    },
+    [activeNovelData]
+  );
   const buildAutoSyncContext = (lonId, nhoId, nho, parentLabel = '') => ({
     activeTabLon: lonId,
     activeTabNho: nhoId,
@@ -2169,6 +2184,7 @@ export default function App() {
       autoSyncReason: 'set_auto_role',
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
+    persistGenreTemplateFromTabs(current);
   };
 
   const handleSetTabAutoSyncFieldMap = (lonId, nhoId, fieldKey, nextFieldIdValue) => {
@@ -2201,6 +2217,7 @@ export default function App() {
       autoSyncReason: 'set_field_map',
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
+    persistGenreTemplateFromTabs(current);
   };
 
   const handleSetTabAutoSyncTargets = (lonId, nhoId, nextTargetPaths) => {
@@ -2228,6 +2245,7 @@ export default function App() {
       autoSyncReason: 'set_auto_targets',
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
+    persistGenreTemplateFromTabs(current);
   };
 
   const handleSetTabMapEntrySuggestions = (lonId, nhoId, which, text, options = {}) => {
@@ -2703,6 +2721,7 @@ export default function App() {
       autoSyncReason: 'set_auto_levels',
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
+    persistGenreTemplateFromTabs(current);
   };
 
   // ==========================================

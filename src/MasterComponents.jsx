@@ -1718,10 +1718,10 @@ export const ModalEntity = ({
   /** Cùng «khung» với thẻ Danh xưng & khối Trạng thái (viền slate, bóng nhẹ) — nội dung bên trong vẫn dùng tông amber. */
   const entityModalQuickSurface =
     'rounded-xl border border-slate-800/55 bg-slate-950/30 p-2.5 sm:p-3 shadow-inner shadow-black/10 space-y-2.5';
-  const entityModalQuickGrid = 'grid gap-2.5 md:grid-cols-3 md:gap-3.5';
-  const entityModalQuickCol = 'min-w-0 flex h-full flex-col gap-1.5';
+  const entityModalQuickGrid = 'grid items-stretch gap-2.5 md:grid-cols-3 md:gap-3.5';
+  const entityModalQuickCol = 'min-w-0 flex h-full flex-col gap-1.5 rounded-lg border border-slate-800/80 bg-slate-950/35 p-2';
   const entityModalQuickSubBlock = 'rounded-lg border border-amber-900/40 bg-slate-950/40 p-2.5 space-y-1.5';
-  const entityModalQuickLabel = 'block text-[10px] font-bold text-amber-200 uppercase tracking-widest leading-tight';
+  const entityModalQuickLabel = 'block text-[11px] font-bold text-amber-200 uppercase tracking-widest leading-tight';
   const renderLabelWithPrefix = (labelObj) => {
     const prefix = safeString(labelObj?.sortPrefix).trim();
     const text = safeString(labelObj?.label);
@@ -1756,7 +1756,7 @@ export const ModalEntity = ({
       <>
         {showInput && (
           <div className="shrink-0 w-[2.75rem] space-y-0.5">
-            <div className="text-[7px] font-bold uppercase tracking-wide text-emerald-200/80 leading-tight">Số TT</div>
+            <div className="text-[8px] font-bold uppercase tracking-wide text-emerald-200/80 leading-tight">Số TT</div>
             <input
               type="text"
               defaultValue={sp}
@@ -1767,7 +1767,7 @@ export const ModalEntity = ({
               maxLength={16}
               title="Mẫu trường chung cả tab — I, 1, 1.1…; đổi ở đây sẽ áp cho mọi thẻ cùng tab nhỏ. Thứ tự riêng từng mục trong thẻ Danh sách (AUTO): dùng «Mục lục danh sách (AUTO)» trên từng mục."
               aria-label={`Ký hiệu thứ tự gợi ý nhanh cho ${fid}`}
-              className="w-full bg-slate-950/90 border border-emerald-800/50 rounded-md px-1.5 py-1 text-[11px] text-emerald-100 font-mono focus:border-emerald-500/70 outline-none"
+              className="h-9 w-full bg-slate-950/90 border border-emerald-800/50 rounded-md px-1.5 py-1 text-[11px] text-emerald-100 font-mono focus:border-emerald-500/70 outline-none"
               placeholder="·"
             />
           </div>
@@ -1781,15 +1781,15 @@ export const ModalEntity = ({
       </>
     );
     if (opts.inline) {
-      return <div className="flex items-center gap-1.5 min-w-0">{inner}</div>;
+      return <div className="flex min-h-[2.6rem] items-end gap-1.5 min-w-0">{inner}</div>;
     }
-    return <div className="flex items-center gap-1.5 min-w-0 w-full">{inner}</div>;
+    return <div className="flex min-h-[2.6rem] items-end gap-1.5 min-w-0 w-full">{inner}</div>;
   };
 
   /** «Số TT»/Ký hiệu nằm trên mẫu trường (fieldsTemplate) — dùng chung mọi thẻ; không phải dữ liệu riêng từng thẻ. */
 
   const entityModalQuickInput =
-    'w-full min-h-[2.75rem] bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none';
+    'w-full h-11 bg-slate-950/80 border border-amber-900/40 rounded-lg py-2 px-2.5 text-sm text-slate-100 font-serif focus:border-amber-500 outline-none';
   const entityModalHintCallout = 'rounded-lg border border-slate-800/70 bg-slate-950/35 px-2.5 py-1.5';
   const entityModalHintTitle = 'text-[10px] font-bold uppercase tracking-widest text-amber-300/95 mb-0.5';
 

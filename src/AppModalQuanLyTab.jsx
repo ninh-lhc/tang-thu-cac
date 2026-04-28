@@ -746,6 +746,7 @@ export function AppModalQuanLyTab({
                     const healthCopy = getTabHealthCopy(tabReport);
                     const HealthIcon = healthCopy.icon;
                     const autoEnabled = isAutoRoleEnabled(explicitRole || effectiveRole || '__local__');
+                    const isAutoOffForTab = explicitRole === 'khong-tu-dong';
                     const isAutoPanelOpen = openAutoTabPath === tabPathKey;
                     const advancedOverride = advancedOpenByPath[tabPathKey];
                     const roleCardGroups = getAutoRoleCardGroups({
@@ -964,16 +965,35 @@ export function AppModalQuanLyTab({
                                       Bấm 1 ô bên dưới để nói cho AUTO biết mục này đang chứa loại dữ liệu gì.
                                     </div>
                                   </div>
-                                  {!explicitRole && effectiveRole && (
-                                    <span className="rounded-full border border-cyan-700/40 bg-cyan-950/25 px-2 py-1 text-[11px] text-cyan-100 font-semibold">
-                                      AUTO đang gợi ý: {getAutoRoleSelectLabel(effectiveRole)}
-                                    </span>
-                                  )}
-                                  {explicitRole && (
-                                    <span className="rounded-full border border-amber-700/40 bg-amber-950/25 px-2 py-1 text-[11px] text-amber-100 font-semibold">
-                                      Đang chọn tay
-                                    </span>
-                                  )}
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleSetTabAutoSyncRole(
+                                          tabLon.id,
+                                          tabNho.id,
+                                          isAutoOffForTab ? '' : 'khong-tu-dong'
+                                        )
+                                      }
+                                      className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold ${
+                                        isAutoOffForTab
+                                          ? 'border-emerald-700/50 bg-emerald-950/25 text-emerald-100 hover:bg-emerald-900/30'
+                                          : 'border-rose-700/45 bg-rose-950/25 text-rose-100 hover:bg-rose-900/30'
+                                      }`}
+                                    >
+                                      {isAutoOffForTab ? 'Bật AUTO lại cho tab này' : 'Tắt AUTO cho tab này'}
+                                    </button>
+                                    {!explicitRole && effectiveRole && (
+                                      <span className="rounded-full border border-cyan-700/40 bg-cyan-950/25 px-2 py-1 text-[11px] text-cyan-100 font-semibold">
+                                        AUTO đang gợi ý: {getAutoRoleSelectLabel(effectiveRole)}
+                                      </span>
+                                    )}
+                                    {explicitRole && (
+                                      <span className="rounded-full border border-amber-700/40 bg-amber-950/25 px-2 py-1 text-[11px] text-amber-100 font-semibold">
+                                        Đang chọn tay
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
 
                                 <div className="grid gap-2 md:grid-cols-2">
@@ -1018,11 +1038,10 @@ export function AppModalQuanLyTab({
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <div>
                                     <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">
-                                      AUTO nâng cao (bậc 3-4)
+                                      AUTO theo bậc (1-4)
                                     </div>
                                     <div className="text-[12px] text-slate-300 font-serif mt-1">
-                                      Bậc 1–2 <strong className="text-emerald-200/90">luôn bật</strong> (AUTO trong thẻ + thẻ Danh sách
-                                      cùng tab), không tắt được. Chỉ chỉnh bậc 3–4 khi cần liên tab / timeline.
+                                      Mặc định tab mới bật bậc 1–2. Với tab đặc thù, bạn có thể tắt riêng từng bậc ngay bên dưới.
                                     </div>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2">
@@ -1054,18 +1073,12 @@ export function AppModalQuanLyTab({
                                 <div className="rounded-lg border border-slate-800/80 bg-slate-950/35 px-3 py-2 text-[11px] text-slate-400 font-serif">
                                   Preset thực dụng: Thế lực ưu tiên liên tab với Bản đồ; Nhân vật chính ưu tiên bậc 4 timeline;
                                   Hệ thống tu luyện chỉ bật bậc 3 khi cần liên tab khác tab lớn.
-                                  {!practicalRole && ' Tab chưa chọn vai trò: chỉ bật AUTO bậc 1–2 nội bộ, tắt 3–4 cho an toàn.'}
-                                </div>
-                                <div className="grid gap-2 md:grid-cols-2">
-                                  <div className="rounded-xl border border-emerald-700/35 bg-emerald-950/20 px-3 py-2 text-xs font-semibold text-emerald-100">
-                                    Bậc 1: AUTO trong chính thẻ (mặc định)
-                                  </div>
-                                  <div className="rounded-xl border border-emerald-700/35 bg-emerald-950/20 px-3 py-2 text-xs font-semibold text-emerald-100">
-                                    Bậc 2: AUTO thẻ Danh Sách cùng tab (mặc định)
-                                  </div>
+                                  {!practicalRole && ' Tab chưa chọn vai trò: ưu tiên chỉ bật các bậc bạn thực sự cần.'}
                                 </div>
                                 <div className="grid gap-2 md:grid-cols-2">
                                   {[
+                                    [AUTO_SYNC_LEVEL_1, 'Bậc 1: AUTO trong chính thẻ'],
+                                    [AUTO_SYNC_LEVEL_2, 'Bậc 2: AUTO thẻ Danh Sách cùng tab'],
                                     [
                                       AUTO_SYNC_LEVEL_3,
                                       auto3Recommended

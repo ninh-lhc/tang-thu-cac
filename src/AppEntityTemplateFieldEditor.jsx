@@ -164,14 +164,14 @@ export function AppEntityTemplateFieldEditor({
   };
 
   const scopeButtonClass = (active) =>
-    `flex-1 min-w-0 min-h-[2.35rem] px-1.5 sm:px-2 py-1 text-[10px] font-bold leading-tight text-center transition-colors ${
+    `flex-1 min-w-0 min-h-[2.5rem] px-2 sm:px-2.5 py-1.5 text-sm font-semibold leading-tight text-center transition-colors ${
       active
         ? 'bg-amber-700/80 text-white'
         : 'bg-slate-950/60 text-slate-300 hover:bg-slate-900/70'
     }`;
 
   return (
-    <div className="rounded-lg border border-amber-900/40 bg-amber-950/10 p-2 space-y-1.5">
+    <div className="rounded-lg border border-amber-900/40 bg-amber-950/10 p-3 space-y-2">
       <button
         type="button"
         onClick={() => setIsOpen((v) => !v)}
@@ -180,25 +180,20 @@ export function AppEntityTemplateFieldEditor({
         title="Tên hiển thị sửa tùy ý; ID hệ thống sinh khi thêm, không đổi trừ khi xoá trường."
       >
         <div className="min-w-0">
-          <div className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
+          <div className="text-xs font-bold text-amber-300 uppercase tracking-widest">
             Trường thông tin (thêm · sửa · xoá)
           </div>
         </div>
-        <span className="inline-flex items-center gap-0.5 rounded-md border border-amber-800/45 bg-amber-950/35 px-1.5 py-0.5 text-[9px] font-bold text-amber-100/95 shrink-0">
+        <span className="inline-flex items-center gap-0.5 rounded-md border border-amber-800/45 bg-amber-950/35 px-2 py-1 text-xs font-bold text-amber-100/95 shrink-0">
           {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           {isOpen ? 'Thu' : 'Mở'}
         </span>
       </button>
 
       {isOpen && (
-        <div className="space-y-1.5 pt-1.5 border-t border-amber-900/30">
-          {safeString(contextHint).trim() && (
-            <p className="text-[9px] text-amber-200/80 font-serif leading-snug line-clamp-2" title={contextHint}>
-              {contextHint}
-            </p>
-          )}
-          <div className="space-y-1">
-            <div className="text-[8px] font-bold text-amber-300/90 uppercase tracking-widest">Chế độ lưu</div>
+        <div className="space-y-2 pt-2 border-t border-amber-900/30">
+          <div className="space-y-1.5">
+            <div className="text-[11px] font-bold text-amber-300/90 uppercase tracking-widest">Chế độ lưu</div>
             <div className="grid grid-cols-2 gap-0 rounded-lg border border-amber-900/50 overflow-hidden w-full min-h-[2.35rem]">
               <button
                 type="button"
@@ -219,14 +214,14 @@ export function AppEntityTemplateFieldEditor({
                 Khu vực
               </button>
             </div>
-            <p className={`text-[8px] font-medium leading-tight break-words rounded border px-1.5 py-0.5 ${scopeTone}`}>
+            <p className={`text-[11px] font-medium leading-tight break-words rounded border px-2 py-1 ${scopeTone}`}>
               {scopeLabel}
             </p>
           </div>
 
-          <div className="flex flex-wrap items-stretch gap-1.5">
+          <div className="flex flex-wrap items-stretch gap-2">
             <div className="min-w-[min(100%,10rem)] flex-1">
-              <label className="block text-[8px] font-bold text-amber-200/90 uppercase tracking-widest mb-0.5">
+              <label className="block text-[11px] font-bold text-amber-200/90 uppercase tracking-widest mb-1">
                 Thêm trường
               </label>
               <input
@@ -240,17 +235,17 @@ export function AppEntityTemplateFieldEditor({
                   }
                 }}
                 placeholder="Ví dụ: Phẩm cấp, Tộc hệ…"
-                className="w-full bg-slate-950 border border-slate-700 rounded-md px-2 py-1.5 text-xs text-slate-100 font-serif outline-none focus:border-amber-600/55"
+                className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm text-slate-100 font-serif outline-none focus:border-amber-600/55"
               />
             </div>
             <div className="flex items-end">
               <button
                 type="button"
                 onClick={handleAdd}
-                className="inline-flex h-8 items-center gap-0.5 rounded-md border border-amber-700/55 bg-amber-950/40 px-2 text-[10px] font-bold text-amber-100 hover:bg-amber-900/45"
+                className="inline-flex h-9 items-center gap-1 rounded-md border border-amber-700/55 bg-amber-950/40 px-3 text-sm font-bold text-amber-100 hover:bg-amber-900/45"
                 title="Thêm trường vào mẫu (theo chế độ lưu)"
               >
-                <Plus size={12} />
+                <Plus size={14} />
                 <span>Thêm</span>
               </button>
             </div>
@@ -261,7 +256,7 @@ export function AppEntityTemplateFieldEditor({
               Chưa có trường nào. Thêm trường đầu tiên để bắt đầu khởi tạo thẻ theo ý bạn.
             </p>
           ) : (
-            <div className="space-y-1.5 max-h-[min(40vh,260px)] overflow-y-auto pr-0.5 custom-scrollbar">
+            <div className="space-y-2 max-h-[min(40vh,260px)] overflow-y-auto pr-0.5 custom-scrollbar">
               {templateFields.map((field) => {
                 const fid = safeString(field?.id).trim();
                 if (!fid) return null;
@@ -279,11 +274,11 @@ export function AppEntityTemplateFieldEditor({
                 return (
                   <div
                     key={fid}
-                    className="rounded-md border border-slate-800/90 bg-slate-950/55 p-1.5 space-y-1.5"
+                    className="rounded-md border border-slate-800/90 bg-slate-950/55 p-2 space-y-2"
                   >
                     {isOutlineField && patchEntity && (
                       <div className="rounded-md border border-emerald-800/50 bg-emerald-950/20 p-2 space-y-1.5">
-                        <div className="text-[9px] font-bold uppercase tracking-wide text-emerald-300">
+                        <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-300">
                           Giá trị khi tạo thẻ — {outlineLabel || fid}
                         </div>
                         <input
@@ -292,7 +287,7 @@ export function AppEntityTemplateFieldEditor({
                           list={outlineSuggestions.length ? outlineDlId : undefined}
                           value={outlineVal}
                           onChange={(e) => patchEntity({ [fid]: e.target.value })}
-                          className="w-full bg-slate-950 border border-emerald-800/55 rounded-md px-2 py-1.5 text-sm text-slate-100 font-serif outline-none focus:border-emerald-500/80"
+                          className="w-full bg-slate-950 border border-emerald-800/55 rounded-md px-2.5 py-2 text-sm text-slate-100 font-serif outline-none focus:border-emerald-500/80"
                           placeholder="I / 1 / 1.1 — cùng mục xếp theo tên thẻ"
                           title="Quy ước I·II·1·1.1 — list mẫu chỉnh ở ô dưới"
                         />
@@ -303,23 +298,17 @@ export function AppEntityTemplateFieldEditor({
                             ))}
                           </datalist>
                         )}
-                        <p className="text-[10px] text-slate-500 font-serif leading-snug">
-                          List gợi ý mẫu (I, 1, 1.1…) sửa ở khung dưới cùng trường.
-                        </p>
                         <div className="h-px bg-slate-800/80" />
-                        <div className="text-[9px] font-bold uppercase tracking-wide text-amber-200/90">
+                        <div className="text-[11px] font-bold uppercase tracking-wide text-amber-200/90">
                           Mẫu tab: nhãn &amp; list gợi ý
                         </div>
                       </div>
                     )}
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="w-20 shrink-0 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-200/90">
+                        <span className="text-[11px] font-bold uppercase tracking-wide text-emerald-200/90">
                           Ký hiệu
                         </span>
-                        <p className="text-[8px] text-slate-500 font-serif leading-tight">
-                          Chung cả tab — không lưu theo từng thẻ.
-                        </p>
                         <input
                           id={sortPrefixId}
                           type="text"
@@ -330,21 +319,21 @@ export function AppEntityTemplateFieldEditor({
                               ? handleSetTabTemplateFieldSortPrefix(lonId, nhoId, fid, e.target.value, opts)
                               : null
                           }
-                          className="w-full bg-slate-950 border border-emerald-800/50 rounded-lg px-2 py-1.5 text-xs text-emerald-100 font-mono"
+                          className="w-full bg-slate-950 border border-emerald-800/50 rounded-lg px-2 py-1.5 text-sm text-emerald-100 font-mono"
                           aria-label={`Ký hiệu sắp xếp của trường ${fid}`}
                           placeholder="I / 1 / 1.1"
                         />
                       </div>
                       <div className="min-w-0 flex-1 space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-amber-200/90">
+                          <span className="text-[11px] font-bold uppercase tracking-wide text-amber-200/90">
                             Tên hiển thị
                           </span>
                           <button
                             type="button"
                             title="Sửa tên hiển thị của trường này"
                             onClick={() => document.getElementById(labelDomId)?.focus()}
-                            className="inline-flex items-center gap-1 rounded-md border border-amber-800/50 bg-amber-950/30 px-2 py-0.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/40"
+                            className="inline-flex items-center gap-1 rounded-md border border-amber-800/50 bg-amber-950/30 px-2 py-1 text-xs font-bold text-amber-100 hover:bg-amber-900/40"
                           >
                             <Edit2 size={12} /> Sửa tên
                           </button>
@@ -357,12 +346,12 @@ export function AppEntityTemplateFieldEditor({
                           onBlur={(e) =>
                             handleRenameTabTemplateFieldLabel(lonId, nhoId, fid, e.target.value, opts)
                           }
-                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100 font-serif"
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-sm text-slate-100 font-serif"
                           aria-label={`Tên hiển thị trường ${fid}`}
                         />
                       </div>
                       <div className="shrink-0 flex flex-col items-end gap-0.5 max-w-[10rem]">
-                        <span className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
                           ID hệ thống
                         </span>
                         <button
@@ -376,7 +365,7 @@ export function AppEntityTemplateFieldEditor({
                             }
                           }}
                           title={`ID hệ thống (bất biến): ${fid} — click để copy`}
-                          className="font-mono text-[10px] text-slate-400 bg-slate-950/70 border border-slate-800 rounded px-1.5 py-0.5 hover:text-amber-200 hover:border-amber-800/55 truncate max-w-full"
+                          className="font-mono text-xs text-slate-400 bg-slate-950/70 border border-slate-800 rounded px-1.5 py-1 hover:text-amber-200 hover:border-amber-800/55 truncate max-w-full"
                         >
                           {fid}
                         </button>
@@ -385,7 +374,7 @@ export function AppEntityTemplateFieldEditor({
                         <button
                           type="button"
                           onClick={() => confirmRemove(field)}
-                          className="shrink-0 rounded-lg border border-rose-800/50 bg-rose-950/25 px-2 py-1 text-[10px] font-bold text-rose-100 hover:bg-rose-900/35"
+                          className="shrink-0 rounded-lg border border-rose-800/50 bg-rose-950/25 px-2.5 py-1.5 text-xs font-bold text-rose-100 hover:bg-rose-900/35"
                           title={
                             propagate
                               ? 'Xóa trường ở tất cả tab con trong tab lớn'
@@ -408,9 +397,6 @@ export function AppEntityTemplateFieldEditor({
                       />
                     )}
                     <div>
-                      <div className="text-[10px] text-slate-500 mb-1">
-                        Danh sách gợi ý — nhập ký hiệu ở ô nhỏ trước từng dòng.
-                      </div>
                       <div className="space-y-1">
                         {suggestionRows.map((row, rowIdx) => (
                           <div key={`${fid}-row-${rowIdx}`} className="flex items-center gap-1.5">
@@ -425,7 +411,7 @@ export function AppEntityTemplateFieldEditor({
                                   return { ...prev, [fid]: list };
                                 });
                               }}
-                              className="w-20 bg-slate-950 border border-emerald-800/45 rounded-md px-2 py-1 text-[10px] text-emerald-100 font-mono"
+                              className="w-20 bg-slate-950 border border-emerald-800/45 rounded-md px-2 py-1.5 text-xs text-emerald-100 font-mono"
                               placeholder="I / 1 / 1.1"
                               aria-label={`Ký hiệu dòng gợi ý ${rowIdx + 1} của ${fid}`}
                             />
@@ -440,7 +426,7 @@ export function AppEntityTemplateFieldEditor({
                                   return { ...prev, [fid]: list };
                                 });
                               }}
-                              className="flex-1 bg-slate-950 border border-slate-800 rounded-md px-2 py-1 text-[10px] text-slate-200 font-mono"
+                              className="flex-1 bg-slate-950 border border-slate-800 rounded-md px-2.5 py-1.5 text-xs text-slate-200 font-mono"
                               placeholder="Nội dung gợi ý..."
                               aria-label={`Nội dung dòng gợi ý ${rowIdx + 1} của ${fid}`}
                             />
@@ -453,7 +439,7 @@ export function AppEntityTemplateFieldEditor({
                                   return { ...prev, [fid]: list };
                                 });
                               }}
-                              className="rounded-md border border-rose-800/50 bg-rose-950/20 px-2 py-1 text-[10px] font-bold text-rose-100"
+                              className="rounded-md border border-rose-800/50 bg-rose-950/20 px-2 py-1.5 text-xs font-bold text-rose-100"
                             >
                               X
                             </button>
@@ -469,7 +455,7 @@ export function AppEntityTemplateFieldEditor({
                                 return { ...prev, [fid]: list };
                               });
                             }}
-                            className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/50 px-2 py-1 text-[10px] font-bold text-slate-200"
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/50 px-2.5 py-1.5 text-xs font-bold text-slate-200"
                           >
                             <Plus size={10} /> Dòng
                           </button>
@@ -487,7 +473,7 @@ export function AppEntityTemplateFieldEditor({
                                 'success'
                               );
                             }}
-                            className="inline-flex items-center gap-1 rounded-md border border-amber-700/55 bg-amber-950/35 px-2 py-1 text-[10px] font-bold text-amber-100 hover:bg-amber-900/40"
+                            className="inline-flex items-center gap-1 rounded-md border border-amber-700/55 bg-amber-950/35 px-2.5 py-1.5 text-xs font-bold text-amber-100 hover:bg-amber-900/40"
                           >
                             Lưu list
                           </button>
@@ -500,9 +486,6 @@ export function AppEntityTemplateFieldEditor({
             </div>
           )}
 
-          <p className="text-[10px] text-slate-500 font-serif leading-snug">
-            Blur để lưu nhãn/list. «Khu vực» = ghi đè mọi tab con trong tab lớn.
-          </p>
         </div>
       )}
     </div>
@@ -556,15 +539,15 @@ function FieldSourceRow({ lonId, nhoId, fid, tabConfig, activeNovelData, opts, h
   };
 
   return (
-    <div className="rounded-md border border-sky-900/40 bg-sky-950/20 p-1.5 space-y-1">
+    <div className="rounded-md border border-sky-900/40 bg-sky-950/20 p-2 space-y-1.5">
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[9px] font-bold uppercase tracking-wide text-sky-200/90">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-sky-200/90">
           Nguồn giá trị
         </span>
         <select
           value={currentKind}
           onChange={(e) => commit(e.target.value, currentMetaKey)}
-          className={`bg-slate-950 border rounded-md px-1.5 py-0.5 text-[11px] font-serif outline-none focus:border-sky-600/55 ${
+          className={`bg-slate-950 border rounded-md px-2 py-1.5 text-sm font-serif outline-none focus:border-sky-600/55 ${
             isOrphanKind
               ? 'border-amber-700/70 text-amber-200'
               : 'border-slate-700 text-slate-100'
@@ -581,7 +564,7 @@ function FieldSourceRow({ lonId, nhoId, fid, tabConfig, activeNovelData, opts, h
           <select
             value={currentMetaKey}
             onChange={(e) => commit(currentKind, e.target.value)}
-            className="bg-slate-950 border border-slate-700 rounded-md px-1.5 py-0.5 text-[11px] text-slate-100 font-serif outline-none focus:border-sky-600/55"
+            className="bg-slate-950 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-100 font-serif outline-none focus:border-sky-600/55"
             aria-label={`Khoá metadata của trường ${fid}`}
           >
             {NOVEL_METADATA_OPTIONS.map((o) => (
