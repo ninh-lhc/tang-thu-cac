@@ -13,85 +13,18 @@ export const MAP_FIELD_PRESET_FLAVOR = Object.freeze({
 });
 
 const MAP_TYPE_BY_FLAVOR = Object.freeze({
-  [MAP_FIELD_PRESET_FLAVOR.CULTIVATION]: Object.freeze([
-    'Vị diện',
-    'Giới',
-    'Tiên tinh',
-    'Tinh cầu',
-    'Đại lục',
-    'Châu',
-    'Đế quốc',
-    'Khu vực',
-    'Thành/Trấn',
-    'Địa danh',
-  ]),
-  [MAP_FIELD_PRESET_FLAVOR.URBAN]: Object.freeze([
-    'Quốc gia / Liên bang',
-    'Vùng / Miền',
-    'Thành phố',
-    'Quận / Huyện',
-    'Khu phố',
-    'Tòa nhà / Công trình',
-    'Khu thương mại / Trung tâm',
-    'Sân bay / Bến cảng / Ga',
-    'Online / Nền tảng / App',
-    'Địa danh / Landmark',
-  ]),
-  [MAP_FIELD_PRESET_FLAVOR.SCIFI]: Object.freeze([
-    'Thiên hà',
-    'Tinh vực',
-    'Hành tinh',
-    'Mặt trăng / Vệ tinh',
-    'Trạm không gian',
-    'Thành phố nổi',
-    'Khu thuộc địa',
-    'Hành lang không gian',
-    'Khu đặc quyền',
-    'Địa danh',
-  ]),
-  [MAP_FIELD_PRESET_FLAVOR.SURVIVAL]: Object.freeze([
-    'Khu an toàn',
-    'Căn cứ',
-    'Tiền đồn',
-    'Khu phế tích',
-    'Vùng nhiễm / Đỏ',
-    'Hang / Hầm',
-    'Khu buôn lậu / Chợ đen',
-    'Đường tiếp tế',
-    'Địa danh',
-  ]),
+  [MAP_FIELD_PRESET_FLAVOR.CULTIVATION]: Object.freeze([]),
+  [MAP_FIELD_PRESET_FLAVOR.URBAN]: Object.freeze([]),
+  [MAP_FIELD_PRESET_FLAVOR.SCIFI]: Object.freeze([]),
+  [MAP_FIELD_PRESET_FLAVOR.SURVIVAL]: Object.freeze([]),
 });
 
 /** Seed hệ phân cấp địa bàn (nhãn UI: Đặc Tính Địa Vực). Không dùng chung ladder thế lực tu tiên. */
 const MAP_HIERARCHY_BY_FLAVOR = Object.freeze({
-  [MAP_FIELD_PRESET_FLAVOR.CULTIVATION]: Object.freeze(['Cửu cấp', 'Vương giới', 'Tôn giới', 'Đế giới']),
-  [MAP_FIELD_PRESET_FLAVOR.URBAN]: Object.freeze([
-    'Cấp quốc gia / liên bang',
-    'Cấp bang / châu',
-    'Cấp thành phố',
-    'Cấp quận',
-    'Cấp phường / khu',
-    'Cấp tổ chức / hiệp hội',
-    'Cấp tòa nhà / trụ sở',
-    'Cấp VIP / siêu cấp',
-  ]),
-  [MAP_FIELD_PRESET_FLAVOR.SCIFI]: Object.freeze([
-    'Cấp Tinh vực',
-    'Cấp Hành tinh',
-    'Cấp Quỹ đạo / Vành đai',
-    'Cấp Trạm',
-    'Cấp Khu dân cư',
-    'Cấp Hạ tầng',
-    'Cấp Đặc quyền',
-  ]),
-  [MAP_FIELD_PRESET_FLAVOR.SURVIVAL]: Object.freeze([
-    'Lõi an toàn',
-    'Vành đai',
-    'Vùng ngoài',
-    'Vùng xám',
-    'Vùng chết',
-    'Khu săn bắn',
-  ]),
+  [MAP_FIELD_PRESET_FLAVOR.CULTIVATION]: Object.freeze([]),
+  [MAP_FIELD_PRESET_FLAVOR.URBAN]: Object.freeze([]),
+  [MAP_FIELD_PRESET_FLAVOR.SCIFI]: Object.freeze([]),
+  [MAP_FIELD_PRESET_FLAVOR.SURVIVAL]: Object.freeze([]),
 });
 
 const PLACEHOLDER_BY_FLAVOR = Object.freeze({

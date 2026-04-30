@@ -8,7 +8,7 @@ import { generateId, safeString, toDisplayTitleCase } from './MasterUtils.jsx';
 import { countEntitiesInNovel } from './deepSearchCore.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { applyAutoRelationNotesForEntity, isAutoRelationScopeLonId, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
-import { syncAllCollectionListCards, syncAllCollectionListCardsDetailed } from './lib/collectionListCardSync.js';
+import { isListCardEntity, syncAllCollectionListCards, syncAllCollectionListCardsDetailed } from './lib/collectionListCardSync.js';
 import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
 import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
@@ -32,6 +32,7 @@ import {
   hasAnyAutoSyncFieldChanged,
   setEntityAutoFieldValue,
 } from './lib/tabAutoSyncFieldMap.js';
+import { normalizeTabAutoSyncLevelConfig } from './lib/tabAutoSyncLevels.js';
 import {
   isForceCollectionScope,
   summarizeTheLucMapSyncWarnings,
@@ -782,6 +783,7 @@ export function useAppEntityMilestoneActions({
         const updated = structuredClone(data);
         let removed = false;
         let removedEntityName = '';
+        let removedWasListCard = false;
         let removedLonId = '';
         let removedNhoId = '';
         for (const lonId of Object.keys(updated.data || {})) {
@@ -793,6 +795,7 @@ export function useAppEntityMilestoneActions({
             const idx = tabData.entities.findIndex((e) => e.id === entityIdToDelete);
             if (idx >= 0) {
               removedEntityName = safeString(tabData.entities[idx]?.name).trim();
+              removedWasListCard = isListCardEntity(tabData.entities[idx]);
               tabData.entities.splice(idx, 1);
               removedLonId = lonId;
               removedNhoId = nhoId;
@@ -811,6 +814,7 @@ export function useAppEntityMilestoneActions({
           let mainCharacterRelationResynced = false;
           let cultivationRelationResynced = false;
           let mapHierarchyResynced = false;
+          let autoLevel2DisabledByListCardDelete = false;
           if (removedEntityName) {
             removedAutoMsCount = removeOwnerAcquisitionMilestonesByItem(updated, {
               name: removedEntityName,
@@ -819,6 +823,19 @@ export function useAppEntityMilestoneActions({
           }
           const removedLonConfig = (updated.tabsConfig || []).find((tab) => tab.id === removedLonId);
           const removedNhoConfig = removedLonConfig?.subTabs?.find((tab) => tab.id === removedNhoId) || null;
+          if (removedWasListCard && removedNhoConfig) {
+            const levelCfg = normalizeTabAutoSyncLevelConfig(removedNhoConfig.autoSyncLevelConfig);
+            if (levelCfg.levels.level_2_list !== false) {
+              removedNhoConfig.autoSyncLevelConfig = {
+                ...levelCfg,
+                levels: {
+                  ...levelCfg.levels,
+                  level_2_list: false,
+                },
+              };
+              autoLevel2DisabledByListCardDelete = true;
+            }
+          }
           if (
             isForceCollectionScope({
               activeTabLon: removedLonId,
@@ -889,6 +906,9 @@ export function useAppEntityMilestoneActions({
           }
           if (mapHierarchyResynced) {
             showToast('Đã đồng bộ lại AUTO cây Bản đồ sau khi xóa thẻ.', 'success');
+          }
+          if (autoLevel2DisabledByListCardDelete) {
+            showToast('Đã tắt AUTO bậc 2 cho tab này vì bạn đã xóa thẻ Danh Sách.', 'success');
           }
         }
         if (removed && forceMapWarning) {

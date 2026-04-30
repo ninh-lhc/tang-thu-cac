@@ -441,6 +441,11 @@ function seedAutoLevelsForCanonicalListCard(tabConfig, tabData, tabLabel = '') {
   return true;
 }
 
+function isAutoLevel2Enabled(tabConfig) {
+  const cfg = normalizeTabAutoSyncLevelConfig(tabConfig?.autoSyncLevelConfig);
+  return cfg.enabled !== false && cfg.levels?.level_2_list === true;
+}
+
 function ensureListCardEntity(tabData, tabLabel = '') {
   const entities = Array.isArray(tabData?.entities) ? tabData.entities : [];
   if (entities.some(isListCardEntity)) return false;
@@ -1340,6 +1345,12 @@ export function syncAllCollectionListCardsDetailed(nov) {
       if (!isCollectionTab(nho)) return;
       const tabData = nov?.data?.[lon.id]?.[nho.id];
       if (!tabData || typeof tabData !== 'object' || !Array.isArray(tabData.entities)) return;
+      const explicitOff = isAutoSyncExplicitlyOff(nho);
+      const level2Enabled = isAutoLevel2Enabled(nho);
+      if (explicitOff || !level2Enabled) {
+        changed = clearListCardsAutoInTab(tabData) || changed;
+        return;
+      }
       const recreated = ensureListCardEntity(tabData, nho.label || nho.id);
       if (recreated) {
         recreatedCount += 1;
@@ -1352,10 +1363,6 @@ export function syncAllCollectionListCardsDetailed(nov) {
       }
       changed = recreated || changed;
       changed = seedAutoLevelsForCanonicalListCard(nho, tabData, nho.label || nho.id) || changed;
-      if (isAutoSyncExplicitlyOff(nho)) {
-        changed = clearListCardsAutoInTab(tabData) || changed;
-        return;
-      }
       changed = syncListCardsInTab(
         tabData,
         {
@@ -1403,6 +1410,12 @@ export function ensureCollectionListCardsForNovel(nov, { createMissingTabBuckets
       if (!Array.isArray(tabData.entities)) {
         tabData.entities = [];
         changed = true;
+      }
+      const explicitOff = isAutoSyncExplicitlyOff(nho);
+      const level2Enabled = isAutoLevel2Enabled(nho);
+      if (explicitOff || !level2Enabled) {
+        changed = clearListCardsAutoInTab(tabData) || changed;
+        return;
       }
       changed = ensureListCardEntity(tabData, nho?.label || nhoId) || changed;
       changed = seedAutoLevelsForCanonicalListCard(nho, tabData, nho?.label || nhoId) || changed;

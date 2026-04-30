@@ -37,6 +37,8 @@ import {
   supportsAutoSyncLinkRole,
 } from './lib/tabAutoSyncLinks.js';
 import {
+  AUTO_SYNC_LEVEL_1,
+  AUTO_SYNC_LEVEL_2,
   AUTO_SYNC_LEVEL_3,
   AUTO_SYNC_LEVEL_4,
   getEffectiveTabAutoSyncLevelConfig,
@@ -61,6 +63,7 @@ import {
   getQuickAuto3DefaultPair,
   validateQuickAuto3Pair,
 } from './lib/autoSyncQuickLinkSetup.js';
+import { AppSectionErrorBoundary } from './AppSectionErrorBoundary.jsx';
 
 export function AppModalQuanLyTab({
   activeNovelData,
@@ -86,6 +89,7 @@ export function AppModalQuanLyTab({
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
   handleSaveCurrentTabsAsGenreTemplate,
+  handleResetNovelSuggestionLists,
   setConfirmDialog,
   showToast,
 }) {
@@ -96,6 +100,10 @@ export function AppModalQuanLyTab({
   const [showAutoOverview, setShowAutoOverview] = React.useState(false);
   const [quickAuto3SourcePathOverride, setQuickAuto3SourcePathOverride] = React.useState(null);
   const [quickAuto3TargetPathOverride, setQuickAuto3TargetPathOverride] = React.useState(null);
+  const safeSortedTabs = React.useMemo(
+    () => (Array.isArray(sortedTabs) ? sortedTabs : []),
+    [sortedTabs]
+  );
   const novelGenres = React.useMemo(() => extractNovelGenres(activeNovelData), [activeNovelData]);
   const diagnostics = React.useMemo(
     () => (activeNovelData ? collectNovelAutoSyncDiagnostics(activeNovelData) : null),
@@ -107,14 +115,14 @@ export function AppModalQuanLyTab({
   );
   const simpleSetupSteps = React.useMemo(() => buildSimpleSetupSteps(diagnostics), [diagnostics]);
   const quickAuto3SourceOptions = React.useMemo(
-    () => getQuickAuto3SourceOptions(sortedTabs).map((row) => ({ pathKey: row.pathKey, label: row.label })),
-    [sortedTabs]
+    () => getQuickAuto3SourceOptions(safeSortedTabs).map((row) => ({ pathKey: row.pathKey, label: row.label })),
+    [safeSortedTabs]
   );
   const quickAuto3TargetOptions = React.useMemo(
-    () => getQuickAuto3TargetOptions(sortedTabs).map((row) => ({ pathKey: row.pathKey, label: row.label })),
-    [sortedTabs]
+    () => getQuickAuto3TargetOptions(safeSortedTabs).map((row) => ({ pathKey: row.pathKey, label: row.label })),
+    [safeSortedTabs]
   );
-  const quickAuto3DefaultPair = React.useMemo(() => getQuickAuto3DefaultPair(sortedTabs), [sortedTabs]);
+  const quickAuto3DefaultPair = React.useMemo(() => getQuickAuto3DefaultPair(safeSortedTabs), [safeSortedTabs]);
   const quickAuto3SourcePath = quickAuto3SourcePathOverride ?? quickAuto3DefaultPair.sourcePath;
   const quickAuto3TargetPath = quickAuto3TargetPathOverride ?? quickAuto3DefaultPair.targetPath;
   const lonIconInputRefById = React.useRef({});
@@ -200,9 +208,9 @@ export function AppModalQuanLyTab({
     }
     const [sourceLonId, sourceNhoId] = sourcePath.split('::');
     const [targetLonId, targetNhoId] = targetPath.split('::');
-    const sourceLon = (sortedTabs || []).find((lon) => safeString(lon?.id) === safeString(sourceLonId));
+    const sourceLon = safeSortedTabs.find((lon) => safeString(lon?.id) === safeString(sourceLonId));
     const sourceNho = sourceLon?.subTabs?.find((nho) => safeString(nho?.id) === safeString(sourceNhoId));
-    const targetLon = (sortedTabs || []).find((lon) => safeString(lon?.id) === safeString(targetLonId));
+    const targetLon = safeSortedTabs.find((lon) => safeString(lon?.id) === safeString(targetLonId));
     const targetNho = targetLon?.subTabs?.find((nho) => safeString(nho?.id) === safeString(targetNhoId));
     if (!sourceLon || !sourceNho || !targetLon || !targetNho) {
       showToast?.('Không tìm thấy tab nguồn hoặc tab đích trong cây hiện tại.');
@@ -229,7 +237,7 @@ export function AppModalQuanLyTab({
     quickAuto3SourcePath,
     quickAuto3TargetPath,
     showToast,
-    sortedTabs,
+    safeSortedTabs,
   ]);
 
   return (
@@ -324,6 +332,24 @@ export function AppModalQuanLyTab({
                       className="px-4 py-2.5 rounded-xl border border-emerald-700/40 bg-emerald-950/25 text-emerald-100 text-sm font-bold flex items-center gap-2 hover:bg-emerald-900/30"
                     >
                       <Save size={15} /> Lưu Cây Này Thành Mẫu
+                    </button>
+                  )}
+                  {activeNovelData && typeof handleResetNovelSuggestionLists === 'function' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        flushFocusedEditor();
+                        setConfirmDialog?.({
+                          isOpen: true,
+                          title: 'Reset List Gợi Ý',
+                          message:
+                            'Xóa toàn bộ list gợi ý và nguồn gợi ý theo trường của truyện này? <br/><br/>Hành động này chỉ áp dụng cho truyện đang mở.',
+                          onConfirm: () => handleResetNovelSuggestionLists(),
+                        });
+                      }}
+                      className="px-4 py-2.5 rounded-xl border border-rose-700/40 bg-rose-950/25 text-rose-100 text-sm font-bold flex items-center gap-2 hover:bg-rose-900/30"
+                    >
+                      <RefreshCw size={15} /> Reset List Gợi Ý
                     </button>
                   )}
                 </div>
@@ -477,8 +503,13 @@ export function AppModalQuanLyTab({
             </div>
           )}
 
-          {sortedTabs.map((tabLon) => (
-            <div key={tabLon.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-5 shadow-inner">
+          <AppSectionErrorBoundary
+            resetKey={`${safeSortedTabs.length}:${openAutoTabPath || 'none'}`}
+            title="Khu vực cây mục lục đang gặp lỗi"
+            description="Một mục trong cây tab bị lỗi khi render. Bạn vẫn có thể đóng modal và tiếp tục dùng app."
+          >
+            {safeSortedTabs.map((tabLon) => (
+              <div key={tabLon.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-5 shadow-inner">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
                   <span className="text-amber-600 bg-amber-950/50 p-2 rounded-lg overflow-hidden">
@@ -611,9 +642,10 @@ export function AppModalQuanLyTab({
                 )}
               </div>
 
-              {!tabLon.isFixed && tabLon.subTabs?.length > 0 && (
+              {!tabLon.isFixed && Array.isArray(tabLon.subTabs) && tabLon.subTabs.length > 0 && (
                 <div className="mt-4 pl-8 space-y-3 border-l-2 border-slate-800/80">
                   {tabLon.subTabs.map((tabNho) => {
+                    if (!tabNho || typeof tabNho !== 'object') return null;
                     const tabAutoContext = {
                       activeTabLon: tabLon.id,
                       activeTabNho: tabNho.id,
@@ -636,9 +668,18 @@ export function AppModalQuanLyTab({
                     const tabPathKey = `${tabLon.id}::${tabNho.id}`;
                     const tabReport = diagnosticsByPath.get(tabPathKey);
                     const supportsLink = supportsAutoSyncLinkRole(effectiveRole);
-                    const targetCandidates = supportsLink ? listAutoSyncTargetCandidates(sortedTabs, tabAutoContext) : [];
-                    const selectedTargets = supportsLink ? resolveExplicitAutoSyncTargets(sortedTabs, tabAutoContext) : [];
-                    const autoLevelConfig = getEffectiveTabAutoSyncLevelConfig(tabNho);
+                    const targetCandidates = supportsLink ? listAutoSyncTargetCandidates(safeSortedTabs, tabAutoContext) : [];
+                    const selectedTargets = supportsLink ? resolveExplicitAutoSyncTargets(safeSortedTabs, tabAutoContext) : [];
+                    const autoLevelConfigRaw = getEffectiveTabAutoSyncLevelConfig(tabNho);
+                    const autoLevelConfig = {
+                      enabled: autoLevelConfigRaw?.enabled !== false,
+                      levels: {
+                        level_1_card: Boolean(autoLevelConfigRaw?.levels?.level_1_card),
+                        level_2_list: Boolean(autoLevelConfigRaw?.levels?.level_2_list),
+                        level_3_linked: Boolean(autoLevelConfigRaw?.levels?.level_3_linked),
+                        level_4_timeline: Boolean(autoLevelConfigRaw?.levels?.level_4_timeline),
+                      },
+                    };
                     const practicalRole = explicitRole || effectiveRole || '';
                     const auto3SourceEligible = practicalRole === 'the-luc';
                     const isMainCharacterRole = effectiveRole === 'nhan-vat-chinh';
@@ -662,7 +703,7 @@ export function AppModalQuanLyTab({
                         });
                         return;
                       }
-                      const guessedTargets = guessAutoSyncTargetPathsForTab(sortedTabs, {
+                      const guessedTargets = guessAutoSyncTargetPathsForTab(safeSortedTabs, {
                         ...tabAutoContext,
                         role: 'the-luc',
                       }).slice(0, 1);
@@ -696,12 +737,12 @@ export function AppModalQuanLyTab({
                       const roleLinkSupported = supportsAutoSyncLinkRole(roleToUse);
                       let nextTargetPaths = [];
                       if (roleLinkSupported) {
-                        const roleCandidates = listAutoSyncTargetCandidates(sortedTabs, {
+                        const roleCandidates = listAutoSyncTargetCandidates(safeSortedTabs, {
                           ...tabAutoContext,
                           role: roleToUse,
                         });
                         if (roleToUse === 'the-luc') {
-                          nextTargetPaths = guessAutoSyncTargetPathsForTab(sortedTabs, {
+                          nextTargetPaths = guessAutoSyncTargetPathsForTab(safeSortedTabs, {
                             ...tabAutoContext,
                             role: roleToUse,
                           }).slice(0, 1);
@@ -749,13 +790,21 @@ export function AppModalQuanLyTab({
                     const isAutoOffForTab = explicitRole === 'khong-tu-dong';
                     const isAutoPanelOpen = openAutoTabPath === tabPathKey;
                     const advancedOverride = advancedOpenByPath[tabPathKey];
-                    const roleCardGroups = getAutoRoleCardGroups({
+                    const roleCardGroupsRaw = getAutoRoleCardGroups({
                       tabLon,
                       tabNho,
                       explicitRole,
                       effectiveRole,
                       novelGenres,
                     });
+                    const roleCardGroups = {
+                      visibleRoles: Array.isArray(roleCardGroupsRaw?.visibleRoles)
+                        ? roleCardGroupsRaw.visibleRoles
+                        : [''],
+                      hiddenRoles: Array.isArray(roleCardGroupsRaw?.hiddenRoles)
+                        ? roleCardGroupsRaw.hiddenRoles
+                        : [],
+                    };
                     const showAllRoleChoices = Boolean(expandedRoleChoicesByPath[tabPathKey]);
                     const showAdvanced =
                       typeof advancedOverride === 'boolean'
@@ -1435,8 +1484,9 @@ export function AppModalQuanLyTab({
                   })}
                 </div>
               )}
-            </div>
-          ))}
+              </div>
+            ))}
+          </AppSectionErrorBoundary>
         </div>
         <div className="p-5 border-t border-slate-800 bg-slate-950 flex justify-between items-center z-10">
           <span className="text-xs text-slate-500 italic flex items-center gap-2">

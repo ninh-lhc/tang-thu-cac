@@ -150,6 +150,26 @@ describe('collectionListCardSync (flat mode)', () => {
     expect(novel.data['ban-do']['ha-gioi'].entities[0].name).toContain('Danh Sách');
   });
 
+  it('does not recreate list card when AUTO level 2 is disabled', () => {
+    const novel = buildNovel();
+    novel.tabsConfig[0].subTabs[0].autoSyncLevelConfig = {
+      enabled: true,
+      levels: {
+        level_1_card: true,
+        level_2_list: false,
+        level_3_linked: false,
+        level_4_timeline: false,
+      },
+    };
+    novel.data['ban-do']['ha-gioi'].entities = novel.data['ban-do']['ha-gioi'].entities.filter(
+      (ent) => !String(ent.name || '').toLowerCase().includes('danh sach')
+    );
+
+    const result = syncAllCollectionListCardsDetailed(novel);
+    expect(result.recreatedCount).toBe(0);
+    expect(novel.data['ban-do']['ha-gioi'].entities.some((ent) => /danh sach/i.test(String(ent.name || '')))).toBe(false);
+  });
+
   it('uses tab fieldsTemplate order to pick detail suffix for non-map tabs', () => {
     const novel = {
       tabsConfig: [

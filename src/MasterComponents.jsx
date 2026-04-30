@@ -2167,15 +2167,11 @@ export const ModalEntity = ({
       if (!initialDyn.f_title && initialData.title) initialDyn.f_title = initialData.title;
       if (!initialDyn.f_desc && initialData.description) initialDyn.f_desc = initialData.description;
       const mapQuickStateRaw = parseMapQuickState(initialDyn);
-      const configuredRealmTypeKeys = Object.keys(tabConfig?.mapEntrySuggestions?.realmScaleLists || {});
-      const defaultMapTypeFromSubTab = safeString(tabConfig?.label).trim();
       const mapQuickType =
         isMapScope &&
-        !isForceScope &&
-        configuredRealmTypeKeys.length > 0 &&
-        !configuredRealmTypeKeys.some((k) => normalizeAsciiText(k) === normalizeAsciiText(mapQuickStateRaw.mapType))
-          ? defaultMapTypeFromSubTab
-          : mapQuickStateRaw.mapType;
+        !isForceScope
+          ? mapQuickStateRaw.mapType
+          : '';
       const mapRealmOptions = buildMapRealmSystemOptions(tabConfig, mapQuickType);
       const mapQuickRealmSystem =
         mapQuickStateRaw.realmSystem &&
@@ -2239,16 +2235,8 @@ export const ModalEntity = ({
     } else {
       genericQuickFStatusUserOverrideRef.current = false;
       setFormData({ id: null, name: '', avatar: '', rawText: '' });
-      const subTabLabel = safeString(tabConfig?.label).trim();
-      const defaultMapTypeFromSubTab = isMapScope && !isForceScope && subTabLabel ? subTabLabel : '';
-      if (defaultMapTypeFromSubTab) {
-        const seedDyn = { f_title: defaultMapTypeFromSubTab };
-        seedDyn.f_status = composeMapTemplateDisplayLine(fieldsTemplate, seedDyn, '');
-        setDynamicData(seedDyn);
-      } else {
-        setDynamicData({});
-      }
-      setMapQuickType(defaultMapTypeFromSubTab);
+      setDynamicData({});
+      setMapQuickType('');
       setMapQuickRealmSystem('');
       setMapQuickSystem('');
       setMapQuickParentPath('');
@@ -4335,7 +4323,7 @@ export const ModalSettings = ({
   setAutoLinkToastEnabled,
 }) => {
   const [newKey, setNewKey] = useState('');
-  const [testStatus, setTestStatus] = useState({}); // idx -> 'testing'|'ok'|'fail'
+  const [testStatus, setTestStatus] = useState({}); // idx -> 'testing'|'ok'|'busy'|'fail'
   const [showKeys, setShowKeys] = useState({});     // idx -> bool (hiện plain text)
 
   const notesTypoPrefs = useSyncExternalStore(subscribeEntityNotesPrefs, getEntityNotesPrefs, getEntityNotesPrefs);
@@ -4346,7 +4334,7 @@ export const ModalSettings = ({
   const keys = Array.isArray(geminiApiKeys) ? geminiApiKeys : (geminiApiKeys ? [geminiApiKeys] : []);
 
   const handleAdd = () => {
-    const trimmed = newKey.trim();
+    const trimmed = newKey.trim().replace(/\s+/g, '');
     if (!trimmed) return;
     setGeminiApiKeys([...keys, trimmed]);
     setNewKey('');
@@ -4358,16 +4346,30 @@ export const ModalSettings = ({
   };
 
   const handleTest = async (key, idx) => {
+    const normalizedKey = safeString(key).trim().replace(/\s+/g, '');
+    if (!normalizedKey) {
+      setTestStatus(prev => ({ ...prev, [idx]: 'fail' }));
+      return;
+    }
     setTestStatus(prev => ({ ...prev, [idx]: 'testing' }));
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: 'test' }] }] }) }
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(normalizedKey)}`,
+        { method: 'GET' }
       );
-      setTestStatus(prev => ({ ...prev, [idx]: res.ok ? 'ok' : 'fail' }));
-    } catch {
+      if (res.ok) {
+        setTestStatus(prev => ({ ...prev, [idx]: 'ok' }));
+        return;
+      }
+      // 429/503 thường là quá tải hoặc rate limit, không đồng nghĩa key sai.
+      if (res.status === 429 || res.status === 503) {
+        setTestStatus(prev => ({ ...prev, [idx]: 'busy' }));
+        return;
+      }
       setTestStatus(prev => ({ ...prev, [idx]: 'fail' }));
+    } catch {
+      // Lỗi mạng tạm thời: không kết luận key hỏng.
+      setTestStatus(prev => ({ ...prev, [idx]: 'busy' }));
     }
   };
 
@@ -4406,7 +4408,7 @@ export const ModalSettings = ({
                    const st = testStatus[idx];
                    return (
                      <div key={idx} className="flex items-center gap-2 bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2.5">
-                       <div className={`w-2 h-2 rounded-full flex-shrink-0 ${st === 'ok' ? 'bg-emerald-400' : st === 'fail' ? 'bg-rose-500' : 'bg-slate-600'}`}/>
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${st === 'ok' ? 'bg-emerald-400' : st === 'busy' ? 'bg-amber-400' : st === 'fail' ? 'bg-rose-500' : 'bg-slate-600'}`}/>
                        <span className="flex-1 font-mono text-xs text-slate-300 truncate select-none">
                          {showKeys[idx] ? k : maskKey(k)}
                        </span>
@@ -4414,8 +4416,8 @@ export const ModalSettings = ({
                        <button onClick={() => setShowKeys(prev => ({ ...prev, [idx]: !prev[idx] }))} className="p-1 text-slate-600 hover:text-slate-300 transition-colors flex-shrink-0" title={showKeys[idx] ? 'Ẩn' : 'Hiện'}>
                          <Eye size={13}/>
                        </button>
-                       <button onClick={() => handleTest(k, idx)} disabled={st === 'testing'} className={`px-2 py-1 rounded-lg text-[10px] font-bold flex-shrink-0 transition-colors border ${st === 'ok' ? 'border-emerald-700/50 text-emerald-400 bg-emerald-950/30' : st === 'fail' ? 'border-rose-700/50 text-rose-400 bg-rose-950/30' : 'border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-700/50 bg-slate-900'}`}>
-                         {st === 'testing' ? '...' : st === 'ok' ? '✓ OK' : st === 'fail' ? '✗ Lỗi' : 'Thử'}
+                       <button onClick={() => handleTest(k, idx)} disabled={st === 'testing'} className={`px-2 py-1 rounded-lg text-[10px] font-bold flex-shrink-0 transition-colors border ${st === 'ok' ? 'border-emerald-700/50 text-emerald-400 bg-emerald-950/30' : st === 'busy' ? 'border-amber-700/50 text-amber-300 bg-amber-950/30' : st === 'fail' ? 'border-rose-700/50 text-rose-400 bg-rose-950/30' : 'border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-700/50 bg-slate-900'}`}>
+                         {st === 'testing' ? '...' : st === 'ok' ? '✓ OK' : st === 'busy' ? '⚠ Bận' : st === 'fail' ? '✗ Lỗi' : 'Thử'}
                        </button>
                        <button onClick={() => handleRemove(idx)} className="p-1 text-slate-600 hover:text-rose-400 transition-colors flex-shrink-0"><Trash2 size={14}/></button>
                      </div>
@@ -4442,8 +4444,8 @@ export const ModalSettings = ({
                    ✦ Có {keys.length} key — tự động xoay vòng khi gặp giới hạn tốc độ.
                   </p>
                 )}
-                <p className="mt-2 text-[11px] text-slate-500 font-serif italic">
-                  Nut "Thu" chi xac nhan key con dung luc nay; khi dung that van co the gap 429/503 neu quota hoac dich vu dang qua tai.
+                 <p className="mt-2 text-[11px] text-slate-500 font-serif italic">
+                  Nút "Thử" chỉ kiểm tra nhanh quyền truy cập. Trạng thái "Bận" là do mạng/API quá tải (429/503), không đồng nghĩa key sai.
                 </p>
               </div>
 

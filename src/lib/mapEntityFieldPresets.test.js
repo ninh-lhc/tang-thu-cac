@@ -9,15 +9,14 @@ import {
 describe('mapEntityFieldPresets', () => {
   it('ưu tiên Đô Thị để không rơi preset Tiên Hiệp', () => {
     expect(resolveMapFieldPresetFlavor(['Hệ Thống', 'Đô Thị'])).toBe(MAP_FIELD_PRESET_FLAVOR.URBAN);
-    expect(getMapTypeSeedPresets(MAP_FIELD_PRESET_FLAVOR.URBAN)).toContain('Thành phố');
-    expect(getMapTypeSeedPresets(MAP_FIELD_PRESET_FLAVOR.URBAN)).not.toContain('Tiên tinh');
-    expect(getMapHierarchySeedLabels(MAP_FIELD_PRESET_FLAVOR.URBAN)).toContain('Cấp thành phố');
-    expect(getMapHierarchySeedLabels(MAP_FIELD_PRESET_FLAVOR.URBAN)).not.toContain('Vương giới');
+    expect(getMapTypeSeedPresets(MAP_FIELD_PRESET_FLAVOR.URBAN)).toEqual([]);
+    expect(getMapHierarchySeedLabels(MAP_FIELD_PRESET_FLAVOR.URBAN)).toEqual([]);
   });
 
   it('Tiên Hiệp / Huyền Huyễn giữ bộ tu tiên', () => {
     expect(resolveMapFieldPresetFlavor(['Tiên Hiệp'])).toBe(MAP_FIELD_PRESET_FLAVOR.CULTIVATION);
-    expect(getMapTypeSeedPresets(MAP_FIELD_PRESET_FLAVOR.CULTIVATION)).toContain('Tiên tinh');
+    expect(getMapTypeSeedPresets(MAP_FIELD_PRESET_FLAVOR.CULTIVATION)).toEqual([]);
+    expect(getMapHierarchySeedLabels(MAP_FIELD_PRESET_FLAVOR.CULTIVATION)).toEqual([]);
   });
 
   it('Đô Thị + Tiên Hiệp: ưu tiên Đô Thị (truyện lai đô thị)', () => {

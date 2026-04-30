@@ -28,6 +28,21 @@ function buildEmptyNovelForm(genres) {
   };
 }
 
+function stripSuggestionSeedsFromTabsConfig(tabs) {
+  if (!Array.isArray(tabs)) return [];
+  return tabs.map((tab) => {
+    const next = tab && typeof tab === 'object' ? { ...tab } : tab;
+    if (!next || typeof next !== 'object') return next;
+    delete next.fieldSuggestionLists;
+    delete next.fieldSource;
+    delete next.mapEntrySuggestions;
+    if (Array.isArray(next.subTabs)) {
+      next.subTabs = stripSuggestionSeedsFromTabsConfig(next.subTabs);
+    }
+    return next;
+  });
+}
+
 export function useAppNovelCrud({
   genres,
   initialTabsConfig,
@@ -115,9 +130,11 @@ export function useAppNovelCrud({
 
       const tabsToUse =
         hydrateTabsAutoSyncConfigs(
-          Array.isArray(novelForm.tabsConfig) && novelForm.tabsConfig.length > 0
-            ? structuredClone(novelForm.tabsConfig)
-            : structuredClone(initialTabsConfig)
+          stripSuggestionSeedsFromTabsConfig(
+            Array.isArray(novelForm.tabsConfig) && novelForm.tabsConfig.length > 0
+              ? structuredClone(novelForm.tabsConfig)
+              : structuredClone(initialTabsConfig)
+          )
         ).tabsConfig;
       const newFullData = {
         ...newMeta,

@@ -1827,6 +1827,29 @@ export default function App() {
     }
     showToast(`Đã lưu cây mẫu cho: ${genres.join(', ')} (kèm quy chuẩn nhóm và cấu hình tab).`, 'success');
   }, [activeNovelData, showToast]);
+  const handleResetNovelSuggestionLists = useCallback(() => {
+    if (!activeNovelData) {
+      showToast('Cần mở truyện trước khi reset list gợi ý.', 'warning');
+      return;
+    }
+    const stripSuggestionConfigFromTabs = (tabs) =>
+      (Array.isArray(tabs) ? tabs : []).map((tab) => {
+        const next = tab && typeof tab === 'object' ? { ...tab } : tab;
+        if (!next || typeof next !== 'object') return next;
+        delete next.fieldSuggestionLists;
+        delete next.fieldSource;
+        delete next.fieldSuggestionDependencies;
+        delete next.mapEntrySuggestions;
+        if (Array.isArray(next.subTabs)) {
+          next.subTabs = stripSuggestionConfigFromTabs(next.subTabs);
+        }
+        return next;
+      });
+    const currentTabs = Array.isArray(activeNovelData.tabsConfig) ? activeNovelData.tabsConfig : [];
+    const strippedTabs = stripSuggestionConfigFromTabs(structuredClone(currentTabs));
+    setTabsConfig(strippedTabs, { resyncAuto: false });
+    showToast('Đã reset toàn bộ list gợi ý của truyện hiện tại.', 'success');
+  }, [activeNovelData, showToast]);
   const persistGenreTemplateFromTabs = useCallback(
     (tabsConfig) => {
       if (!activeNovelData || !Array.isArray(tabsConfig) || tabsConfig.length === 0) return;
@@ -2249,6 +2272,10 @@ export default function App() {
   };
 
   const handleSetTabMapEntrySuggestions = (lonId, nhoId, which, text, options = {}) => {
+    if (!activeNovelData) {
+      showToast('Cần mở truyện để lưu list gợi ý theo từng truyện.', 'warning');
+      return false;
+    }
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
@@ -2325,6 +2352,10 @@ export default function App() {
   };
 
   const handleMergeTabFieldSuggestionList = (lonId, nhoId, fieldId, text, options = {}) => {
+    if (!activeNovelData) {
+      showToast('Cần mở truyện để lưu list gợi ý của trường.', 'warning');
+      return;
+    }
     const propagate = Boolean(options?.propagateWithinLon);
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
@@ -2524,6 +2555,10 @@ export default function App() {
   };
 
   const handleSetTabFieldSource = (lonId, nhoId, fieldId, nextSource, options = {}) => {
+    if (!activeNovelData) {
+      showToast('Cần mở truyện để lưu nguồn giá trị của trường.', 'warning');
+      return;
+    }
     const propagate = Boolean(options?.propagateWithinLon);
     const fid = safeString(fieldId).trim();
     if (!fid || fid === 'f_alias') return;
@@ -2583,6 +2618,10 @@ export default function App() {
   };
 
   const handleSetTabFieldSuggestionDependencies = (lonId, nhoId, dependencies) => {
+    if (!activeNovelData) {
+      showToast('Cần mở truyện để lưu phụ thuộc gợi ý theo truyện.', 'warning');
+      return;
+    }
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
@@ -3095,6 +3134,7 @@ export default function App() {
     handleApplySuggestedAutoSyncSetup,
     handleResyncAutoTabs,
     handleSaveCurrentTabsAsGenreTemplate,
+    handleResetNovelSuggestionLists,
   };
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden relative theme-wrapper ${activeThemeClass} ${performanceMode ? 'performance-mode' : ''}`}>

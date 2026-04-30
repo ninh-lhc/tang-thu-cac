@@ -162,6 +162,7 @@ export function AppModalLayer({
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
   handleSaveCurrentTabsAsGenreTemplate,
+  handleResetNovelSuggestionLists,
 }) {
   return (
     <Suspense fallback={null}>
@@ -397,6 +398,7 @@ export function AppModalLayer({
           handleApplySuggestedAutoSyncSetup={handleApplySuggestedAutoSyncSetup}
           handleResyncAutoTabs={handleResyncAutoTabs}
           handleSaveCurrentTabsAsGenreTemplate={handleSaveCurrentTabsAsGenreTemplate}
+          handleResetNovelSuggestionLists={handleResetNovelSuggestionLists}
           setConfirmDialog={setConfirmDialog}
           showToast={showToast}
         />
