@@ -834,47 +834,14 @@ export function useAppEntityMilestoneActions({
             forceMapWarning =
               summarizeTheLucMapSyncWarnings(forceSyncResult.warnings) || forceMapWarning;
           }
-          if (
-            isAutoRelationScopeLonId(
-              removedLonId,
-              removedLonConfig?.label || '',
-              removedNhoConfig,
-              removedNhoId
-            )
-          ) {
-            relationAutoResynced = syncAllAutoRelationNotesForNovel(updated) || relationAutoResynced;
-          }
-          if (
-            isCultivationRelationScope({
-              activeTabLon: removedLonId,
-              activeTabNho: removedNhoId,
-              currentTabConfig: removedNhoConfig,
-            })
-          ) {
-            cultivationRelationResynced =
-              syncAllCultivationRelationBlocks(updated) || cultivationRelationResynced;
-          }
-          if (
-            isMainCharacterRelationScope({
-              activeTabLon: removedLonId,
-              activeTabNho: removedNhoId,
-              currentTabConfig: removedNhoConfig,
-              parentLabel: removedLonConfig?.label || '',
-            })
-          ) {
-            mainCharacterRelationResynced =
-              syncAllMainCharacterRelationBlocks(updated) || mainCharacterRelationResynced;
-          }
-          if (
-            isMapCollectionScope({
-              activeTabLon: removedLonId,
-              activeTabNho: removedNhoId,
-              currentTabConfig: removedNhoConfig,
-              parentLabel: removedLonConfig?.label || '',
-            })
-          ) {
-            mapHierarchyResynced = syncAllMapHierarchyAutoBlocks(updated) || mapHierarchyResynced;
-          }
+          // Xóa thẻ có thể tạo liên kết ma ở các block AUTO nằm ngoài tab nguồn
+          // (đặc biệt thẻ Danh Sách tổng hợp), nên luôn resync toàn cục sau khi xóa.
+          relationAutoResynced = syncAllAutoRelationNotesForNovel(updated) || relationAutoResynced;
+          cultivationRelationResynced =
+            syncAllCultivationRelationBlocks(updated) || cultivationRelationResynced;
+          mainCharacterRelationResynced =
+            syncAllMainCharacterRelationBlocks(updated) || mainCharacterRelationResynced;
+          mapHierarchyResynced = syncAllMapHierarchyAutoBlocks(updated) || mapHierarchyResynced;
           const listCardSyncResult = syncAllCollectionListCardsDetailed(updated);
           if (listCardSyncResult.recreatedCount > 0) {
             const firstTab = listCardSyncResult.recreatedTabs[0] || {};

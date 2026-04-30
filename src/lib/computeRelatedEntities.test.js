@@ -102,6 +102,40 @@ describe('computeRelatedEntities', () => {
     expect(computeRelatedEntities(args)).toEqual([]);
   });
 
+  it('ignores stale wiki destinations after entity deletion (no ghost relation)', () => {
+    const selectedEntity = {
+      id: 'hero',
+      name: 'Tiểu Minh',
+      dynamicData: {},
+      info: '[[Lão Vương]]',
+      rawText: '',
+      milestones: [],
+    };
+    const activeNovelData = {
+      data: {
+        lon1: {
+          sub1: { entities: [selectedEntity] },
+        },
+      },
+    };
+    const activeTabs = [{ id: 'lon1', label: 'L', subTabs: [{ id: 'sub1', label: 'S', fieldsTemplate: [] }] }];
+    // entityMap bị stale: vẫn còn đích tới thẻ đã bị xóa.
+    const staleEntityMap = [
+      { name: 'Tiểu Minh', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'hero' } },
+      { name: 'Lão Vương', dest: { lonId: 'lon1', nhoId: 'sub1', entityId: 'npc-deleted' } },
+    ];
+
+    const rel = computeRelatedEntities({
+      activeNovelData,
+      selectedEntity,
+      activeTabs,
+      entityMap: staleEntityMap,
+      wikiExactMatchOnly: true,
+    });
+
+    expect(rel).toEqual([]);
+  });
+
   it('ignores entities under data keys for removed subtabs', () => {
     const selectedEntity = { id: 'hero', name: 'Tiểu Minh', dynamicData: {}, rawText: '', milestones: [] };
     const ghost = {
