@@ -85,7 +85,7 @@ export function AppModalQuanLyTab({
   handleSetTabAutoSyncLevels,
   handleSetTabAutoSyncFieldMap,
   handleSetTabMapEntrySuggestions,
-  handleSetTabTemplateFieldSortPrefix,
+  handleSetTabTemplateFieldSortPrefix: _handleSetTabTemplateFieldSortPrefix,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
   handleSaveCurrentTabsAsGenreTemplate,

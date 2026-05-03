@@ -54,7 +54,7 @@ export function AppEntityTemplateFieldEditor({
   entityDynamicData = {},
   onPatchEntityDynamic,
   /** Dòng ngữ cảnh nhỏ hiển thị trong panel đã mở (để phân biệt điểm vào: Khởi tạo thẻ vs Quản lý tab). */
-  contextHint = '',
+  contextHint: _contextHint = '',
   /** Cho phép gọi mở sẵn khi nhúng gần «Gợi ý nhanh» trong Khởi tạo thẻ. */
   defaultOpen = false,
 }) {
@@ -142,7 +142,7 @@ export function AppEntityTemplateFieldEditor({
       const rows = seed.map((v) => ({ prefix: '', value: v }));
       return { ...prev, [fid]: normalizeSuggestionRows(rows) };
     });
-  }, [isForceTemplateScope, activeNovelData, suggestionListsSignature]);
+  }, [isForceTemplateScope, activeNovelData, suggestionListsSignature, suggestionLists]);
 
   if (tabConfig?.viewType !== 'collection-track') return null;
   if (!lonId || !nhoId) return null;

@@ -67,7 +67,7 @@ import {
 } from './lib/mapTabForceBridge.js';
 import { getMapFieldPlaceholders } from './lib/mapEntityFieldPresets.js';
 import { collectMapEntityHints } from './lib/mapEntityHints.js';
-import { resolveEntityQuickSlots, getEffectiveQuickEntrySlotFields, MAX_QUICK_ENTRY_SLOTS } from './lib/entityQuickEntrySlots.js';
+import { resolveEntityQuickSlots } from './lib/entityQuickEntrySlots.js';
 import {
   composeMapTemplateDisplayLine,
   inferMapQuickSystemFromStoredStatus,
@@ -1803,39 +1803,48 @@ export const ModalEntity = ({
       const nextPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
       return { ...(prev || {}), ...nextPatch };
     });
-  const patchDynamicData = (patch) =>
-    setDynamicData((prev) => {
-      const rawPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
-      const nextPatch = rawPatch && typeof rawPatch === 'object' ? rawPatch : {};
-      const merged = { ...(prev || {}), ...nextPatch };
-      if (showGenericQuickEntry && !isMapScope && !isForceScope && genericQuickStatusSourceFieldIds.length) {
-        const patchKeys = Object.keys(nextPatch);
-        const touchesQuickSource = patchKeys.some((k) => genericQuickStatusSourceFieldIds.includes(k));
-        if (touchesQuickSource) {
-          genericQuickFStatusUserOverrideRef.current = false;
+  const patchDynamicData = useCallback(
+    (patch) =>
+      setDynamicData((prev) => {
+        const rawPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
+        const nextPatch = rawPatch && typeof rawPatch === 'object' ? rawPatch : {};
+        const merged = { ...(prev || {}), ...nextPatch };
+        if (showGenericQuickEntry && !isMapScope && !isForceScope && genericQuickStatusSourceFieldIds.length) {
+          const patchKeys = Object.keys(nextPatch);
+          const touchesQuickSource = patchKeys.some((k) => genericQuickStatusSourceFieldIds.includes(k));
+          if (touchesQuickSource) {
+            genericQuickFStatusUserOverrideRef.current = false;
+          }
+          const onlyStatus = patchKeys.length === 1 && patchKeys[0] === 'f_status';
+          if (patchKeys.length > 0 && !onlyStatus && !genericQuickFStatusUserOverrideRef.current) {
+            const line = genericQuickStatusSourceFieldIds
+              .map((id) => safeString(merged[id]).trim())
+              .filter(Boolean)
+              .join(' · ');
+            if (line) merged.f_status = line;
+          }
         }
-        const onlyStatus = patchKeys.length === 1 && patchKeys[0] === 'f_status';
-        if (patchKeys.length > 0 && !onlyStatus && !genericQuickFStatusUserOverrideRef.current) {
-          const line = genericQuickStatusSourceFieldIds
-            .map((id) => safeString(merged[id]).trim())
-            .filter(Boolean)
-            .join(' · ');
-          if (line) merged.f_status = line;
+        if (isMapScope && !isForceScope) {
+          const patchKeys = Object.keys(nextPatch);
+          const onlyStatus = patchKeys.length === 1 && patchKeys[0] === 'f_status';
+          if (patchKeys.length > 0 && !onlyStatus) {
+            merged.f_status = composeMapTemplateDisplayLine(
+              fieldsTemplate,
+              merged,
+              mapQuickSystemRef.current
+            );
+          }
         }
-      }
-      if (isMapScope && !isForceScope) {
-        const patchKeys = Object.keys(nextPatch);
-        const onlyStatus = patchKeys.length === 1 && patchKeys[0] === 'f_status';
-        if (patchKeys.length > 0 && !onlyStatus) {
-          merged.f_status = composeMapTemplateDisplayLine(
-            fieldsTemplate,
-            merged,
-            mapQuickSystemRef.current
-          );
-        }
-      }
-      return merged;
-    });
+        return merged;
+      }),
+    [
+      showGenericQuickEntry,
+      isMapScope,
+      isForceScope,
+      genericQuickStatusSourceFieldIds,
+      fieldsTemplate,
+    ]
+  );
   const quickUseSelect = Boolean(tabConfig?.entityQuickEntry?.useSelectUi);
   const quickEntryBlockTitle = safeString(tabConfig?.label).trim() || 'Mục sưu tập';
   /** Chuẩn giao diện «Gợi ý nhanh» (đồng bộ mục bản đồ / thế lực / lưới) — đổi tên cột theo mẫu tab. */
@@ -2008,7 +2017,7 @@ export const ModalEntity = ({
       }
       return baseSuggestions;
     },
-    [tabConfig?.fieldSuggestionDependencies, dynamicData]
+    [tabConfig, dynamicData]
   );
 
   const mapQuickTypeSuggestionList = useMemo(
@@ -2244,6 +2253,8 @@ export const ModalEntity = ({
     mapQuickParentTier2,
     mapQuickParentTier3,
     mapQuickParentPath,
+    mapTierParentFieldId,
+    patchDynamicData,
   ]);
   // Nạp list «Quy mô theo giới diện» ưu tiên từ `realmScaleLists` (keyed theo tên giới diện),
   // fallback sang `fieldSuggestionLists.f_he_gioi_ban_do` để đồng bộ dữ liệu với editor dưới.
@@ -2266,7 +2277,7 @@ export const ModalEntity = ({
     setMapRealmListTargetNhoId(nhoId);
     loadRealmListDraftFor(lonId, nhoId);
   };
-  const handleSaveMapRealmListDraft = () => {
+  const handleSaveMapRealmListDraft = useCallback(() => {
     if (!onPatchMapRealmScaleLists) return;
     const lonId = mapRealmListTargetLonId || parentTabId || '';
     const nhoId = mapRealmListTargetNhoId || tabConfig?.id || '';
@@ -2285,8 +2296,18 @@ export const ModalEntity = ({
       `Đã lưu ${countSuggestionRows(mapRealmListDraft)} dòng «Quy mô» cho giới diện «${label}».`,
       'success'
     );
-  };
-  const handleSaveMapHierarchyListDraft = () => {
+  }, [
+    onPatchMapRealmScaleLists,
+    mapRealmListTargetLonId,
+    mapRealmListTargetNhoId,
+    mapRealmListTargetLabel,
+    parentTabId,
+    tabConfig?.id,
+    mapRealmListDraft,
+    handleMergeTabFieldSuggestionList,
+    showToast,
+  ]);
+  const handleSaveMapHierarchyListDraft = useCallback(() => {
     if (!onSaveMapHierarchySharedList) return;
     const serialized = serializeSuggestionRows(mapHierarchyListDraft);
     onSaveMapHierarchySharedList(serialized);
@@ -2303,13 +2324,22 @@ export const ModalEntity = ({
       `Đã lưu ${countSuggestionRows(mapHierarchyListDraft)} dòng «Đặc tính địa vực» dùng chung.`,
       'success'
     );
-  };
+  }, [
+    onSaveMapHierarchySharedList,
+    mapHierarchyListDraft,
+    handleMergeTabFieldSuggestionList,
+    parentTabId,
+    tabConfig?.id,
+    showToast,
+  ]);
   /** Trước Lưu thông tin / ttc-save: ghi list gợi ý bản đồ (draft) nếu panel đang mở — tránh mất sửa khi quên bấm «Lưu list». */
   const flushMapListDraftsForMainSaveRef = useRef(() => {});
-  flushMapListDraftsForMainSaveRef.current = () => {
-    if (mapRealmListPanelOpen) handleSaveMapRealmListDraft();
-    if (mapHierarchyListPanelOpen) handleSaveMapHierarchyListDraft();
-  };
+  useEffect(() => {
+    flushMapListDraftsForMainSaveRef.current = () => {
+      if (mapRealmListPanelOpen) handleSaveMapRealmListDraft();
+      if (mapHierarchyListPanelOpen) handleSaveMapHierarchyListDraft();
+    };
+  }, [mapRealmListPanelOpen, mapHierarchyListPanelOpen, handleSaveMapRealmListDraft, handleSaveMapHierarchyListDraft]);
   const toggleMapHierarchyListEditor = () => {
     if (mapHierarchyListPanelOpen) {
       setMapHierarchyListPanelOpen(false);

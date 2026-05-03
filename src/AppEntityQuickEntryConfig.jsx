@@ -154,9 +154,9 @@ function normalizeTierFieldMapDraft(raw, selectable = []) {
   };
 }
 
-export function AppEntityQuickEntryConfig({
-  tabLonId,
-  tabNhoId,
+function AppEntityQuickEntryConfigBody({
+  lon,
+  nho,
   fieldsTemplate,
   entityQuickEntry,
   fieldSuggestionDependencies,
@@ -176,13 +176,10 @@ export function AppEntityQuickEntryConfig({
   /** false = tab Bản đồ / Thế lực (form gợi ý riêng); vẫn hiện «Phụ thuộc gợi ý». */
   showQuickEntrySlots = true,
 }) {
-  const lon = safeString(tabLonId).trim();
-  const nho = safeString(tabNhoId).trim();
   const canEditSlots = typeof onSetEntityQuickEntry === 'function';
   const canEditDeps = typeof onSetFieldSuggestionDependencies === 'function';
   const canEditTierSchema = typeof onSetMapParentTierSchema === 'function';
   const canEditTierFieldMap = typeof onSetMapParentTierFieldMap === 'function';
-  if (!lon || !nho || (!canEditSlots && !canEditDeps && !canEditTierSchema && !canEditTierFieldMap)) return null;
 
   const templateList = useMemo(
     () => (Array.isArray(fieldsTemplate) ? fieldsTemplate : []),
@@ -219,18 +216,20 @@ export function AppEntityQuickEntryConfig({
   const [draftTierSchema, setDraftTierSchema] = useState(() => savedTierSchema);
   const [draftTierFieldMap, setDraftTierFieldMap] = useState(() => savedTierFieldMap);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- đồng bộ nháp với dữ liệu đã lưu khi tab / chữ ký nguồn đổi */
   useEffect(() => {
     setDraft(saved);
-  }, [pathKey, savedSig]);
+  }, [pathKey, savedSig, saved]);
   useEffect(() => {
     setDraftDeps(savedDeps);
-  }, [pathKey, savedDepsSig]);
+  }, [pathKey, savedDepsSig, savedDeps]);
   useEffect(() => {
     setDraftTierSchema(savedTierSchema);
-  }, [pathKey, savedTierSchemaSig]);
+  }, [pathKey, savedTierSchemaSig, savedTierSchema]);
   useEffect(() => {
     setDraftTierFieldMap(savedTierFieldMap);
-  }, [pathKey, savedTierFieldMapSig]);
+  }, [pathKey, savedTierFieldMapSig, savedTierFieldMap]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const dirty = !statesEqual(draft, saved);
   const hasTierFields = Boolean(draftTierFieldMap.scaleFieldId && draftTierFieldMap.parentFieldId);
@@ -887,4 +886,18 @@ export function AppEntityQuickEntryConfig({
       </div>
     </details>
   );
+}
+
+/** Shell không dùng hook: guard `return null` trước khi vào component có hooks. */
+export function AppEntityQuickEntryConfig(props) {
+  const lon = safeString(props.tabLonId).trim();
+  const nho = safeString(props.tabNhoId).trim();
+  const canEditSlots = typeof props.onSetEntityQuickEntry === 'function';
+  const canEditDeps = typeof props.onSetFieldSuggestionDependencies === 'function';
+  const canEditTierSchema = typeof props.onSetMapParentTierSchema === 'function';
+  const canEditTierFieldMap = typeof props.onSetMapParentTierFieldMap === 'function';
+  if (!lon || !nho || (!canEditSlots && !canEditDeps && !canEditTierSchema && !canEditTierFieldMap)) {
+    return null;
+  }
+  return <AppEntityQuickEntryConfigBody {...props} lon={lon} nho={nho} />;
 }

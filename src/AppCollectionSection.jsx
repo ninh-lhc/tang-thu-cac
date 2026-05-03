@@ -270,7 +270,7 @@ export function AppCollectionSection({
     return detailProfileMode === 'current'
       ? buildTimelineCurrentNotesText(selectedEntity)
       : safeString(selectedEntity.info);
-  }, [detailProfileMode, selectedEntity, selectedEntity?.info]);
+  }, [detailProfileMode, selectedEntity]);
   const detailNotesEntity = React.useMemo(() => {
     if (!detailEntity) return detailEntity;
     return {
@@ -300,7 +300,6 @@ export function AppCollectionSection({
     globalLinkRegex,
     handleNavigate,
     isEntityEditing,
-    detailNotesText,
   ]);
   const handleOpenCurrentTimelineEdit = React.useCallback(() => {
     const latestMilestone = timelineCurrentProfile.latestMilestone;

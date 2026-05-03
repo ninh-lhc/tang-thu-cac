@@ -1713,12 +1713,12 @@ export default function App() {
 
   // Tab management helpers
   /** Luôn ưu tiên ref (cập nhật đồng bộ trong updateActiveNovelData) — tránh clone cây tab cũ khi gọi setTabsConfig liên tiếp trong cùng một lượt (vd. lưu realmScaleLists rồi merge fieldSuggestionLists). */
-  const getTabsToUpdate = () => {
+  const getTabsToUpdate = useCallback(() => {
     const fromRef = activeNovelDataRef?.current;
     if (Array.isArray(fromRef?.tabsConfig)) return fromRef.tabsConfig;
     if (activeNovelData && Array.isArray(activeNovelData.tabsConfig)) return activeNovelData.tabsConfig;
     return globalTabsConfig;
-  };
+  }, [activeNovelData, globalTabsConfig, activeNovelDataRef]);
   const buildTabScopeLabel = (lonId, nhoId, currentTabs = getTabsToUpdate()) => {
     const lon = (currentTabs || []).find((tab) => tab.id === lonId);
     if (!lon) return 'Cây thư mục';
@@ -1728,40 +1728,51 @@ export default function App() {
     const nhoLabel = safeString(nho?.label || nhoId).trim();
     return [lonLabel, nhoLabel].filter(Boolean).join(' > ') || 'Cây thư mục';
   };
-  const setTabsConfig = (
-    newTabs,
-    {
-      resyncAuto = false,
-      mutateNovelData = null,
-      autoSyncPlan = null,
-      autoSyncReason = 'tab_config',
-      autoSyncScopeLabel = 'Cây thư mục',
-    } = {}
-  ) => {
-    let forceWarning = '';
-    if (activeNovelData) {
-      updateActiveNovelData((nov) => {
-        nov.tabsConfig = newTabs;
-        if (typeof mutateNovelData === 'function') mutateNovelData(nov);
-        if (resyncAuto) {
-          const autoSyncResult = runNovelAutoSyncPlan(
-            nov,
-            autoSyncPlan || buildFullAutoSyncPlan(),
-            {
-              recordLog: true,
-              reason: autoSyncReason,
-              scopeLabel: autoSyncScopeLabel,
-            }
-          );
-          forceWarning = autoSyncResult.forceWarning || '';
-        }
-      });
-      if (forceWarning) showToast(forceWarning, 'warning');
-      return;
-    }
-    setGlobalTabsConfig(newTabs);
-    syncIndex(novelsMetadata, newTabs, dirHandle);
-  };
+  const setTabsConfig = useCallback(
+    (
+      newTabs,
+      {
+        resyncAuto = false,
+        mutateNovelData = null,
+        autoSyncPlan = null,
+        autoSyncReason = 'tab_config',
+        autoSyncScopeLabel = 'Cây thư mục',
+      } = {}
+    ) => {
+      let forceWarning = '';
+      if (activeNovelData) {
+        updateActiveNovelData((nov) => {
+          nov.tabsConfig = newTabs;
+          if (typeof mutateNovelData === 'function') mutateNovelData(nov);
+          if (resyncAuto) {
+            const autoSyncResult = runNovelAutoSyncPlan(
+              nov,
+              autoSyncPlan || buildFullAutoSyncPlan(),
+              {
+                recordLog: true,
+                reason: autoSyncReason,
+                scopeLabel: autoSyncScopeLabel,
+              }
+            );
+            forceWarning = autoSyncResult.forceWarning || '';
+          }
+        });
+        if (forceWarning) showToast(forceWarning, 'warning');
+        return;
+      }
+      setGlobalTabsConfig(newTabs);
+      syncIndex(novelsMetadata, newTabs, dirHandle);
+    },
+    [
+      activeNovelData,
+      updateActiveNovelData,
+      showToast,
+      setGlobalTabsConfig,
+      syncIndex,
+      novelsMetadata,
+      dirHandle,
+    ]
+  );
 
   const handleResyncAutoTabs = useCallback(() => {
     if (!activeNovelData) return;
@@ -1849,7 +1860,7 @@ export default function App() {
     const strippedTabs = stripSuggestionConfigFromTabs(structuredClone(currentTabs));
     setTabsConfig(strippedTabs, { resyncAuto: false });
     showToast('Đã reset toàn bộ list gợi ý của truyện hiện tại.', 'success');
-  }, [activeNovelData, showToast]);
+  }, [activeNovelData, showToast, setTabsConfig]);
   const persistGenreTemplateFromTabs = useCallback(
     (tabsConfig) => {
       if (!activeNovelData || !Array.isArray(tabsConfig) || tabsConfig.length === 0) return;
@@ -3003,7 +3014,7 @@ export default function App() {
         );
       }
       return <div className="font-serif max-w-none animate-fade-in min-h-[200px]">{renderEntityNotesMarkdown(safeString(selectedEntity.info), currentContextDirHandle, entityMap, globalLinkRegex, (dest) => { if(navFnRef.current) navFnRef.current(dest); }, selectedEntity?.id)}</div>;
-  }, [selectedEntity, selectedEntity?.info, collectionSubTab, isEntityEditing, currentContextDirHandle, entityMap, globalLinkRegex]);
+  }, [selectedEntity, collectionSubTab, isEntityEditing, currentContextDirHandle, entityMap, globalLinkRegex]);
 
   const memoizedStandardData = useMemo(() => {
       if (isEditingMode || currentTabConfig?.viewType === 'collection-track') return null;
