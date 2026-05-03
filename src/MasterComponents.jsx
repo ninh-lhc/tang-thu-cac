@@ -28,6 +28,7 @@ import {
   countSuggestionRows,
   suggestionRowsToValues,
 } from './lib/suggestionRowFormat.js';
+import { FIELD_SOURCE_KIND, getFieldSourceDescriptor, resolveFieldValueSource } from './lib/fieldValueSources.js';
 import {
   safeString, getTerms, AsyncLocalImage,
   handleToolbarClick,
@@ -74,6 +75,7 @@ import {
 import {
   FORCE_QUICK_SLOTS,
   MAP_QUICK_SLOTS,
+  mergeCollectionQuickSlotFieldsIntoTemplate,
   resolveMainFormLabels,
   resolveQuickSlotLabels,
 } from './lib/modalEntityQuickLabels.js';
@@ -82,6 +84,7 @@ import {
   splitMapHierarchyTokens,
   splitStatusHierarchyTokens,
 } from './lib/statusHierarchyParser.js';
+import { composeForceQuickDisplayLine, extractForceQuickRankLabel } from './lib/forceQuickDisplayParse.js';
 import { inferOrgTypeFromContext, inferOrgTypeFromTabSlug } from './lib/forceOrgTypeInfer.js';
 import { mergeTabsByGenres } from './genreTabsMap.js';
 import { getGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
@@ -1254,16 +1257,51 @@ function composeParentPathFromTiers(t1 = '', t2 = '', t3 = '') {
   return [safeString(t1).trim(), safeString(t2).trim(), safeString(t3).trim()].filter(Boolean).join(' > ');
 }
 
-function resolveMapParentTierSchema(realmScale = '') {
+const MAP_PARENT_TIER_DEFAULT_PROFILE = Object.freeze({
+  none: ['tinh cau', 'hanh tinh', 'tinh he', 'thien ha', 'vi dien', 'gioi', 'mat trang', 've tinh'],
+  one: ['dai luc', 'dai duong', 'chau', 'vuc', 'khu vuc', 'de quoc', 'quoc gia', 'lien bang'],
+  two: ['thanh', 'tran', 'do thanh', 'thanh tri', 'khu dan cu', 'lang', 'dao'],
+});
+
+function normalizeParentTierKeywords(input) {
+  const out = [];
+  const seen = new Set();
+  (Array.isArray(input) ? input : [])
+    .map((x) => normalizeAsciiText(safeString(x).trim()))
+    .filter(Boolean)
+    .forEach((k) => {
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push(k);
+    });
+  return out;
+}
+
+function normalizeParentTierSchema(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const none = normalizeParentTierKeywords(src.none);
+  const one = normalizeParentTierKeywords(src.one);
+  const two = normalizeParentTierKeywords(src.two);
+  return {
+    none: none.length > 0 ? none : [...MAP_PARENT_TIER_DEFAULT_PROFILE.none],
+    one: one.length > 0 ? one : [...MAP_PARENT_TIER_DEFAULT_PROFILE.one],
+    two: two.length > 0 ? two : [...MAP_PARENT_TIER_DEFAULT_PROFILE.two],
+  };
+}
+
+function resolveParentTierSchema(realmScale = '', profileId = 'map-default', profileConfig = null) {
+  if (profileId !== 'map-default') return [];
+  const profile = normalizeParentTierSchema(profileConfig);
   const key = normalizeAsciiText(realmScale);
   if (!key) return [];
-  if (/(tinh cau|hanh tinh|tinh he|thien ha|vi dien|gioi|mat trang|ve tinh)/.test(key)) {
+  const hasKeyword = (list) => list.some((kw) => key.includes(kw));
+  if (hasKeyword(profile.none)) {
     return [];
   }
-  if (/(dai luc|dai duong|chau|vuc|khu vuc|de quoc|quoc gia|lien bang)/.test(key)) {
+  if (hasKeyword(profile.one)) {
     return [{ id: 'tier1', label: 'Tinh cầu', placeholder: 'Chọn Tinh cầu cha' }];
   }
-  if (/(thanh|tran|do thanh|thanh tri|khu dan cu|lang|dao)/.test(key)) {
+  if (hasKeyword(profile.two)) {
     return [
       { id: 'tier1', label: 'Tinh cầu', placeholder: 'Chọn Tinh cầu cha' },
       { id: 'tier2', label: 'Đại lục/Đại dương', placeholder: 'Chọn Đại lục/Đại dương cha' },
@@ -1272,14 +1310,18 @@ function resolveMapParentTierSchema(realmScale = '') {
   return [{ id: 'tier1', label: 'Tinh cầu', placeholder: 'Chọn Tinh cầu cha' }];
 }
 
-function parseMapQuickState(dynamicData) {
+function parseMapQuickState(dynamicData, fieldMap = {}) {
+  const scaleFieldId = safeString(fieldMap?.scaleFieldId).trim() || 'f_he_gioi_ban_do';
+  const parentFieldId = safeString(fieldMap?.parentFieldId).trim() || 'f_vi_tri';
   const statusTokens = splitDotMetaTokens(dynamicData?.f_status);
   const mapSystem = inferMapQuickSystemFromStoredStatus(dynamicData);
   return {
     mapType: safeString(dynamicData?.f_title).trim() || statusTokens[0] || '',
     mapSystem,
-    realmSystem: safeString(dynamicData?.f_he_gioi_ban_do || dynamicData?.f_he_phan_cap).trim() || inferForceSystemLabel(mapSystem),
-    parentPath: safeString(dynamicData?.f_vi_tri).trim(),
+    realmSystem:
+      safeString(dynamicData?.[scaleFieldId] || dynamicData?.f_he_gioi_ban_do || dynamicData?.f_he_phan_cap).trim() ||
+      inferForceSystemLabel(mapSystem),
+    parentPath: safeString(dynamicData?.[parentFieldId] || dynamicData?.f_vi_tri).trim(),
   };
 }
 
@@ -1288,8 +1330,9 @@ function parseForceQuickState(dynamicData) {
     dynamicData?.f_loai_to_chuc || dynamicData?.f_loai || dynamicData?.f_to_chuc || dynamicData?.f_title
   ).trim();
   const realmSystem = safeString(dynamicData?.f_he_cap_the_luc || dynamicData?.f_he_phan_cap).trim();
-  const rankLabel = safeString(dynamicData?.f_status || dynamicData?.f_cap).trim();
   const locationLine = safeString(dynamicData?.f_dia_ban || dynamicData?.f_vi_tri).trim();
+  const statusRaw = safeString(dynamicData?.f_status || dynamicData?.f_cap).trim();
+  const rankLabel = extractForceQuickRankLabel(statusRaw, orgType, realmSystem, locationLine);
   return {
     orgType,
     realmSystem,
@@ -1322,8 +1365,8 @@ const FORCE_TYPE_SEED_OPTIONS = [
   'Quốc Gia',
 ];
 
-function getMapHierarchyOptionsByRealm(_realmSystem = '', baseOptions = []) {
-  return dedupeCaseInsensitive(baseOptions);
+function getMapHierarchyOptionsByRealm(_realmSystem = '', baseOptions = [], fallbackOptions = []) {
+  return dedupeCaseInsensitive([...(baseOptions || []), ...(fallbackOptions || [])]);
 }
 
 /** Gợi ý «Quy mô địa vực»: ưu tiên list theo giới diện (`realmScaleLists[k]`), fallback sang
@@ -1408,6 +1451,8 @@ export const ModalEntity = ({
   onOpenAutoSyncGuide,
   onPatchMapRealmScaleLists,
   onSaveMapHierarchySharedList,
+  onSaveMapParentTierSchema,
+  onSaveMapParentTierFieldMap,
   handleAddTabTemplateField,
   handleEnsureTabTemplateFields,
   handleRemoveTabTemplateField,
@@ -1418,21 +1463,33 @@ export const ModalEntity = ({
   setConfirmDialog,
   handleSetTabEntityQuickEntry,
   handleSetTabFieldSuggestionDependencies,
+  requestPropagateFieldSuggestionDependenciesToLon,
   requestPropagateEntityQuickEntryToLon,
   requestPropagateEntityQuickEntryToAllLons,
+  requestPropagateMapParentTierSchemaToLon,
+  requestPropagateMapParentTierFieldMapToLon,
 }) => {
   void onUpdateTemplate;
   void geminiApiKey;
   void geminiMode;
   const terms = getTerms(parentTabId);
-  const fieldsTemplate = useMemo(
+  const baseFieldsTemplate = useMemo(
     () => resolveFieldsTemplate(tabConfig || {}, parentTabId, parentLabel || ''),
     [tabConfig, parentTabId, parentLabel]
   );
-  const fStatusLabel = useMemo(() => {
-    const f = fieldsTemplate.find((x) => x.id === 'f_status');
-    return f?.label || 'Tóm tắt dưới tên';
-  }, [fieldsTemplate]);
+  const mapParentTierFieldMap = useMemo(() => {
+    const ids = new Set(baseFieldsTemplate.map((f) => safeString(f?.id).trim()).filter(Boolean));
+    const rawScale = safeString(tabConfig?.mapEntrySuggestions?.parentTierFieldMap?.scaleFieldId).trim();
+    const rawParent = safeString(tabConfig?.mapEntrySuggestions?.parentTierFieldMap?.parentFieldId).trim();
+    const scaleFieldId = ids.has(rawScale) ? rawScale : ids.has('f_he_gioi_ban_do') ? 'f_he_gioi_ban_do' : '';
+    const parentFieldId = ids.has(rawParent) ? rawParent : ids.has('f_vi_tri') ? 'f_vi_tri' : '';
+    return { scaleFieldId, parentFieldId };
+  }, [baseFieldsTemplate, tabConfig]);
+  const mapTierScaleFieldId = mapParentTierFieldMap.scaleFieldId || 'f_he_gioi_ban_do';
+  const mapTierParentFieldId = mapParentTierFieldMap.parentFieldId || 'f_vi_tri';
+  const hasMapTierProfileFields = useMemo(() => {
+    return Boolean(mapParentTierFieldMap.scaleFieldId && mapParentTierFieldMap.parentFieldId);
+  }, [mapParentTierFieldMap]);
   const isForceScope = useMemo(
     () =>
       isForceCollectionScope({
@@ -1443,7 +1500,7 @@ export const ModalEntity = ({
       }),
     [parentTabId, parentLabel, tabConfig]
   );
-  const isMapScope = useMemo(
+  const isMapScopeByLabel = useMemo(
     () =>
       isMapCollectionScope({
         activeTabLon: parentTabId,
@@ -1453,10 +1510,47 @@ export const ModalEntity = ({
       }),
     [parentTabId, parentLabel, tabConfig]
   );
+  /**
+   * Pha mở rộng (cách 1): ngoài tab được nhận diện là Bản đồ theo id/nhãn,
+   * mọi tab thu thập có đủ cặp field `f_he_gioi_ban_do` + `f_vi_tri` cũng bật profile
+   * "quy mô → trực thuộc nhiều tầng" để dùng chung cơ chế 0/1/2 ô.
+   */
+  const isMapScope = Boolean(
+    isMapScopeByLabel || (tabConfig?.viewType === 'collection-track' && hasMapTierProfileFields)
+  );
   // Một tab chỉ nên render 1 khối "quick domain" để tránh trùng nội dung.
   // Với tab lai (match cả map + thế lực), ưu tiên form Thế lực vì dữ liệu đầu vào là rank + địa bàn.
   const showForceQuickSection = isForceScope;
   const showMapQuickSection = isMapScope && !isForceScope;
+  const fieldsTemplate = useMemo(() => {
+    if (!showMapQuickSection && !showForceQuickSection) return baseFieldsTemplate;
+    return mergeCollectionQuickSlotFieldsIntoTemplate(baseFieldsTemplate, {
+      map: showMapQuickSection,
+      force: showForceQuickSection,
+    });
+  }, [baseFieldsTemplate, showMapQuickSection, showForceQuickSection]);
+  const fStatusLabel = useMemo(() => {
+    const f = fieldsTemplate.find((x) => x.id === 'f_status');
+    return f?.label || 'Tóm tắt dưới tên';
+  }, [fieldsTemplate]);
+  const tabConfigForFieldEditor = useMemo(() => {
+    const base = { ...(tabConfig || {}), fieldsTemplate };
+    if (!showMapQuickSection) return base;
+    return {
+      ...base,
+      fieldsTemplate: (fieldsTemplate || []).map((f) => {
+        const fid = safeString(f?.id).trim();
+        if (fid !== 'f_status') return f;
+        return { ...(f || {}), label: 'Đặc Tính Địa Vực' };
+      }),
+    };
+  }, [tabConfig, fieldsTemplate, showMapQuickSection]);
+  const entityTemplateContextHint = useMemo(() => {
+    const base =
+      'Gợi ý nhanh (phần mở sẵn) để nhập. Chế độ Cục bộ / Khu vực: khối Trường dưới đây. Với lưới thường, thêm cấu hình bố cục ô ở cuối mục này.';
+    if (!showMapQuickSection) return base;
+    return `${base} «Đặc Tính Địa Vực» không có field riêng trong mẫu — nhập ở Tổng quan được gộp vào Chuỗi hiển thị / dữ liệu auto.`;
+  }, [showMapQuickSection]);
   const isCultivationScope = useMemo(
     () =>
       isCultivationRelationScope({
@@ -1545,6 +1639,10 @@ export const ModalEntity = ({
   }, [mapEntityHints.parentTier3Options, mapEntityHints.mapNamesTrucParent3]);
   const mapTypeSuggestions = mapEntityHints.mapTypes;
   const forceSystemSuggestions = mapEntityHints.forceSystems;
+  const mapHierarchyFieldSuggestions = useMemo(() => {
+    const raw = Array.isArray(tabConfig?.fieldSuggestionLists?.f_status) ? tabConfig.fieldSuggestionLists.f_status : [];
+    return dedupeCaseInsensitive(suggestionRowsToValues(raw));
+  }, [tabConfig]);
   const statusFieldPlaceholder = isMapScope
     ? mapFieldPlaceholders.quickLine
     : 'Ví dụ: Kim Đan kỳ · Đang hoạt động · UI hệ thống... (một dòng, hiện dưới tên ở Hồ sơ)';
@@ -1564,14 +1662,19 @@ export const ModalEntity = ({
   const [mapQuickParentTier2, setMapQuickParentTier2] = useState('');
   const [mapQuickParentTier3, setMapQuickParentTier3] = useState('');
   const mapQuickSystemRef = useRef('');
+  const parentTierProfileId = showMapQuickSection ? 'map-default' : '';
+  const mapParentTierProfileConfig = useMemo(
+    () => normalizeParentTierSchema(tabConfig?.mapEntrySuggestions?.parentTierSchema),
+    [tabConfig]
+  );
   /** true = người dùng đang giữ chuỗi hiển thị khác bản ghép từ ô nhanh; sửa ô nhanh hoặc xóa trống ô chuỗi → tắt. */
   const genericQuickFStatusUserOverrideRef = useRef(false);
   useEffect(() => {
     mapQuickSystemRef.current = mapQuickSystem;
   }, [mapQuickSystem]);
   const mapParentTierSchema = useMemo(
-    () => resolveMapParentTierSchema(mapQuickRealmSystem),
-    [mapQuickRealmSystem]
+    () => resolveParentTierSchema(mapQuickRealmSystem, parentTierProfileId, mapParentTierProfileConfig),
+    [mapQuickRealmSystem, parentTierProfileId, mapParentTierProfileConfig]
   );
   const mapParentTierRequiredCount = mapParentTierSchema.length;
   const [mapListEditorMode, setMapListEditorMode] = useState(null);
@@ -1600,10 +1703,26 @@ export const ModalEntity = ({
     [mapQuickParentPath, mapEntityHints.recordsByName]
   );
   const mapHierarchyOptions = useMemo(
-    () => getMapHierarchyOptionsByRealm(mapQuickRealmSystem, forceSystemSuggestions),
-    [mapQuickRealmSystem, forceSystemSuggestions]
+    () => getMapHierarchyOptionsByRealm(mapQuickRealmSystem, forceSystemSuggestions, mapHierarchyFieldSuggestions),
+    [mapQuickRealmSystem, forceSystemSuggestions, mapHierarchyFieldSuggestions]
   );
   const forceQuickHints = useMemo(() => collectForceQuickHints(activeNovelData), [activeNovelData]);
+  const forceTypeSourceDescriptor = useMemo(
+    () => getFieldSourceDescriptor(tabConfig, 'f_loai_to_chuc'),
+    [tabConfig]
+  );
+  const forceTypeSource = useMemo(
+    () =>
+      resolveFieldValueSource({
+        fieldId: 'f_loai_to_chuc',
+        tabConfig: tabConfig || {},
+        parentTabId,
+        parentLabel: parentLabel || '',
+        activeNovelData,
+        genreTemplate: getGenreTabsTemplate(Array.isArray(activeNovelData?.genres) ? activeNovelData.genres : []),
+      }),
+    [tabConfig, parentTabId, parentLabel, activeNovelData]
+  );
   const mapSubTabsForForce = useMemo(
     () => collectMapSubTabsForForceUi(activeNovelData),
     [activeNovelData]
@@ -1662,7 +1781,12 @@ export const ModalEntity = ({
     }
     return dedupeCaseInsensitive([...forceQuickHints.locationSuggestions, ...mapNameSuggestions]);
   }, [matchedMapSubTab, mapTabNamesForForceLocation, forceQuickHints.locationSuggestions, mapNameSuggestions]);
-  const forceTypeOptions = forceQuickHints.typeSuggestions;
+  const forceTypeOptions = useMemo(() => {
+    if (forceTypeSourceDescriptor.kind === FIELD_SOURCE_KIND.SUB_TAB_LABEL) {
+      return dedupeCaseInsensitive(forceTypeSource.suggestions);
+    }
+    return dedupeCaseInsensitive([...forceQuickHints.typeSuggestions, ...forceTypeSource.suggestions]);
+  }, [forceQuickHints.typeSuggestions, forceTypeSource.suggestions, forceTypeSourceDescriptor.kind]);
   const resolvedStatusFieldPlaceholder = showMapQuickSection
     ? mapFieldPlaceholders.quickLine
     : showForceQuickSection
@@ -1887,6 +2011,102 @@ export const ModalEntity = ({
     [tabConfig?.fieldSuggestionDependencies, dynamicData]
   );
 
+  const mapQuickTypeSuggestionList = useMemo(
+    () =>
+      showMapQuickSection
+        ? resolveDependentQuickSuggestions({ fieldId: 'f_title' }, mapTypeSuggestions)
+        : mapTypeSuggestions,
+    [showMapQuickSection, resolveDependentQuickSuggestions, mapTypeSuggestions]
+  );
+  const mapRealmSystemSuggestionList = useMemo(
+    () =>
+      showMapQuickSection
+        ? resolveDependentQuickSuggestions({ fieldId: mapTierScaleFieldId }, mapRealmSystemOptions)
+        : mapRealmSystemOptions,
+    [showMapQuickSection, resolveDependentQuickSuggestions, mapRealmSystemOptions, mapTierScaleFieldId]
+  );
+  /** Giống forceRealmSelectOptions: hiện đúng giá trị đã lưu trong datalist dù chưa có trong list gợi ý. */
+  const mapRealmSelectOptions = useMemo(() => {
+    const cur = safeString(mapQuickRealmSystem).trim();
+    const base = mapRealmSystemSuggestionList;
+    if (!cur) return base;
+    const has = base.some((x) => normalizeAsciiText(x) === normalizeAsciiText(cur));
+    if (has) return base;
+    return dedupeCaseInsensitive([cur, ...base]);
+  }, [mapQuickRealmSystem, mapRealmSystemSuggestionList]);
+  const mapHierarchySuggestionList = useMemo(
+    () =>
+      showMapQuickSection
+        ? resolveDependentQuickSuggestions({ fieldId: 'f_status' }, mapHierarchyOptions)
+        : mapHierarchyOptions,
+    [showMapQuickSection, resolveDependentQuickSuggestions, mapHierarchyOptions]
+  );
+  const mapParentTier1SuggestionList = useMemo(
+    () =>
+      showMapQuickSection
+        ? resolveDependentQuickSuggestions({ fieldId: mapTierParentFieldId }, mapParentTier1Datalist)
+        : mapParentTier1Datalist,
+    [showMapQuickSection, resolveDependentQuickSuggestions, mapParentTier1Datalist, mapTierParentFieldId]
+  );
+  const mapParentTier2SuggestionList = useMemo(
+    () =>
+      showMapQuickSection
+        ? resolveDependentQuickSuggestions({ fieldId: mapTierParentFieldId }, mapParentTier2Datalist)
+        : mapParentTier2Datalist,
+    [showMapQuickSection, resolveDependentQuickSuggestions, mapParentTier2Datalist, mapTierParentFieldId]
+  );
+  const mapParentTier3SuggestionList = useMemo(
+    () =>
+      showMapQuickSection
+        ? resolveDependentQuickSuggestions({ fieldId: mapTierParentFieldId }, mapParentTier3Datalist)
+        : mapParentTier3Datalist,
+    [showMapQuickSection, resolveDependentQuickSuggestions, mapParentTier3Datalist, mapTierParentFieldId]
+  );
+  const mapNameSuggestionList = useMemo(
+    () =>
+      showMapQuickSection
+        ? resolveDependentQuickSuggestions({ fieldId: mapTierParentFieldId }, mapNameSuggestions)
+        : mapNameSuggestions,
+    [showMapQuickSection, resolveDependentQuickSuggestions, mapNameSuggestions, mapTierParentFieldId]
+  );
+  const forceTypeSuggestionList = useMemo(
+    () =>
+      showForceQuickSection
+        ? resolveDependentQuickSuggestions({ fieldId: 'f_loai_to_chuc' }, forceTypeOptions)
+        : forceTypeOptions,
+    [showForceQuickSection, resolveDependentQuickSuggestions, forceTypeOptions]
+  );
+  const forceRankSuggestionList = useMemo(
+    () =>
+      showForceQuickSection
+        ? resolveDependentQuickSuggestions({ fieldId: 'f_status' }, forceRankOptions)
+        : forceRankOptions,
+    [showForceQuickSection, resolveDependentQuickSuggestions, forceRankOptions]
+  );
+  const forceLocationSuggestionList = useMemo(
+    () =>
+      showForceQuickSection
+        ? resolveDependentQuickSuggestions({ fieldId: 'f_dia_ban' }, forceLocationOptions)
+        : forceLocationOptions,
+    [showForceQuickSection, resolveDependentQuickSuggestions, forceLocationOptions]
+  );
+  const forceRealmSystemOptionsDep = useMemo(
+    () =>
+      showForceQuickSection
+        ? resolveDependentQuickSuggestions({ fieldId: 'f_he_cap_the_luc' }, forceRealmSystemOptions)
+        : forceRealmSystemOptions,
+    [showForceQuickSection, resolveDependentQuickSuggestions, forceRealmSystemOptions]
+  );
+  /** Giữ giá trị đang chọn nếu rule phụ thuộc thu hẹp list nhưng thẻ đã lưu tên tab Bản đồ hợp lệ. */
+  const forceRealmSelectOptions = useMemo(() => {
+    const cur = safeString(forceQuickRealmSystem).trim();
+    const base = forceRealmSystemOptionsDep;
+    if (!cur || !forceRealmSystemOptions.includes(cur)) return base;
+    const has = base.some((x) => normalizeAsciiText(x) === normalizeAsciiText(cur));
+    if (has) return base;
+    return dedupeCaseInsensitive([cur, ...base]);
+  }, [forceQuickRealmSystem, forceRealmSystemOptions, forceRealmSystemOptionsDep]);
+
   /* Reset form khi mở modal (đồng bộ từ initialData) */
   const handleMapTypeChange = (value) => {
     setMapQuickType(value);
@@ -1907,7 +2127,8 @@ export const ModalEntity = ({
     mapQuickSystemRef.current = nextSystem;
     patchDynamicData({
       f_title: value,
-      f_he_gioi_ban_do: nextRealm,
+      [mapTierScaleFieldId]: nextRealm,
+      ...(mapTierScaleFieldId === 'f_he_gioi_ban_do' ? null : { f_he_gioi_ban_do: nextRealm }),
     });
   };
   const handleMapSystemChange = (value) => {
@@ -1926,7 +2147,8 @@ export const ModalEntity = ({
     setMapQuickSystem(nextSystem);
     mapQuickSystemRef.current = nextSystem;
     patchDynamicData({
-      f_he_gioi_ban_do: value,
+      [mapTierScaleFieldId]: value,
+      ...(mapTierScaleFieldId === 'f_he_gioi_ban_do' ? null : { f_he_gioi_ban_do: value }),
     });
   };
   const handleMapParentPathChange = (value) => {
@@ -1935,19 +2157,28 @@ export const ModalEntity = ({
     setMapQuickParentTier1(tiers.tier1);
     setMapQuickParentTier2(tiers.tier2);
     setMapQuickParentTier3(tiers.tier3);
-    patchDynamicData({ f_vi_tri: value });
+    patchDynamicData({
+      [mapTierParentFieldId]: value,
+      ...(mapTierParentFieldId === 'f_vi_tri' ? null : { f_vi_tri: value }),
+    });
   };
   const handleMapParentTier1Change = (value) => {
     setMapQuickParentTier1(value);
     const nextPath = composeParentPathFromTiers(value, mapQuickParentTier2, mapQuickParentTier3);
     setMapQuickParentPath(nextPath);
-    patchDynamicData({ f_vi_tri: nextPath });
+    patchDynamicData({
+      [mapTierParentFieldId]: nextPath,
+      ...(mapTierParentFieldId === 'f_vi_tri' ? null : { f_vi_tri: nextPath }),
+    });
   };
   const handleMapParentTier2Change = (value) => {
     setMapQuickParentTier2(value);
     const nextPath = composeParentPathFromTiers(mapQuickParentTier1, value, mapQuickParentTier3);
     setMapQuickParentPath(nextPath);
-    patchDynamicData({ f_vi_tri: nextPath });
+    patchDynamicData({
+      [mapTierParentFieldId]: nextPath,
+      ...(mapTierParentFieldId === 'f_vi_tri' ? null : { f_vi_tri: nextPath }),
+    });
   };
   // Đồng bộ 2 phần: bảo đảm các slot «Gợi ý nhanh» map/force có mặt trong `fieldsTemplate`
   // để khung «Trường thông tin (thêm · sửa · xoá)» ở dưới cũng hiển thị và cho sửa/xoá.
@@ -1999,7 +2230,10 @@ export const ModalEntity = ({
     if (mapParentTierRequiredCount < 2 && mapQuickParentTier2) setMapQuickParentTier2('');
     if (mapQuickParentPath !== nextPath) {
       setMapQuickParentPath(nextPath);
-      patchDynamicData({ f_vi_tri: nextPath });
+      patchDynamicData({
+        [mapTierParentFieldId]: nextPath,
+        ...(mapTierParentFieldId === 'f_vi_tri' ? null : { f_vi_tri: nextPath }),
+      });
     }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [
@@ -2110,24 +2344,31 @@ export const ModalEntity = ({
   };
   const handleForceLocationChange = (value) => {
     setForceQuickLocation(value);
-    patchDynamicData({ f_dia_ban: value });
+    patchDynamicData({
+      f_dia_ban: value,
+      f_status: composeForceQuickDisplayLine(forceQuickType, forceQuickRealmSystem, forceQuickRank, value),
+    });
   };
   const handleForceTypeChange = (value) => {
     setForceQuickType(value);
     // Chỉ ghi f_loai_to_chuc: preset fantasyRace/v.v. dùng f_title cho «phân nhánh», không trùng loại hình.
     patchDynamicData({
       f_loai_to_chuc: value,
+      f_status: composeForceQuickDisplayLine(value, forceQuickRealmSystem, forceQuickRank, forceQuickLocation),
     });
   };
   const handleForceRealmSystemChange = (value) => {
     setForceQuickRealmSystem(value);
     patchDynamicData({
       f_he_cap_the_luc: value,
+      f_status: composeForceQuickDisplayLine(forceQuickType, value, forceQuickRank, forceQuickLocation),
     });
   };
   const handleForceRankChange = (value) => {
     setForceQuickRank(value);
-    patchDynamicData({ f_status: value });
+    patchDynamicData({
+      f_status: composeForceQuickDisplayLine(forceQuickType, forceQuickRealmSystem, value, forceQuickLocation),
+    });
   };
   const handleStatusFieldChange = (value) => {
     if (showGenericQuickEntry && !isMapScope && !isForceScope && genericQuickStatusSourceFieldIds.length) {
@@ -2141,7 +2382,7 @@ export const ModalEntity = ({
     }
     patchDynamicData({ f_status: value });
     if (isMapScope) {
-      const parsed = parseMapQuickState({ ...dynamicData, f_status: value });
+      const parsed = parseMapQuickState({ ...dynamicData, f_status: value }, mapParentTierFieldMap);
       setMapQuickType(parsed.mapType);
       setMapQuickRealmSystem(parsed.realmSystem);
       setMapQuickSystem(parsed.mapSystem);
@@ -2149,6 +2390,9 @@ export const ModalEntity = ({
     }
     if (isForceScope) {
       setForceQuickRank(value);
+      patchDynamicData({
+        f_status: composeForceQuickDisplayLine(forceQuickType, forceQuickRealmSystem, value, forceQuickLocation),
+      });
     }
   };
 
@@ -2166,18 +2410,15 @@ export const ModalEntity = ({
       if (!initialDyn.f_status && initialData.status) initialDyn.f_status = initialData.status;
       if (!initialDyn.f_title && initialData.title) initialDyn.f_title = initialData.title;
       if (!initialDyn.f_desc && initialData.description) initialDyn.f_desc = initialData.description;
-      const mapQuickStateRaw = parseMapQuickState(initialDyn);
+      const mapQuickStateRaw = parseMapQuickState(initialDyn, mapParentTierFieldMap);
       const mapQuickType =
         isMapScope &&
         !isForceScope
           ? mapQuickStateRaw.mapType
           : '';
-      const mapRealmOptions = buildMapRealmSystemOptions(tabConfig, mapQuickType);
-      const mapQuickRealmSystem =
-        mapQuickStateRaw.realmSystem &&
-        mapRealmOptions.some((x) => normalizeAsciiText(x) === normalizeAsciiText(mapQuickStateRaw.realmSystem))
-          ? mapQuickStateRaw.realmSystem
-          : '';
+      const rawRealmSaved = safeString(mapQuickStateRaw.realmSystem).trim();
+      /** Giữ giá trị đã lưu kể khi list «Quy mô» theo giới diện đổi / trống — tránh mất khi mở Tu Bổ. */
+      const mapQuickRealmSystem = rawRealmSaved;
       // Khi Tu Bổ thẻ đã có dữ liệu, luôn giữ lại "Đặc Tính Địa Vực" đã lưu.
       // Trường này là optional nên không auto điền khi tạo mới, nhưng không được tự mất khi mở lại form.
       const mapQuickSystem = safeString(mapQuickStateRaw.mapSystem).trim();
@@ -2188,7 +2429,10 @@ export const ModalEntity = ({
         mapSystem: mapQuickSystem,
       };
       if (isMapScope && !isForceScope) {
-        initialDyn.f_he_gioi_ban_do = mapQuickState.realmSystem;
+        initialDyn[mapTierScaleFieldId] = mapQuickState.realmSystem;
+        if (mapTierScaleFieldId !== 'f_he_gioi_ban_do') initialDyn.f_he_gioi_ban_do = mapQuickState.realmSystem;
+        initialDyn[mapTierParentFieldId] = mapQuickState.parentPath;
+        if (mapTierParentFieldId !== 'f_vi_tri') initialDyn.f_vi_tri = mapQuickState.parentPath;
         initialDyn.f_status = composeMapTemplateDisplayLine(
           fieldsTemplate,
           initialDyn,
@@ -2196,6 +2440,19 @@ export const ModalEntity = ({
         );
       }
       const forceQuickState = parseForceQuickState(initialDyn);
+      if (isForceScope) {
+        initialDyn.f_status = composeForceQuickDisplayLine(
+          forceQuickState.orgType,
+          forceQuickState.realmSystem,
+          forceQuickState.rankLabel,
+          forceQuickState.locationLine
+        );
+      }
+      const defaultForceType = safeString(forceTypeSource.defaultValue).trim();
+      if (isForceScope && !forceQuickState.orgType && defaultForceType) {
+        forceQuickState.orgType = defaultForceType;
+        initialDyn.f_loai_to_chuc = defaultForceType;
+      }
       const mapBanDoLabels = dedupeCaseInsensitive(
         collectMapSubTabsForForceUi(activeNovelData).map((t) => t.label)
       );
@@ -2235,18 +2492,59 @@ export const ModalEntity = ({
     } else {
       genericQuickFStatusUserOverrideRef.current = false;
       setFormData({ id: null, name: '', avatar: '', rawText: '' });
-      setDynamicData({});
-      setMapQuickType('');
-      setMapQuickRealmSystem('');
-      setMapQuickSystem('');
-      setMapQuickParentPath('');
-      setMapQuickParentTier1('');
-      setMapQuickParentTier2('');
-      setMapQuickParentTier3('');
+      if (isMapScope && !isForceScope) {
+        const defaultGioi = safeString(tabConfig?.label).trim();
+        if (defaultGioi) {
+          const realmOpts = buildMapRealmSystemOptions(tabConfig, defaultGioi);
+          const nextRealm = realmOpts[0] || '';
+          mapQuickSystemRef.current = '';
+          const initialDyn = {
+            f_title: defaultGioi,
+            [mapTierScaleFieldId]: nextRealm,
+            ...(mapTierScaleFieldId === 'f_he_gioi_ban_do' ? null : { f_he_gioi_ban_do: nextRealm }),
+          };
+          initialDyn.f_status = composeMapTemplateDisplayLine(fieldsTemplate, initialDyn, '');
+          setDynamicData(initialDyn);
+          setMapQuickType(defaultGioi);
+          setMapQuickRealmSystem(nextRealm);
+          setMapQuickSystem('');
+          setMapQuickParentPath('');
+          setMapQuickParentTier1('');
+          setMapQuickParentTier2('');
+          setMapQuickParentTier3('');
+        } else {
+          setDynamicData({});
+          setMapQuickType('');
+          setMapQuickRealmSystem('');
+          setMapQuickSystem('');
+          mapQuickSystemRef.current = '';
+          setMapQuickParentPath('');
+          setMapQuickParentTier1('');
+          setMapQuickParentTier2('');
+          setMapQuickParentTier3('');
+        }
+      } else {
+        setDynamicData({});
+        setMapQuickType('');
+        setMapQuickRealmSystem('');
+        setMapQuickSystem('');
+        mapQuickSystemRef.current = '';
+        setMapQuickParentPath('');
+        setMapQuickParentTier1('');
+        setMapQuickParentTier2('');
+        setMapQuickParentTier3('');
+      }
       setForceQuickType('');
       setForceQuickRealmSystem('');
       setForceQuickRank('');
       setForceQuickLocation('');
+      if (isForceScope) {
+        const defaultForceType = safeString(forceTypeSource.defaultValue).trim();
+        if (defaultForceType) {
+          setForceQuickType(defaultForceType);
+          setDynamicData((prev) => ({ ...(prev || {}), f_loai_to_chuc: defaultForceType }));
+        }
+      }
     }
     setMapRealmListPanelOpen(false);
     setEntityCreatePanel('overview');
@@ -2258,7 +2556,11 @@ export const ModalEntity = ({
     tabConfig,
     isMapScope,
     isForceScope,
+    forceTypeSource.defaultValue,
     fieldsTemplate,
+    mapParentTierFieldMap,
+    mapTierScaleFieldId,
+    mapTierParentFieldId,
     showGenericQuickEntry,
     genericQuickStatusSourceFieldIds,
   ]);
@@ -2719,7 +3021,7 @@ export const ModalEntity = ({
                     value={mapQuickRealmSystem}
                     onChange={(e) => handleMapRealmSystemChange(e.target.value)}
                     className={entityModalQuickInput}
-                    placeholder={mapRealmSystemOptions[0] || 'Ví dụ: Hạ giới'}
+                    placeholder={mapRealmSystemSuggestionList[0] || 'Ví dụ: Hạ giới'}
                   />
                 </div>
                 <div className={entityModalQuickCol}>
@@ -2829,7 +3131,7 @@ export const ModalEntity = ({
                     value={forceQuickType}
                     onChange={(e) => handleForceTypeChange(e.target.value)}
                     className={entityModalQuickInput}
-                    placeholder={forceTypeOptions[0] || 'Ví dụ: Tông Môn'}
+                    placeholder={forceTypeSuggestionList[0] || 'Ví dụ: Tông Môn'}
                   />
                 </div>
                 <div className={entityModalQuickCol}>
@@ -2841,7 +3143,7 @@ export const ModalEntity = ({
                     className={`${entityModalQuickInput} cursor-pointer`}
                   >
                     <option value="">— Chọn tên thẻ Bản đồ —</option>
-                    {forceRealmSystemOptions.map((label) => (
+                    {forceRealmSelectOptions.map((label) => (
                       <option key={label} value={label}>
                         {label}
                       </option>
@@ -2856,9 +3158,9 @@ export const ModalEntity = ({
                     value={forceQuickRank}
                     onChange={(e) => handleForceRankChange(e.target.value)}
                     className={entityModalQuickInput}
-                    placeholder={forceRankOptions[0] || 'Nhập cấp (xem Quản lý tab Bản đồ để chỉnh list)'}
+                    placeholder={forceRankSuggestionList[0] || 'Nhập cấp (xem Quản lý tab Bản đồ để chỉnh list)'}
                     title={
-                      forceRankOptions[0]
+                      forceRankSuggestionList[0]
                         ? undefined
                         : 'Chỉnh list cấp theo thẻ Bản đồ: Quản lý tab → tab con Bản đồ → mapEntrySuggestions.forceRanks'
                     }
@@ -2952,7 +3254,7 @@ export const ModalEntity = ({
                 </div>
                 <div className="space-y-2 bg-slate-900/25 px-3 py-2.5">
                   <AppEntityTemplateFieldEditor
-                    tabConfig={tabConfig}
+                    tabConfig={tabConfigForFieldEditor}
                     parentTabId={parentTabId}
                     parentLabel={parentLabel}
                     activeNovelData={activeNovelData}
@@ -2965,23 +3267,29 @@ export const ModalEntity = ({
                     setConfirmDialog={setConfirmDialog}
                     showToast={showToast}
                     defaultOpen
-                    contextHint="Gợi ý nhanh (phần mở sẵn) để nhập. Chế độ Cục bộ / Khu vực: khối Trường dưới đây. Với lưới thường, thêm cấu hình bố cục ô ở cuối mục này."
+                    contextHint={entityTemplateContextHint}
                   />
-                  {showGenericQuickEntry && (
-                    <AppEntityQuickEntryConfig
-                      tabLonId={parentTabId}
-                      tabNhoId={tabConfig?.id}
-                      fieldsTemplate={fieldsTemplate}
-                      entityQuickEntry={tabConfig?.entityQuickEntry}
-                      fieldSuggestionDependencies={tabConfig?.fieldSuggestionDependencies}
-                      onSetEntityQuickEntry={handleSetTabEntityQuickEntry}
-                      onSetFieldSuggestionDependencies={handleSetTabFieldSuggestionDependencies}
-                      onSetTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
-                      onRequestPropagateToLon={requestPropagateEntityQuickEntryToLon}
-                      onRequestPropagateToAllLons={requestPropagateEntityQuickEntryToAllLons}
-                      showToast={showToast}
-                    />
-                  )}
+                  <AppEntityQuickEntryConfig
+                    tabLonId={parentTabId}
+                    tabNhoId={tabConfig?.id}
+                    fieldsTemplate={fieldsTemplate}
+                    entityQuickEntry={tabConfig?.entityQuickEntry}
+                    fieldSuggestionDependencies={tabConfig?.fieldSuggestionDependencies}
+                    onSetEntityQuickEntry={handleSetTabEntityQuickEntry}
+                    onSetFieldSuggestionDependencies={handleSetTabFieldSuggestionDependencies}
+                    onRequestPropagateDependenciesToLon={requestPropagateFieldSuggestionDependenciesToLon}
+                    mapParentTierSchema={tabConfig?.mapEntrySuggestions?.parentTierSchema}
+                    mapParentTierFieldMap={tabConfig?.mapEntrySuggestions?.parentTierFieldMap}
+                    onSetMapParentTierSchema={onSaveMapParentTierSchema}
+                    onSetMapParentTierFieldMap={onSaveMapParentTierFieldMap}
+                    onRequestPropagateMapParentTierSchemaToLon={requestPropagateMapParentTierSchemaToLon}
+                    onRequestPropagateMapParentTierFieldMapToLon={requestPropagateMapParentTierFieldMapToLon}
+                    onSetTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
+                    onRequestPropagateToLon={requestPropagateEntityQuickEntryToLon}
+                    onRequestPropagateToAllLons={requestPropagateEntityQuickEntryToAllLons}
+                    showToast={showToast}
+                    showQuickEntrySlots={showGenericQuickEntry}
+                  />
                 </div>
               </div>
             ) : (
@@ -3000,7 +3308,7 @@ export const ModalEntity = ({
               </summary>
               <div className="space-y-2 border-t border-slate-800/70 bg-slate-900/25 px-3 py-2.5">
                 <AppEntityTemplateFieldEditor
-                  tabConfig={tabConfig}
+                  tabConfig={tabConfigForFieldEditor}
                   parentTabId={parentTabId}
                   parentLabel={parentLabel}
                   activeNovelData={activeNovelData}
@@ -3013,75 +3321,81 @@ export const ModalEntity = ({
                   setConfirmDialog={setConfirmDialog}
                   showToast={showToast}
                   defaultOpen
-                  contextHint="Gợi ý nhanh (phần mở sẵn) để nhập. Chế độ Cục bộ / Khu vực: khối Trường dưới đây. Với lưới thường, thêm cấu hình bố cục ô ở cuối mục này."
+                  contextHint={entityTemplateContextHint}
                 />
-                {showGenericQuickEntry && (
-                  <AppEntityQuickEntryConfig
-                    tabLonId={parentTabId}
-                    tabNhoId={tabConfig?.id}
-                    fieldsTemplate={fieldsTemplate}
-                    entityQuickEntry={tabConfig?.entityQuickEntry}
-                    fieldSuggestionDependencies={tabConfig?.fieldSuggestionDependencies}
-                    onSetEntityQuickEntry={handleSetTabEntityQuickEntry}
-                    onSetFieldSuggestionDependencies={handleSetTabFieldSuggestionDependencies}
-                    onSetTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
-                    onRequestPropagateToLon={requestPropagateEntityQuickEntryToLon}
-                    onRequestPropagateToAllLons={requestPropagateEntityQuickEntryToAllLons}
-                    showToast={showToast}
-                  />
-                )}
+                <AppEntityQuickEntryConfig
+                  tabLonId={parentTabId}
+                  tabNhoId={tabConfig?.id}
+                  fieldsTemplate={fieldsTemplate}
+                  entityQuickEntry={tabConfig?.entityQuickEntry}
+                  fieldSuggestionDependencies={tabConfig?.fieldSuggestionDependencies}
+                  onSetEntityQuickEntry={handleSetTabEntityQuickEntry}
+                  onSetFieldSuggestionDependencies={handleSetTabFieldSuggestionDependencies}
+                  onRequestPropagateDependenciesToLon={requestPropagateFieldSuggestionDependenciesToLon}
+                  mapParentTierSchema={tabConfig?.mapEntrySuggestions?.parentTierSchema}
+                  mapParentTierFieldMap={tabConfig?.mapEntrySuggestions?.parentTierFieldMap}
+                  onSetMapParentTierSchema={onSaveMapParentTierSchema}
+                  onSetMapParentTierFieldMap={onSaveMapParentTierFieldMap}
+                  onRequestPropagateMapParentTierSchemaToLon={requestPropagateMapParentTierSchemaToLon}
+                  onRequestPropagateMapParentTierFieldMapToLon={requestPropagateMapParentTierFieldMapToLon}
+                  onSetTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
+                  onRequestPropagateToLon={requestPropagateEntityQuickEntryToLon}
+                  onRequestPropagateToAllLons={requestPropagateEntityQuickEntryToAllLons}
+                  showToast={showToast}
+                  showQuickEntrySlots={showGenericQuickEntry}
+                />
               </div>
             </details>
             )
           )}
 
           <datalist id="ttc-map-type-options">
-            {mapTypeSuggestions.map((item) => (
+            {mapQuickTypeSuggestionList.map((item) => (
               <option key={item} value={item} />
             ))}
           </datalist>
           <datalist id="ttc-force-system-options">
-            {mapHierarchyOptions.map((item) => (
+            {mapHierarchySuggestionList.map((item) => (
               <option key={item} value={item} />
             ))}
           </datalist>
           <datalist id="ttc-map-realm-options">
-            {mapRealmSystemOptions.map((item) => (
+            {mapRealmSelectOptions.map((item) => (
               <option key={item} value={item} />
             ))}
           </datalist>
           <datalist id="ttc-map-name-options">
-            {mapNameSuggestions.map((item) => (
+            {mapNameSuggestionList.map((item) => (
               <option key={item} value={item} />
             ))}
           </datalist>
           <datalist id="ttc-map-parent-tier1-options">
-            {mapParentTier1Datalist.map((item) => (
+            {mapParentTier1SuggestionList.map((item) => (
               <option key={`tier1-${item}`} value={item} />
             ))}
           </datalist>
           <datalist id="ttc-map-parent-tier2-options">
-            {mapParentTier2Datalist.map((item) => (
+            {mapParentTier2SuggestionList.map((item) => (
               <option key={`tier2-${item}`} value={item} />
             ))}
           </datalist>
           <datalist id="ttc-map-parent-tier3-options">
-            {mapParentTier3Datalist.map((item) => (
+            {mapParentTier3SuggestionList.map((item) => (
               <option key={`tier3-${item}`} value={item} />
             ))}
           </datalist>
           <datalist id="ttc-force-rank-options">
-            {forceRankOptions.map((item) => (
+            {forceRankSuggestionList.map((item) => (
               <option key={item} value={item} />
             ))}
           </datalist>
           <datalist id="ttc-force-type-options">
-            {forceTypeOptions.map((item) => (
+            {forceTypeSuggestionList.map((item) => (
               <option key={item} value={item} />
             ))}
           </datalist>
           <datalist id="ttc-force-location-options">
-            {forceLocationOptions.map((item) => (
+            {forceLocationSuggestionList.map((item) => (
               <option key={item} value={item} />
             ))}
           </datalist>

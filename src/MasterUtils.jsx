@@ -813,8 +813,180 @@ const sanitizeInlineColor = (rawColor) => {
   return null;
 };
 
-export const processInline = (text, dirHandle, entityLookup, linkRegex, onNavigate, selfEntityId = null) => {
+/** Giá trị sau «: » (địa chỉ / meta bản đồ); nội dung trong () — wiki [[…]] giữ style chip. */
+const GEO_COLON_VALUE_CLASS = 'font-semibold text-sky-200/95';
+const GEO_PAREN_INLINE_CLASS = 'font-semibold text-violet-200/90';
+/** Ký tự vùng Private Use — không trùng văn bản thường; bọc id để tách ngoặc trước khi INLINE_MARK_SPLIT. */
+const WIKI_PH_START = '\uE140';
+const WIKI_PH_END = '\uE141';
+
+/** Thay [[wiki]] bằng placeholder để tách ngoặc / sau dấu : không bị vỡ bởi INLINE_MARK_SPLIT. */
+function protectInlineWikiMarkers(raw, store) {
+  return safeString(raw).replace(/\[\[[\s\S]*?\]\]/g, (m) => {
+    const id = store.length;
+    store.push(m);
+    return `${WIKI_PH_START}${id}${WIKI_PH_END}`;
+  });
+}
+
+function unprotectInlineWikiMarkers(text, store) {
+  return safeString(text).replace(new RegExp(`${WIKI_PH_START}(\\d+)${WIKI_PH_END}`, 'g'), (_, id) => store[Number(id)] ?? '');
+}
+
+function splitOuterParensPreservingWiki(text) {
+  const s = safeString(text);
+  if (!s) return [{ type: 'text', text: '' }];
+  const out = [];
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === WIKI_PH_START) {
+      const end = s.indexOf(WIKI_PH_END, i + 1);
+      if (end === -1) {
+        out.push({ type: 'text', text: s.slice(i) });
+        break;
+      }
+      out.push({ type: 'text', text: s.slice(i, end + 1) });
+      i = end + 1;
+      continue;
+    }
+    if (s.startsWith('[[', i)) {
+      const end = s.indexOf(']]', i + 2);
+      if (end === -1) {
+        out.push({ type: 'text', text: s.slice(i) });
+        break;
+      }
+      out.push({ type: 'text', text: s.slice(i, end + 2) });
+      i = end + 2;
+      continue;
+    }
+    if (s[i] === '(') {
+      let depth = 1;
+      let j = i + 1;
+      while (j < s.length && depth > 0) {
+        if (s[j] === WIKI_PH_START) {
+          const endPh = s.indexOf(WIKI_PH_END, j + 1);
+          if (endPh === -1) {
+            j = s.length;
+            break;
+          }
+          j = endPh + 1;
+          continue;
+        }
+        if (s.startsWith('[[', j)) {
+          const endw = s.indexOf(']]', j + 2);
+          if (endw === -1) {
+            j = s.length;
+            break;
+          }
+          j = endw + 2;
+          continue;
+        }
+        if (s[j] === '(') depth += 1;
+        else if (s[j] === ')') depth -= 1;
+        j += 1;
+      }
+      if (depth === 0) {
+        out.push({ type: 'paren', inner: s.slice(i + 1, j - 1) });
+        i = j;
+      } else {
+        out.push({ type: 'text', text: s.slice(i) });
+        break;
+      }
+      continue;
+    }
+    let j = i;
+    while (j < s.length && s[j] !== '(' && !s.startsWith('[[', j) && s[j] !== WIKI_PH_START) j += 1;
+    if (j > i) out.push({ type: 'text', text: s.slice(i, j) });
+    i = j;
+  }
+  if (out.length === 0) out.push({ type: 'text', text: s });
+  return out;
+}
+
+function renderParenAwareAddressFragments(text, ctx, wikiStore) {
+  const segs = splitOuterParensPreservingWiki(text);
+  const baseOpts = { ...ctx.inlineOptions, addressMeta: false };
+  const pi = (t) =>
+    processInline(unprotectInlineWikiMarkers(t, wikiStore), ctx.dirHandle, ctx.lookup, ctx.linkRegex, ctx.onNavigate, ctx.selfEntityId, baseOpts);
+  return segs.map((seg, idx) => {
+    if (seg.type === 'paren') {
+      return (
+        <span key={`geo-paren-${idx}`} className={GEO_PAREN_INLINE_CLASS}>
+          ({pi(seg.inner)})
+        </span>
+      );
+    }
+    return (
+      <span key={`geo-txt-${idx}`} className="min-w-0">
+        {pi(seg.text)}
+      </span>
+    );
+  });
+}
+
+/** Chạy trước INLINE_MARK_SPLIT để () chứa [[wiki]] không bị tách mất ngoặc. */
+function renderAddressMetaPlainSegmentFromProtected(
+  prot,
+  wikiStore,
+  dirHandle,
+  lookup,
+  linkRegex,
+  onNavigate,
+  selfEntityId,
+  inlineOptions,
+) {
+  const ctx = { dirHandle, lookup, linkRegex, onNavigate, selfEntityId, inlineOptions };
+  const colonIdx = prot.indexOf(': ');
+  const baseOpts = { ...inlineOptions, addressMeta: false };
+  const pi = (t) =>
+    processInline(unprotectInlineWikiMarkers(t, wikiStore), dirHandle, lookup, linkRegex, onNavigate, selfEntityId, baseOpts);
+
+  if (colonIdx !== -1) {
+    const head = prot.slice(0, colonIdx + 1);
+    const tail = prot.slice(colonIdx + 2);
+    return (
+      <>
+        {pi(head)}
+        {' '}
+        <span className={GEO_COLON_VALUE_CLASS}>{renderParenAwareAddressFragments(tail, ctx, wikiStore)}</span>
+      </>
+    );
+  }
+  return renderParenAwareAddressFragments(prot, ctx, wikiStore);
+}
+
+export const processInline = (
+  text,
+  dirHandle,
+  entityLookup,
+  linkRegex,
+  onNavigate,
+  selfEntityId = null,
+  inlineOptions = {},
+) => {
   if (!text) return null;
+  const { addressMeta = false } = inlineOptions || {};
+
+  if (addressMeta) {
+    const wikiStore = [];
+    const prot = protectInlineWikiMarkers(safeString(text), wikiStore);
+    const hasColonValue = prot.includes(': ');
+    const hasParenPair = prot.includes('(') && prot.includes(')');
+    if (hasColonValue || hasParenPair) {
+      const lookupEarly = entityLookup?.__isEntityLookup ? entityLookup : buildEntityNameLookup(entityLookup);
+      return renderAddressMetaPlainSegmentFromProtected(
+        prot,
+        wikiStore,
+        dirHandle,
+        lookupEarly,
+        linkRegex,
+        onNavigate,
+        selfEntityId,
+        inlineOptions,
+      );
+    }
+  }
+
   const lookup = entityLookup?.__isEntityLookup ? entityLookup : buildEntityNameLookup(entityLookup);
   const parts = text.split(INLINE_MARK_SPLIT);
 
@@ -880,35 +1052,50 @@ export const processInline = (text, dirHandle, entityLookup, linkRegex, onNaviga
         const colorValue = sanitizeInlineColor(colorMatch[1]) || '#c084fc';
         return (
           <span key={i} style={{ color: colorValue }}>
-            {processInline(colorMatch[2], dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+            {processInline(colorMatch[2], dirHandle, lookup, linkRegex, onNavigate, selfEntityId, {
+              ...inlineOptions,
+              addressMeta: false,
+            })}
           </span>
         );
       }
       if (part.startsWith('**') && part.endsWith('**')) {
         return (
           <strong key={i} className="font-black tracking-[0.01em] text-slate-50">
-            {processInline(safeString(part.slice(2, -2)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+            {processInline(safeString(part.slice(2, -2)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId, {
+              ...inlineOptions,
+              addressMeta: false,
+            })}
           </strong>
         );
       }
       if (part.startsWith('~~') && part.endsWith('~~')) {
         return (
           <del key={i} className="text-slate-400 line-through">
-            {processInline(safeString(part.slice(2, -2)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+            {processInline(safeString(part.slice(2, -2)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId, {
+              ...inlineOptions,
+              addressMeta: false,
+            })}
           </del>
         );
       }
       if (part.startsWith('==') && part.endsWith('==')) {
         return (
           <mark key={i} className="bg-amber-500/35 text-amber-100 px-0.5 rounded">
-            {processInline(safeString(part.slice(2, -2)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+            {processInline(safeString(part.slice(2, -2)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId, {
+              ...inlineOptions,
+              addressMeta: false,
+            })}
           </mark>
         );
       }
       if (part.startsWith('<u>') && part.endsWith('</u>')) {
         return (
           <u key={i} className="underline decoration-slate-300/75 underline-offset-[0.18em]">
-            {processInline(safeString(part.slice(3, -4)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+            {processInline(safeString(part.slice(3, -4)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId, {
+              ...inlineOptions,
+              addressMeta: false,
+            })}
           </u>
         );
       }
@@ -922,7 +1109,10 @@ export const processInline = (text, dirHandle, entityLookup, linkRegex, onNaviga
       if (part.startsWith('*') && part.endsWith('*')) {
         return (
           <em key={i} className="italic text-slate-200/85">
-            {processInline(safeString(part.slice(1, -1)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+            {processInline(safeString(part.slice(1, -1)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId, {
+              ...inlineOptions,
+              addressMeta: false,
+            })}
           </em>
         );
       }
@@ -938,7 +1128,12 @@ export const renderMarkdown = (text, dirHandle, entityMap, linkRegex, onNavigate
   return lines.map((line, i) => {
     if (line.startsWith('# ')) return <h1 key={`h1-${i}`} className="text-3xl font-heading font-bold text-slate-100 mb-4 border-b border-slate-700 pb-2 mt-6">{processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</h1>;
     if (line.startsWith('## ')) return <h2 key={`h2-${i}`} className="text-2xl font-heading font-bold text-cyan-200 mb-3 mt-4">{processInline(line.slice(3), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</h2>;
-    if (line.startsWith('- ')) return <li key={`li-${i}`} className="ml-6 list-disc mb-2 text-slate-300 font-serif">{processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</li>;
+    if (line.startsWith('- '))
+      return (
+        <li key={`li-${i}`} className="ml-6 list-disc mb-2 text-slate-300 font-serif">
+          {processInline(line.slice(2), dirHandle, lookup, linkRegex, onNavigate, selfEntityId, { addressMeta: true })}
+        </li>
+      );
     if (/^\d+\.\s/.test(line)) {
       const m = line.match(/^(\d+)\.\s(.*)$/);
       const orderNo = m?.[1] || '';
@@ -946,7 +1141,7 @@ export const renderMarkdown = (text, dirHandle, entityMap, linkRegex, onNavigate
       return (
         <p key={`oli-${i}`} className="mb-2 text-slate-300 font-serif leading-relaxed text-lg">
           <span className="inline-block min-w-7 text-slate-500">{orderNo}.</span>{' '}
-          {processInline(body, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+          {processInline(body, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, { addressMeta: true })}
         </p>
       );
     }

@@ -115,7 +115,9 @@ describe('mapHierarchySync', () => {
     expect(parent).toBeTruthy();
     expect(source.info).toContain('## Phân tầng bản đồ (AUTO)');
     expect(source.info).toContain('Địa chỉ (chuỗi địa lý):');
-    expect(source.info).toContain('Trực thuộc: [[Việt Long Tinh Cầu]]');
+    // Parent do đồng bộ tạo (stub) — không chèn [[wiki]] rỗng; thẻ con m1 có sẵn mới dùng [[ ]].
+    expect(source.info).toContain('Trực thuộc: Việt Long Tinh Cầu');
+    expect(source.info).not.toContain('Trực thuộc: [[Việt Long Tinh Cầu]]');
     expect(parent.info).toContain('## Bản đồ trực thuộc');
     expect(parent.info).toContain('[[Man Hoang Đại Lục]] (Đại Lục · Tiểu Thế Giới)');
   });
@@ -193,7 +195,9 @@ describe('mapHierarchySync', () => {
     const outer = mapEntities.find((ent) => ent.name === 'Hạ Giới Vị Diện');
 
     expect(source.info).toContain('Trực thuộc: [[Việt Long Tinh Cầu]]');
-    expect(source.info).toContain('Ngoại tầng 1: [[Hạ Giới Vị Diện]]');
+    // Hạ Giới do đồng bộ tạo khi thiếu thẻ — stub, không wiki.
+    expect(source.info).toContain('Ngoại tầng 1: Hạ Giới Vị Diện');
+    expect(source.info).not.toContain('Ngoại tầng 1: [[Hạ Giới Vị Diện]]');
     expect(outer).toBeTruthy();
     expect(outer.info).toContain('[[Việt Long Tinh Cầu]] (Tinh Cầu · Tiểu Thế Giới)');
     expect(outer.info).toContain('  - [[Man Hoang Đại Lục]] (Đại Lục · Tiểu Thế Giới)');
@@ -229,7 +233,8 @@ describe('mapHierarchySync', () => {
     const child = mapEntities.find((ent) => ent.id === 'm1');
 
     expect(parent).toBeTruthy();
-    expect(child.info).toContain('[[Viet Long Tinh Cau]]');
+    expect(child.info).toContain('Trực thuộc: Viet Long Tinh Cau');
+    expect(child.info).not.toContain('[[Viet Long Tinh Cau]]');
     expect(parent.info).toContain('[[Man Hoang Dai Luc]]');
   });
 
@@ -374,7 +379,8 @@ describe('mapHierarchySync', () => {
     const parent = mapEntities.find((ent) => ent.name === 'Viet Long Tinh');
     const generic = mapEntities.find((ent) => normalizeAsciiText(ent.name) === 'dai luc');
 
-    expect(String(child?.info || '')).toContain('Trực thuộc: [[Viet Long Tinh]]');
+    expect(String(child?.info || '')).toContain('Trực thuộc: Viet Long Tinh');
+    expect(String(child?.info || '')).not.toContain('Trực thuộc: [[Viet Long Tinh]]');
     expect(parent).toBeTruthy();
     expect(generic).toBeFalsy();
   });

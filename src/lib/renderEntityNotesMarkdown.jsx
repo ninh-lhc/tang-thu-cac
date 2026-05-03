@@ -98,13 +98,15 @@ const isBlockBoundary = (line) => {
   );
 };
 
+const ADDRESS_META_OPTS = { addressMeta: true };
+
 const renderInlineBodyWithLeadLabel = (body, context) => {
   const normalized = safeString(body);
   const match = normalized.match(LEAD_BOLD_LABEL_RE);
   const { dirHandle, lookup, linkRegex, onNavigate, selfEntityId } = context;
 
   if (!match) {
-    return processInline(normalized, dirHandle, lookup, linkRegex, onNavigate, selfEntityId);
+    return processInline(normalized, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ADDRESS_META_OPTS);
   }
 
   const labelText = safeString(match[1]).trim();
@@ -125,7 +127,7 @@ const renderInlineBodyWithLeadLabel = (body, context) => {
       </div>
       {restText ? (
         <div className="pl-0.5">
-          {processInline(restText, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+          {processInline(restText, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ADDRESS_META_OPTS)}
         </div>
       ) : null}
     </div>

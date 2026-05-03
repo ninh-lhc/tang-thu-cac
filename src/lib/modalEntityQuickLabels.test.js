@@ -4,6 +4,7 @@ import {
   MAIN_FORM_SLOTS,
   MAIN_STATUS_BASELINE_LABELS,
   MAP_QUICK_SLOTS,
+  mergeCollectionQuickSlotFieldsIntoTemplate,
   resolveMainFormLabels,
   resolveQuickSlotLabel,
   resolveQuickSlotLabels,
@@ -40,6 +41,29 @@ describe('resolveQuickSlotLabel', () => {
     const trucThuoc = MAP_QUICK_SLOTS.find((s) => s.key === 'trucThuoc');
     const tpl = [{ id: 'f_vi_tri', label: 'Thuộc về' }];
     expect(resolveQuickSlotLabel(tpl, trucThuoc)).toBe('Thuộc về');
+  });
+});
+
+describe('mergeCollectionQuickSlotFieldsIntoTemplate', () => {
+  it('thêm các field slot Bản đồ còn thiếu và chèn trước f_alias', () => {
+    const tpl = [
+      { id: 'f_status', label: 'Mức nguy hiểm' },
+      { id: 'f_alias', label: 'Wiki' },
+    ];
+    const merged = mergeCollectionQuickSlotFieldsIntoTemplate(tpl, { map: true });
+    const aliasIdx = merged.findIndex((f) => f.id === 'f_alias');
+    const heIdx = merged.findIndex((f) => f.id === 'f_he_gioi_ban_do');
+    expect(heIdx).toBeGreaterThanOrEqual(0);
+    expect(heIdx).toBeLessThan(aliasIdx);
+    expect(merged.some((f) => f.id === 'f_title')).toBe(true);
+    expect(merged.some((f) => f.id === 'f_vi_tri')).toBe(true);
+  });
+
+  it('không trùng field đã có trong mẫu', () => {
+    const tpl = [{ id: 'f_title', label: 'Đã có' }, { id: 'f_alias', label: 'X' }];
+    const merged = mergeCollectionQuickSlotFieldsIntoTemplate(tpl, { map: true });
+    expect(merged.filter((f) => f.id === 'f_title')).toHaveLength(1);
+    expect(merged.find((f) => f.id === 'f_title')?.label).toBe('Đã có');
   });
 });
 

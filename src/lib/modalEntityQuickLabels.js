@@ -195,3 +195,37 @@ export function resolveMainFormLabels(
     },
   };
 }
+
+/**
+ * Gộp các trường bắt buộc của slot «Gợi ý nhanh» Bản đồ / Thế lực vào mẫu hiển thị trong modal,
+ * để khối «Trường thông tin» khớp với ô đang thấy ở Tổng quan (không đợi async ensure).
+ * Chèn trước `f_alias` giống `handleEnsureTabTemplateFields` trong App.jsx.
+ */
+export function mergeCollectionQuickSlotFieldsIntoTemplate(fieldsTemplate, { map = false, force = false } = {}) {
+  const base = Array.isArray(fieldsTemplate) ? [...fieldsTemplate] : [];
+  const existing = new Set(base.map((f) => safeString(f?.id).trim()).filter(Boolean));
+  const insertBeforeAlias = (field) => {
+    const fid = safeString(field?.id).trim();
+    const label = safeString(field?.label).trim();
+    if (!fid || existing.has(fid)) return;
+    const aliasIdx = base.findIndex((f) => safeString(f?.id).trim() === WIKI_ALIAS_FIELD.id);
+    const insertIdx = aliasIdx === -1 ? base.length : aliasIdx;
+    base.splice(insertIdx, 0, { id: fid, label: label || fid });
+    existing.add(fid);
+  };
+  if (map) {
+    MAP_QUICK_SLOTS.forEach((slot) => {
+      const fid = safeString(slot.fieldId).trim();
+      if (!fid) return;
+      insertBeforeAlias({ id: fid, label: safeString(slot.defaultLabel).trim() || fid });
+    });
+  }
+  if (force) {
+    FORCE_QUICK_SLOTS.forEach((slot) => {
+      const fid = safeString(slot.fieldId).trim();
+      if (!fid) return;
+      insertBeforeAlias({ id: fid, label: safeString(slot.defaultLabel).trim() || fid });
+    });
+  }
+  return base;
+}

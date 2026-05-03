@@ -610,8 +610,8 @@ export function AppCollectionSection({
               );
               const forceTypeLine = safeString(currentTabConfig?.label || '').trim();
               const statusLine =
-                safeString(detailEntity?.status).trim() ||
-                safeString(detailEntity?.dynamicData?.f_status).trim();
+                safeString(detailEntity?.dynamicData?.f_status).trim() ||
+                safeString(detailEntity?.status).trim();
               const mapTraitLabel = isMapDetail ? getMapTraitLabel(statusLine) : '';
               const mapTraitBadgeStyle = getMapTraitBadgeStyle(mapTraitLabel);
               const mapStatusForSubtitle =
@@ -619,7 +619,7 @@ export function AppCollectionSection({
               const profileSubtitle = isMapDetail
                 ? [...new Set([mapParentLine, mapStatusForSubtitle].filter(Boolean))].join(' · ')
                 : isForceDetail
-                  ? [...new Set([forceTypeLine, statusLine, forceLocationLine].filter(Boolean))].join(' Â· ')
+                  ? statusLine || [...new Set([forceTypeLine, forceLocationLine].filter(Boolean))].join(' · ')
                   : statusLine;
               return (
               <div

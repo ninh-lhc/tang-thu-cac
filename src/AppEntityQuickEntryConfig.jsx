@@ -12,6 +12,11 @@ import {
   MAX_QUICK_ENTRY_SLOTS,
 } from './lib/entityQuickEntrySlots.js';
 
+const DEP_SCOPE_LOCAL = 'local';
+const DEP_SCOPE_AREA = 'area';
+const TIER_SCOPE_LOCAL = 'local';
+const TIER_SCOPE_AREA = 'area';
+
 function buildQuickEntryState(entityQuickEntry, templateList) {
   const tabStub = { entityQuickEntry };
   const slotFields = getEffectiveQuickEntrySlotFields(tabStub, templateList);
@@ -104,22 +109,80 @@ function serializeDependencyDraft(draft, templateList) {
   return out;
 }
 
+function normalizeTierSchemaDraft(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const toText = (arr) => (Array.isArray(arr) ? arr.map((x) => safeString(x).trim()).filter(Boolean).join('\n') : '');
+  return {
+    none: toText(source.none),
+    one: toText(source.one),
+    two: toText(source.two),
+  };
+}
+
+function serializeTierSchemaDraft(draft) {
+  const dedupe = (text) => {
+    const out = [];
+    const seen = new Set();
+    safeString(text)
+      .split(/\r?\n/)
+      .map((line) => safeString(line).trim())
+      .filter(Boolean)
+      .forEach((line) => {
+        const key = normalizeAsciiText(line);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        out.push(line);
+      });
+    return out;
+  };
+  return {
+    none: dedupe(draft?.none),
+    one: dedupe(draft?.one),
+    two: dedupe(draft?.two),
+  };
+}
+
+function normalizeTierFieldMapDraft(raw, selectable = []) {
+  const allowed = new Set((Array.isArray(selectable) ? selectable : []).map((f) => safeString(f?.id).trim()).filter(Boolean));
+  const scaleFieldIdRaw = safeString(raw?.scaleFieldId).trim();
+  const parentFieldIdRaw = safeString(raw?.parentFieldId).trim();
+  const fallbackScale = allowed.has('f_he_gioi_ban_do') ? 'f_he_gioi_ban_do' : '';
+  const fallbackParent = allowed.has('f_vi_tri') ? 'f_vi_tri' : '';
+  return {
+    scaleFieldId: allowed.has(scaleFieldIdRaw) ? scaleFieldIdRaw : fallbackScale,
+    parentFieldId: allowed.has(parentFieldIdRaw) ? parentFieldIdRaw : fallbackParent,
+  };
+}
+
 export function AppEntityQuickEntryConfig({
   tabLonId,
   tabNhoId,
   fieldsTemplate,
   entityQuickEntry,
   fieldSuggestionDependencies,
+  mapParentTierSchema,
+  mapParentTierFieldMap,
   onSetEntityQuickEntry,
   onSetFieldSuggestionDependencies,
+  onRequestPropagateDependenciesToLon,
+  onSetMapParentTierSchema,
+  onSetMapParentTierFieldMap,
+  onRequestPropagateMapParentTierSchemaToLon,
+  onRequestPropagateMapParentTierFieldMapToLon,
   onSetTemplateFieldSortPrefix,
   onRequestPropagateToLon,
   onRequestPropagateToAllLons,
   showToast,
+  /** false = tab Bản đồ / Thế lực (form gợi ý riêng); vẫn hiện «Phụ thuộc gợi ý». */
+  showQuickEntrySlots = true,
 }) {
   const lon = safeString(tabLonId).trim();
   const nho = safeString(tabNhoId).trim();
-  if (!lon || !nho || typeof onSetEntityQuickEntry !== 'function') return null;
+  const canEditSlots = typeof onSetEntityQuickEntry === 'function';
+  const canEditDeps = typeof onSetFieldSuggestionDependencies === 'function';
+  const canEditTierSchema = typeof onSetMapParentTierSchema === 'function';
+  const canEditTierFieldMap = typeof onSetMapParentTierFieldMap === 'function';
+  if (!lon || !nho || (!canEditSlots && !canEditDeps && !canEditTierSchema && !canEditTierFieldMap)) return null;
 
   const templateList = useMemo(
     () => (Array.isArray(fieldsTemplate) ? fieldsTemplate : []),
@@ -137,9 +200,24 @@ export function AppEntityQuickEntryConfig({
     [fieldSuggestionDependencies, templateList]
   );
   const savedDepsSig = useMemo(() => JSON.stringify(savedDeps), [savedDeps]);
+  const savedTierSchema = useMemo(() => normalizeTierSchemaDraft(mapParentTierSchema), [mapParentTierSchema]);
+  const savedTierSchemaSig = useMemo(() => JSON.stringify(savedTierSchema), [savedTierSchema]);
+  const selectable = useMemo(
+    () => templateList.filter((f) => f && f.id && f.id !== 'f_alias'),
+    [templateList]
+  );
+  const savedTierFieldMap = useMemo(
+    () => normalizeTierFieldMapDraft(mapParentTierFieldMap, selectable),
+    [mapParentTierFieldMap, selectable]
+  );
+  const savedTierFieldMapSig = useMemo(() => JSON.stringify(savedTierFieldMap), [savedTierFieldMap]);
 
   const [draft, setDraft] = useState(() => saved);
   const [draftDeps, setDraftDeps] = useState(() => savedDeps);
+  const [depScope, setDepScope] = useState(DEP_SCOPE_LOCAL);
+  const [tierScope, setTierScope] = useState(TIER_SCOPE_LOCAL);
+  const [draftTierSchema, setDraftTierSchema] = useState(() => savedTierSchema);
+  const [draftTierFieldMap, setDraftTierFieldMap] = useState(() => savedTierFieldMap);
 
   useEffect(() => {
     setDraft(saved);
@@ -147,50 +225,127 @@ export function AppEntityQuickEntryConfig({
   useEffect(() => {
     setDraftDeps(savedDeps);
   }, [pathKey, savedDepsSig]);
+  useEffect(() => {
+    setDraftTierSchema(savedTierSchema);
+  }, [pathKey, savedTierSchemaSig]);
+  useEffect(() => {
+    setDraftTierFieldMap(savedTierFieldMap);
+  }, [pathKey, savedTierFieldMapSig]);
 
   const dirty = !statesEqual(draft, saved);
-  const selectable = templateList.filter((f) => f && f.id && f.id !== 'f_alias');
+  const hasTierFields = Boolean(draftTierFieldMap.scaleFieldId && draftTierFieldMap.parentFieldId);
   const { slotFields, slotLabels } = draft;
   const optIds = new Set(selectable.map((f) => f.id));
   const canAdd =
     slotFields.length < MAX_QUICK_ENTRY_SLOTS && selectable.some((f) => f && !slotFields.includes(f.id));
 
   const commitTabThis = useCallback(() => {
+    if (!canEditSlots) return;
     onSetEntityQuickEntry(lon, nho, draft.slotFields, draft.slotLabels, {
       dualFirstRow: draft.dualFirstRow,
       useSelectUi: draft.useSelectUi,
     });
     showToast?.('Đã lưu cấu hình ô gợi ý nhanh cho tab này (mẫu tab nhỏ).', 'success');
-  }, [lon, nho, draft, onSetEntityQuickEntry, showToast]);
+  }, [canEditSlots, lon, nho, draft, onSetEntityQuickEntry, showToast]);
 
   const handleRevert = useCallback(() => {
     setDraft(saved);
   }, [saved]);
 
   const handlePropagateClick = useCallback(() => {
-    if (typeof onRequestPropagateToLon !== 'function') return;
+    if (!canEditSlots || typeof onRequestPropagateToLon !== 'function') return;
     onRequestPropagateToLon(lon, draft.slotFields, draft.slotLabels, {
       dualFirstRow: draft.dualFirstRow,
       useSelectUi: draft.useSelectUi,
     });
-  }, [lon, onRequestPropagateToLon, draft]);
+  }, [canEditSlots, lon, onRequestPropagateToLon, draft]);
 
   const handlePropagateAllLonsClick = useCallback(() => {
-    if (typeof onRequestPropagateToAllLons !== 'function') return;
+    if (!canEditSlots || typeof onRequestPropagateToAllLons !== 'function') return;
     onRequestPropagateToAllLons(draft.slotFields, draft.slotLabels, {
       dualFirstRow: draft.dualFirstRow,
       useSelectUi: draft.useSelectUi,
     });
-  }, [onRequestPropagateToAllLons, draft]);
+  }, [canEditSlots, onRequestPropagateToAllLons, draft]);
   const depsDirty = useMemo(() => {
     return JSON.stringify(draftDeps) !== savedDepsSig;
   }, [draftDeps, savedDepsSig]);
+  const depScopeButtonClass = (active) =>
+    `flex-1 min-w-0 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+      active
+        ? 'bg-emerald-800/80 text-white'
+        : 'bg-slate-950/65 text-slate-300 hover:bg-slate-900/75'
+    }`;
+  const tierSchemaDirty = useMemo(
+    () => JSON.stringify(draftTierSchema) !== savedTierSchemaSig,
+    [draftTierSchema, savedTierSchemaSig]
+  );
+  const tierFieldMapDirty = useMemo(
+    () => JSON.stringify(draftTierFieldMap) !== savedTierFieldMapSig,
+    [draftTierFieldMap, savedTierFieldMapSig]
+  );
   const handleSaveDependencies = useCallback(() => {
     if (typeof onSetFieldSuggestionDependencies !== 'function') return;
     const normalized = serializeDependencyDraft(draftDeps, templateList);
+    if (depScope === DEP_SCOPE_AREA && typeof onRequestPropagateDependenciesToLon === 'function') {
+      onRequestPropagateDependenciesToLon(lon, normalized);
+      return;
+    }
     onSetFieldSuggestionDependencies(lon, nho, normalized);
     showToast?.('Đã lưu phụ thuộc gợi ý theo trường trong tab này.', 'success');
-  }, [onSetFieldSuggestionDependencies, draftDeps, templateList, lon, nho, showToast]);
+  }, [
+    onSetFieldSuggestionDependencies,
+    onRequestPropagateDependenciesToLon,
+    depScope,
+    draftDeps,
+    templateList,
+    lon,
+    nho,
+    showToast,
+  ]);
+  const handleSaveTierSchema = useCallback(() => {
+    if (!canEditTierSchema) return;
+    const normalized = serializeTierSchemaDraft(draftTierSchema);
+    if (tierScope === TIER_SCOPE_AREA && typeof onRequestPropagateMapParentTierSchemaToLon === 'function') {
+      onRequestPropagateMapParentTierSchemaToLon(lon, normalized);
+      return;
+    }
+    onSetMapParentTierSchema(normalized, { lonId: lon, nhoId: nho });
+    showToast?.('Đã lưu rule phân tầng «Trực thuộc» cho tab này.', 'success');
+  }, [
+    canEditTierSchema,
+    draftTierSchema,
+    tierScope,
+    onRequestPropagateMapParentTierSchemaToLon,
+    onSetMapParentTierSchema,
+    lon,
+    nho,
+    showToast,
+  ]);
+  const handleSaveTierFieldMap = useCallback(() => {
+    if (!canEditTierFieldMap) return;
+    const normalized = normalizeTierFieldMapDraft(draftTierFieldMap, selectable);
+    if (!normalized.scaleFieldId || !normalized.parentFieldId) {
+      showToast?.('Chọn đủ Trường Quy mô và Trường Trực thuộc.', 'warning');
+      return;
+    }
+    if (tierScope === TIER_SCOPE_AREA && typeof onRequestPropagateMapParentTierFieldMapToLon === 'function') {
+      onRequestPropagateMapParentTierFieldMapToLon(lon, normalized);
+      return;
+    }
+    onSetMapParentTierFieldMap(normalized, { lonId: lon, nhoId: nho });
+    showToast?.('Đã lưu cặp trường cho rule phân tầng.', 'success');
+  }, [
+    canEditTierFieldMap,
+    draftTierFieldMap,
+    selectable,
+    tierScope,
+    onRequestPropagateMapParentTierFieldMapToLon,
+    onSetMapParentTierFieldMap,
+    lon,
+    nho,
+    showToast,
+  ]);
 
   return (
     <details className="rounded-xl border border-amber-800/40 bg-amber-950/12 p-2.5">
@@ -201,21 +356,27 @@ export function AppEntityQuickEntryConfig({
               Cấu hình mẫu: các ô gợi ý nhanh
             </div>
             <div className="text-[10px] text-slate-400 font-serif mt-0.5 leading-snug line-clamp-2">
-              Chỉnh tại đây, rồi <strong className="text-amber-200/90">Lưu (tab này)</strong> — chưa lưu thì cấu hình mẫu trên
-              truyện chưa đổi. Tối đa {MAX_QUICK_ENTRY_SLOTS} trường; thêm{' '}
-              <code className="text-amber-200/90">f_*</code> ở «Trường thông tin (mẫu tab)» cùng mục nâng cao, phía trên khối cấu hình ô.
+              {showQuickEntrySlots && canEditSlots ? (
+                <>
+                  Chỉnh tại đây, rồi <strong className="text-amber-200/90">Lưu (tab này)</strong> — chưa lưu thì cấu hình mẫu trên
+                  truyện chưa đổi. Tối đa {MAX_QUICK_ENTRY_SLOTS} trường; thêm{' '}
+                  <code className="text-amber-200/90">f_*</code> ở «Trường thông tin (mẫu tab)» cùng mục nâng cao, phía trên khối cấu hình ô.
+                </>
+              ) : (
+                <>
+                  Tab này dùng <strong className="text-amber-200/90">form gợi ý riêng</strong> (Bản đồ / Thế lực) ở Tổng quan. Ở đây
+                  bạn vẫn cấu hình <strong className="text-violet-200/90">phụ thuộc gợi ý theo trường</strong> (A → B); bấm{' '}
+                  <strong className="text-emerald-200/90">Lưu phụ thuộc</strong> để ghi vào mẫu tab.
+                </>
+              )}
             </div>
           </div>
           <div className="text-[9px] text-amber-200/80 font-semibold shrink-0">Mở</div>
         </div>
       </summary>
       <div className="mt-2 space-y-2">
-        {dirty && (
-          <p className="text-[10px] text-amber-200/90 font-serif rounded-md border border-amber-800/50 bg-amber-950/30 px-2 py-1">
-            Có thay đổi chưa lưu mẫu tab.
-          </p>
-        )}
-        <details className="rounded-lg border border-violet-900/35 bg-slate-950/45 p-2">
+        {canEditDeps && (
+        <details className="rounded-lg border border-violet-900/35 bg-slate-950/45 p-2" defaultOpen>
           <summary className="cursor-pointer text-[10px] font-bold text-violet-200 uppercase tracking-widest">
             Phụ thuộc gợi ý (Trường A → Trường B)
           </summary>
@@ -333,6 +494,31 @@ export function AppEntityQuickEntryConfig({
               </div>
             ))}
             <div className="flex flex-wrap items-center gap-1.5">
+              {typeof onRequestPropagateDependenciesToLon === 'function' && (
+                <div className="w-full max-w-[16rem] space-y-1">
+                  <div className="text-[9px] font-bold text-emerald-200/90 uppercase tracking-widest">Phạm vi lưu</div>
+                  <div className="grid grid-cols-2 rounded-md border border-emerald-900/45 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setDepScope(DEP_SCOPE_LOCAL)}
+                      className={depScopeButtonClass(depScope === DEP_SCOPE_LOCAL)}
+                      aria-pressed={depScope === DEP_SCOPE_LOCAL}
+                      title="Chỉ lưu cho tab con đang mở"
+                    >
+                      Cục bộ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDepScope(DEP_SCOPE_AREA)}
+                      className={depScopeButtonClass(depScope === DEP_SCOPE_AREA)}
+                      aria-pressed={depScope === DEP_SCOPE_AREA}
+                      title="Ghi đè mọi tab con cùng tab lớn"
+                    >
+                      Khu vực
+                    </button>
+                  </div>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -348,55 +534,184 @@ export function AppEntityQuickEntryConfig({
                 onClick={handleSaveDependencies}
                 className="inline-flex items-center gap-1 rounded-md border border-emerald-800/50 bg-emerald-950/40 px-2 py-1 text-[10px] font-bold text-emerald-100 hover:bg-emerald-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Save size={12} /> Lưu phụ thuộc
+                <Save size={12} /> {depScope === DEP_SCOPE_AREA ? 'Lưu khu vực' : 'Lưu cục bộ'}
               </button>
             </div>
           </div>
         </details>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={commitTabThis}
-            disabled={!dirty}
-            className="inline-flex items-center gap-1 rounded-md border border-emerald-800/50 bg-emerald-950/40 px-2 py-1 text-[9px] font-bold text-emerald-100 hover:bg-emerald-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Save size={12} /> Lưu (tab này)
-          </button>
-          <button
-            type="button"
-            onClick={handleRevert}
-            disabled={!dirty}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-600 bg-slate-950/60 px-2 py-1 text-[9px] font-bold text-slate-300 hover:bg-slate-800/50 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Hoàn tác
-          </button>
-          {typeof onRequestPropagateToLon === 'function' && (
-            <button
-              type="button"
-              onClick={handlePropagateClick}
-              className="inline-flex items-center gap-1 rounded-md border border-cyan-800/50 bg-cyan-950/35 px-2 py-1 text-[9px] font-bold text-cyan-100 hover:bg-cyan-900/40"
+        )}
+        {(canEditTierSchema || canEditTierFieldMap) && (
+          <details className="rounded-lg border border-fuchsia-900/35 bg-slate-950/45 p-2">
+            <summary className="cursor-pointer text-[10px] font-bold text-fuchsia-200 uppercase tracking-widest">
+              Rule phân tầng «Trực thuộc» (theo Quy mô)
+            </summary>
+            <div className="mt-2 space-y-2">
+              <p className="text-[10px] text-slate-400 font-serif leading-snug">
+                Mỗi dòng 1 từ khóa (không dấu). Quy mô chứa từ khóa sẽ hiện 0 / 1 / 2 ô «Trực thuộc».
+              </p>
+              <div className="grid gap-2 md:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-fuchsia-200/85">Trường Quy mô</span>
+                  <select
+                    value={draftTierFieldMap.scaleFieldId}
+                    onChange={(e) => setDraftTierFieldMap((d) => ({ ...d, scaleFieldId: safeString(e.target.value).trim() }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 font-mono outline-none focus:border-fuchsia-600/50"
+                  >
+                    <option value="">-- Chọn trường --</option>
+                    {selectable.map((f) => (
+                      <option key={`tier-scale-${f.id}`} value={f.id}>
+                        {safeString(f.label) || f.id} ({f.id})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-fuchsia-200/85">Trường Trực thuộc</span>
+                  <select
+                    value={draftTierFieldMap.parentFieldId}
+                    onChange={(e) => setDraftTierFieldMap((d) => ({ ...d, parentFieldId: safeString(e.target.value).trim() }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 font-mono outline-none focus:border-fuchsia-600/50"
+                  >
+                    <option value="">-- Chọn trường --</option>
+                    {selectable.map((f) => (
+                      <option key={`tier-parent-${f.id}`} value={f.id}>
+                        {safeString(f.label) || f.id} ({f.id})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="grid gap-2 md:grid-cols-3">
+                <label className="space-y-1">
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-fuchsia-200/85">0 ô trực thuộc</span>
+                  <textarea
+                    rows={4}
+                    value={draftTierSchema.none}
+                    onChange={(e) => setDraftTierSchema((d) => ({ ...d, none: e.target.value }))}
+                    className="w-full bg-slate-950 border border-fuchsia-900/40 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 font-serif outline-none focus:border-fuchsia-600/50"
+                    placeholder={'tinh cau\ngioi\nthien ha'}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-fuchsia-200/85">1 ô trực thuộc</span>
+                  <textarea
+                    rows={4}
+                    value={draftTierSchema.one}
+                    onChange={(e) => setDraftTierSchema((d) => ({ ...d, one: e.target.value }))}
+                    className="w-full bg-slate-950 border border-fuchsia-900/40 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 font-serif outline-none focus:border-fuchsia-600/50"
+                    placeholder={'dai luc\nchau\nde quoc'}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-fuchsia-200/85">2 ô trực thuộc</span>
+                  <textarea
+                    rows={4}
+                    value={draftTierSchema.two}
+                    onChange={(e) => setDraftTierSchema((d) => ({ ...d, two: e.target.value }))}
+                    className="w-full bg-slate-950 border border-fuchsia-900/40 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 font-serif outline-none focus:border-fuchsia-600/50"
+                    placeholder={'thanh\ntran\nlang'}
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {typeof onRequestPropagateMapParentTierSchemaToLon === 'function' && (
+                  <div className="w-full max-w-[16rem] space-y-1">
+                    <div className="text-[9px] font-bold text-emerald-200/90 uppercase tracking-widest">Phạm vi lưu</div>
+                    <div className="grid grid-cols-2 rounded-md border border-emerald-900/45 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setTierScope(TIER_SCOPE_LOCAL)}
+                        className={depScopeButtonClass(tierScope === TIER_SCOPE_LOCAL)}
+                        aria-pressed={tierScope === TIER_SCOPE_LOCAL}
+                        title="Chỉ lưu cho tab con đang mở"
+                      >
+                        Cục bộ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTierScope(TIER_SCOPE_AREA)}
+                        className={depScopeButtonClass(tierScope === TIER_SCOPE_AREA)}
+                        aria-pressed={tierScope === TIER_SCOPE_AREA}
+                        title="Ghi đè mọi tab con cùng tab lớn"
+                      >
+                        Khu vực
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  disabled={!tierFieldMapDirty}
+                  onClick={handleSaveTierFieldMap}
+                  className="inline-flex items-center gap-1 rounded-md border border-cyan-800/50 bg-cyan-950/40 px-2 py-1 text-[10px] font-bold text-cyan-100 hover:bg-cyan-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Save size={12} /> {tierScope === TIER_SCOPE_AREA ? 'Lưu trường (khu vực)' : 'Lưu trường (cục bộ)'}
+                </button>
+                <button
+                  type="button"
+                  disabled={!tierSchemaDirty || !hasTierFields}
+                  onClick={handleSaveTierSchema}
+                  className="inline-flex items-center gap-1 rounded-md border border-fuchsia-800/50 bg-fuchsia-950/40 px-2 py-1 text-[10px] font-bold text-fuchsia-100 hover:bg-fuchsia-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Save size={12} /> {tierScope === TIER_SCOPE_AREA ? 'Lưu rule (khu vực)' : 'Lưu rule (cục bộ)'}
+                </button>
+              </div>
+            </div>
+          </details>
+        )}
+        {canEditSlots && showQuickEntrySlots && dirty && (
+          <p className="text-[10px] text-amber-200/90 font-serif rounded-md border border-amber-800/50 bg-amber-950/30 px-2 py-1">
+            Có thay đổi chưa lưu mẫu tab.
+          </p>
+        )}
+        {canEditSlots && showQuickEntrySlots && (
+          <>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={commitTabThis}
+                disabled={!dirty}
+                className="inline-flex items-center gap-1 rounded-md border border-emerald-800/50 bg-emerald-950/40 px-2 py-1 text-[9px] font-bold text-emerald-100 hover:bg-emerald-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Save size={12} /> Lưu (tab này)
+              </button>
+              <button
+                type="button"
+                onClick={handleRevert}
+                disabled={!dirty}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-600 bg-slate-950/60 px-2 py-1 text-[9px] font-bold text-slate-300 hover:bg-slate-800/50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Hoàn tác
+              </button>
+              {typeof onRequestPropagateToLon === 'function' && (
+                <button
+                  type="button"
+                  onClick={handlePropagateClick}
+                  className="inline-flex items-center gap-1 rounded-md border border-cyan-800/50 bg-cyan-950/35 px-2 py-1 text-[9px] font-bold text-cyan-100 hover:bg-cyan-900/40"
+                >
+                  Áp cả tab lớn
+                </button>
+              )}
+              {typeof onRequestPropagateToAllLons === 'function' && (
+                <button
+                  type="button"
+                  onClick={handlePropagateAllLonsClick}
+                  className="inline-flex items-center gap-1 rounded-md border border-violet-800/50 bg-violet-950/35 px-2 py-1 text-[9px] font-bold text-violet-100 hover:bg-violet-900/40"
+                >
+                  Áp mọi mục lớn
+                </button>
+              )}
+            </div>
+            <p
+              className="text-[9px] text-slate-500 font-serif leading-snug line-clamp-2"
+              title="«Áp cả tab lớn» / «Áp mọi mục lớn» dùng nháp hiện tại (kể cả chưa Lưu) — xác nhận rồi ghi đè mọi tab sưu tập theo phạm vi. Thứ tự từng dòng trong «Danh sách (AUTO)» chỉnh trên từng mục con."
             >
-              Áp cả tab lớn
-            </button>
-          )}
-          {typeof onRequestPropagateToAllLons === 'function' && (
-            <button
-              type="button"
-              onClick={handlePropagateAllLonsClick}
-              className="inline-flex items-center gap-1 rounded-md border border-violet-800/50 bg-violet-950/35 px-2 py-1 text-[9px] font-bold text-violet-100 hover:bg-violet-900/40"
-            >
-              Áp mọi mục lớn
-            </button>
-          )}
-        </div>
-        <p
-          className="text-[9px] text-slate-500 font-serif leading-snug line-clamp-2"
-          title="«Áp cả tab lớn» / «Áp mọi mục lớn» dùng nháp hiện tại (kể cả chưa Lưu) — xác nhận rồi ghi đè mọi tab sưu tập theo phạm vi. Thứ tự từng dòng trong «Danh sách (AUTO)» chỉnh trên từng mục con."
-        >
-          «Áp cả / Áp mọi mục lớn» dùng nháp hiện tại; xác nhận rồi ghi đè. Danh sách (AUTO) từng mục: chỉnh riêng từng
-          mục con.
-        </p>
-        {selectable.length === 0 ? (
+              «Áp cả / Áp mọi mục lớn» dùng nháp hiện tại; xác nhận rồi ghi đè. Danh sách (AUTO) từng mục: chỉnh riêng từng
+              mục con.
+            </p>
+          </>
+        )}
+        {canEditSlots && showQuickEntrySlots && (selectable.length === 0 ? (
           <p className="text-[11px] text-amber-100/90 font-serif">
             Thêm trường ở «Trường thông tin (mẫu tab)» trong cùng mục nâng cao (trên) để gán ô gợi ý.
           </p>
@@ -568,7 +883,7 @@ export function AppEntityQuickEntryConfig({
               </label>
             </div>
           </div>
-        )}
+        ))}
       </div>
     </details>
   );

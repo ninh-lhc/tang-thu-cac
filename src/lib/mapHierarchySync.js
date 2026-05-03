@@ -20,6 +20,26 @@ const AUTO_MAP_CHILDREN_END = '<!-- AUTO_MAP_CHILDREN_LIST:END -->';
 const MAP_META_TITLE = '## Phân tầng bản đồ (AUTO)';
 const MAP_CHILDREN_TITLE = '## Bản đồ trực thuộc';
 const MAP_AUTO_END = '> (Tự động cập nhật theo cây bản đồ)';
+
+/** Thẻ do đồng bộ tự tạo để neo parent — chưa «Tu Bổ» lưu thì không chèn [[wiki]] rỗng. */
+export const TTC_MAP_ANCHOR_STUB_KEY = '_ttcMapAnchorStub';
+
+function mapEntityEligibleForWikiLink(entity) {
+  if (!entity || typeof entity !== 'object') return false;
+  const stub = entity.dynamicData && entity.dynamicData[TTC_MAP_ANCHOR_STUB_KEY];
+  if (stub) return false;
+  return true;
+}
+
+/** Chuỗi hiển thị một tên: [[wiki]] chỉ khi đã có thẻ thật (không phải anchor stub). */
+function formatMapWikiName(name, byName) {
+  const clean = safeString(name).trim();
+  if (!clean) return '';
+  const key = normalizeAscii(clean);
+  const rec = byName.get(key);
+  if (!rec || !mapEntityEligibleForWikiLink(rec.entity)) return clean;
+  return `[[${clean}]]`;
+}
 const DEFAULT_LEVEL = { label: 'Địa Danh', rank: 40 };
 const GENERIC_MAP_PARENT_KEYS = new Set([
   'dia danh',
@@ -283,6 +303,7 @@ function ensureMapEntityByName(tabData, name, mapContext = {}) {
       status: '',
       dynamicData: {
         ...(detected.label !== DEFAULT_LEVEL.label ? { f_title: detected.label } : {}),
+        [TTC_MAP_ANCHOR_STUB_KEY]: true,
       },
       info: '',
       milestones: [],
@@ -379,7 +400,7 @@ function hasMeaningfulMapMeta(record) {
   return safeString(record.levelLabel).trim() && record.levelLabel !== DEFAULT_LEVEL.label;
 }
 
-function buildMapMetaBlock(record) {
+function buildMapMetaBlock(record, byName) {
   const lines = [`- Loại địa danh: ${record.levelLabel}`];
   const scaleLabel = safeString(record.scaleLabel).trim();
   if (scaleLabel && normalizeAscii(scaleLabel) !== normalizeAscii(record.levelLabel)) {
@@ -387,13 +408,14 @@ function buildMapMetaBlock(record) {
   }
   if (Array.isArray(record.fullChain) && record.fullChain.length > 0) {
     const chain = [...record.fullChain, safeString(record.name).trim()].filter(Boolean);
-    lines.push(`- Địa chỉ (chuỗi địa lý): ${chain.join(' → ')}`);
+    const formatted = chain.map((n) => formatMapWikiName(n, byName)).join(' → ');
+    lines.push(`- Địa chỉ (chuỗi địa lý): ${formatted}`);
   }
   if (record.fullChain[0]) {
-    lines.push(`- Trực thuộc: [[${record.fullChain[0]}]]`);
+    lines.push(`- Trực thuộc: ${formatMapWikiName(record.fullChain[0], byName)}`);
   }
   record.fullChain.slice(1).forEach((name, idx) => {
-    lines.push(`- Ngoại tầng ${idx + 1}: [[${name}]]`);
+    lines.push(`- Ngoại tầng ${idx + 1}: ${formatMapWikiName(name, byName)}`);
   });
   return lines;
 }
@@ -456,7 +478,8 @@ function buildMapChildrenBlock(targetRecord, byName, descendantsIndex) {
   const lines = [];
   const renderNode = (node, depth) => {
     const indent = '  '.repeat(depth);
-    lines.push(`${indent}- [[${node.label}]] (${formatMapMeta(node.meta)})`);
+    const labelWiki = formatMapWikiName(node.label, byName);
+    lines.push(`${indent}- ${labelWiki} (${formatMapMeta(node.meta)})`);
     [...node.children.values()].sort(compareMapNodes).forEach((child) => renderNode(child, depth + 1));
   };
 
@@ -517,7 +540,7 @@ function syncMapHierarchyInTab(mapTab, mapPath = {}) {
 
     let next = base;
     if (hasMeaningfulMapMeta(record)) {
-      next = mergeAutoSection(next, MAP_META_TITLE, MAP_AUTO_END, buildMapMetaBlock(record));
+      next = mergeAutoSection(next, MAP_META_TITLE, MAP_AUTO_END, buildMapMetaBlock(record, byName));
     }
     const childBlock = buildMapChildrenBlock(record, byName, descendantsIndex);
     if (Array.isArray(childBlock) && childBlock.length > 0) {

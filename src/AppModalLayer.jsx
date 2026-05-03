@@ -148,6 +148,8 @@ export function AppModalLayer({
   handleSetTabAutoSyncLevels,
   handleSetTabAutoSyncFieldMap,
   handleSetTabMapEntrySuggestions,
+  handleSetTabMapParentTierSchema,
+  handleSetTabMapParentTierFieldMap,
   handleMergeTabFieldSuggestionList,
   handleAddTabTemplateField,
   handleEnsureTabTemplateFields,
@@ -156,8 +158,11 @@ export function AppModalLayer({
   handleSetTabTemplateFieldSortPrefix,
   handleSetTabEntityQuickEntry,
   handleSetTabFieldSuggestionDependencies,
+  requestPropagateFieldSuggestionDependenciesToLon,
   requestPropagateEntityQuickEntryToLon,
   requestPropagateEntityQuickEntryToAllLons,
+  requestPropagateMapParentTierSchemaToLon,
+  requestPropagateMapParentTierFieldMapToLon,
   handleSetTabFieldSource,
   handleApplySuggestedAutoSyncSetup,
   handleResyncAutoTabs,
@@ -202,6 +207,18 @@ export function AppModalLayer({
             showToast?.('Đã lưu list «Đặc Tính Địa Vực» dùng chung cho các tab Bản đồ cùng nhánh.', 'success');
           }
         }}
+        onSaveMapParentTierSchema={(schema, options = {}) => {
+          const lonId = options.lonId || activeTabLon;
+          const nhoId = options.nhoId || currentTabConfig?.id;
+          if (!lonId || !nhoId) return;
+          handleSetTabMapParentTierSchema(lonId, nhoId, schema);
+        }}
+        onSaveMapParentTierFieldMap={(fieldMap, options = {}) => {
+          const lonId = options.lonId || activeTabLon;
+          const nhoId = options.nhoId || currentTabConfig?.id;
+          if (!lonId || !nhoId) return;
+          handleSetTabMapParentTierFieldMap(lonId, nhoId, fieldMap);
+        }}
         handleAddTabTemplateField={handleAddTabTemplateField}
         handleEnsureTabTemplateFields={handleEnsureTabTemplateFields}
         handleRemoveTabTemplateField={handleRemoveTabTemplateField}
@@ -212,8 +229,11 @@ export function AppModalLayer({
         setConfirmDialog={setConfirmDialog}
         handleSetTabEntityQuickEntry={handleSetTabEntityQuickEntry}
         handleSetTabFieldSuggestionDependencies={handleSetTabFieldSuggestionDependencies}
+        requestPropagateFieldSuggestionDependenciesToLon={requestPropagateFieldSuggestionDependenciesToLon}
         requestPropagateEntityQuickEntryToLon={requestPropagateEntityQuickEntryToLon}
         requestPropagateEntityQuickEntryToAllLons={requestPropagateEntityQuickEntryToAllLons}
+        requestPropagateMapParentTierSchemaToLon={requestPropagateMapParentTierSchemaToLon}
+        requestPropagateMapParentTierFieldMapToLon={requestPropagateMapParentTierFieldMapToLon}
       />
       <ModalMilestone
         isOpen={isMilestoneModalOpen}

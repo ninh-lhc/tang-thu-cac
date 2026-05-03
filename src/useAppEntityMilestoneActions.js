@@ -26,7 +26,12 @@ import {
   removeOwnerAcquisitionMilestonesByItem,
   syncAutoOwnerMilestonesItemRename,
 } from './lib/autoOwnerMilestone.js';
-import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks, syncMapHierarchyNameReferences } from './lib/mapHierarchySync.js';
+import {
+  isMapCollectionScope,
+  syncAllMapHierarchyAutoBlocks,
+  syncMapHierarchyNameReferences,
+  TTC_MAP_ANCHOR_STUB_KEY,
+} from './lib/mapHierarchySync.js';
 import {
   getEntityAutoFieldValue,
   hasAnyAutoSyncFieldChanged,
@@ -260,6 +265,7 @@ export function useAppEntityMilestoneActions({
               : [];
             const prevDyn = tabData.entities[idx].dynamicData || {};
             const mergedDyn = { ...prevDyn, ...dynamicData };
+            delete mergedDyn[TTC_MAP_ANCHOR_STUB_KEY];
             const statusLine = getStatusLineForCurrentTab({
               ...tabData.entities[idx],
               dynamicData: mergedDyn,
@@ -299,6 +305,7 @@ export function useAppEntityMilestoneActions({
           }
         } else {
           const mergedNew = { ...dynamicData };
+          delete mergedNew[TTC_MAP_ANCHOR_STUB_KEY];
           const statusLine = getStatusLineForCurrentTab({
             dynamicData: mergedNew,
             status: '',

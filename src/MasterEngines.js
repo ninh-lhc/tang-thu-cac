@@ -160,6 +160,7 @@ export const DEFAULT_FIELDS_MAP = {
   'dia-danh': [
     { id: 'f_status', label: 'Mức nguy hiểm' },
     { id: 'f_title', label: 'Loại địa danh' },
+    { id: 'f_he_gioi_ban_do', label: 'Quy Mô Địa Vực' },
     { id: 'f_vi_tri', label: 'Vị trí' },
     { id: 'f_co_duyen', label: 'Kho báu / Cơ duyên' },
     { id: 'f_desc', label: 'Mô tả' }
@@ -571,6 +572,7 @@ export const INITIAL_TABS_CONFIG = [
         fieldsTemplate: [
           { id: 'f_status', label: 'Mức nguy hiểm' },
           { id: 'f_title', label: 'Loại địa danh' },
+          { id: 'f_he_gioi_ban_do', label: 'Quy Mô Địa Vực' },
           { id: 'f_vi_tri', label: 'Vị trí' },
           { id: 'f_co_duyen', label: 'Kho báu / Cơ duyên' },
           { id: 'f_desc', label: 'Mô tả' }

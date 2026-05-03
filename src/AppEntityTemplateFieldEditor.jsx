@@ -22,6 +22,8 @@ import {
   normalizeSuggestionRows,
   serializeSuggestionRows,
 } from './lib/suggestionRowFormat.js';
+import { collectAggregatedMapForceRankSuggestions } from './lib/mapTabForceBridge.js';
+import { isForceCollectionScope } from './lib/theLucBanDoSync.js';
 
 const NOVEL_METADATA_OPTIONS = [
   { key: NOVEL_METADATA_KEYS.GENRES, label: 'Thể loại truyện' },
@@ -106,6 +108,41 @@ export function AppEntityTemplateFieldEditor({
     setSuggestionRowsByField(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suggestionListsSignature, pathKey]);
+
+  const isForceTemplateScope = useMemo(
+    () =>
+      isForceCollectionScope({
+        activeTabLon: lonId,
+        activeTabNho: nhoId,
+        currentTabConfig: tabConfig,
+        parentLabel: lonLabel,
+      }),
+    [lonId, nhoId, tabConfig, lonLabel]
+  );
+
+  /** Tổng quan Thế lực lấy cấp từ `mapEntrySuggestions.forceRanks` (Bản đồ); mẫu tab dùng `fieldSuggestionLists.f_status`. Nạp gộp từ Bản đồ khi list mẫu còn trống. */
+  useEffect(() => {
+    if (!isForceTemplateScope || !activeNovelData) return;
+    const fid = 'f_status';
+    const src = suggestionLists && typeof suggestionLists === 'object' ? suggestionLists : {};
+    const stored = Array.isArray(src[fid]) ? src[fid] : [];
+    const hasStoredValues = stored.some((x) => safeString(x).trim());
+    if (hasStoredValues) return;
+
+    const seed = collectAggregatedMapForceRankSuggestions(activeNovelData);
+    if (seed.length === 0) return;
+
+    setSuggestionRowsByField((prev) => {
+      const existing = prev[fid];
+      const rowsFromPrev = Array.isArray(existing) ? existing : [];
+      const hasNonEmptyRow = rowsFromPrev.some(
+        (r) => safeString(r?.value).trim() || safeString(r?.prefix).trim()
+      );
+      if (hasNonEmptyRow) return prev;
+      const rows = seed.map((v) => ({ prefix: '', value: v }));
+      return { ...prev, [fid]: normalizeSuggestionRows(rows) };
+    });
+  }, [isForceTemplateScope, activeNovelData, suggestionListsSignature]);
 
   if (tabConfig?.viewType !== 'collection-track') return null;
   if (!lonId || !nhoId) return null;
@@ -200,7 +237,7 @@ export function AppEntityTemplateFieldEditor({
                 onClick={() => setScope(SCOPE_LOCAL)}
                 className={scopeButtonClass(scope === SCOPE_LOCAL)}
                 aria-pressed={scope === SCOPE_LOCAL}
-                title="Chỉ lưu cho tab con đang mở"
+                title="Các thao tác trường (Thêm, Xóa, Lưu list…) chỉ áp cho tab con đang mở — có hiệu lực ngay, không cần nút lưu chế độ"
               >
                 Cục bộ
               </button>
@@ -209,13 +246,20 @@ export function AppEntityTemplateFieldEditor({
                 onClick={() => setScope(SCOPE_AREA)}
                 className={scopeButtonClass(scope === SCOPE_AREA)}
                 aria-pressed={scope === SCOPE_AREA}
-                title="Lưu mọi tab con cùng tab lớn"
+                title="Các thao tác trường áp cho mọi tab con cùng tab lớn — có hiệu lực ngay, không cần nút lưu chế độ"
               >
                 Khu vực
               </button>
             </div>
             <p className={`text-[11px] font-medium leading-tight break-words rounded border px-2 py-1 ${scopeTone}`}>
               {scopeLabel}
+            </p>
+            <p className="text-[10px] text-slate-400 font-serif leading-snug">
+              Phạm vi này áp dụng <span className="text-slate-300 font-semibold">ngay</span> khi bạn{' '}
+              <span className="text-slate-300">Thêm</span> trường, <span className="text-slate-300">Xóa</span>,{' '}
+              <span className="text-slate-300">Lưu list</span> hoặc chỉnh nhãn/ký hiệu — không có nút lưu riêng cho chế độ. Nút{' '}
+              <span className="text-amber-200/90">«Lưu thông tin»</span> cuối modal chỉ lưu <span className="text-slate-300">nội dung thẻ</span>, không
+              ghi lại chọn Cục bộ/Khu vực.
             </p>
           </div>
 

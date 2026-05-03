@@ -209,4 +209,30 @@ describe('renderEntityNotesMarkdown', () => {
     expect(container.querySelector('[data-auto-sync-footer="true"]')).not.toBeNull();
     expect(container.querySelector('blockquote')).toBeNull();
   });
+
+  it('emphasizes colon values and parenthetical map meta without overriding wiki link chips', () => {
+    const sample =
+      '- Địa chỉ (chuỗi địa lý): Hạ Giới → [[Việt Long Tinh]]\n- [[Băng Thiên Đại Lục]] (Giới · Hạ Giới · [[Việt Long Tinh]] · Tinh Cầu)';
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(
+          sample,
+          null,
+          [
+            { id: 'e1', name: 'Việt Long Tinh' },
+            { id: 'e2', name: 'Băng Thiên Đại Lục' },
+          ],
+          null,
+          vi.fn(),
+        )}
+      </div>
+    );
+
+    const sky = container.querySelector('.text-sky-200\\/95');
+    const violet = container.querySelector('.text-violet-200\\/90');
+    expect(sky).not.toBeNull();
+    expect(violet).not.toBeNull();
+    const wikiSpans = container.querySelectorAll('.inline-flex.items-center');
+    expect(wikiSpans.length).toBeGreaterThanOrEqual(2);
+  });
 });

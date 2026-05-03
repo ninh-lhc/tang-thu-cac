@@ -10,8 +10,10 @@
 import {
   normalizeAsciiText,
   parseRankNumber as parseStatusRankNumber,
+  splitMapHierarchyTokens,
   splitStatusHierarchyTokens,
 } from './statusHierarchyParser.js';
+import { extractForceQuickRankLabel } from './forceQuickDisplayParse.js';
 import { buildPreferredWikiName } from './entityWikiDisambiguation.js';
 import { isMapCollectionScope } from './mapHierarchySync.js';
 import { getEntityAutoFieldValue, setEntityAutoFieldValue } from './tabAutoSyncFieldMap.js';
@@ -205,9 +207,15 @@ function splitLocationTokens(locationText) {
 }
 
 function parseForceStatus(statusText, { fallbackOrgType = '', fallbackRealmSystem = '' } = {}) {
-  const parts = splitStatusParts(statusText);
+  const parts = splitMapHierarchyTokens(statusText);
   const fallbackType = safeString(fallbackOrgType).trim();
+  const realm = safeString(fallbackRealmSystem).trim();
   if (parts.length === 0) return null;
+
+  /** Modal Thế lực: Loại · Hệ (tab Bản đồ) · Cấp · Địa… — token thứ 2 trùng hệ cấp bậc. */
+  if (realm && parts.length >= 4 && normalizeAscii(parts[1]) === normalizeAscii(realm)) {
+    return buildForceMeta(parts[0], parts[2], parts.slice(3), realm);
+  }
 
   if (parts.length >= 3 && !isLikelyRankText(parts[0])) {
     return buildForceMeta(parts[0], parts[1], parts.slice(2), fallbackRealmSystem);
@@ -244,13 +252,18 @@ function parseForceMetaFromEntity(entity, context = {}) {
     getEntityAutoFieldValue(entity, autoCtx, 'status') ||
     safeString(dyn.f_status).trim();
   const rankFromCap = safeString(dyn.f_cap).trim();
-  const rankText = isLikelyRankText(rankFromStatus)
-    ? rankFromStatus
-    : (isLikelyRankText(rankFromCap) ? rankFromCap : '');
   const locationText =
     getEntityAutoFieldValue(entity, autoCtx, 'location') ||
     safeString(dyn.f_dia_ban || dyn.f_vi_tri).trim();
   const locations = splitLocationTokens(locationText);
+
+  let rankText = extractForceQuickRankLabel(rankFromStatus, fallbackOrgType, fallbackRealmSystem, locationText);
+  if (!rankText && rankFromStatus) {
+    const multiToken = /[·•]/.test(rankFromStatus) || /\s-\s/.test(rankFromStatus);
+    if (!multiToken && isLikelyRankText(rankFromStatus)) rankText = rankFromStatus;
+  }
+  if (!rankText && isLikelyRankText(rankFromCap)) rankText = rankFromCap;
+
   if (!rankText || locations.length === 0) return null;
   return buildForceMeta(fallbackOrgType, rankText, locations, fallbackRealmSystem);
 }

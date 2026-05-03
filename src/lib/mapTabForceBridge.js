@@ -80,3 +80,22 @@ export function getMapSubTabForceRankSuggestions(activeNovelData, lonId, nhoId) 
   if (!Array.isArray(arr)) return [];
   return arr.map((s) => safeString(s).trim()).filter(Boolean);
 }
+
+/**
+ * Gộp `forceRanks` từ mọi tab con Bản đồ (collection-track map) — dùng khi mẫu tab Thế lực
+ * chưa có `fieldSuggestionLists.f_status` nhưng Tổng quan vẫn có datalist từ Bản đồ.
+ */
+export function collectAggregatedMapForceRankSuggestions(activeNovelData) {
+  const tabs = collectMapSubTabsForForceUi(activeNovelData);
+  const seen = new Set();
+  const out = [];
+  for (const { lonId, nhoId } of tabs) {
+    for (const line of getMapSubTabForceRankSuggestions(activeNovelData, lonId, nhoId)) {
+      const key = normalizeAsciiText(line);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(line);
+    }
+  }
+  return out;
+}

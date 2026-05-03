@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  collectAggregatedMapForceRankSuggestions,
   collectMapSubTabsForForceUi,
   getMapSubTabForceRankSuggestions,
   listMapTabEntityNames,
@@ -78,5 +79,32 @@ describe('mapTabForceBridge', () => {
 
   it('getMapSubTabForceRankSuggestions reads mapEntrySuggestions.forceRanks', () => {
     expect(getMapSubTabForceRankSuggestions(nov, 'ban-do', 'ha-gioi')).toEqual(['A cấp', 'B cấp']);
+  });
+
+  it('collectAggregatedMapForceRankSuggestions merges map tabs and dedupes', () => {
+    const multi = {
+      tabsConfig: [
+        {
+          id: 'ban-do',
+          label: 'Bản đồ',
+          subTabs: [
+            {
+              id: 'ha-gioi',
+              label: 'Hạ Giới',
+              viewType: 'collection-track',
+              mapEntrySuggestions: { forceRanks: ['Ngũ Cấp', 'a cấp'] },
+            },
+            {
+              id: 'thuong-gioi',
+              label: 'Thượng Giới',
+              viewType: 'collection-track',
+              mapEntrySuggestions: { forceRanks: ['Ngũ Cấp', 'Thần cấp'] },
+            },
+          ],
+        },
+      ],
+      data: {},
+    };
+    expect(collectAggregatedMapForceRankSuggestions(multi)).toEqual(['Ngũ Cấp', 'a cấp', 'Thần cấp']);
   });
 });

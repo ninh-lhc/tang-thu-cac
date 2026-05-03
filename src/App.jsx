@@ -2286,11 +2286,17 @@ export default function App() {
       const prevTypes = Array.isArray(prev.types) ? prev.types : [];
       const prevHierarchy = Array.isArray(prev.hierarchy) ? prev.hierarchy : [];
       const prevForceRanks = Array.isArray(prev.forceRanks) ? prev.forceRanks : [];
+      const prevParentTierSchema =
+        prev.parentTierSchema && typeof prev.parentTierSchema === 'object' ? prev.parentTierSchema : {};
+      const prevParentTierFieldMap =
+        prev.parentTierFieldMap && typeof prev.parentTierFieldMap === 'object' ? prev.parentTierFieldMap : {};
       const prevRealmScaleLists =
         prev.realmScaleLists && typeof prev.realmScaleLists === 'object' && !Array.isArray(prev.realmScaleLists)
           ? { ...prev.realmScaleLists }
           : {};
       let realmScaleLists = prevRealmScaleLists;
+      let parentTierSchema = prevParentTierSchema;
+      let parentTierFieldMap = prevParentTierFieldMap;
       if (which === 'realmScaleLists' && options.patch && typeof options.patch === 'object') {
         realmScaleLists = { ...prevRealmScaleLists };
         for (const [k, v] of Object.entries(options.patch)) {
@@ -2302,6 +2308,24 @@ export default function App() {
           else delete realmScaleLists[normKey];
         }
       }
+      if (which === 'parentTierSchema' && options.schema && typeof options.schema === 'object') {
+        const normalizeWords = (arr) => dedupeCaseInsensitiveLines(Array.isArray(arr) ? arr : []);
+        parentTierSchema = {
+          none: normalizeWords(options.schema.none),
+          one: normalizeWords(options.schema.one),
+          two: normalizeWords(options.schema.two),
+        };
+      }
+      if (which === 'parentTierFieldMap' && options.fieldMap && typeof options.fieldMap === 'object') {
+        const mapRaw = options.fieldMap || {};
+        const templateIds = new Set((targetNho.fieldsTemplate || []).map((f) => safeString(f?.id).trim()).filter(Boolean));
+        const scaleFieldId = safeString(mapRaw.scaleFieldId).trim();
+        const parentFieldId = safeString(mapRaw.parentFieldId).trim();
+        parentTierFieldMap = {
+          scaleFieldId: templateIds.has(scaleFieldId) ? scaleFieldId : templateIds.has('f_he_gioi_ban_do') ? 'f_he_gioi_ban_do' : '',
+          parentFieldId: templateIds.has(parentFieldId) ? parentFieldId : templateIds.has('f_vi_tri') ? 'f_vi_tri' : '',
+        };
+      }
       const types = which === 'types' ? linesToSuggestionArray(text) : prevTypes;
       const hierarchy = which === 'hierarchy' ? linesToSuggestionArray(text) : prevHierarchy;
       const forceRanks = which === 'forceRanks' ? linesToSuggestionArray(text) : prevForceRanks;
@@ -2310,6 +2334,17 @@ export default function App() {
       if (hierarchy.length) next.hierarchy = hierarchy;
       if (forceRanks.length) next.forceRanks = forceRanks;
       if (Object.keys(realmScaleLists).length > 0) next.realmScaleLists = realmScaleLists;
+      if (
+        Array.isArray(parentTierSchema?.none) &&
+        Array.isArray(parentTierSchema?.one) &&
+        Array.isArray(parentTierSchema?.two) &&
+        (parentTierSchema.none.length > 0 || parentTierSchema.one.length > 0 || parentTierSchema.two.length > 0)
+      ) {
+        next.parentTierSchema = parentTierSchema;
+      }
+      if (safeString(parentTierFieldMap?.scaleFieldId).trim() && safeString(parentTierFieldMap?.parentFieldId).trim()) {
+        next.parentTierFieldMap = parentTierFieldMap;
+      }
       if (Object.keys(next).length === 0) delete targetNho.mapEntrySuggestions;
       else targetNho.mapEntrySuggestions = next;
     };
@@ -2336,6 +2371,112 @@ export default function App() {
     }
     return true;
   };
+  const handleSetTabMapParentTierSchema = (lonId, nhoId, schema) =>
+    handleSetTabMapEntrySuggestions(lonId, nhoId, 'parentTierSchema', '', { schema });
+  const handleSetTabMapParentTierFieldMap = (lonId, nhoId, fieldMap) =>
+    handleSetTabMapEntrySuggestions(lonId, nhoId, 'parentTierFieldMap', '', { fieldMap });
+  const normalizeMapParentTierSchema = useCallback((schema) => {
+    const normalizeList = (arr) => dedupeCaseInsensitiveLines(Array.isArray(arr) ? arr : []);
+    return {
+      none: normalizeList(schema?.none),
+      one: normalizeList(schema?.one),
+      two: normalizeList(schema?.two),
+    };
+  }, []);
+  const applyMapParentTierSchemaToNho = useCallback((nho, schema) => {
+    if (!nho || nho.viewType !== 'collection-track') return false;
+    const templateIds = new Set((nho.fieldsTemplate || []).map((f) => safeString(f?.id).trim()).filter(Boolean));
+    if (!templateIds.has('f_he_gioi_ban_do') || !templateIds.has('f_vi_tri')) return false;
+    const normalized = normalizeMapParentTierSchema(schema);
+    const prev = nho.mapEntrySuggestions && typeof nho.mapEntrySuggestions === 'object' ? nho.mapEntrySuggestions : {};
+    const next = { ...prev };
+    next.parentTierSchema = normalized;
+    nho.mapEntrySuggestions = next;
+    return true;
+  }, [normalizeMapParentTierSchema]);
+  const performPropagateMapParentTierSchemaToLon = useCallback(
+    (lonId, schema) => {
+      const current = structuredClone(getTabsToUpdate());
+      const lon = current.find((t) => t.id === lonId);
+      if (!lon || !Array.isArray(lon.subTabs)) return;
+      let count = 0;
+      lon.subTabs.forEach((nho) => {
+        if (applyMapParentTierSchemaToNho(nho, schema)) count += 1;
+      });
+      if (count === 0) {
+        showToast('Không có tab phù hợp để áp rule phân tầng.', 'warning');
+        return;
+      }
+      setTabsConfig(current, { resyncAuto: false });
+      const lab = safeString(lon?.label).trim() || 'tab lớn';
+      showToast(`Đã áp rule phân tầng «Trực thuộc» cho ${count} tab trong «${lab}».`, 'success');
+    },
+    [applyMapParentTierSchemaToNho, getTabsToUpdate, setTabsConfig, showToast]
+  );
+  const requestPropagateMapParentTierSchemaToLon = useCallback(
+    (lonId, schema) => {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Lưu rule phân tầng cho khu vực?',
+        message:
+          'Ghi đè rule 0/1/2 ô «Trực thuộc» lên mọi tab con phù hợp trong cùng tab lớn. Tab thiếu f_he_gioi_ban_do hoặc f_vi_tri sẽ tự bỏ qua.',
+        onConfirm: () => {
+          performPropagateMapParentTierSchemaToLon(lonId, schema);
+        },
+      });
+    },
+    [setConfirmDialog, performPropagateMapParentTierSchemaToLon]
+  );
+  const normalizeMapParentTierFieldMap = useCallback((fieldMap, nho = null) => {
+    const ids = new Set((nho?.fieldsTemplate || []).map((f) => safeString(f?.id).trim()).filter(Boolean));
+    const scaleFieldId = safeString(fieldMap?.scaleFieldId).trim();
+    const parentFieldId = safeString(fieldMap?.parentFieldId).trim();
+    return {
+      scaleFieldId: ids.has(scaleFieldId) ? scaleFieldId : ids.has('f_he_gioi_ban_do') ? 'f_he_gioi_ban_do' : '',
+      parentFieldId: ids.has(parentFieldId) ? parentFieldId : ids.has('f_vi_tri') ? 'f_vi_tri' : '',
+    };
+  }, []);
+  const applyMapParentTierFieldMapToNho = useCallback((nho, fieldMap) => {
+    if (!nho || nho.viewType !== 'collection-track') return false;
+    const normalized = normalizeMapParentTierFieldMap(fieldMap, nho);
+    if (!normalized.scaleFieldId || !normalized.parentFieldId) return false;
+    const prev = nho.mapEntrySuggestions && typeof nho.mapEntrySuggestions === 'object' ? nho.mapEntrySuggestions : {};
+    nho.mapEntrySuggestions = { ...prev, parentTierFieldMap: normalized };
+    return true;
+  }, [normalizeMapParentTierFieldMap]);
+  const performPropagateMapParentTierFieldMapToLon = useCallback(
+    (lonId, fieldMap) => {
+      const current = structuredClone(getTabsToUpdate());
+      const lon = current.find((t) => t.id === lonId);
+      if (!lon || !Array.isArray(lon.subTabs)) return;
+      let count = 0;
+      lon.subTabs.forEach((nho) => {
+        if (applyMapParentTierFieldMapToNho(nho, fieldMap)) count += 1;
+      });
+      if (count === 0) {
+        showToast('Không có tab phù hợp để áp cặp trường.', 'warning');
+        return;
+      }
+      setTabsConfig(current, { resyncAuto: false });
+      const lab = safeString(lon?.label).trim() || 'tab lớn';
+      showToast(`Đã áp cặp trường phân tầng cho ${count} tab trong «${lab}».`, 'success');
+    },
+    [applyMapParentTierFieldMapToNho, getTabsToUpdate, setTabsConfig, showToast]
+  );
+  const requestPropagateMapParentTierFieldMapToLon = useCallback(
+    (lonId, fieldMap) => {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Lưu cặp trường cho khu vực?',
+        message:
+          'Ghi đè Trường Quy mô / Trường Trực thuộc lên mọi tab con phù hợp trong cùng tab lớn. Tab không hợp lệ sẽ tự bỏ qua.',
+        onConfirm: () => {
+          performPropagateMapParentTierFieldMapToLon(lonId, fieldMap);
+        },
+      });
+    },
+    [setConfirmDialog, performPropagateMapParentTierFieldMapToLon]
+  );
 
   const applyFieldSuggestionMergeToNho = (nho, fieldId, text) => {
     const fid = safeString(fieldId).trim();
@@ -2617,17 +2758,9 @@ export default function App() {
     setTabsConfig(current, { resyncAuto: false });
   };
 
-  const handleSetTabFieldSuggestionDependencies = (lonId, nhoId, dependencies) => {
-    if (!activeNovelData) {
-      showToast('Cần mở truyện để lưu phụ thuộc gợi ý theo truyện.', 'warning');
-      return;
-    }
-    const current = structuredClone(getTabsToUpdate());
-    const lon = current.find((tab) => tab.id === lonId);
-    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
-    if (!nho || nho.viewType !== 'collection-track') return;
+  const sanitizeFieldSuggestionDependenciesForTab = useCallback((nho, dependencies) => {
     const allowed = new Set(
-      (nho.fieldsTemplate || [])
+      (nho?.fieldsTemplate || [])
         .map((f) => safeString(f?.id).trim())
         .filter((id) => id && id !== 'f_alias')
     );
@@ -2665,10 +2798,63 @@ export default function App() {
       if (cases.length < 1) return;
       sanitized.push({ sourceFieldId, targetFieldId, cases });
     });
+    return sanitized;
+  }, []);
+
+  const applyFieldSuggestionDependenciesToNho = useCallback((nho, dependencies) => {
+    if (!nho || nho.viewType !== 'collection-track') return false;
+    const sanitized = sanitizeFieldSuggestionDependenciesForTab(nho, dependencies);
     if (sanitized.length < 1) delete nho.fieldSuggestionDependencies;
     else nho.fieldSuggestionDependencies = sanitized;
+    return true;
+  }, [sanitizeFieldSuggestionDependenciesForTab]);
+
+  const handleSetTabFieldSuggestionDependencies = (lonId, nhoId, dependencies) => {
+    if (!activeNovelData) {
+      showToast('Cần mở truyện để lưu phụ thuộc gợi ý theo truyện.', 'warning');
+      return;
+    }
+    const current = structuredClone(getTabsToUpdate());
+    const lon = current.find((tab) => tab.id === lonId);
+    const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
+    if (!applyFieldSuggestionDependenciesToNho(nho, dependencies)) return;
     setTabsConfig(current, { resyncAuto: false });
   };
+
+  const performPropagateFieldSuggestionDependenciesToLon = useCallback(
+    (lonId, dependencies) => {
+      const current = structuredClone(getTabsToUpdate());
+      const lon = current.find((t) => t.id === lonId);
+      if (!lon || !Array.isArray(lon.subTabs)) return;
+      let count = 0;
+      lon.subTabs.forEach((nho) => {
+        if (applyFieldSuggestionDependenciesToNho(nho, dependencies)) count += 1;
+      });
+      if (count === 0) {
+        showToast('Không có tab sưu tập nào dưới tab lớn này.', 'warning');
+        return;
+      }
+      setTabsConfig(current, { resyncAuto: false });
+      const lab = safeString(lon?.label).trim() || 'tab lớn';
+      showToast(`Đã lưu phụ thuộc gợi ý cho ${count} tab trong «${lab}».`, 'success');
+    },
+    [applyFieldSuggestionDependenciesToNho, getTabsToUpdate, setTabsConfig, showToast]
+  );
+
+  const requestPropagateFieldSuggestionDependenciesToLon = useCallback(
+    (lonId, dependencies) => {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Lưu phụ thuộc cho khu vực?',
+        message:
+          'Ghi đè rule «Phụ thuộc gợi ý (A → B)» lên mọi tab sưu tập cùng tab lớn. Rule có field không khớp mẫu từng tab sẽ tự bỏ qua.',
+        onConfirm: () => {
+          performPropagateFieldSuggestionDependenciesToLon(lonId, dependencies);
+        },
+      });
+    },
+    [setConfirmDialog, performPropagateFieldSuggestionDependenciesToLon]
+  );
 
   const performPropagateEntityQuickEntryToLon = useCallback(
     (lonId, slotFields, slotLabels, options = {}) => {
@@ -3120,6 +3306,8 @@ export default function App() {
     handleSetTabAutoSyncLevels,
     handleSetTabAutoSyncFieldMap,
     handleSetTabMapEntrySuggestions,
+    handleSetTabMapParentTierSchema,
+    handleSetTabMapParentTierFieldMap,
     handleMergeTabFieldSuggestionList,
     handleAddTabTemplateField,
     handleEnsureTabTemplateFields,
@@ -3128,8 +3316,11 @@ export default function App() {
     handleSetTabTemplateFieldSortPrefix,
     handleSetTabEntityQuickEntry,
     handleSetTabFieldSuggestionDependencies,
+    requestPropagateFieldSuggestionDependenciesToLon,
     requestPropagateEntityQuickEntryToLon,
     requestPropagateEntityQuickEntryToAllLons,
+    requestPropagateMapParentTierSchemaToLon,
+    requestPropagateMapParentTierFieldMapToLon,
     handleSetTabFieldSource,
     handleApplySuggestedAutoSyncSetup,
     handleResyncAutoTabs,

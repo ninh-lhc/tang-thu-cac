@@ -645,6 +645,11 @@ function mapQuyMoRankLineFromEntity(entity) {
 function _renderForceEntry(entity, ctx = {}) {
   const name = safeString(entity?.name).trim();
   if (!name) return '';
+  const statusLine = safeString(pickFirstFilled(entity, ['f_status'])).trim();
+  const statusBits = statusLine
+    .split(/[·•|/]+/)
+    .map((s) => safeString(s).trim())
+    .filter(Boolean);
   const org = resolveOrgForMapList(entity, ctx);
   const sys = getForceRealmSystemSort(entity);
   const rank =
@@ -661,8 +666,12 @@ function _renderForceEntry(entity, ctx = {}) {
     bits.push(`\`${v}\``);
   };
   pushBit(org);
-  pushBit(sys);
-  pushBit(rank);
+  if (statusBits.length >= 2) {
+    statusBits.forEach(pushBit);
+  } else {
+    pushBit(sys);
+    pushBit(rank);
+  }
   if (bits.length === 0) return `[[${name}]]`;
   return `[[${name}]] - ${bits.join(' · ')}`;
 }
