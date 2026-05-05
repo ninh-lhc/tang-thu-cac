@@ -80,6 +80,51 @@ const makeAnchorId = (label, usedAnchors) => {
   return candidate;
 };
 
+/**
+ * Số dòng danh sách (- / *) hoặc danh sách số trong từng khoảng dưới mỗi tiêu đề (đến tiêu đề cùng hoặc cao hơn).
+ * Dùng cho preview ghi chép / AUTO Thế Lực ↔ Bản đồ: tự khớp khi nội dung markdown đổi.
+ */
+export function computeEntityNotesHeadingSectionCounts(lines) {
+  const arr = Array.isArray(lines) ? lines : [];
+  const counts = new Map();
+  const headings = [];
+  for (let idx = 0; idx < arr.length; idx += 1) {
+    const raw = safeString(arr[idx]);
+    const leftTrimmed = raw.trimStart();
+    let level = 0;
+    let title = '';
+    if (leftTrimmed.startsWith('### ')) {
+      level = 3;
+      title = leftTrimmed.slice(4);
+    } else if (leftTrimmed.startsWith('## ')) {
+      level = 2;
+      title = leftTrimmed.slice(3);
+    } else if (leftTrimmed.startsWith('# ')) {
+      level = 1;
+      title = leftTrimmed.slice(2);
+    } else {
+      const m = raw.trim().match(SECTION_HEADING_RE);
+      if (m) {
+        level = 2;
+        title = `${m[1]}. ${m[2]}`;
+      }
+    }
+    if (level > 0) headings.push({ lineIndex: idx, level, title });
+  }
+  for (let k = 0; k < headings.length; k += 1) {
+    const { lineIndex, level } = headings[k];
+    const next = headings[k + 1];
+    const endLine = next && next.level <= level ? next.lineIndex : arr.length;
+    let n = 0;
+    for (let i = lineIndex + 1; i < endLine; i += 1) {
+      const row = safeString(arr[i]);
+      if (BULLET_RE.test(row) || ORDERED_RE.test(row)) n += 1;
+    }
+    counts.set(lineIndex + 1, n);
+  }
+  return counts;
+}
+
 const isBlockBoundary = (line) => {
   const normalized = safeString(line);
   const trimmed = normalized.trim();
@@ -135,8 +180,23 @@ const renderInlineBodyWithLeadLabel = (body, context) => {
 };
 
 function renderBlocksFromLines(lines, context, options = {}) {
-  const { baseKey = 'entity-notes', collectToc = false, usedAnchors = new Set(), compact = false, onJumpToLine = null } = options;
+  const {
+    baseKey = 'entity-notes',
+    collectToc = false,
+    usedAnchors = new Set(),
+    compact = false,
+    onJumpToLine = null,
+    skipHeadingCountScan = false,
+    headingCountsByLine: headingCountsInjected = null,
+  } = options;
   const { dirHandle, lookup, linkRegex, onNavigate, selfEntityId } = context;
+  const headingCountsByLine =
+    headingCountsInjected || (skipHeadingCountScan ? null : computeEntityNotesHeadingSectionCounts(lines));
+  const renderCountSuffix = (lineNo, className) => {
+    const c = headingCountsByLine?.get(lineNo);
+    if (c == null || c <= 0) return null;
+    return <span className={className}>({c})</span>;
+  };
   const blocks = [];
   const toc = [];
   let lineIndex = 0;
@@ -166,7 +226,8 @@ function renderBlocksFromLines(lines, context, options = {}) {
   const pushTocItem = (title, level, lineNo) => {
     if (!collectToc) return null;
     const id = makeAnchorId(title, usedAnchors);
-    toc.push({ id, title, level, line: lineNo });
+    const c = headingCountsByLine?.get(lineNo);
+    toc.push({ id, title, level, line: lineNo, count: typeof c === 'number' ? c : undefined });
     return id;
   };
 
@@ -195,6 +256,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
           className={mergeClassName(jumpProps, 'mt-8 mb-5 border-b border-violet-500/20 pb-3 text-[2.15rem] font-heading font-bold text-slate-50')}
         >
           {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+          {renderCountSuffix(lineNo, 'ml-2 text-[0.55em] font-semibold tabular-nums text-cyan-200/80')}
         </h1>
       );
       lineIndex += 1;
@@ -213,6 +275,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
           className={mergeClassName(jumpProps, 'mt-8 mb-4 border-l-4 border-violet-500/35 pl-4 text-[1.7rem] font-heading font-bold text-violet-100')}
         >
           {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+          {renderCountSuffix(lineNo, 'ml-2 text-[0.58em] font-semibold tabular-nums text-violet-300/85')}
         </h2>
       );
       lineIndex += 1;
@@ -231,6 +294,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
           className={mergeClassName(jumpProps, 'mt-6 mb-3 text-[1.15rem] font-bold uppercase tracking-[0.18em] text-amber-200/85')}
         >
           {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+          {renderCountSuffix(lineNo, 'ml-2 text-[0.75em] font-semibold tabular-nums text-amber-200/70')}
         </h3>
       );
       lineIndex += 1;
@@ -283,6 +347,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
           </span>
           <h3 className="text-[1.55rem] leading-tight font-heading font-bold text-violet-200">
             {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+            {renderCountSuffix(lineNo, 'ml-2 text-[0.65em] font-semibold tabular-nums text-violet-300/80')}
           </h3>
         </div>
       );
@@ -333,6 +398,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
           collectToc: false,
           compact: true,
           usedAnchors,
+          skipHeadingCountScan: true,
         });
         blocks.push(
           <section

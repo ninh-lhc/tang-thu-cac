@@ -1058,6 +1058,26 @@ function stripMapPathDuplicateOfBadge(pathLine, badgeLabel) {
   return pathTokens.slice(i).join(' > ').trim();
 }
 
+/**
+ * Dòng trường đầu (f_status / chuỗi cấp) thường ghép cả đoạn đã hiện ở trường 2 (vd. đường Trực thuộc dưới nhãn Giới Diện).
+ * Bỏ các đoạn trùng (so khớp normalize) để thẻ chỉ còn một lớp thông tin địa lý rõ ràng.
+ */
+function stripMapPrimaryLineSegmentsDuplicatedInSecondField(primaryLine, secondaryLine) {
+  const p = safeString(primaryLine).trim();
+  const s = safeString(secondaryLine).trim();
+  if (!p || !s) return p;
+  if (normalizeAsciiText(p) === normalizeAsciiText(s)) return '';
+  const ns = normalizeAsciiText(s);
+  const sep = /\s*(?:[·•]|\s-\s|—|–)\s*/;
+  const parts = p.split(sep).map((x) => safeString(x).trim()).filter(Boolean);
+  if (parts.length <= 1) return p;
+  const kept = parts.filter((seg) => normalizeAsciiText(seg) !== ns);
+  if (kept.length === parts.length) return p;
+  if (kept.length === 0) return '';
+  const delim = /\s-\s/.test(p) ? ' - ' : ' · ';
+  return kept.join(delim);
+}
+
 export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, tabConfig, dirHandle, parentTabId, parentLabel }) => {
   const fields = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const terms = getTerms(parentTabId);
@@ -1161,6 +1181,12 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
       f1DisplayResolved,
     ]) || f2DisplayResolved;
     f2DisplayResolved = stripMapPathDuplicateOfBadge(f2DisplayResolved, mapSystemBadgeLabel);
+  }
+  if (isMapCardScope && !isListCardEntity && fields[0] && fields[1]) {
+    const refSecond = safeString(f2DisplayResolved).trim();
+    if (refSecond) {
+      f1DisplayResolved = stripMapPrimaryLineSegmentsDuplicatedInSecondField(f1DisplayResolved, refSecond);
+    }
   }
   const f3Trim = safeString(f3).trim();
   const f2Trim = safeString(f2DisplayResolved).trim();
@@ -1314,14 +1340,15 @@ function parseMapQuickState(dynamicData, fieldMap = {}) {
   const scaleFieldId = safeString(fieldMap?.scaleFieldId).trim() || 'f_he_gioi_ban_do';
   const parentFieldId = safeString(fieldMap?.parentFieldId).trim() || 'f_vi_tri';
   const statusTokens = splitDotMetaTokens(dynamicData?.f_status);
-  const mapSystem = inferMapQuickSystemFromStoredStatus(dynamicData);
+  const parentPath = safeString(dynamicData?.[parentFieldId] || dynamicData?.f_vi_tri).trim();
+  const mapSystem = inferMapQuickSystemFromStoredStatus(dynamicData, parentPath);
   return {
     mapType: safeString(dynamicData?.f_title).trim() || statusTokens[0] || '',
     mapSystem,
     realmSystem:
       safeString(dynamicData?.[scaleFieldId] || dynamicData?.f_he_gioi_ban_do || dynamicData?.f_he_phan_cap).trim() ||
       inferForceSystemLabel(mapSystem),
-    parentPath: safeString(dynamicData?.[parentFieldId] || dynamicData?.f_vi_tri).trim(),
+    parentPath,
   };
 }
 

@@ -1,7 +1,11 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import { buildEntityNotesPreviewModel, renderEntityNotesMarkdown } from './renderEntityNotesMarkdown.jsx';
+import {
+  buildEntityNotesPreviewModel,
+  computeEntityNotesHeadingSectionCounts,
+  renderEntityNotesMarkdown,
+} from './renderEntityNotesMarkdown.jsx';
 
 describe('renderEntityNotesMarkdown', () => {
   it('renders long-form analysis blocks with stronger structure', () => {
@@ -184,8 +188,36 @@ describe('renderEntityNotesMarkdown', () => {
     const { container } = render(<div>{model.blocks}</div>);
 
     expect(model.toc.map((item) => item.title)).toEqual(['Tieu de lon', 'Tieu muc']);
+    expect(model.toc.map((item) => item.count ?? 0)).toEqual([0, 0]);
     expect(container.textContent).toContain('Canh bao');
     expect(container.textContent).toContain('Dieu can nho');
+  });
+
+  it('đếm mục danh sách theo từng tiêu đề (# / ## / ###) cho thống kê (n)', () => {
+    const md = [
+      '# Bang Thien',
+      '## De Quoc',
+      '- [[A]]',
+      '- [[B]]',
+      '## Gia Toc',
+      '- [[C]]',
+    ].join('\n');
+    const lines = md.split('\n');
+    const counts = computeEntityNotesHeadingSectionCounts(lines);
+    expect(counts.get(1)).toBe(3);
+    expect(counts.get(2)).toBe(2);
+    expect(counts.get(5)).toBe(1);
+    const model = buildEntityNotesPreviewModel(md, null, [], null, vi.fn());
+    expect(model.toc.map((t) => [t.title, t.count])).toEqual([
+      ['Bang Thien', 3],
+      ['De Quoc', 2],
+      ['Gia Toc', 1],
+    ]);
+    const { container } = render(<div>{model.blocks}</div>);
+    expect(container.textContent).toContain('Bang Thien');
+    expect(container.textContent).toMatch(/\(3\)/);
+    expect(container.textContent).toMatch(/\(2\)/);
+    expect(container.textContent).toMatch(/\(1\)/);
   });
 
   it('renders auto-sync footer quote as subtle footer note', () => {
