@@ -21,6 +21,7 @@ import { AppCollectionEmptyState } from './AppCollectionEmptyState.jsx';
 import { AppEntitySummaryBlocks } from './AppEntitySummaryBlocks.jsx';
 import { AppEntityDetailNotes } from './AppEntityDetailNotes.jsx';
 import { AppEntityTimelinePanel } from './AppEntityTimelinePanel.jsx';
+import { AppEntityDescriptionPanel } from './AppEntityDescriptionPanel.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import { MarkdownToolbar } from './MasterComponents.jsx';
 import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
@@ -159,6 +160,11 @@ export function AppCollectionSection({
   handleMergeSnapshotToProfile,
   handleDeleteMilestone,
   handleReplaceMilestones,
+  selectedDescriptionId,
+  setSelectedDescriptionId,
+  setEditingDescriptionData,
+  setIsDescriptionModalOpen,
+  handleDeleteDescription,
   getFieldValue,
   // standard editor
   isEditingMode,
@@ -554,6 +560,7 @@ export function AppCollectionSection({
             galleryCount={selectedEntity?.images?.length || 0}
             selectedEntityName={selectedEntity ? safeString(selectedEntity.name) : ''}
             selectedEntityMilestoneCount={selectedEntity?.milestones?.length || 0}
+            selectedEntityDescriptionCount={selectedEntity?.descriptions?.length || 0}
             isSwitching={isCollectionSwitching}
           />
 
@@ -590,7 +597,7 @@ export function AppCollectionSection({
             />
 
             <AppCollectionEmptyState
-              show={(collectionSubTab === 'detail' || collectionSubTab === 'timeline') && !selectedEntity}
+              show={(collectionSubTab === 'detail' || collectionSubTab === 'timeline' || collectionSubTab === 'description') && !selectedEntity}
               onBackToList={() => setCollectionSubTab('list')}
             />
 
@@ -773,6 +780,20 @@ export function AppCollectionSection({
               handleReplaceMilestones={handleReplaceMilestones}
               getFieldValue={getFieldValue}
               setLightboxSrc={setLightboxSrc}
+            />
+
+            <AppEntityDescriptionPanel
+              collectionSubTab={collectionSubTab}
+              selectedEntity={selectedEntity}
+              selectedDescriptionId={selectedDescriptionId}
+              setSelectedDescriptionId={setSelectedDescriptionId}
+              currentContextDirHandle={currentContextDirHandle}
+              entityMap={entityMap}
+              globalLinkRegex={globalLinkRegex}
+              onNavigate={(dest) => navFnRef.current?.(dest)}
+              setEditingDescriptionData={setEditingDescriptionData}
+              setIsDescriptionModalOpen={setIsDescriptionModalOpen}
+              handleDeleteDescription={handleDeleteDescription}
             />
           </div>
         </div>

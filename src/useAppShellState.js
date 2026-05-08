@@ -90,6 +90,10 @@ export function useAppShellState() {
   const [selectedMilestoneId, setSelectedMilestoneId] = useState(null);
   const [editingMilestoneData, setEditingMilestoneData] = useState(null);
 
+  const [selectedDescriptionId, setSelectedDescriptionId] = useState(null);
+  const [editingDescriptionData, setEditingDescriptionData] = useState(null);
+  const [isDescriptionModalOpen, setIsDescriptionModalOpen] = useState(false);
+
   const [isEntityEditing, setIsEntityEditing] = useState(false);
   const [isSplitPreview, setIsSplitPreview] = useState(false);
   const [recentlyMergedFields, setRecentlyMergedFields] = useState(new Set());
@@ -446,6 +450,12 @@ export function useAppShellState() {
     setSelectedMilestoneId,
     editingMilestoneData,
     setEditingMilestoneData,
+    selectedDescriptionId,
+    setSelectedDescriptionId,
+    editingDescriptionData,
+    setEditingDescriptionData,
+    isDescriptionModalOpen,
+    setIsDescriptionModalOpen,
     isEntityEditing,
     setIsEntityEditing,
     isSplitPreview,

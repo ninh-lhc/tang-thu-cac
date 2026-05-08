@@ -17,6 +17,7 @@ import {
   ModalDeepSearch,
   ModalInNovelSearch,
 } from './MasterComponents.jsx';
+import { ModalDescription } from './AppModalDescription.jsx';
 
 const AppModalMotCua = lazy(() => import('./AppModalMotCua.jsx').then((m) => ({ default: m.AppModalMotCua })));
 const AppModalQuanLyTab = lazy(() => import('./AppModalQuanLyTab.jsx').then((m) => ({ default: m.AppModalQuanLyTab })));
@@ -40,6 +41,10 @@ export function AppModalLayer({
   aiMode,
   isMilestoneModalOpen,
   setIsMilestoneModalOpen,
+  isDescriptionModalOpen,
+  setIsDescriptionModalOpen,
+  handleSaveDescription,
+  editingDescriptionData,
   isAutoSyncGuideOpen,
   setIsAutoSyncGuideOpen,
   isEntityNotesGuideOpen,
@@ -258,6 +263,17 @@ export function AppModalLayer({
         entityMap={entityMap}
         showToast={showToast}
         autoLinkToastEnabled={autoLinkToastEnabled}
+      />
+      <ModalDescription
+        isOpen={!!isDescriptionModalOpen}
+        onClose={() => setIsDescriptionModalOpen?.(false)}
+        onSave={handleSaveDescription}
+        initialData={editingDescriptionData}
+        defaultChapterWhenNew={
+          editingDescriptionData
+            ? undefined
+            : String(Math.max(0, parseInt(activeNovelData?.readingAnchorChapter ?? activeNovelData?.chaptersRead ?? 0, 10) || 0))
+        }
       />
       <ModalSettings
         isOpen={isSettingsOpen}

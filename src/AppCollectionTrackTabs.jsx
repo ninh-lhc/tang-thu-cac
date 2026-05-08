@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Images } from 'lucide-react';
+import { Images, FileText } from 'lucide-react';
 
 export const AppCollectionTrackTabs = memo(function AppCollectionTrackTabs({
   collectionSubTab,
@@ -7,6 +7,7 @@ export const AppCollectionTrackTabs = memo(function AppCollectionTrackTabs({
   galleryCount,
   selectedEntityName,
   selectedEntityMilestoneCount,
+  selectedEntityDescriptionCount = 0,
   isSwitching = false,
 }) {
   return (
@@ -23,6 +24,12 @@ export const AppCollectionTrackTabs = memo(function AppCollectionTrackTabs({
         Dòng Thời Gian
         {selectedEntityMilestoneCount > 0 && (
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${collectionSubTab === 'timeline' ? 'bg-amber-500 text-slate-900' : 'bg-slate-700 text-slate-300'}`}>{selectedEntityMilestoneCount}</span>
+        )}
+      </button>
+      <button type="button" onClick={() => setCollectionSubTab('description')} className={`tt-kbd-focus text-sm font-bold uppercase tracking-widest pb-3 -mb-[13px] transition-colors flex items-center gap-2 ${collectionSubTab === 'description' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-500 hover:text-slate-300'}`}>
+        <FileText size={14} className="opacity-70" /> Miêu Tả
+        {selectedEntityDescriptionCount > 0 && (
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${collectionSubTab === 'description' ? 'bg-amber-500 text-slate-900' : 'bg-slate-700 text-slate-300'}`}>{selectedEntityDescriptionCount}</span>
         )}
       </button>
     </div>

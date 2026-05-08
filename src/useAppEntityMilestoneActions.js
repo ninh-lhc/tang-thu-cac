@@ -56,12 +56,14 @@ export function useAppEntityMilestoneActions({
   selectedEntity,
   selectedEntityId,
   selectedMilestoneId,
+  selectedDescriptionId,
   updateActiveNovelData,
   handlePickLocalImage,
   setActiveNovelData,
   setSelectedEntityId,
   setSelectedMilestoneId,
   setEditingMilestoneData,
+  setSelectedDescriptionId,
   setCollectionSubTab,
   setIsEditingMode,
   setIsEntityEditing,
@@ -731,6 +733,114 @@ export function useAppEntityMilestoneActions({
     ]
   );
 
+  const handleSaveDescription = useCallback(
+    (formData) => {
+      if (!selectedEntityId) {
+        showToast?.('Hãy chọn một thẻ trước khi ghi miêu tả.', 'warning');
+        return;
+      }
+      const prev = activeNovelData ? structuredClone(activeNovelData) : null;
+      let savedId = formData?.id || null;
+      updateActiveNovelData((nov) => {
+        if (!nov.data?.[activeTabLon]) return;
+        const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
+        const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
+        if (!ent) return;
+        if (!Array.isArray(ent.descriptions)) ent.descriptions = [];
+        const chapterNum = parseInt(formData.chapter, 10) || 0;
+        const content = safeString(formData.content).trim();
+        if (formData.id) {
+          const idx = ent.descriptions.findIndex((d) => d.id === formData.id);
+          if (idx > -1) {
+            ent.descriptions[idx] = {
+              ...ent.descriptions[idx],
+              chapter: chapterNum,
+              content,
+            };
+          }
+        } else {
+          const newId = generateId('desc');
+          ent.descriptions.push({ id: newId, chapter: chapterNum, content });
+          savedId = newId;
+        }
+        ent.descriptions.sort((a, b) => (a.chapter || 0) - (b.chapter || 0));
+      });
+      if (savedId && setSelectedDescriptionId) setSelectedDescriptionId(savedId);
+      showToast(
+        formData.id ? 'Đã tu bổ Miêu Tả!' : 'Đã khắc ghi Miêu Tả mới!',
+        'success',
+        prev
+          ? {
+              undoLabel: 'Hoàn tác',
+              onUndo: () => {
+                setActiveNovelData(structuredClone(prev));
+                void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
+              },
+            }
+          : null
+      );
+    },
+    [
+      activeNovelData,
+      updateActiveNovelData,
+      activeTabLon,
+      activeTabNho,
+      selectedEntityId,
+      setSelectedDescriptionId,
+      showToast,
+      setActiveNovelData,
+      syncNovelRef,
+      dirHandleRef,
+    ]
+  );
+
+  const handleDeleteDescription = useCallback(
+    (descId) => {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Xóa Miêu Tả',
+        message: 'Xóa miêu tả này? Có thể hoàn tác ngay sau khi xóa.',
+        onConfirm: () => {
+          const prev = activeNovelData ? structuredClone(activeNovelData) : null;
+          const prevDescId = selectedDescriptionId;
+          updateActiveNovelData((nov) => {
+            if (!nov.data?.[activeTabLon]) return;
+            const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
+            const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
+            if (ent && Array.isArray(ent.descriptions)) {
+              ent.descriptions = ent.descriptions.filter((d) => d.id !== descId);
+            }
+          });
+          setSelectedDescriptionId?.(null);
+          if (prev) {
+            showToast('Đã xóa miêu tả.', 'success', {
+              undoLabel: 'Hoàn tác xóa',
+              onUndo: () => {
+                setActiveNovelData(structuredClone(prev));
+                setSelectedDescriptionId?.(prevDescId || null);
+                void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
+              },
+            });
+          }
+        },
+      });
+    },
+    [
+      setConfirmDialog,
+      activeNovelData,
+      selectedDescriptionId,
+      updateActiveNovelData,
+      activeTabLon,
+      activeTabNho,
+      selectedEntityId,
+      setSelectedDescriptionId,
+      showToast,
+      setActiveNovelData,
+      syncNovelRef,
+      dirHandleRef,
+    ]
+  );
+
   const handleReplaceMilestones = useCallback(
     (nextMilestones, toastMessage = 'Đã cập nhật mốc.') => {
       const prev = activeNovelData ? structuredClone(activeNovelData) : null;
@@ -1109,6 +1219,8 @@ export function useAppEntityMilestoneActions({
     handleSaveMilestone,
     handleDeleteMilestone,
     handleReplaceMilestones,
+    handleSaveDescription,
+    handleDeleteDescription,
     handleDeleteEntity,
     handleMergeSnapshotToProfile,
   };
