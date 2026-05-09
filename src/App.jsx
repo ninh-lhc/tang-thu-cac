@@ -132,7 +132,7 @@ import {
 import { AppMainPane } from './AppMainPane.jsx';
 import { AppListCardInfoSearch } from './AppListCardInfoSearch.jsx';
 import { AppModalLayer } from './AppModalLayer.jsx';
-import { saveGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
+import { configureGenreTabsTemplateStore, saveGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
 import {
   ensureWikiAliasInFieldsTemplate,
   sanitizeFieldsTemplate,
@@ -279,10 +279,12 @@ export default function App() {
     setAutoLinkToastEnabled,
     novelStatsById,
     setNovelStatsById,
+    setGenreTabsTemplates,
     isStatsBackfilling,
     setIsStatsBackfilling,
     isDirectoryConnectionBootstrapping,
     novelStatsByIdRef,
+    genreTabsTemplatesRef,
     novelsMetadataRef,
     globalTabsConfigRef,
     dirHandleRef,
@@ -326,12 +328,44 @@ export default function App() {
 
   const { syncIndex, syncNovel, awaitNovelDiskIdle, cleanupLegacyIndexFiles, loadNovelData, syncNovelRef } = useAppPersistence({
     novelStatsByIdRef,
+    genreTabsTemplatesRef,
     novelsMetadataRef,
     globalTabsConfigRef,
     dirHandleRef,
     setNovelStatsById,
     showToast,
   });
+
+  useEffect(() => {
+    configureGenreTabsTemplateStore({
+      getStore: () => genreTabsTemplatesRef.current,
+      setStore: (nextStore) => {
+        const normalized =
+          nextStore && typeof nextStore === 'object' && !Array.isArray(nextStore) ? { ...nextStore } : {};
+        genreTabsTemplatesRef.current = normalized;
+        setGenreTabsTemplates(normalized);
+        const d = dirHandleRef.current;
+        if (!d) return;
+        void syncIndex(
+          novelsMetadataRef.current,
+          globalTabsConfigRef.current,
+          d,
+          novelStatsByIdRef.current
+        );
+      },
+    });
+    return () => {
+      configureGenreTabsTemplateStore();
+    };
+  }, [
+    dirHandleRef,
+    genreTabsTemplatesRef,
+    globalTabsConfigRef,
+    novelStatsByIdRef,
+    novelsMetadataRef,
+    setGenreTabsTemplates,
+    syncIndex,
+  ]);
 
   const resolveSafeTabsConfig = useCallback(
     (candidate) => (Array.isArray(candidate) && candidate.length > 0 ? candidate : globalTabsConfigRef.current),

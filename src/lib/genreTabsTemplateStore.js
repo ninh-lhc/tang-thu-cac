@@ -1,4 +1,6 @@
 const STORAGE_KEY = 'ttc_genre_tabs_templates_v1';
+let runtimeStoreGet = null;
+let runtimeStoreSet = null;
 
 function safeJsonParse(value, fallback) {
   try {
@@ -16,6 +18,28 @@ function cloneValue(value) {
   }
 }
 
+function sanitizeStore(store) {
+  if (!store || typeof store !== 'object' || Array.isArray(store)) return {};
+  const out = {};
+  Object.entries(store).forEach(([key, value]) => {
+    if (!key || !value || typeof value !== 'object') return;
+    const tabsConfig = Array.isArray(value.tabsConfig) ? cloneValue(value.tabsConfig) : [];
+    if (tabsConfig.length === 0) return;
+    const genres = Array.isArray(value.genres)
+      ? value.genres.map((x) => String(x || '').trim()).filter(Boolean)
+      : String(key || '')
+        .split('||')
+        .map((x) => x.trim())
+        .filter(Boolean);
+    out[key] = {
+      genres,
+      tabsConfig,
+      updatedAt: String(value.updatedAt || ''),
+    };
+  });
+  return out;
+}
+
 function normalizeGenreLabel(value = '') {
   return String(value || '').trim();
 }
@@ -31,13 +55,49 @@ export function buildGenreTemplateKey(genres = []) {
 }
 
 function readStore() {
-  if (typeof localStorage === 'undefined') return {};
-  return safeJsonParse(localStorage.getItem(STORAGE_KEY) || '{}', {});
+  let runtimeStore = null;
+  if (typeof runtimeStoreGet === 'function') {
+    try {
+      const external = runtimeStoreGet();
+      if (external && typeof external === 'object') runtimeStore = sanitizeStore(external);
+    } catch {
+      /* fallback localStorage */
+    }
+  }
+  if (runtimeStore && Object.keys(runtimeStore).length > 0) return runtimeStore;
+  if (typeof localStorage === 'undefined') return runtimeStore || {};
+  const localStore = sanitizeStore(safeJsonParse(localStorage.getItem(STORAGE_KEY) || '{}', {}));
+  if (
+    runtimeStore &&
+    Object.keys(runtimeStore).length === 0 &&
+    Object.keys(localStore).length > 0 &&
+    typeof runtimeStoreSet === 'function'
+  ) {
+    try {
+      runtimeStoreSet(localStore);
+    } catch {
+      /* ignore migration write failure */
+    }
+  }
+  return Object.keys(localStore).length > 0 ? localStore : runtimeStore || {};
 }
 
 function writeStore(nextStore) {
+  const sanitized = sanitizeStore(nextStore);
+  if (typeof runtimeStoreSet === 'function') {
+    try {
+      runtimeStoreSet(sanitized);
+    } catch {
+      /* fallback localStorage only */
+    }
+  }
   if (typeof localStorage === 'undefined') return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(nextStore || {}));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
+}
+
+export function configureGenreTabsTemplateStore({ getStore, setStore } = {}) {
+  runtimeStoreGet = typeof getStore === 'function' ? getStore : null;
+  runtimeStoreSet = typeof setStore === 'function' ? setStore : null;
 }
 
 export function saveGenreTabsTemplate(genres = [], tabsConfig = []) {

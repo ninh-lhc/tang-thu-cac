@@ -124,6 +124,7 @@ async function pruneLegacyIndexVariantFiles(dirHandle) {
 
 export function useAppPersistence({
   novelStatsByIdRef,
+  genreTabsTemplatesRef,
   novelsMetadataRef,
   globalTabsConfigRef,
   dirHandleRef,
@@ -153,7 +154,11 @@ export function useAppPersistence({
         novelStatsOverride !== undefined && novelStatsOverride !== null
           ? novelStatsOverride
           : { ...novelStatsByIdRef.current };
-      const payload = { metadata: newMetadata, config: newConfig, novelStats };
+      const genreTabsTemplates =
+        genreTabsTemplatesRef?.current && typeof genreTabsTemplatesRef.current === 'object'
+          ? { ...genreTabsTemplatesRef.current }
+          : {};
+      const payload = { metadata: newMetadata, config: newConfig, novelStats, genreTabsTemplates };
       if (!dir || dir === 'LOCAL_STORAGE') {
         const writeRes = writeLocalJsonWithBackup(INDEX_STORAGE_KEY, INDEX_STORAGE_BACKUP_KEY, payload);
         if (!writeRes.ok && isQuotaExceededError(writeRes.error)) {
@@ -206,7 +211,7 @@ export function useAppPersistence({
         persistIndexShadow(payload);
       }
     },
-    [novelStatsByIdRef, showToast]
+    [novelStatsByIdRef, genreTabsTemplatesRef, showToast]
   );
 
   const queuePersistNovelStatsToIndex = useCallback(() => {

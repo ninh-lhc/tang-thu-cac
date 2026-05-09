@@ -154,6 +154,28 @@ function sanitizeMetadataItem(m) {
   };
 }
 
+function sanitizeGenreTabsTemplatesMap(raw) {
+  if (!isObj(raw)) return {};
+  const out = {};
+  Object.entries(raw).forEach(([key, value]) => {
+    if (!key || !isObj(value)) return;
+    const tabsConfig = Array.isArray(value.tabsConfig) ? clone(value.tabsConfig) : [];
+    if (tabsConfig.length === 0) return;
+    const genres = Array.isArray(value.genres)
+      ? value.genres.map((x) => String(x || '').trim()).filter(Boolean)
+      : String(key || '')
+        .split('||')
+        .map((x) => x.trim())
+        .filter(Boolean);
+    out[key] = {
+      genres,
+      tabsConfig,
+      updatedAt: String(value.updatedAt || ''),
+    };
+  });
+  return out;
+}
+
 /** Migrate index (tangthu_index): metadata, config, novelStats. */
 export function migrateIndex(raw) {
   const d = isObj(raw) ? clone(raw) : {};
@@ -164,6 +186,7 @@ export function migrateIndex(raw) {
   const hydratedConfig = hydrateTabsAutoSyncConfigs(Array.isArray(d.config) ? d.config : []);
   d.config = hydratedConfig.tabsConfig;
   d.novelStats = isObj(d.novelStats) ? d.novelStats : {};
+  d.genreTabsTemplates = sanitizeGenreTabsTemplatesMap(d.genreTabsTemplates);
   d.dataVersion = INDEX_DATA_VERSION;
 
   return d;

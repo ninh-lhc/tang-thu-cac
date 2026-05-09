@@ -212,8 +212,10 @@ export function useAppShellState() {
   });
 
   const [novelStatsById, setNovelStatsById] = useState(embeddedPreviewStats);
+  const [genreTabsTemplates, setGenreTabsTemplates] = useState({});
   const [isStatsBackfilling, setIsStatsBackfilling] = useState(false);
   const novelStatsByIdRef = useRef({});
+  const genreTabsTemplatesRef = useRef(genreTabsTemplates);
   const novelsMetadataRef = useRef(novelsMetadata);
   const globalTabsConfigRef = useRef(globalTabsConfig);
   const dirHandleRef = useRef(dirHandle);
@@ -233,12 +235,14 @@ export function useAppShellState() {
     dirHandleRef.current = dirHandle;
     activeNovelDataRef.current = activeNovelData;
     novelStatsByIdRef.current = novelStatsById;
+    genreTabsTemplatesRef.current = genreTabsTemplates;
   }, [
     activeNovelData,
     dirHandle,
     globalTabsConfig,
     isCommandPaletteOpen,
     novelStatsById,
+    genreTabsTemplates,
     novelsMetadata,
   ]);
 
@@ -281,14 +285,20 @@ export function useAppShellState() {
           : hydrateTabsAutoSyncConfigs(INITIAL_TABS_CONFIG).tabsConfig;
         const nextStats =
           parsed.novelStats && typeof parsed.novelStats === 'object' ? parsed.novelStats : {};
+        const nextGenreTemplates =
+          parsed.genreTabsTemplates && typeof parsed.genreTabsTemplates === 'object'
+            ? parsed.genreTabsTemplates
+            : {};
         setNovelsMetadata(nextMetadata);
         setGlobalTabsConfig(nextConfig);
         setNovelStatsById(nextStats);
+        setGenreTabsTemplates(nextGenreTemplates);
         setActiveNovelData(null);
         setActiveNovelDirHandle(null);
         novelsMetadataRef.current = nextMetadata;
         globalTabsConfigRef.current = nextConfig;
         novelStatsByIdRef.current = nextStats;
+        genreTabsTemplatesRef.current = nextGenreTemplates;
         try {
           localStorage.setItem(
             'tangthu_index_shadow',
@@ -296,6 +306,7 @@ export function useAppShellState() {
               metadata: nextMetadata,
               config: nextConfig,
               novelStats: nextStats,
+              genreTabsTemplates: nextGenreTemplates,
             })
           );
         } catch {
@@ -401,6 +412,7 @@ export function useAppShellState() {
     dirHandle,
     globalTabsConfigRef,
     novelStatsByIdRef,
+    genreTabsTemplatesRef,
     novelsMetadataRef,
     shouldAutoRestoreDirectory,
     showToast,
@@ -593,10 +605,13 @@ export function useAppShellState() {
     autoLinkToastEnabled,
     setAutoLinkToastEnabled,
     novelStatsById,
+    genreTabsTemplates,
+    setGenreTabsTemplates,
     setNovelStatsById,
     isStatsBackfilling,
     setIsStatsBackfilling,
     novelStatsByIdRef,
+    genreTabsTemplatesRef,
     novelsMetadataRef,
     globalTabsConfigRef,
     dirHandleRef,
