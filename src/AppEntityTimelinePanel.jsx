@@ -1,6 +1,6 @@
 /**
  * Panel timeline thẻ: danh sách mốc (cột trái) + chi tiết mốc (cột phải).
- * Phân trang 10 mốc/trang (chương mới nhất trước); thanh trang luôn dùng được, kể cả khi cột mốc thu (icon ←/→).
+ * Phân trang 10 mốc/trang (chương mới nhất trước); cột trái cố định hẹp (giống tab Miêu Tả), không thu gọn theo chọn mốc.
  * Cột mốc dùng @tanstack/react-virtual — tránh render hàng nghìn nút DOM (P0 roadmap).
  * Ai import: AppCollectionSection / luồng collection.
  */
@@ -34,8 +34,8 @@ function isMeaningfulTimelineValue(value) {
   return !emptyTokens.has(v);
 }
 
-/** Chiều cao ước lượng mỗi hàng mốc (p-4 + 2 dòng + gap); virtualizer dùng làm mặc định. */
-const MILESTONE_LIST_ROW_ESTIMATE_PX = 96;
+/** Chiều cao ước lượng mỗi hàng (nút chương gọn, có thể + 1 dòng tiêu đề phụ). */
+const MILESTONE_LIST_ROW_ESTIMATE_PX = 52;
 
 /** Cùng reference khi không có milestones — tránh dependency useMemo đổi mỗi render. */
 const EMPTY_MILESTONES = [];
@@ -88,8 +88,6 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
     LABEL_BADGE_CLASS[labelId] || 'border-cyan-700/40 bg-cyan-950/30 text-cyan-300';
   const [milestonesPage, setMilestonesPage] = useState(0);
   const milestoneListScrollRef = useRef(null);
-  const eventColumnRef = useRef(null);
-  const leaveCollapseTimeoutRef = useRef(null);
   const milestonesAll = Array.isArray(selectedEntity?.milestones)
     ? selectedEntity.milestones
     : EMPTY_MILESTONES;
@@ -108,13 +106,8 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   const totalPages = Math.max(1, Math.ceil(milestonesSorted.length / PAGE_SIZE));
   const safePage = Math.min(milestonesPage, totalPages - 1);
   const milestones = milestonesSorted.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
-  // Thu gọn sau khi đã chọn mốc. Mở rộng lại sẽ làm bằng CSS hover (không setState theo chuột để tránh lag).
-  const isEventColumnCollapsed = !!selectedMilestoneId;
-  const [isEventColumnHovered, setIsEventColumnHovered] = useState(false);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [reviewPick, setReviewPick] = useState(() => new Set());
-  const isEventColumnExpanded = !isEventColumnCollapsed || isEventColumnHovered;
-  const isEventColumnContentHidden = isEventColumnCollapsed && !isEventColumnExpanded;
 
   const rowVirtualizer = useVirtualizer({
     count: milestones.length,
@@ -128,27 +121,6 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
     // Clamp page khi đổi entity hoặc khi tổng số page giảm.
     setMilestonesPage((p) => Math.min(p, totalPages - 1));
   }, [selectedEntity?.id, totalPages]);
-
-  // Nếu user đã hover vào cột trái ngay thời điểm vừa chọn milestone (đổi state),
-  // thì onMouseEnter có thể không chạy lại. Dùng :hover để đồng bộ ngay lập tức.
-  useEffect(() => {
-    if (!isEventColumnCollapsed) {
-      setIsEventColumnHovered(false);
-      return;
-    }
-    const el = eventColumnRef.current;
-    if (!el) return;
-    if (el.matches(':hover')) setIsEventColumnHovered(true);
-  }, [isEventColumnCollapsed]);
-
-  useEffect(() => {
-    return () => {
-      if (leaveCollapseTimeoutRef.current) {
-        clearTimeout(leaveCollapseTimeoutRef.current);
-        leaveCollapseTimeoutRef.current = null;
-      }
-    };
-  }, []);
 
   useEffect(() => {
     // Khi đang bật tab timeline và milestone được chọn nằm ở page khác,
@@ -248,54 +220,12 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   };
 
   return (
-    <div className={`flex overflow-hidden w-full h-full flex-col md:flex-row pb-10`}>
-      <div
-        className={`group w-full border-r border-slate-800/80 flex flex-col flex-shrink-0 min-h-0 md:max-h-[min(85vh,720px)] transition-[width,padding] duration-200 ease-out ${
-          isEventColumnCollapsed
-            ? isEventColumnExpanded
-              ? 'md:w-1/3 md:pr-6'
-              : 'md:w-[92px] md:pr-2'
-            : 'md:w-1/3 md:pr-6'
-        }`}
-        ref={eventColumnRef}
-        onMouseEnter={() => {
-          if (leaveCollapseTimeoutRef.current) {
-            clearTimeout(leaveCollapseTimeoutRef.current);
-            leaveCollapseTimeoutRef.current = null;
-          }
-          setIsEventColumnHovered(true);
-        }}
-        onMouseLeave={() => {
-          if (leaveCollapseTimeoutRef.current) clearTimeout(leaveCollapseTimeoutRef.current);
-          // Hysteresis để tránh "giật" khi transition làm hit-area thay đổi.
-          leaveCollapseTimeoutRef.current = setTimeout(() => {
-            setIsEventColumnHovered(false);
-          }, 140);
-        }}
-      >
-        <div className="flex justify-between items-center mb-4 shrink-0">
-          <h3 className={`text-lg font-heading font-bold text-amber-500 transition-opacity duration-150 ${
-            isEventColumnContentHidden
-              ? 'opacity-0 pointer-events-none'
-              : 'opacity-100'
-          }`}>Mốc Sự Kiện</h3>
-          <div className="flex items-center gap-2">
-            {canReviewTimeline && (
-              <button
-                type="button"
-                onClick={() => setIsReviewOpen((p) => !p)}
-                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-colors ${
-                  isReviewOpen
-                    ? 'text-cyan-300 bg-cyan-950/40 border-cyan-700/50'
-                    : 'text-slate-300 bg-slate-900 border-slate-700 hover:border-cyan-700/40'
-                }`}
-                title="Rà soát mốc theo nhãn ký tự"
-              >
-                Rà soát
-              </button>
-            )}
-            <button onClick={() => { setEditingMilestoneData(null); setIsMilestoneModalOpen(true); }} className="p-2 bg-emerald-900/30 text-emerald-400 rounded-[40px] hover:bg-emerald-800/50 transition-colors" title="Thêm mốc mới"><Plus size={16}/></button>
-          </div>
+    <div className="flex overflow-hidden w-full h-full flex-col md:flex-row pb-10">
+      <div className="w-full border-r border-slate-800/80 flex flex-col flex-shrink-0 min-h-0 md:w-[clamp(11.5rem,14vw,14.5rem)] md:pr-4 md:max-h-[min(85vh,720px)]">
+        <div className="flex items-center mb-4 shrink-0">
+          <h3 className="text-xs font-heading font-bold text-amber-500 uppercase tracking-widest">
+            Mốc Sự Kiện
+          </h3>
         </div>
 
         {milestonesAll.length === 0 ? (
@@ -317,13 +247,8 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                 </button>
               </div>
             )}
-            <div ref={milestoneListScrollRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative pl-1">
-              <div
-                className="absolute left-[14px] top-0 w-px bg-gradient-to-b from-amber-900/50 via-slate-700 to-transparent z-0 pointer-events-none"
-                style={{ height: `${Math.max(rowVirtualizer.getTotalSize(), 120)}px` }}
-                aria-hidden
-              />
-              <div className="relative z-10" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
+            <div ref={milestoneListScrollRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+              <div className="relative" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
                 {rowVirtualizer.getVirtualItems().map((vi) => {
                   const ms = milestones[vi.index];
                   if (!ms) return null;
@@ -332,68 +257,48 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                   const milestoneTitle = getMilestoneTitle(ms);
                   const milestoneBodyPreview = getMilestoneBody(ms, parsedMs).trim();
                   const isAutoMs = isAutoOwnerMilestone(ms);
+                  const tooltipParts = [
+                    milestoneTitle,
+                    milestoneBodyPreview,
+                    parsedMs.labelId ? safeString(labelTitleById.get(parsedMs.labelId)) : '',
+                    isAutoMs ? 'AUTO' : '',
+                  ].filter(Boolean);
+                  const tooltip =
+                    tooltipParts.length > 0
+                      ? `Chương ${safeString(ms.chapter)} · ${tooltipParts.join(' · ')}`
+                      : `Mốc chương ${safeString(ms.chapter)}`;
                   return (
                     <div
                       key={ms.id}
                       ref={rowVirtualizer.measureElement}
                       data-index={vi.index}
-                      className="absolute top-0 left-0 w-full pb-4"
+                      className="absolute top-0 left-0 w-full pb-2"
                       style={{ transform: `translateY(${vi.start}px)` }}
                     >
                       <button
                         type="button"
-                        onClick={() => { setSelectedMilestoneId(ms.id); }}
-                      className={`w-full text-left p-4 rounded-2xl flex items-start gap-4 transition-all duration-300 ${isSelected ? 'bg-gradient-to-r from-amber-900/40 to-slate-900 border border-amber-700/50 shadow-lg translate-x-2' : 'bg-transparent border border-transparent hover:bg-slate-900 hover:border-slate-800'}`}
+                        onClick={() => {
+                          setSelectedMilestoneId(ms.id);
+                        }}
+                        className={`w-full rounded-xl px-3 py-2 text-left font-heading font-bold text-xs transition-all duration-200 border ${
+                          isSelected
+                            ? 'bg-gradient-to-r from-amber-900/50 to-amber-800/30 border-amber-700/60 text-amber-300 shadow-md'
+                            : 'bg-slate-900/40 border-slate-800/80 text-slate-400 hover:bg-slate-900 hover:border-slate-700 hover:text-slate-200'
+                        }`}
+                        title={tooltip}
                       >
-                        <div className={`mt-1 w-3 h-3 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-amber-400 border-amber-900 shadow-[0_0_10px_var(--t-400)]' : 'bg-slate-800 border-slate-950 group-hover:bg-slate-600'}`}></div>
-                        {isEventColumnContentHidden && (
-                          <div className="min-w-0 flex-1 pt-0.5">
-                            <div className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                              isSelected
-                                ? 'border-amber-700/70 bg-amber-900/40 text-amber-300'
-                                : 'border-slate-700/80 bg-slate-900/70 text-slate-400 group-hover:text-slate-300'
-                            }`}>
-                              Ch {safeString(ms.chapter)}
-                            </div>
-                          </div>
-                        )}
-                        <div
-                          className={`flex-1 min-w-0 transition-[opacity,max-width] duration-150 overflow-hidden ${
-                            isEventColumnContentHidden
-                              ? 'opacity-0 max-w-0 pointer-events-none'
-                              : 'opacity-100 max-w-[9999px]'
-                          }`}
-                        >
-                          <div className={`text-sm font-bold uppercase tracking-widest font-heading mb-1 transition-colors ${isSelected ? 'text-amber-400' : 'text-slate-400 group-hover:text-slate-300'}`}>Chương {safeString(ms.chapter)}</div>
-                          <div className="flex items-center gap-2 mb-1">
-                            {parsedMs.labelId && (
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded border uppercase tracking-wide ${getLabelBadgeClass(parsedMs.labelId)}`}>
-                                {safeString(labelTitleById.get(parsedMs.labelId))}
-                              </span>
-                            )}
-                            {isAutoMs && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700/50 bg-emerald-950/30 text-emerald-300 uppercase tracking-wide">
-                                AUTO
-                              </span>
-                            )}
-                          </div>
-                          {milestoneTitle ? (
-                            <div className="space-y-1">
-                              <div className={`text-sm font-semibold leading-snug ${isSelected ? 'text-slate-100' : 'text-slate-300 group-hover:text-slate-200'}`}>
-                                {milestoneTitle}
-                              </div>
-                              {milestoneBodyPreview ? (
-                                <div className={`text-xs font-serif line-clamp-2 leading-relaxed ${isSelected ? 'text-slate-300' : 'text-slate-500 group-hover:text-slate-400'}`}>
-                                  {milestoneBodyPreview}
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <div className={`text-xs font-serif line-clamp-2 leading-relaxed ${isSelected ? 'text-slate-200' : 'text-slate-500 group-hover:text-slate-400'}`}>
-                              {milestoneBodyPreview}
-                            </div>
+                        <span className="flex items-center gap-2 min-w-0 justify-between">
+                          <span className="block uppercase tracking-widest whitespace-nowrap">
+                            Chương {safeString(ms.chapter)}
+                          </span>
+                          {parsedMs.labelId && (
+                            <span
+                              className={`inline-block text-[10px] px-1.5 py-0.5 rounded border normal-case tracking-normal font-semibold whitespace-nowrap flex-shrink-0 ${getLabelBadgeClass(parsedMs.labelId)}`}
+                            >
+                              {safeString(labelTitleById.get(parsedMs.labelId))}
+                            </span>
                           )}
-                        </div>
+                        </span>
                       </button>
                     </div>
                   );
@@ -403,86 +308,76 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
 
             {totalPages > 1 && (
               <div
-                className={`mt-3 shrink-0 px-1 transition-all duration-150 ${
-                  isEventColumnContentHidden
-                    ? 'flex flex-col items-center gap-1.5 py-2 border-t border-slate-800/70'
-                    : 'flex max-h-[72px] items-center justify-between gap-2 sm:gap-3'
-                }`}
+                className="mt-3 shrink-0 flex flex-col items-center gap-1.5 py-2 border-t border-slate-800/70 px-0.5"
                 role="navigation"
                 aria-label="Phân trang mốc thời gian (10 mốc gần nhất mỗi trang, trang 1 là mới nhất)"
               >
-                {isEventColumnContentHidden ? (
-                  <>
-                    <button
-                      type="button"
-                      disabled={safePage <= 0}
-                      title="Trang trước — các mốc mới hơn"
-                      aria-label="Trang trước, mốc mới hơn"
-                      onClick={() => setMilestonesPage((p) => Math.max(0, p - 1))}
-                      className={`tt-kbd-focus p-2 rounded-lg border transition-colors ${
-                        safePage <= 0
-                          ? 'bg-slate-900 border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
-                          : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-900/50'
-                      }`}
-                    >
-                      <ChevronLeft size={18} aria-hidden />
-                    </button>
-                    <span className="text-[10px] font-bold text-slate-500 tabular-nums leading-none">
-                      {safePage + 1}/{totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={safePage >= totalPages - 1}
-                      title="Trang sau — các mốc cũ hơn"
-                      aria-label="Trang sau, mốc cũ hơn"
-                      onClick={() => setMilestonesPage((p) => Math.min(totalPages - 1, p + 1))}
-                      className={`tt-kbd-focus p-2 rounded-lg border transition-colors ${
-                        safePage >= totalPages - 1
-                          ? 'bg-slate-900 border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
-                          : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-900/50'
-                      }`}
-                    >
-                      <ChevronRight size={18} aria-hidden />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      disabled={safePage <= 0}
-                      onClick={() => setMilestonesPage((p) => Math.max(0, p - 1))}
-                      className={`tt-kbd-focus px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
-                        safePage <= 0
-                          ? 'bg-slate-900 border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
-                          : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-900/50'
-                      }`}
-                    >
-                      Trang trước
-                    </button>
-                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest tabular-nums">
-                      {safePage + 1} / {totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={safePage >= totalPages - 1}
-                      onClick={() => setMilestonesPage((p) => Math.min(totalPages - 1, p + 1))}
-                      className={`tt-kbd-focus px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
-                        safePage >= totalPages - 1
-                          ? 'bg-slate-900 border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
-                          : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-900/50'
-                      }`}
-                    >
-                      Trang sau
-                    </button>
-                  </>
-                )}
+                <button
+                  type="button"
+                  disabled={safePage <= 0}
+                  title="Trang trước — các mốc mới hơn"
+                  aria-label="Trang trước, mốc mới hơn"
+                  onClick={() => setMilestonesPage((p) => Math.max(0, p - 1))}
+                  className={`tt-kbd-focus p-2 rounded-lg border transition-colors ${
+                    safePage <= 0
+                      ? 'bg-slate-900 border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
+                      : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-900/50'
+                  }`}
+                >
+                  <ChevronLeft size={18} aria-hidden />
+                </button>
+                <span className="text-[10px] font-bold text-slate-500 tabular-nums leading-none">
+                  {safePage + 1}/{totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={safePage >= totalPages - 1}
+                  title="Trang sau — các mốc cũ hơn"
+                  aria-label="Trang sau, mốc cũ hơn"
+                  onClick={() => setMilestonesPage((p) => Math.min(totalPages - 1, p + 1))}
+                  className={`tt-kbd-focus p-2 rounded-lg border transition-colors ${
+                    safePage >= totalPages - 1
+                      ? 'bg-slate-900 border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
+                      : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-900/50'
+                  }`}
+                >
+                  <ChevronRight size={18} aria-hidden />
+                </button>
               </div>
             )}
           </>
         )}
       </div>
 
-      <div className="flex-1 min-w-0 overflow-y-auto custom-scrollbar pl-2 pr-2">
+      <div className="flex-1 min-w-0 overflow-y-auto custom-scrollbar md:pl-6 pl-2 pr-2">
+        <div className="mb-4 flex items-center justify-end gap-2">
+          {canReviewTimeline && (
+            <button
+              type="button"
+              onClick={() => setIsReviewOpen((p) => !p)}
+              className={`px-2.5 py-1.5 text-[11px] font-bold rounded-lg border transition-colors ${
+                isReviewOpen
+                  ? 'text-cyan-300 bg-cyan-950/40 border-cyan-700/50'
+                  : 'text-slate-300 bg-slate-900 border-slate-700 hover:border-cyan-700/40'
+              }`}
+              title="Rà soát mốc theo nhãn ký tự"
+            >
+              Rà soát
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setEditingMilestoneData(null);
+              setIsMilestoneModalOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-900/30 text-emerald-300 rounded-lg border border-emerald-800/50 hover:bg-emerald-800/40 transition-colors text-[11px] font-bold"
+            title="Thêm mốc mới"
+          >
+            <Plus size={13} />
+            Thêm mốc
+          </button>
+        </div>
         {canReviewTimeline && isReviewOpen && (
           <div className="mb-4 rounded-2xl border border-cyan-800/40 bg-cyan-950/10 p-4">
             <div className="text-[11px] font-bold uppercase tracking-widest text-cyan-300 mb-2">Bộ nhãn ký tự</div>
