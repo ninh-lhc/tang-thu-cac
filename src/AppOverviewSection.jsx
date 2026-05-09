@@ -76,6 +76,11 @@ export function AppOverviewSection({
   const readChapters = Math.max(0, parseInt(overviewForm?.chaptersRead, 10) || 0);
   const progressPercent = computeProgressPercent(readChapters, totalChapters);
   const isReadingDone = checkNovelReadingDone(readChapters, totalChapters);
+  const novelGenres = Array.isArray(activeNovelData.genres)
+    ? activeNovelData.genres.map((g) => safeString(g).trim()).filter(Boolean)
+    : safeString(activeNovelData.genre).trim()
+      ? [safeString(activeNovelData.genre).trim()]
+      : [];
   const hasPersonalTags = (activeNovelData.tags || []).length > 0;
   const xrefs = Array.isArray(activeNovelData.chapterCrossRefs) ? activeNovelData.chapterCrossRefs : [];
 
@@ -147,6 +152,23 @@ export function AppOverviewSection({
             <header className="space-y-1">
               <h1 className="text-5xl font-heading font-bold text-slate-100 leading-tight">{safeString(activeNovelData.title)}</h1>
               <p className="text-xl text-slate-400 font-serif italic">Tác giả: {safeString(activeNovelData.author)}</p>
+              {novelGenres.length > 0 && (
+                <div className="pt-2">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-1.5">
+                    Thể loại
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {novelGenres.map((genre) => (
+                      <span
+                        key={genre}
+                        className="px-2.5 py-1 rounded-md text-[11px] font-serif border border-cyan-800/40 bg-cyan-950/25 text-cyan-200"
+                      >
+                        {safeString(genre)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </header>
 
             {/* Quick stats grid */}
