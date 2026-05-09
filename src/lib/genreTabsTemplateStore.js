@@ -1,3 +1,5 @@
+import bundledGenreTabsTemplatesJson from '../data/bundledGenreTabsTemplates.json';
+
 const STORAGE_KEY = 'ttc_genre_tabs_templates_v1';
 let runtimeStoreGet = null;
 let runtimeStoreSet = null;
@@ -125,6 +127,20 @@ export function mergeGenreTabsTemplatesFromLocalStorage(indexTemplates = {}) {
   });
 
   return { next, changed };
+}
+
+/** Chỉ thêm khóa chưa có (index/LS không ghi đè). Nguồn: src/data/bundledGenreTabsTemplates.json */
+export function mergeBundledGenreTabsTemplatesInto(base = {}) {
+  const out = sanitizeStore(base);
+  const bundled = sanitizeStore(bundledGenreTabsTemplatesJson);
+  let changed = false;
+  Object.entries(bundled).forEach(([key, rec]) => {
+    if (!out[key]) {
+      out[key] = rec;
+      changed = true;
+    }
+  });
+  return { next: out, changed };
 }
 
 export function saveGenreTabsTemplate(genres = [], tabsConfig = []) {

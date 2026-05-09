@@ -20,7 +20,10 @@ import {
   isPersistedDirectoryHandleUsable,
   loadPersistedDirectoryHandle,
 } from './lib/directoryHandleStore.js';
-import { mergeGenreTabsTemplatesFromLocalStorage } from './lib/genreTabsTemplateStore.js';
+import {
+  mergeBundledGenreTabsTemplatesInto,
+  mergeGenreTabsTemplatesFromLocalStorage,
+} from './lib/genreTabsTemplateStore.js';
 import { findNovelFolderEntryNameOnRoot } from './lib/novelDiskLayout.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 import { useToast } from './useToast.js';
@@ -290,7 +293,8 @@ export function useAppShellState() {
           parsed.genreTabsTemplates && typeof parsed.genreTabsTemplates === 'object'
             ? parsed.genreTabsTemplates
             : {};
-        const { next: nextGenreTemplates } = mergeGenreTabsTemplatesFromLocalStorage(rawGenreTabs);
+        const lsMerged = mergeGenreTabsTemplatesFromLocalStorage(rawGenreTabs);
+        const { next: nextGenreTemplates } = mergeBundledGenreTabsTemplatesInto(lsMerged.next);
         setNovelsMetadata(nextMetadata);
         setGlobalTabsConfig(nextConfig);
         setNovelStatsById(nextStats);

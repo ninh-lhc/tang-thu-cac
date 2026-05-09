@@ -3,6 +3,7 @@ import {
   buildGenreTemplateKey,
   deleteGenreTabsTemplate,
   getGenreTabsTemplate,
+  mergeBundledGenreTabsTemplatesInto,
   mergeGenreTabsTemplatesFromLocalStorage,
   saveGenreTabsTemplate,
 } from './genreTabsTemplateStore.js';
@@ -93,6 +94,25 @@ describe('genreTabsTemplateStore', () => {
     const { next, changed } = mergeGenreTabsTemplatesFromLocalStorage(indexOlder);
     expect(changed).toBe(true);
     expect(next[key]?.tabsConfig?.[0]?.id).toBe('old');
+  });
+
+  it('mergeBundled adds shipped defaults without overwriting existing keys', () => {
+    const comboKey = buildGenreTemplateKey(['Tiên Hiệp', 'Hệ Thống']);
+    const custom = {
+      [comboKey]: {
+        genres: comboKey.split('||'),
+        tabsConfig: [{ id: 'custom-root', subTabs: [] }],
+        updatedAt: '2099-01-01T00:00:00.000Z',
+      },
+    };
+    const first = mergeBundledGenreTabsTemplatesInto(custom);
+    expect(first.changed).toBe(true);
+    expect(first.next[comboKey]?.tabsConfig?.[0]?.id).toBe('custom-root');
+    const tienKey = buildGenreTemplateKey(['Tiên Hiệp']);
+    expect(first.next[tienKey]?.tabsConfig?.length).toBeGreaterThan(0);
+
+    const second = mergeBundledGenreTabsTemplatesInto(first.next);
+    expect(second.changed).toBe(false);
   });
 });
 

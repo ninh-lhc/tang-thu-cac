@@ -1,0 +1,3046 @@
+{
+  "Tiên Hiệp": {
+    "genres": [
+      "Tiên Hiệp"
+    ],
+    "tabsConfig": [
+      {
+        "id": "tong-quan",
+        "label": "Tổng Quan",
+        "iconName": "BookOpen",
+        "subTabs": [],
+        "isFixed": true
+      },
+      {
+        "id": "tu-si",
+        "label": "Tu Sĩ (Nhân Vật)",
+        "iconName": "User",
+        "subTabs": [
+          {
+            "id": "thien-menh-chi-tu",
+            "label": "Thiên Mệnh Chi Tử (NVC)",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_linh_can",
+                "label": "Linh Căn / Thiên Phú"
+              },
+              {
+                "id": "f_the_chat",
+                "label": "Thể Chất"
+              },
+              {
+                "id": "f_cong_phap",
+                "label": "Công Pháp chính"
+              },
+              {
+                "id": "f_vu_khi",
+                "label": "Pháp Bảo"
+              },
+              {
+                "id": "f_to_chuc",
+                "label": "Thế Lực / Tông Môn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-chinh",
+            "autoSyncFieldMap": {
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "dao-lu",
+            "label": "Đạo Lữ",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_linh_can",
+                "label": "Linh Căn / Thiên Phú"
+              },
+              {
+                "id": "f_the_chat",
+                "label": "Thể Chất"
+              },
+              {
+                "id": "f_cong_phap",
+                "label": "Công Pháp chính"
+              },
+              {
+                "id": "f_quan_he",
+                "label": "Quan hệ với chủ nhân"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-lien-quan",
+            "autoSyncFieldMap": {
+              "relation": "f_quan_he",
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "hong-nhan-tri-ky",
+            "label": "Hồng Nhan Tri Kỷ",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_linh_can",
+                "label": "Linh Căn / Thiên Phú"
+              },
+              {
+                "id": "f_the_chat",
+                "label": "Thể Chất"
+              },
+              {
+                "id": "f_cong_phap",
+                "label": "Công Pháp chính"
+              },
+              {
+                "id": "f_quan_he",
+                "label": "Quan hệ với chủ nhân"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-lien-quan",
+            "autoSyncFieldMap": {
+              "relation": "f_quan_he",
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "sinh-tu-giao",
+            "label": "Sinh Tử Giao (Huynh đệ)",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_linh_can",
+                "label": "Linh Căn / Thiên Phú"
+              },
+              {
+                "id": "f_the_chat",
+                "label": "Thể Chất"
+              },
+              {
+                "id": "f_cong_phap",
+                "label": "Công Pháp chính"
+              },
+              {
+                "id": "f_quan_he",
+                "label": "Quan hệ với chủ nhân"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-lien-quan",
+            "autoSyncFieldMap": {
+              "relation": "f_quan_he",
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "dong-mon-su-de",
+            "label": "Đồng Môn Sư Đệ/Sư Muội",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_linh_can",
+                "label": "Linh Căn / Thiên Phú"
+              },
+              {
+                "id": "f_the_chat",
+                "label": "Thể Chất"
+              },
+              {
+                "id": "f_cong_phap",
+                "label": "Công Pháp chính"
+              },
+              {
+                "id": "f_quan_he",
+                "label": "Quan hệ với chủ nhân"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-lien-quan",
+            "autoSyncFieldMap": {
+              "relation": "f_quan_he",
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "tu-dich",
+            "label": "Tử Địch (Kẻ thù)",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_to_chuc",
+                "label": "Thế lực"
+              },
+              {
+                "id": "f_dong_luc",
+                "label": "Động lực / Mục tiêu"
+              },
+              {
+                "id": "f_vu_khi",
+                "label": "Pháp Bảo"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-lien-quan",
+            "autoSyncFieldMap": {
+              "relation": "f_quan_he",
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "phan-dien",
+            "label": "Phản Diện / Pháo Khôi",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_to_chuc",
+                "label": "Thế lực"
+              },
+              {
+                "id": "f_dong_luc",
+                "label": "Động lực / Mục tiêu"
+              },
+              {
+                "id": "f_vu_khi",
+                "label": "Pháp Bảo"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-lien-quan",
+            "autoSyncFieldMap": {
+              "relation": "f_quan_he",
+              "status": "f_status"
+            }
+          }
+        ],
+        "_group": "Nhân Vật",
+        "_genre": "Tiên Hiệp"
+      },
+      {
+        "id": "dai-dao",
+        "label": "Đại Đạo (Tu Luyện)",
+        "iconName": "Flame",
+        "subTabs": [
+          {
+            "id": "canh-gioi-tu-vi",
+            "label": "Cảnh Giới Tu Vi",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Thuộc hệ thống"
+              },
+              {
+                "id": "f_title",
+                "label": "Thứ tự / Cấp số"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện đột phá"
+              },
+              {
+                "id": "f_dac_quyen",
+                "label": "Đặc quyền / Năng lực"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc điểm nhận dạng"
+              }
+            ],
+            "autoSyncRole": "canh-gioi-tu-vi",
+            "autoSyncFieldMap": {
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "cong-phap",
+            "label": "Công Pháp",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới yêu cầu"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Thuộc tính"
+              },
+              {
+                "id": "f_cap",
+                "label": "Phẩm giai"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng"
+              }
+            ]
+          },
+          {
+            "id": "vo-ky",
+            "label": "Võ Kỹ",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới yêu cầu"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Thuộc tính"
+              },
+              {
+                "id": "f_cap",
+                "label": "Phẩm giai"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng"
+              }
+            ]
+          },
+          {
+            "id": "cam-thuat",
+            "label": "Cấm Thuật",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới yêu cầu"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Thuộc tính"
+              },
+              {
+                "id": "f_cap",
+                "label": "Phẩm giai"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng"
+              }
+            ]
+          },
+          {
+            "id": "bi-phap",
+            "label": "Bí Pháp",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới yêu cầu"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Thuộc tính"
+              },
+              {
+                "id": "f_cap",
+                "label": "Phẩm giai"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng"
+              }
+            ]
+          },
+          {
+            "id": "dac-thu-the-chat",
+            "label": "Đặc Thù Thể Chất",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp độ"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Nguồn gốc"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc điểm"
+              }
+            ]
+          },
+          {
+            "id": "thai-co-huyet-mach",
+            "label": "Thái Cổ Huyết Mạch",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp độ"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Nguồn gốc"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc điểm"
+              }
+            ]
+          },
+          {
+            "id": "linh-can",
+            "label": "Linh Căn",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp độ"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Nguồn gốc"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc điểm"
+              }
+            ]
+          },
+          {
+            "id": "ngo-tinh-thien-phu",
+            "label": "Ngộ Tính Thiên Phú",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp độ"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Nguồn gốc"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc điểm"
+              }
+            ]
+          },
+          {
+            "id": "thien-phu",
+            "label": "Thiên Phú",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp độ"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Nguồn gốc"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc điểm"
+              }
+            ]
+          }
+        ],
+        "_group": "Tu Luyện / Sức mạnh",
+        "_genre": "Tiên Hiệp"
+      },
+      {
+        "id": "chu-thien-van-gioi",
+        "label": "Chư Thiên Vạn Giới (Thế Giới)",
+        "iconName": "Globe",
+        "subTabs": [
+          {
+            "id": "tu-tien-gioi",
+            "label": "Tu Tiên Giới / Phàm Nhân Giới",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Mức nguy hiểm"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại địa danh"
+              },
+              {
+                "id": "f_he_gioi_ban_do",
+                "label": "Quy Mô Địa Vực"
+              },
+              {
+                "id": "f_vi_tri",
+                "label": "Vị trí"
+              },
+              {
+                "id": "f_co_duyen",
+                "label": "Kho báu / Cơ duyên"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ],
+            "autoSyncRole": "ban-do",
+            "autoSyncFieldMap": {
+              "title": "f_title",
+              "status": "f_status",
+              "parent_path": "f_vi_tri"
+            }
+          },
+          {
+            "id": "vi-dien-tinh-vuc",
+            "label": "Vị Diện / Tinh Vực",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Mức nguy hiểm"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại địa danh"
+              },
+              {
+                "id": "f_he_gioi_ban_do",
+                "label": "Quy Mô Địa Vực"
+              },
+              {
+                "id": "f_vi_tri",
+                "label": "Vị trí"
+              },
+              {
+                "id": "f_co_duyen",
+                "label": "Kho báu / Cơ duyên"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "thuong-gioi-tien-gioi",
+            "label": "Thượng Giới / Tiên Giới",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Mức nguy hiểm"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại địa danh"
+              },
+              {
+                "id": "f_he_gioi_ban_do",
+                "label": "Quy Mô Địa Vực"
+              },
+              {
+                "id": "f_vi_tri",
+                "label": "Vị trí"
+              },
+              {
+                "id": "f_co_duyen",
+                "label": "Kho báu / Cơ duyên"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "cam-dia",
+            "label": "Cấm Địa",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Mức nguy hiểm"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại địa danh"
+              },
+              {
+                "id": "f_he_gioi_ban_do",
+                "label": "Quy Mô Địa Vực"
+              },
+              {
+                "id": "f_vi_tri",
+                "label": "Vị trí"
+              },
+              {
+                "id": "f_co_duyen",
+                "label": "Kho báu / Cơ duyên"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "thuong-co-di-tich",
+            "label": "Thượng Cổ Di Tích",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Mức nguy hiểm"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại địa danh"
+              },
+              {
+                "id": "f_he_gioi_ban_do",
+                "label": "Quy Mô Địa Vực"
+              },
+              {
+                "id": "f_vi_tri",
+                "label": "Vị trí"
+              },
+              {
+                "id": "f_co_duyen",
+                "label": "Kho báu / Cơ duyên"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          }
+        ],
+        "_group": "Thế Giới",
+        "_genre": "Tiên Hiệp"
+      },
+      {
+        "id": "dinh-cap-the-luc",
+        "label": "Đỉnh Cấp Thế Lực",
+        "iconName": "Hexagon",
+        "subTabs": [
+          {
+            "id": "tong-mon-thanh-dia",
+            "label": "Tông Môn / Thánh Địa",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp bậc"
+              },
+              {
+                "id": "f_title",
+                "label": "Chính / Tà"
+              },
+              {
+                "id": "f_cap",
+                "label": "Quy mô"
+              },
+              {
+                "id": "f_dia_ban",
+                "label": "Địa bàn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc trưng"
+              }
+            ],
+            "autoSyncRole": "the-luc",
+            "autoSyncTargetPaths": [
+              "chu-thien-van-gioi::tu-tien-gioi"
+            ],
+            "autoSyncFieldMap": {
+              "status": "f_status",
+              "location": "f_dia_ban",
+              "type": "f_title"
+            }
+          },
+          {
+            "id": "truong-ton-the-gia",
+            "label": "Trường Tồn Thế Gia",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp bậc"
+              },
+              {
+                "id": "f_title",
+                "label": "Chính / Tà"
+              },
+              {
+                "id": "f_cap",
+                "label": "Quy mô"
+              },
+              {
+                "id": "f_dia_ban",
+                "label": "Địa bàn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc trưng"
+              }
+            ],
+            "autoSyncRole": "the-luc",
+            "autoSyncFieldMap": {
+              "status": "f_status",
+              "location": "f_dia_ban",
+              "type": "f_title"
+            },
+            "autoSyncTargetPaths": [
+              "chu-thien-van-gioi::tu-tien-gioi"
+            ]
+          },
+          {
+            "id": "an-the-tong-mon",
+            "label": "Ẩn Thế Tông Môn",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp bậc"
+              },
+              {
+                "id": "f_title",
+                "label": "Chính / Tà"
+              },
+              {
+                "id": "f_cap",
+                "label": "Quy mô"
+              },
+              {
+                "id": "f_dia_ban",
+                "label": "Địa bàn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc trưng"
+              }
+            ],
+            "autoSyncRole": "the-luc",
+            "autoSyncFieldMap": {
+              "status": "f_status",
+              "location": "f_dia_ban",
+              "type": "f_title"
+            },
+            "autoSyncTargetPaths": [
+              "chu-thien-van-gioi::tu-tien-gioi"
+            ]
+          }
+        ],
+        "_group": "Thế Lực",
+        "_genre": "Tiên Hiệp"
+      },
+      {
+        "id": "ky-tran-di-bao",
+        "label": "Kỳ Trân Dị Bảo (Vật Phẩm)",
+        "iconName": "Swords",
+        "subTabs": [
+          {
+            "id": "phap-bao-tien-khi",
+            "label": "Pháp Bảo / Tiên Khí",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại pháp bảo"
+              },
+              {
+                "id": "f_chu",
+                "label": "Chủ nhân"
+              },
+              {
+                "id": "f_linh_the",
+                "label": "Linh thể / Tinh linh"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng & Hiệu quả"
+              }
+            ]
+          },
+          {
+            "id": "than-binh-loi-khi",
+            "label": "Thần Binh Lợi Khí",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại pháp bảo"
+              },
+              {
+                "id": "f_chu",
+                "label": "Chủ nhân"
+              },
+              {
+                "id": "f_linh_the",
+                "label": "Linh thể / Tinh linh"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng & Hiệu quả"
+              }
+            ]
+          },
+          {
+            "id": "dan-duoc",
+            "label": "Đan Dược",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại"
+              },
+              {
+                "id": "f_cong_dung",
+                "label": "Công dụng"
+              },
+              {
+                "id": "f_nguyen_lieu",
+                "label": "Nguyên liệu"
+              },
+              {
+                "id": "f_desc",
+                "label": "Điều kiện sử dụng"
+              }
+            ]
+          },
+          {
+            "id": "tien-thao-linh-duoc",
+            "label": "Tiên Thảo / Linh Dược",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại"
+              },
+              {
+                "id": "f_cong_dung",
+                "label": "Công dụng"
+              },
+              {
+                "id": "f_nguyen_lieu",
+                "label": "Nguyên liệu"
+              },
+              {
+                "id": "f_desc",
+                "label": "Điều kiện sử dụng"
+              }
+            ]
+          },
+          {
+            "id": "thien-tai-dia-bao",
+            "label": "Thiên Tài Địa Bảo",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại pháp bảo"
+              },
+              {
+                "id": "f_chu",
+                "label": "Chủ nhân"
+              },
+              {
+                "id": "f_linh_the",
+                "label": "Linh thể / Tinh linh"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng & Hiệu quả"
+              }
+            ]
+          },
+          {
+            "id": "tran-phap",
+            "label": "Trận Pháp",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại"
+              },
+              {
+                "id": "f_tac_dung",
+                "label": "Tác dụng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện triển khai"
+              },
+              {
+                "id": "f_desc",
+                "label": "Hạn chế"
+              }
+            ]
+          },
+          {
+            "id": "linh-phu-bua-chu",
+            "label": "Linh Phù / Bùa Chú",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại pháp bảo"
+              },
+              {
+                "id": "f_chu",
+                "label": "Chủ nhân"
+              },
+              {
+                "id": "f_linh_the",
+                "label": "Linh thể / Tinh linh"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng & Hiệu quả"
+              }
+            ]
+          }
+        ],
+        "_group": "Vật Phẩm / Kỹ thuật",
+        "_genre": "Tiên Hiệp"
+      }
+    ],
+    "updatedAt": "2026-05-09T12:00:00.000Z"
+  },
+  "Hệ Thống": {
+    "genres": [
+      "Hệ Thống"
+    ],
+    "tabsConfig": [
+      {
+        "id": "tong-quan",
+        "label": "Tổng Quan",
+        "iconName": "BookOpen",
+        "subTabs": [],
+        "isFixed": true
+      },
+      {
+        "id": "ban-the-he-thong",
+        "label": "Bản Thể Hệ Thống",
+        "iconName": "Hexagon",
+        "subTabs": [
+          {
+            "id": "nguon-goc-he-thong",
+            "label": "Nguồn Gốc Hệ Thống",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phân hệ / phiên bản"
+              },
+              {
+                "id": "f_title",
+                "label": "Nguồn gốc / loại hệ thống"
+              },
+              {
+                "id": "f_quyen_han",
+                "label": "Quyền hạn / cấp truy cập"
+              },
+              {
+                "id": "f_rang_buoc",
+                "label": "Ràng buộc / giới hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ghi chú vận hành"
+              }
+            ]
+          },
+          {
+            "id": "ma-dinh-danh-phien-ban",
+            "label": "Mã Định Danh / Phiên Bản",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phân hệ / phiên bản"
+              },
+              {
+                "id": "f_title",
+                "label": "Nguồn gốc / loại hệ thống"
+              },
+              {
+                "id": "f_quyen_han",
+                "label": "Quyền hạn / cấp truy cập"
+              },
+              {
+                "id": "f_rang_buoc",
+                "label": "Ràng buộc / giới hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ghi chú vận hành"
+              }
+            ]
+          },
+          {
+            "id": "tri-nao-he-thong-tinh-linh",
+            "label": "Trí Não / Hệ Thống Tinh Linh",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phân hệ / phiên bản"
+              },
+              {
+                "id": "f_title",
+                "label": "Nguồn gốc / loại hệ thống"
+              },
+              {
+                "id": "f_quyen_han",
+                "label": "Quyền hạn / cấp truy cập"
+              },
+              {
+                "id": "f_rang_buoc",
+                "label": "Ràng buộc / giới hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ghi chú vận hành"
+              }
+            ]
+          },
+          {
+            "id": "quyen-han-cap-do",
+            "label": "Quyền Hạn Cấp Độ",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phân hệ / phiên bản"
+              },
+              {
+                "id": "f_title",
+                "label": "Nguồn gốc / loại hệ thống"
+              },
+              {
+                "id": "f_quyen_han",
+                "label": "Quyền hạn / cấp truy cập"
+              },
+              {
+                "id": "f_rang_buoc",
+                "label": "Ràng buộc / giới hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ghi chú vận hành"
+              }
+            ]
+          }
+        ],
+        "_group": "Thế Lực",
+        "_genre": "Hệ Thống"
+      },
+      {
+        "id": "giao-dien-thuoc-tinh",
+        "label": "Giao Diện Thuộc Tính",
+        "iconName": "BookOpen",
+        "subTabs": [
+          {
+            "id": "ca-nhan-mieu-ta",
+            "label": "Cá Nhân Miêu Tả (Bảng Stats)",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Giá trị / cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại thuộc tính"
+              },
+              {
+                "id": "f_nguon",
+                "label": "Nguồn tăng trưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hiển thị"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ý nghĩa / ghi chú"
+              }
+            ]
+          },
+          {
+            "id": "diem-kinh-nghiem",
+            "label": "Điểm Kinh Nghiệm (EXP)",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Giá trị / cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại thuộc tính"
+              },
+              {
+                "id": "f_nguon",
+                "label": "Nguồn tăng trưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hiển thị"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ý nghĩa / ghi chú"
+              }
+            ]
+          },
+          {
+            "id": "diem-tich-luy-tien-te",
+            "label": "Điểm Tích Lũy / Tiền Tệ",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Giá trị / cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại thuộc tính"
+              },
+              {
+                "id": "f_nguon",
+                "label": "Nguồn tăng trưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hiển thị"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ý nghĩa / ghi chú"
+              }
+            ]
+          },
+          {
+            "id": "dan-hieu",
+            "label": "Danh Hiệu",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Giá trị / cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại thuộc tính"
+              },
+              {
+                "id": "f_nguon",
+                "label": "Nguồn tăng trưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hiển thị"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ý nghĩa / ghi chú"
+              }
+            ]
+          },
+          {
+            "id": "do-thuan-thuc",
+            "label": "Độ Thuần Thục (Kỹ năng)",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Giá trị / cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại thuộc tính"
+              },
+              {
+                "id": "f_nguon",
+                "label": "Nguồn tăng trưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hiển thị"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ý nghĩa / ghi chú"
+              }
+            ]
+          }
+        ],
+        "_group": "Khác",
+        "_genre": "Hệ Thống"
+      },
+      {
+        "id": "chuc-nang-cot-loi",
+        "label": "Chức Năng Cốt Lõi",
+        "iconName": "Flame",
+        "subTabs": [
+          {
+            "id": "he-thong-thuong-thanh",
+            "label": "Hệ Thống Thương Thành",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Giá / Điểm đổi"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại vật phẩm"
+              },
+              {
+                "id": "f_cap",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_hieu_qua",
+                "label": "Hiệu quả / Công năng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện mở khóa"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "nhiem-vu-chu-tuyen",
+            "label": "Nhiệm Vụ Chủ Tuyến",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Độ khó"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại nhiệm vụ"
+              },
+              {
+                "id": "f_phan_thuong",
+                "label": "Phần thưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hoàn thành"
+              },
+              {
+                "id": "f_thoi_han",
+                "label": "Thời hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "nhiem-vu-chi-nhanh",
+            "label": "Nhiệm Vụ Chi Nhánh / Ẩn",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Độ khó"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại nhiệm vụ"
+              },
+              {
+                "id": "f_phan_thuong",
+                "label": "Phần thưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hoàn thành"
+              },
+              {
+                "id": "f_thoi_han",
+                "label": "Thời hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "che-tai-trung-phat",
+            "label": "Chế Tài Trừng Phạt",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Độ khó"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại nhiệm vụ"
+              },
+              {
+                "id": "f_phan_thuong",
+                "label": "Phần thưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hoàn thành"
+              },
+              {
+                "id": "f_thoi_han",
+                "label": "Thời hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "gacha-vong-quay-may-man",
+            "label": "Gacha / Vòng Quay May Mắn",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Tỷ lệ / độ hiếm"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại thưởng"
+              },
+              {
+                "id": "f_noi_dung",
+                "label": "Phần thưởng / pool"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện kích hoạt"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ghi chú vận hành"
+              }
+            ]
+          }
+        ],
+        "_group": "Tu Luyện / Sức mạnh",
+        "_genre": "Hệ Thống"
+      }
+    ],
+    "updatedAt": "2026-05-09T12:00:00.000Z"
+  },
+  "Hệ Thống||Tiên Hiệp": {
+    "genres": [
+      "Hệ Thống",
+      "Tiên Hiệp"
+    ],
+    "tabsConfig": [
+      {
+        "id": "tong-quan",
+        "label": "Tổng Quan",
+        "iconName": "BookOpen",
+        "subTabs": [],
+        "isFixed": true
+      },
+      {
+        "id": "tu-si",
+        "label": "Tu Sĩ (Nhân Vật)",
+        "iconName": "User",
+        "subTabs": [
+          {
+            "id": "thien-menh-chi-tu",
+            "label": "Thiên Mệnh Chi Tử (NVC)",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_linh_can",
+                "label": "Linh Căn / Thiên Phú"
+              },
+              {
+                "id": "f_the_chat",
+                "label": "Thể Chất"
+              },
+              {
+                "id": "f_cong_phap",
+                "label": "Công Pháp chính"
+              },
+              {
+                "id": "f_vu_khi",
+                "label": "Pháp Bảo"
+              },
+              {
+                "id": "f_to_chuc",
+                "label": "Thế Lực / Tông Môn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-chinh",
+            "autoSyncFieldMap": {
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "dao-lu",
+            "label": "Đạo Lữ",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_linh_can",
+                "label": "Linh Căn / Thiên Phú"
+              },
+              {
+                "id": "f_the_chat",
+                "label": "Thể Chất"
+              },
+              {
+                "id": "f_cong_phap",
+                "label": "Công Pháp chính"
+              },
+              {
+                "id": "f_quan_he",
+                "label": "Quan hệ với chủ nhân"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-lien-quan",
+            "autoSyncFieldMap": {
+              "relation": "f_quan_he",
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "hong-nhan-tri-ky",
+            "label": "Hồng Nhan Tri Kỷ",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_linh_can",
+                "label": "Linh Căn / Thiên Phú"
+              },
+              {
+                "id": "f_the_chat",
+                "label": "Thể Chất"
+              },
+              {
+                "id": "f_cong_phap",
+                "label": "Công Pháp chính"
+              },
+              {
+                "id": "f_quan_he",
+                "label": "Quan hệ với chủ nhân"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-lien-quan",
+            "autoSyncFieldMap": {
+              "relation": "f_quan_he",
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "sinh-tu-giao",
+            "label": "Sinh Tử Giao (Huynh đệ)",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_linh_can",
+                "label": "Linh Căn / Thiên Phú"
+              },
+              {
+                "id": "f_the_chat",
+                "label": "Thể Chất"
+              },
+              {
+                "id": "f_cong_phap",
+                "label": "Công Pháp chính"
+              },
+              {
+                "id": "f_quan_he",
+                "label": "Quan hệ với chủ nhân"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-lien-quan",
+            "autoSyncFieldMap": {
+              "relation": "f_quan_he",
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "dong-mon-su-de",
+            "label": "Đồng Môn Sư Đệ/Sư Muội",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_linh_can",
+                "label": "Linh Căn / Thiên Phú"
+              },
+              {
+                "id": "f_the_chat",
+                "label": "Thể Chất"
+              },
+              {
+                "id": "f_cong_phap",
+                "label": "Công Pháp chính"
+              },
+              {
+                "id": "f_quan_he",
+                "label": "Quan hệ với chủ nhân"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-lien-quan",
+            "autoSyncFieldMap": {
+              "relation": "f_quan_he",
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "tu-dich",
+            "label": "Tử Địch (Kẻ thù)",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_to_chuc",
+                "label": "Thế lực"
+              },
+              {
+                "id": "f_dong_luc",
+                "label": "Động lực / Mục tiêu"
+              },
+              {
+                "id": "f_vu_khi",
+                "label": "Pháp Bảo"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-lien-quan",
+            "autoSyncFieldMap": {
+              "relation": "f_quan_he",
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "phan-dien",
+            "label": "Phản Diện / Pháo Khôi",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới"
+              },
+              {
+                "id": "f_title",
+                "label": "Danh hiệu"
+              },
+              {
+                "id": "f_to_chuc",
+                "label": "Thế lực"
+              },
+              {
+                "id": "f_dong_luc",
+                "label": "Động lực / Mục tiêu"
+              },
+              {
+                "id": "f_vu_khi",
+                "label": "Pháp Bảo"
+              },
+              {
+                "id": "f_desc",
+                "label": "Tính cách"
+              }
+            ],
+            "autoSyncRole": "nhan-vat-lien-quan",
+            "autoSyncFieldMap": {
+              "relation": "f_quan_he",
+              "status": "f_status"
+            }
+          }
+        ],
+        "_group": "Nhân Vật",
+        "_genre": "Tiên Hiệp"
+      },
+      {
+        "id": "dai-dao",
+        "label": "Đại Đạo (Tu Luyện)",
+        "iconName": "Flame",
+        "subTabs": [
+          {
+            "id": "canh-gioi-tu-vi",
+            "label": "Cảnh Giới Tu Vi",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Thuộc hệ thống"
+              },
+              {
+                "id": "f_title",
+                "label": "Thứ tự / Cấp số"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện đột phá"
+              },
+              {
+                "id": "f_dac_quyen",
+                "label": "Đặc quyền / Năng lực"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc điểm nhận dạng"
+              }
+            ],
+            "autoSyncRole": "canh-gioi-tu-vi",
+            "autoSyncFieldMap": {
+              "status": "f_status"
+            }
+          },
+          {
+            "id": "cong-phap",
+            "label": "Công Pháp",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới yêu cầu"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Thuộc tính"
+              },
+              {
+                "id": "f_cap",
+                "label": "Phẩm giai"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng"
+              }
+            ]
+          },
+          {
+            "id": "vo-ky",
+            "label": "Võ Kỹ",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới yêu cầu"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Thuộc tính"
+              },
+              {
+                "id": "f_cap",
+                "label": "Phẩm giai"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng"
+              }
+            ]
+          },
+          {
+            "id": "cam-thuat",
+            "label": "Cấm Thuật",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới yêu cầu"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Thuộc tính"
+              },
+              {
+                "id": "f_cap",
+                "label": "Phẩm giai"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng"
+              }
+            ]
+          },
+          {
+            "id": "bi-phap",
+            "label": "Bí Pháp",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cảnh giới yêu cầu"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Thuộc tính"
+              },
+              {
+                "id": "f_cap",
+                "label": "Phẩm giai"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng"
+              }
+            ]
+          },
+          {
+            "id": "dac-thu-the-chat",
+            "label": "Đặc Thù Thể Chất",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp độ"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Nguồn gốc"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc điểm"
+              }
+            ]
+          },
+          {
+            "id": "thai-co-huyet-mach",
+            "label": "Thái Cổ Huyết Mạch",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp độ"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Nguồn gốc"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc điểm"
+              }
+            ]
+          },
+          {
+            "id": "linh-can",
+            "label": "Linh Căn",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp độ"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Nguồn gốc"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc điểm"
+              }
+            ]
+          },
+          {
+            "id": "ngo-tinh-thien-phu",
+            "label": "Ngộ Tính Thiên Phú",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp độ"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Nguồn gốc"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc điểm"
+              }
+            ]
+          },
+          {
+            "id": "thien-phu",
+            "label": "Thiên Phú",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp độ"
+              },
+              {
+                "id": "f_title",
+                "label": "Phân loại"
+              },
+              {
+                "id": "f_loai",
+                "label": "Nguồn gốc"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc điểm"
+              }
+            ]
+          }
+        ],
+        "_group": "Tu Luyện / Sức mạnh",
+        "_genre": "Tiên Hiệp"
+      },
+      {
+        "id": "chu-thien-van-gioi",
+        "label": "Chư Thiên Vạn Giới (Thế Giới)",
+        "iconName": "Globe",
+        "subTabs": [
+          {
+            "id": "tu-tien-gioi",
+            "label": "Tu Tiên Giới / Phàm Nhân Giới",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Mức nguy hiểm"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại địa danh"
+              },
+              {
+                "id": "f_he_gioi_ban_do",
+                "label": "Quy Mô Địa Vực"
+              },
+              {
+                "id": "f_vi_tri",
+                "label": "Vị trí"
+              },
+              {
+                "id": "f_co_duyen",
+                "label": "Kho báu / Cơ duyên"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ],
+            "autoSyncRole": "ban-do",
+            "autoSyncFieldMap": {
+              "title": "f_title",
+              "status": "f_status",
+              "parent_path": "f_vi_tri"
+            }
+          },
+          {
+            "id": "vi-dien-tinh-vuc",
+            "label": "Vị Diện / Tinh Vực",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Mức nguy hiểm"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại địa danh"
+              },
+              {
+                "id": "f_he_gioi_ban_do",
+                "label": "Quy Mô Địa Vực"
+              },
+              {
+                "id": "f_vi_tri",
+                "label": "Vị trí"
+              },
+              {
+                "id": "f_co_duyen",
+                "label": "Kho báu / Cơ duyên"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "thuong-gioi-tien-gioi",
+            "label": "Thượng Giới / Tiên Giới",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Mức nguy hiểm"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại địa danh"
+              },
+              {
+                "id": "f_he_gioi_ban_do",
+                "label": "Quy Mô Địa Vực"
+              },
+              {
+                "id": "f_vi_tri",
+                "label": "Vị trí"
+              },
+              {
+                "id": "f_co_duyen",
+                "label": "Kho báu / Cơ duyên"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "cam-dia",
+            "label": "Cấm Địa",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Mức nguy hiểm"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại địa danh"
+              },
+              {
+                "id": "f_he_gioi_ban_do",
+                "label": "Quy Mô Địa Vực"
+              },
+              {
+                "id": "f_vi_tri",
+                "label": "Vị trí"
+              },
+              {
+                "id": "f_co_duyen",
+                "label": "Kho báu / Cơ duyên"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "thuong-co-di-tich",
+            "label": "Thượng Cổ Di Tích",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Mức nguy hiểm"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại địa danh"
+              },
+              {
+                "id": "f_he_gioi_ban_do",
+                "label": "Quy Mô Địa Vực"
+              },
+              {
+                "id": "f_vi_tri",
+                "label": "Vị trí"
+              },
+              {
+                "id": "f_co_duyen",
+                "label": "Kho báu / Cơ duyên"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          }
+        ],
+        "_group": "Thế Giới",
+        "_genre": "Tiên Hiệp"
+      },
+      {
+        "id": "dinh-cap-the-luc",
+        "label": "Đỉnh Cấp Thế Lực",
+        "iconName": "Hexagon",
+        "subTabs": [
+          {
+            "id": "tong-mon-thanh-dia",
+            "label": "Tông Môn / Thánh Địa",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp bậc"
+              },
+              {
+                "id": "f_title",
+                "label": "Chính / Tà"
+              },
+              {
+                "id": "f_cap",
+                "label": "Quy mô"
+              },
+              {
+                "id": "f_dia_ban",
+                "label": "Địa bàn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc trưng"
+              }
+            ],
+            "autoSyncRole": "the-luc",
+            "autoSyncTargetPaths": [
+              "chu-thien-van-gioi::tu-tien-gioi"
+            ],
+            "autoSyncFieldMap": {
+              "status": "f_status",
+              "location": "f_dia_ban",
+              "type": "f_title"
+            }
+          },
+          {
+            "id": "truong-ton-the-gia",
+            "label": "Trường Tồn Thế Gia",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp bậc"
+              },
+              {
+                "id": "f_title",
+                "label": "Chính / Tà"
+              },
+              {
+                "id": "f_cap",
+                "label": "Quy mô"
+              },
+              {
+                "id": "f_dia_ban",
+                "label": "Địa bàn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc trưng"
+              }
+            ],
+            "autoSyncRole": "the-luc",
+            "autoSyncFieldMap": {
+              "status": "f_status",
+              "location": "f_dia_ban",
+              "type": "f_title"
+            },
+            "autoSyncTargetPaths": [
+              "chu-thien-van-gioi::tu-tien-gioi"
+            ]
+          },
+          {
+            "id": "an-the-tong-mon",
+            "label": "Ẩn Thế Tông Môn",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Cấp bậc"
+              },
+              {
+                "id": "f_title",
+                "label": "Chính / Tà"
+              },
+              {
+                "id": "f_cap",
+                "label": "Quy mô"
+              },
+              {
+                "id": "f_dia_ban",
+                "label": "Địa bàn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Đặc trưng"
+              }
+            ],
+            "autoSyncRole": "the-luc",
+            "autoSyncFieldMap": {
+              "status": "f_status",
+              "location": "f_dia_ban",
+              "type": "f_title"
+            },
+            "autoSyncTargetPaths": [
+              "chu-thien-van-gioi::tu-tien-gioi"
+            ]
+          }
+        ],
+        "_group": "Thế Lực",
+        "_genre": "Tiên Hiệp"
+      },
+      {
+        "id": "ky-tran-di-bao",
+        "label": "Kỳ Trân Dị Bảo (Vật Phẩm)",
+        "iconName": "Swords",
+        "subTabs": [
+          {
+            "id": "phap-bao-tien-khi",
+            "label": "Pháp Bảo / Tiên Khí",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại pháp bảo"
+              },
+              {
+                "id": "f_chu",
+                "label": "Chủ nhân"
+              },
+              {
+                "id": "f_linh_the",
+                "label": "Linh thể / Tinh linh"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng & Hiệu quả"
+              }
+            ]
+          },
+          {
+            "id": "than-binh-loi-khi",
+            "label": "Thần Binh Lợi Khí",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại pháp bảo"
+              },
+              {
+                "id": "f_chu",
+                "label": "Chủ nhân"
+              },
+              {
+                "id": "f_linh_the",
+                "label": "Linh thể / Tinh linh"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng & Hiệu quả"
+              }
+            ]
+          },
+          {
+            "id": "dan-duoc",
+            "label": "Đan Dược",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại"
+              },
+              {
+                "id": "f_cong_dung",
+                "label": "Công dụng"
+              },
+              {
+                "id": "f_nguyen_lieu",
+                "label": "Nguyên liệu"
+              },
+              {
+                "id": "f_desc",
+                "label": "Điều kiện sử dụng"
+              }
+            ]
+          },
+          {
+            "id": "tien-thao-linh-duoc",
+            "label": "Tiên Thảo / Linh Dược",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại"
+              },
+              {
+                "id": "f_cong_dung",
+                "label": "Công dụng"
+              },
+              {
+                "id": "f_nguyen_lieu",
+                "label": "Nguyên liệu"
+              },
+              {
+                "id": "f_desc",
+                "label": "Điều kiện sử dụng"
+              }
+            ]
+          },
+          {
+            "id": "thien-tai-dia-bao",
+            "label": "Thiên Tài Địa Bảo",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại pháp bảo"
+              },
+              {
+                "id": "f_chu",
+                "label": "Chủ nhân"
+              },
+              {
+                "id": "f_linh_the",
+                "label": "Linh thể / Tinh linh"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng & Hiệu quả"
+              }
+            ]
+          },
+          {
+            "id": "tran-phap",
+            "label": "Trận Pháp",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại"
+              },
+              {
+                "id": "f_tac_dung",
+                "label": "Tác dụng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện triển khai"
+              },
+              {
+                "id": "f_desc",
+                "label": "Hạn chế"
+              }
+            ]
+          },
+          {
+            "id": "linh-phu-bua-chu",
+            "label": "Linh Phù / Bùa Chú",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại pháp bảo"
+              },
+              {
+                "id": "f_chu",
+                "label": "Chủ nhân"
+              },
+              {
+                "id": "f_linh_the",
+                "label": "Linh thể / Tinh linh"
+              },
+              {
+                "id": "f_desc",
+                "label": "Công năng & Hiệu quả"
+              }
+            ]
+          }
+        ],
+        "_group": "Vật Phẩm / Kỹ thuật",
+        "_genre": "Tiên Hiệp"
+      },
+      {
+        "id": "ban-the-he-thong",
+        "label": "Bản Thể Hệ Thống",
+        "iconName": "Hexagon",
+        "subTabs": [
+          {
+            "id": "nguon-goc-he-thong",
+            "label": "Nguồn Gốc Hệ Thống",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phân hệ / phiên bản"
+              },
+              {
+                "id": "f_title",
+                "label": "Nguồn gốc / loại hệ thống"
+              },
+              {
+                "id": "f_quyen_han",
+                "label": "Quyền hạn / cấp truy cập"
+              },
+              {
+                "id": "f_rang_buoc",
+                "label": "Ràng buộc / giới hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ghi chú vận hành"
+              }
+            ]
+          },
+          {
+            "id": "ma-dinh-danh-phien-ban",
+            "label": "Mã Định Danh / Phiên Bản",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phân hệ / phiên bản"
+              },
+              {
+                "id": "f_title",
+                "label": "Nguồn gốc / loại hệ thống"
+              },
+              {
+                "id": "f_quyen_han",
+                "label": "Quyền hạn / cấp truy cập"
+              },
+              {
+                "id": "f_rang_buoc",
+                "label": "Ràng buộc / giới hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ghi chú vận hành"
+              }
+            ]
+          },
+          {
+            "id": "tri-nao-he-thong-tinh-linh",
+            "label": "Trí Não / Hệ Thống Tinh Linh",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phân hệ / phiên bản"
+              },
+              {
+                "id": "f_title",
+                "label": "Nguồn gốc / loại hệ thống"
+              },
+              {
+                "id": "f_quyen_han",
+                "label": "Quyền hạn / cấp truy cập"
+              },
+              {
+                "id": "f_rang_buoc",
+                "label": "Ràng buộc / giới hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ghi chú vận hành"
+              }
+            ]
+          },
+          {
+            "id": "quyen-han-cap-do",
+            "label": "Quyền Hạn Cấp Độ",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Phân hệ / phiên bản"
+              },
+              {
+                "id": "f_title",
+                "label": "Nguồn gốc / loại hệ thống"
+              },
+              {
+                "id": "f_quyen_han",
+                "label": "Quyền hạn / cấp truy cập"
+              },
+              {
+                "id": "f_rang_buoc",
+                "label": "Ràng buộc / giới hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ghi chú vận hành"
+              }
+            ]
+          }
+        ],
+        "_group": "Thế Lực",
+        "_genre": "Hệ Thống"
+      },
+      {
+        "id": "giao-dien-thuoc-tinh",
+        "label": "Giao Diện Thuộc Tính",
+        "iconName": "BookOpen",
+        "subTabs": [
+          {
+            "id": "ca-nhan-mieu-ta",
+            "label": "Cá Nhân Miêu Tả (Bảng Stats)",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Giá trị / cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại thuộc tính"
+              },
+              {
+                "id": "f_nguon",
+                "label": "Nguồn tăng trưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hiển thị"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ý nghĩa / ghi chú"
+              }
+            ]
+          },
+          {
+            "id": "diem-kinh-nghiem",
+            "label": "Điểm Kinh Nghiệm (EXP)",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Giá trị / cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại thuộc tính"
+              },
+              {
+                "id": "f_nguon",
+                "label": "Nguồn tăng trưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hiển thị"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ý nghĩa / ghi chú"
+              }
+            ]
+          },
+          {
+            "id": "diem-tich-luy-tien-te",
+            "label": "Điểm Tích Lũy / Tiền Tệ",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Giá trị / cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại thuộc tính"
+              },
+              {
+                "id": "f_nguon",
+                "label": "Nguồn tăng trưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hiển thị"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ý nghĩa / ghi chú"
+              }
+            ]
+          },
+          {
+            "id": "dan-hieu",
+            "label": "Danh Hiệu",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Giá trị / cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại thuộc tính"
+              },
+              {
+                "id": "f_nguon",
+                "label": "Nguồn tăng trưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hiển thị"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ý nghĩa / ghi chú"
+              }
+            ]
+          },
+          {
+            "id": "do-thuan-thuc",
+            "label": "Độ Thuần Thục (Kỹ năng)",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Giá trị / cấp"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại thuộc tính"
+              },
+              {
+                "id": "f_nguon",
+                "label": "Nguồn tăng trưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hiển thị"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ý nghĩa / ghi chú"
+              }
+            ]
+          }
+        ],
+        "_group": "Khác",
+        "_genre": "Hệ Thống"
+      },
+      {
+        "id": "chuc-nang-cot-loi",
+        "label": "Chức Năng Cốt Lõi",
+        "iconName": "Flame",
+        "subTabs": [
+          {
+            "id": "he-thong-thuong-thanh",
+            "label": "Hệ Thống Thương Thành",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Giá / Điểm đổi"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại vật phẩm"
+              },
+              {
+                "id": "f_cap",
+                "label": "Phẩm cấp"
+              },
+              {
+                "id": "f_hieu_qua",
+                "label": "Hiệu quả / Công năng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện mở khóa"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "nhiem-vu-chu-tuyen",
+            "label": "Nhiệm Vụ Chủ Tuyến",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Độ khó"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại nhiệm vụ"
+              },
+              {
+                "id": "f_phan_thuong",
+                "label": "Phần thưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hoàn thành"
+              },
+              {
+                "id": "f_thoi_han",
+                "label": "Thời hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "nhiem-vu-chi-nhanh",
+            "label": "Nhiệm Vụ Chi Nhánh / Ẩn",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Độ khó"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại nhiệm vụ"
+              },
+              {
+                "id": "f_phan_thuong",
+                "label": "Phần thưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hoàn thành"
+              },
+              {
+                "id": "f_thoi_han",
+                "label": "Thời hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "che-tai-trung-phat",
+            "label": "Chế Tài Trừng Phạt",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Độ khó"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại nhiệm vụ"
+              },
+              {
+                "id": "f_phan_thuong",
+                "label": "Phần thưởng"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện hoàn thành"
+              },
+              {
+                "id": "f_thoi_han",
+                "label": "Thời hạn"
+              },
+              {
+                "id": "f_desc",
+                "label": "Mô tả"
+              }
+            ]
+          },
+          {
+            "id": "gacha-vong-quay-may-man",
+            "label": "Gacha / Vòng Quay May Mắn",
+            "viewType": "collection-track",
+            "tabCon": [],
+            "fieldsTemplate": [
+              {
+                "id": "f_status",
+                "label": "Tỷ lệ / độ hiếm"
+              },
+              {
+                "id": "f_title",
+                "label": "Loại thưởng"
+              },
+              {
+                "id": "f_noi_dung",
+                "label": "Phần thưởng / pool"
+              },
+              {
+                "id": "f_dieu_kien",
+                "label": "Điều kiện kích hoạt"
+              },
+              {
+                "id": "f_desc",
+                "label": "Ghi chú vận hành"
+              }
+            ]
+          }
+        ],
+        "_group": "Tu Luyện / Sức mạnh",
+        "_genre": "Hệ Thống"
+      }
+    ],
+    "updatedAt": "2026-05-09T12:00:00.000Z"
+  }
+}

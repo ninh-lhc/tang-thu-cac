@@ -385,7 +385,17 @@ export default function App() {
       setGenreTabsTemplates(next);
     }
     void syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, d, novelStatsByIdRef.current);
-  }, [dirHandle, genreTabsTemplates, syncIndex, setGenreTabsTemplates]);
+  }, [
+    dirHandle,
+    dirHandleRef,
+    genreTabsTemplates,
+    genreTabsTemplatesRef,
+    globalTabsConfigRef,
+    novelStatsByIdRef,
+    novelsMetadataRef,
+    setGenreTabsTemplates,
+    syncIndex,
+  ]);
 
   const resolveSafeTabsConfig = useCallback(
     (candidate) => (Array.isArray(candidate) && candidate.length > 0 ? candidate : globalTabsConfigRef.current),
