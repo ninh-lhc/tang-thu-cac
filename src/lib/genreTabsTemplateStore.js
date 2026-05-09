@@ -100,6 +100,33 @@ export function configureGenreTabsTemplateStore({ getStore, setStore } = {}) {
   runtimeStoreSet = typeof setStore === 'function' ? setStore : null;
 }
 
+/** Gộp mẫu trong localStorage vào bản đã có trên index (ưu tiên bản `updatedAt` mới hơn). Dùng khi khởi động để đưa dữ liệu cũ domain-local vào index.json. */
+export function mergeGenreTabsTemplatesFromLocalStorage(indexTemplates = {}) {
+  const base = sanitizeStore(indexTemplates);
+  if (typeof localStorage === 'undefined') return { next: base, changed: false };
+  const local = sanitizeStore(safeJsonParse(localStorage.getItem(STORAGE_KEY) || '{}', {}));
+  if (Object.keys(local).length === 0) return { next: base, changed: false };
+
+  const next = { ...base };
+  let changed = false;
+  const ts = (rec) => String(rec?.updatedAt || '');
+
+  Object.entries(local).forEach(([key, loc]) => {
+    const cur = next[key];
+    if (!cur) {
+      next[key] = loc;
+      changed = true;
+      return;
+    }
+    if (ts(loc) > ts(cur)) {
+      next[key] = loc;
+      changed = true;
+    }
+  });
+
+  return { next, changed };
+}
+
 export function saveGenreTabsTemplate(genres = [], tabsConfig = []) {
   const key = buildGenreTemplateKey(genres);
   if (!key || !Array.isArray(tabsConfig) || tabsConfig.length === 0) return false;

@@ -3,6 +3,7 @@ import {
   buildGenreTemplateKey,
   deleteGenreTabsTemplate,
   getGenreTabsTemplate,
+  mergeGenreTabsTemplatesFromLocalStorage,
   saveGenreTabsTemplate,
 } from './genreTabsTemplateStore.js';
 
@@ -59,6 +60,39 @@ describe('genreTabsTemplateStore', () => {
     expect(getGenreTabsTemplate(['Tiên Hiệp'])).toBeTruthy();
     expect(deleteGenreTabsTemplate(['Tiên Hiệp'])).toBe(true);
     expect(getGenreTabsTemplate(['Tiên Hiệp'])).toBeNull();
+  });
+
+  it('merge pulls missing templates from localStorage into index-shaped map', () => {
+    const cfg = [{ id: 'root', subTabs: [] }];
+    saveGenreTabsTemplate(['Tiên Hiệp'], cfg);
+    const key = buildGenreTemplateKey(['Tiên Hiệp']);
+    const { next, changed } = mergeGenreTabsTemplatesFromLocalStorage({});
+    expect(changed).toBe(true);
+    expect(next[key]?.tabsConfig).toEqual(cfg);
+  });
+
+  it('merge prefers newer updatedAt when both index and local have same key', () => {
+    const key = buildGenreTemplateKey(['Tiên Hiệp']);
+    localStorage.setItem(
+      'ttc_genre_tabs_templates_v1',
+      JSON.stringify({
+        [key]: {
+          genres: ['Tiên Hiệp'],
+          tabsConfig: [{ id: 'old', subTabs: [] }],
+          updatedAt: '2020-01-01T00:00:00.000Z',
+        },
+      })
+    );
+    const indexOlder = {
+      [key]: {
+        genres: ['Tiên Hiệp'],
+        tabsConfig: [{ id: 'from-disk', subTabs: [] }],
+        updatedAt: '2019-01-01T00:00:00.000Z',
+      },
+    };
+    const { next, changed } = mergeGenreTabsTemplatesFromLocalStorage(indexOlder);
+    expect(changed).toBe(true);
+    expect(next[key]?.tabsConfig?.[0]?.id).toBe('old');
   });
 });
 

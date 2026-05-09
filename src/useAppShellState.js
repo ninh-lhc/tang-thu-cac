@@ -20,6 +20,7 @@ import {
   isPersistedDirectoryHandleUsable,
   loadPersistedDirectoryHandle,
 } from './lib/directoryHandleStore.js';
+import { mergeGenreTabsTemplatesFromLocalStorage } from './lib/genreTabsTemplateStore.js';
 import { findNovelFolderEntryNameOnRoot } from './lib/novelDiskLayout.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 import { useToast } from './useToast.js';
@@ -285,10 +286,11 @@ export function useAppShellState() {
           : hydrateTabsAutoSyncConfigs(INITIAL_TABS_CONFIG).tabsConfig;
         const nextStats =
           parsed.novelStats && typeof parsed.novelStats === 'object' ? parsed.novelStats : {};
-        const nextGenreTemplates =
+        const rawGenreTabs =
           parsed.genreTabsTemplates && typeof parsed.genreTabsTemplates === 'object'
             ? parsed.genreTabsTemplates
             : {};
+        const { next: nextGenreTemplates } = mergeGenreTabsTemplatesFromLocalStorage(rawGenreTabs);
         setNovelsMetadata(nextMetadata);
         setGlobalTabsConfig(nextConfig);
         setNovelStatsById(nextStats);
@@ -371,9 +373,9 @@ export function useAppShellState() {
           if (cancelled) return;
           if (usable) {
             restoredConnection = true;
-            setDirHandle(storedHandle);
             hydratedFromDisk = await awaitIndexSnapshotFromHandle(storedHandle);
             if (cancelled) return;
+            setDirHandle(storedHandle);
           } else {
             await clearPersistedDirectoryHandle();
           }

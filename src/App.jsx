@@ -132,7 +132,11 @@ import {
 import { AppMainPane } from './AppMainPane.jsx';
 import { AppListCardInfoSearch } from './AppListCardInfoSearch.jsx';
 import { AppModalLayer } from './AppModalLayer.jsx';
-import { configureGenreTabsTemplateStore, saveGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
+import {
+  configureGenreTabsTemplateStore,
+  mergeGenreTabsTemplatesFromLocalStorage,
+  saveGenreTabsTemplate,
+} from './lib/genreTabsTemplateStore.js';
 import {
   ensureWikiAliasInFieldsTemplate,
   sanitizeFieldsTemplate,
@@ -279,6 +283,7 @@ export default function App() {
     setAutoLinkToastEnabled,
     novelStatsById,
     setNovelStatsById,
+    genreTabsTemplates,
     setGenreTabsTemplates,
     isStatsBackfilling,
     setIsStatsBackfilling,
@@ -366,6 +371,21 @@ export default function App() {
     setGenreTabsTemplates,
     syncIndex,
   ]);
+
+  /**
+   * Gộp mẫu từ localStorage vào state (applySnapshot đã gộp một lần; bước này idempotent).
+   * Luôn syncIndex khi có thư mục để index.json trên đĩa khớp state (kể cả mẫu mới gộp từ LS).
+   */
+  useEffect(() => {
+    const d = dirHandleRef.current;
+    if (!d) return;
+    const { next, changed } = mergeGenreTabsTemplatesFromLocalStorage(genreTabsTemplates);
+    if (changed) {
+      genreTabsTemplatesRef.current = next;
+      setGenreTabsTemplates(next);
+    }
+    void syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, d, novelStatsByIdRef.current);
+  }, [dirHandle, genreTabsTemplates, syncIndex, setGenreTabsTemplates]);
 
   const resolveSafeTabsConfig = useCallback(
     (candidate) => (Array.isArray(candidate) && candidate.length > 0 ? candidate : globalTabsConfigRef.current),
