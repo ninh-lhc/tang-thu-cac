@@ -477,6 +477,23 @@ export function useAppPersistence({
       const novel = finalizeParsed(parsed, `${manifestBaseName}.json`);
       return novel ? { novel, novelDir } : null;
     };
+    const tryDirByManifestScan = async (novelDir) => {
+      if (!wantId) return null;
+      try {
+        for await (const [entryName, entryHandle] of novelDir.entries()) {
+          if (entryHandle.kind !== 'file') continue;
+          if (!/\.json$/i.test(entryName)) continue;
+          if (/\.backup\.json$/i.test(entryName) || /\.json\.tmp$/i.test(entryName)) continue;
+          const baseName = String(entryName).replace(/\.json$/i, '').trim();
+          if (!baseName) continue;
+          const hit = await tryDirWithBase(novelDir, baseName);
+          if (hit) return hit;
+        }
+      } catch {
+        /* ignore scan errors for this folder */
+      }
+      return null;
+    };
 
     for (const name of novelManifestBaseNameCandidates(meta)) {
       try {
@@ -488,6 +505,8 @@ export function useAppPersistence({
           const hitAlt = await tryDirWithBase(novelDir, alt);
           if (hitAlt) return hitAlt;
         }
+        const hitScan = await tryDirByManifestScan(novelDir);
+        if (hitScan) return hitScan;
       } catch {
         /* thử candidate kế */
       }
@@ -495,10 +514,16 @@ export function useAppPersistence({
 
     if (wantId) {
       try {
+        const candidateBases = novelManifestBaseNameCandidates(meta);
         for await (const [entryName, h] of rootDir.entries()) {
           if (h.kind !== 'directory') continue;
-          const hit = await tryDirWithBase(h, entryName);
-          if (hit) return hit;
+          const basesToTry = [...new Set([entryName, ...candidateBases])];
+          for (const base of basesToTry) {
+            const hit = await tryDirWithBase(h, base);
+            if (hit) return hit;
+          }
+          const hitScan = await tryDirByManifestScan(h);
+          if (hitScan) return hitScan;
         }
       } catch (e) {
         console.warn('[TTC] Quét thư mục gốc tìm truyện theo id:', e);

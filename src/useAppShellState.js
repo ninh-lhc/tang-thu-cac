@@ -20,6 +20,7 @@ import {
   isPersistedDirectoryHandleUsable,
   loadPersistedDirectoryHandle,
 } from './lib/directoryHandleStore.js';
+import { findNovelFolderEntryNameOnRoot } from './lib/novelDiskLayout.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 import { useToast } from './useToast.js';
 
@@ -45,6 +46,42 @@ function isEmbeddedPreview() {
   } catch {
     return false;
   }
+}
+
+async function hasLegacyNovelFile(rootHandle, id) {
+  if (!rootHandle || !id) return false;
+  try {
+    const legacyDir = await rootHandle.getDirectoryHandle('novels');
+    await legacyDir.getFileHandle(`${id}.json`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function sanitizeSnapshotByDisk(snapshot, rootHandle) {
+  if (!snapshot || typeof snapshot !== 'object' || !rootHandle || rootHandle === 'LOCAL_STORAGE') {
+    return snapshot;
+  }
+  let parsed;
+  try {
+    parsed = migrateIndex(snapshot);
+  } catch {
+    return snapshot;
+  }
+  const metadata = Array.isArray(parsed.metadata) ? parsed.metadata : [];
+  if (metadata.length === 0) return snapshot;
+  const keptMetadata = [];
+  for (const meta of metadata) {
+    const id = String(meta?.id || '').trim();
+    if (!id) continue;
+    const folderName = await findNovelFolderEntryNameOnRoot(rootHandle, meta);
+    if (folderName || await hasLegacyNovelFile(rootHandle, id)) {
+      keptMetadata.push(meta);
+    }
+  }
+  if (keptMetadata.length === metadata.length) return snapshot;
+  return { ...parsed, metadata: keptMetadata };
 }
 
 export function useAppShellState() {
@@ -276,7 +313,8 @@ export function useAppShellState() {
           const fileHandle = await handle.getFileHandle(filename);
           const file = await fileHandle.getFile();
           const snapshot = JSON.parse(await file.text());
-          if (applySnapshot(snapshot)) return true;
+          const sanitized = await sanitizeSnapshotByDisk(snapshot, handle);
+          if (applySnapshot(sanitized)) return true;
         } catch {
           /* try next source */
         }

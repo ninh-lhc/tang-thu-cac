@@ -231,30 +231,42 @@ export function useAppNovelCrud({
     setNovelsMetadata(newMetaList);
     novelsMetadataRef.current = newMetaList;
 
-    if (dirHandle === 'LOCAL_STORAGE') {
-      localStorage.removeItem(`tangthu_novel_${id}`);
-    } else if (dirHandle && meta) {
-      await awaitNovelDiskIdle?.();
-      await new Promise((r) => setTimeout(r, 50));
-      const diskResult = await removeNovelStorageFromRoot(dirHandle, meta);
-      if (!diskResult.ok && diskResult.reason === 'remove_failed') {
-        const label = diskResult.attempted || meta.id;
-        console.warn('[TTC] Khong xoa duoc du lieu truyen tren dia:', label, diskResult.error);
-        const reason = diskResult?.error?.name || String(diskResult?.error?.message || '').slice(0, 80) || 'unknown';
-        setTimeout(() => {
-          showToast(`Da xoa khoi so nhung khong xoa duoc du lieu «${label}» tren o (${reason}).`, 'warning');
-        }, 0);
-      } else if (!diskResult.ok && diskResult.reason === 'permission_denied') {
-        setTimeout(() => {
-          showToast(
-            'Khong xoa duoc tren o: thieu quyen ghi thu muc — mo Cai dat va ket noi lai thu muc, chap nhan quyen chinh sua.',
-            'warning'
-          );
-        }, 0);
+    try {
+      if (dirHandle === 'LOCAL_STORAGE') {
+        localStorage.removeItem(`tangthu_novel_${id}`);
+      } else if (dirHandle && meta) {
+        await awaitNovelDiskIdle?.();
+        await new Promise((r) => setTimeout(r, 50));
+        const diskResult = await removeNovelStorageFromRoot(dirHandle, meta);
+        if (!diskResult.ok && diskResult.reason === 'remove_failed') {
+          const label = diskResult.attempted || meta.id;
+          console.warn('[TTC] Khong xoa duoc du lieu truyen tren dia:', label, diskResult.error);
+          const reason = diskResult?.error?.name || String(diskResult?.error?.message || '').slice(0, 80) || 'unknown';
+          setTimeout(() => {
+            showToast(`Da xoa khoi so nhung khong xoa duoc du lieu «${label}» tren o (${reason}).`, 'warning');
+          }, 0);
+        } else if (!diskResult.ok && diskResult.reason === 'permission_denied') {
+          setTimeout(() => {
+            showToast(
+              'Khong xoa duoc tren o: thieu quyen ghi thu muc — mo Cai dat va ket noi lai thu muc, chap nhan quyen chinh sua.',
+              'warning'
+            );
+          }, 0);
+        }
       }
+    } catch (error) {
+      console.warn('[TTC] Loi bat ngo khi xoa du lieu truyen tren dia:', error);
+      setTimeout(() => {
+        showToast('Xóa dữ liệu trên ổ có lỗi, nhưng vẫn tiếp tục cập nhật danh mục.', 'warning');
+      }, 0);
     }
 
-    await syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
+    const indexResult = await syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
+    if (!indexResult?.ok) {
+      setTimeout(() => {
+        showToast('Đã xóa khỏi phiên hiện tại nhưng chưa ghi được index lên ổ. Hãy thử xóa lại sau khi kết nối lại thư mục.', 'warning');
+      }, 0);
+    }
 
     setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
     showToast('Da huy diet thu tich!');

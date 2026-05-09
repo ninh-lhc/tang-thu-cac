@@ -295,6 +295,8 @@ export default function App() {
     confirmDeleteEntityRef,
   } = useAppShellState();
   const pendingNovelIndexRefreshRef = useRef(new Map());
+  const orphanMetadataPruneInFlightRef = useRef(false);
+  const orphanMetadataPrunedHandlesRef = useRef(new WeakSet());
 
   const {
     librarySearchInputRef,
@@ -1022,6 +1024,124 @@ export default function App() {
     setIsStatsBackfilling,
     setNovelStatsById,
     syncIndex,
+  ]);
+
+  // Dọn metadata "truyện ma": còn trong index nhưng không load được từ thư mục hiện tại.
+  useEffect(() => {
+    if (!dirHandle || dirHandle === 'LOCAL_STORAGE') return;
+    if (orphanMetadataPrunedHandlesRef.current.has(dirHandle)) return;
+    if (orphanMetadataPruneInFlightRef.current) return;
+    let cancelled = false;
+    orphanMetadataPruneInFlightRef.current = true;
+    const root = dirHandle;
+    const run = async () => {
+      try {
+        const snapshotMeta = novelsMetadataRef.current || [];
+        // Chỉ dọn 1 lần mỗi thư mục đã kết nối. Nếu thư viện trống thì đánh dấu đã dọn luôn
+        // để không ảnh hưởng flow tạo truyện mới ngay sau đó.
+        if (snapshotMeta.length === 0) {
+          orphanMetadataPrunedHandlesRef.current.add(root);
+          return;
+        }
+
+        const hasNovelStorage = async (meta) => {
+          const id = String(meta?.id || '').trim();
+          if (!id) return false;
+          const safeTitle = String(meta?.title || '').replace(/[\\/:*?"<>|]/g, '').trim();
+          const folderName = String(meta?.folderName || '').trim();
+          const folderCandidates = Array.from(new Set([folderName, safeTitle, id].filter(Boolean)));
+          for (const dirName of folderCandidates) {
+            try {
+              const novelDir = await root.getDirectoryHandle(dirName);
+              const manifestCandidates = Array.from(new Set([folderName, safeTitle, id, dirName].filter(Boolean)));
+              for (const base of manifestCandidates) {
+                try {
+                  const manifestFile = await novelDir.getFileHandle(`${base}.json`);
+                  const text = await (await manifestFile.getFile()).text();
+                  const parsed = JSON.parse(text);
+                  if (String(parsed?.id || '').trim() !== id) continue;
+                  const parsedTitle = safeString(parsed?.title).trim();
+                  // Chặn "truyện ma" từ manifest hỏng/rỗng: id trùng nhưng thiếu title hợp lệ.
+                  if (!parsedTitle) continue;
+                  return true;
+                } catch {
+                  /* try next manifest candidate */
+                }
+              }
+            } catch {
+              /* try next folder candidate */
+            }
+          }
+          // Legacy layout fallback: novels/<id>.json
+          try {
+            const legacyDir = await root.getDirectoryHandle('novels');
+            await legacyDir.getFileHandle(`${id}.json`);
+            return true;
+          } catch {
+            return false;
+          }
+        };
+
+        const staleIds = [];
+        const chunk = 3;
+        for (let i = 0; i < snapshotMeta.length; i += chunk) {
+          if (cancelled) return;
+          const batch = snapshotMeta.slice(i, i + chunk);
+          const loadedBatch = await Promise.all(
+            batch.map(async (meta) => {
+              try {
+                const ok = await hasNovelStorage(meta);
+                return { id: meta.id, ok };
+              } catch {
+                return { id: meta.id, ok: false };
+              }
+            })
+          );
+          loadedBatch.forEach((row) => {
+            if (!row.ok) staleIds.push(row.id);
+          });
+        }
+        if (cancelled || staleIds.length === 0) return;
+        const staleSet = new Set(staleIds);
+        const currentMeta = novelsMetadataRef.current || [];
+        const nextMeta = currentMeta.filter((m) => !staleSet.has(m?.id));
+        if (nextMeta.length === currentMeta.length) return;
+        const nextStats = { ...novelStatsByIdRef.current };
+        staleIds.forEach((id) => {
+          delete nextStats[id];
+        });
+        novelStatsByIdRef.current = nextStats;
+        setNovelStatsById(nextStats);
+        setNovelsMetadata(nextMeta);
+        novelsMetadataRef.current = nextMeta;
+        if (activeNovelDataRef.current && staleSet.has(activeNovelDataRef.current.id)) {
+          setActiveNovelData(null);
+          setActiveNovelDirHandle(null);
+        }
+        await syncIndex(nextMeta, globalTabsConfigRef.current, root, nextStats);
+        showToast(`Đã dọn ${staleIds.length} truyện không còn dữ liệu trên ổ.`, 'warning');
+      } finally {
+        orphanMetadataPrunedHandlesRef.current.add(root);
+        orphanMetadataPruneInFlightRef.current = false;
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+      orphanMetadataPruneInFlightRef.current = false;
+    };
+  }, [
+    dirHandle,
+    syncIndex,
+    setNovelStatsById,
+    setNovelsMetadata,
+    setActiveNovelData,
+    setActiveNovelDirHandle,
+    novelsMetadataRef,
+    novelStatsByIdRef,
+    globalTabsConfigRef,
+    activeNovelDataRef,
+    showToast,
   ]);
 
   const runRecalculateAllLibraryStats = useCallback(async () => {

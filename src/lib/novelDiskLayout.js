@@ -372,6 +372,40 @@ async function readManifestIdFromNovelDir(novelDirHandle, manifestBaseName) {
   }
 }
 
+async function hasMatchingManifestIdInDirectory(novelDirHandle, wantId) {
+  if (!novelDirHandle || !wantId) return false;
+  try {
+    for await (const [entryName, entryHandle] of novelDirHandle.entries()) {
+      if (entryHandle.kind !== 'file') continue;
+      if (!/\.json$/i.test(entryName)) continue;
+      if (/\.backup\.json$/i.test(entryName) || /\.json\.tmp$/i.test(entryName)) continue;
+      try {
+        const text = await (await entryHandle.getFile()).text();
+        const parsed = JSON.parse(text);
+        if (!parsed || typeof parsed !== 'object') continue;
+        const parsedId = String(parsed.id ?? '').trim();
+        if (parsedId !== wantId) continue;
+        // Chỉ coi là manifest truyện nếu có dấu hiệu cấu trúc truyện;
+        // tránh match nhầm file json phụ trong thư mục images/cache.
+        const isNovelLike =
+          typeof parsed.title === 'string' ||
+          typeof parsed.author === 'string' ||
+          Array.isArray(parsed.tabsConfig) ||
+          (parsed.data && typeof parsed.data === 'object') ||
+          Array.isArray(parsed.genres) ||
+          typeof parsed.genre === 'string' ||
+          parsed.storageLayout === NOVEL_STORAGE_SHARDED;
+        if (isNovelLike) return true;
+      } catch {
+        /* skip malformed file */
+      }
+    }
+  } catch {
+    /* unreadable dir */
+  }
+  return false;
+}
+
 async function removeDirectoryTreeManual(dirHandle) {
   for await (const [entryName, entryHandle] of dirHandle.entries()) {
     if (entryHandle.kind === 'file') {
@@ -424,6 +458,7 @@ export async function findNovelFolderEntryNameOnRoot(rootDir, meta) {
         const pid = await readManifestIdFromNovelDir(novelDir, base);
         if (pid === wantId) return dirName;
       }
+      if (await hasMatchingManifestIdInDirectory(novelDir, wantId)) return dirName;
     } catch {
       /* thử candidate kế */
     }
@@ -442,6 +477,7 @@ export async function findNovelFolderEntryNameOnRoot(rootDir, meta) {
           /* */
         }
       }
+      if (await hasMatchingManifestIdInDirectory(handle, wantId)) return entryName;
     }
   } catch (e) {
     console.warn('[TTC] findNovelFolderEntryNameOnRoot scan', e);
