@@ -3595,7 +3595,7 @@ export const ModalMilestone = ({
   const EVENT_EDITOR_ID = 'milestone-event-editor';
   const HISTORY_LIMIT = 120;
   const notesTypo = useSyncExternalStore(subscribeEntityNotesPrefs, getEntityNotesPrefs, getEntityNotesPrefs);
-  const [formData, setFormData] = useState({ id: null, chapter: '', title: '' });
+  const [formData, setFormData] = useState({ id: null, chapter: '', title: '', nextEntityName: '' });
   const [snapshotData, setSnapshotData] = useState({ avatar: '', dynamicData: {} });
   const [eventEdit, setEventEdit] = useState(() => ({ text: '', history: [''], hIndex: 0 }));
   const [toolbarState, setToolbarState] = useState(() => getEntityNotesToolbarState('', 0, 0));
@@ -3745,12 +3745,13 @@ export const ModalMilestone = ({
         id: initialData.id,
         chapter: safeString(initialData.chapter),
         title: safeString(initialData.title),
+        nextEntityName: safeString(initialData.nextEntityName),
       });
       setSnapshotData(initialData.snapshot || { avatar: '', dynamicData: {} });
     } else {
       const defaultChapter =
         defaultChapterWhenNew != null && defaultChapterWhenNew !== '' ? String(defaultChapterWhenNew) : '';
-      setFormData({ id: null, chapter: defaultChapter, title: '' });
+      setFormData({ id: null, chapter: defaultChapter, title: '', nextEntityName: '' });
       setSnapshotData({ avatar: '', dynamicData: {} });
     }
     setEventEdit({ text: nextEvent, history: [nextEvent], hIndex: 0 });
@@ -3818,7 +3819,12 @@ export const ModalMilestone = ({
       const nextSnapshot = preparedSnapshot.snapshot;
       const wrappedCount = eventWrap.count + preparedSnapshot.wrappedCount;
       onSave(
-        { ...formData, title: safeString(formData.title).trim(), event: eventWrap.text },
+        {
+          ...formData,
+          title: safeString(formData.title).trim(),
+          nextEntityName: safeString(formData.nextEntityName).trim(),
+          event: eventWrap.text,
+        },
         preparedSnapshot.hasSnapshot ? nextSnapshot : null
       );
       if (preparedText !== eventText) {
@@ -4182,7 +4188,12 @@ Yêu cầu trả về:
       toast(`Đã tự bọc ${wrappedCount} [[liên kết]] theo thẻ có sẵn.`);
     }
     onSave(
-      { ...formData, title: safeString(formData.title).trim(), event: eventWrap.text },
+      {
+        ...formData,
+        title: safeString(formData.title).trim(),
+        nextEntityName: safeString(formData.nextEntityName).trim(),
+        event: eventWrap.text,
+      },
       preparedSnapshot.hasSnapshot ? nextSnapshot : null
     );
     onClose();
@@ -4321,6 +4332,20 @@ Yêu cầu trả về:
                   className="w-full rounded-[22px] border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 font-serif outline-none transition-colors focus:border-amber-500"
                   placeholder="VD: Kết đan thành công"
                 />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase tracking-widest text-slate-400">
+                  Tên mới sau nâng cấp (tuỳ chọn)
+                </label>
+                <input
+                  value={safeString(formData.nextEntityName)}
+                  onChange={(event) => patchFormData({ nextEntityName: event.target.value })}
+                  className="w-full rounded-[22px] border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 font-serif outline-none transition-colors focus:border-amber-500"
+                  placeholder="VD: Tháp Phượng Hoàng"
+                />
+                <p className="mt-1 text-[11px] font-serif text-slate-500">
+                  Nếu nhập, khi lưu mốc sẽ tự đổi tên thẻ hiện tại sang tên mới này.
+                </p>
               </div>
 
               {parentTabId === 'nhan-vat' && (

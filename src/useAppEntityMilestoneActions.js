@@ -632,11 +632,16 @@ export function useAppEntityMilestoneActions({
   const handleSaveMilestone = useCallback(
     (formData, snapshot) => {
       const prev = activeNovelData ? structuredClone(activeNovelData) : null;
+      let timelineNameUpdated = false;
+      let ownerMilestoneRenameSynced = 0;
+      let mapHierarchyRenameSynced = 0;
       updateActiveNovelData((nov) => {
         if (!nov.data?.[activeTabLon]) return;
         const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
         const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
         if (ent) {
+          const prevName = safeString(ent.name).trim();
+          const nextEntityName = toDisplayTitleCase(formData?.nextEntityName);
           if (!ent.milestones) ent.milestones = [];
           if (formData.id) {
             const idx = ent.milestones.findIndex((m) => m.id === formData.id);
@@ -645,6 +650,7 @@ export function useAppEntityMilestoneActions({
                 ...ent.milestones[idx],
                 chapter: parseInt(formData.chapter, 10),
                 title: safeString(formData.title).trim(),
+                nextEntityName: safeString(formData.nextEntityName).trim(),
                 event: formData.event,
                 snapshot,
               };
@@ -654,11 +660,32 @@ export function useAppEntityMilestoneActions({
               id: generateId('ms'),
               chapter: parseInt(formData.chapter, 10),
               title: safeString(formData.title).trim(),
+              nextEntityName: safeString(formData.nextEntityName).trim(),
               event: formData.event,
               snapshot,
             });
           }
           ent.milestones.sort((a, b) => a.chapter - b.chapter);
+          if (prevName && nextEntityName && prevName !== nextEntityName) {
+            ent.name = nextEntityName;
+            mergeAliasForCurrentTab(ent, prevName);
+            timelineNameUpdated = true;
+            if (activeTabLon !== 'nhan-vat') {
+              ownerMilestoneRenameSynced = syncAutoOwnerMilestonesItemRename(nov, {
+                entityId: ent.id,
+                oldName: prevName,
+                newName: nextEntityName,
+              });
+            }
+            if (isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig })) {
+              mapHierarchyRenameSynced = syncMapHierarchyNameReferences(nov, {
+                entityId: ent.id,
+                oldName: prevName,
+                newName: nextEntityName,
+              });
+            }
+            syncAllCollectionListCards(nov);
+          }
         }
       });
       showToast(
@@ -674,13 +701,27 @@ export function useAppEntityMilestoneActions({
             }
           : null
       );
+      if (timelineNameUpdated) {
+        showToast('Đã tự đổi tên thẻ theo mốc timeline và lưu tên cũ vào bí danh.', 'success');
+      }
+      if (ownerMilestoneRenameSynced > 0) {
+        showToast(
+          `Đã đồng bộ ${ownerMilestoneRenameSynced} mốc auto theo tên mới của thẻ.`,
+          'success'
+        );
+      }
+      if (mapHierarchyRenameSynced > 0) {
+        showToast(`Đã cập nhật ${mapHierarchyRenameSynced} thẻ Bản đồ theo tên mới.`, 'success');
+      }
     },
     [
       activeNovelData,
       updateActiveNovelData,
       activeTabLon,
       activeTabNho,
+      currentTabConfig,
       selectedEntityId,
+      mergeAliasForCurrentTab,
       showToast,
       setActiveNovelData,
       syncNovelRef,
