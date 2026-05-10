@@ -19,6 +19,7 @@ import {
   ChevronUp,
   Upload,
   ImageOff,
+  Ban,
 } from 'lucide-react';
 import { safeString, getIconComponent } from './MasterUtils.jsx';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
@@ -87,9 +88,11 @@ export function AppModalQuanLyTab({
   handleSetTabMapEntrySuggestions,
   handleSetTabTemplateFieldSortPrefix: _handleSetTabTemplateFieldSortPrefix,
   handleApplySuggestedAutoSyncSetup,
+  handleBulkDisableTabAutoSync,
   handleResyncAutoTabs,
   handleSaveCurrentTabsAsGenreTemplate,
   handleResetNovelSuggestionLists,
+  activeTabLon,
   setConfirmDialog,
   showToast,
 }) {
@@ -127,6 +130,11 @@ export function AppModalQuanLyTab({
   const quickAuto3TargetPath = quickAuto3TargetPathOverride ?? quickAuto3DefaultPair.targetPath;
   const lonIconInputRefById = React.useRef({});
   const nhoIconInputRefByPath = React.useRef({});
+  const bulkAutoLonMeta =
+    activeTabLon && activeTabLon !== 'tong-quan'
+      ? safeSortedTabs.find((t) => t && t.id === activeTabLon)
+      : null;
+  const canBulkDisableAutoForOpenLon = Boolean(bulkAutoLonMeta);
 
   const normalizeIconImageFile = React.useCallback((file, onDone) => {
     if (!file || typeof onDone !== 'function') return;
@@ -324,6 +332,56 @@ export function AppModalQuanLyTab({
                     >
                       <Sparkles size={15} /> Áp Preset AUTO Theo Thể Loại
                     </button>
+                  )}
+                  {activeNovelData && typeof handleBulkDisableTabAutoSync === 'function' && (
+                    <>
+                      <button
+                        type="button"
+                        accessKey="c"
+                        title="Tắt AUTO mọi tab sưu tập trong truyện. Phím nhanh: Alt+Shift+C (tùy trình duyệt)."
+                        onClick={() => {
+                          flushFocusedEditor();
+                          setConfirmDialog?.({
+                            isOpen: true,
+                            title: 'Tắt AUTO toàn cây',
+                            message:
+                              'Đặt «Tắt auto» cho <strong>mọi tab sưu tập</strong> trong cả cây thư mục truyện này? Liên kết AUTO và ánh xạ trường gắn vai trò sẽ được gỡ.',
+                            onConfirm: () => handleBulkDisableTabAutoSync(null),
+                          });
+                        }}
+                        className="px-4 py-2.5 rounded-xl border border-rose-700/45 bg-rose-950/25 text-rose-100 text-sm font-bold flex items-center gap-2 hover:bg-rose-900/35"
+                      >
+                        <Ban size={15} /> Tắt AUTO toàn cây
+                      </button>
+                      <button
+                        type="button"
+                        accessKey="t"
+                        disabled={!canBulkDisableAutoForOpenLon}
+                        title={
+                          canBulkDisableAutoForOpenLon
+                            ? `Tắt AUTO mọi tab sưu tập trong tab lớn «${safeString(bulkAutoLonMeta?.label)}». Phím nhanh: Alt+Shift+T (tùy trình duyệt).`
+                            : 'Chỉ dùng khi đang mở một tab lớn nội dung (không phải Tổng quan).'
+                        }
+                        onClick={() => {
+                          if (!canBulkDisableAutoForOpenLon || !activeTabLon) return;
+                          flushFocusedEditor();
+                          const lonLabel = safeString(bulkAutoLonMeta?.label || activeTabLon);
+                          setConfirmDialog?.({
+                            isOpen: true,
+                            title: 'Tắt AUTO theo tab lớn',
+                            message: `Đặt «Tắt auto» cho <strong>mọi tab sưu tập</strong> trong tab lớn «${lonLabel}» (tab lớn đang mở khi đọc truyện)?`,
+                            onConfirm: () => handleBulkDisableTabAutoSync(activeTabLon),
+                          });
+                        }}
+                        className={`px-4 py-2.5 rounded-xl border text-sm font-bold flex items-center gap-2 ${
+                          canBulkDisableAutoForOpenLon
+                            ? 'border-orange-700/45 bg-orange-950/25 text-orange-100 hover:bg-orange-900/35'
+                            : 'border-slate-700/50 bg-slate-950/40 text-slate-600 cursor-not-allowed'
+                        }`}
+                      >
+                        <Ban size={15} /> Tắt AUTO tab đang mở
+                      </button>
+                    </>
                   )}
                   {typeof handleSaveCurrentTabsAsGenreTemplate === 'function' && (
                     <button
@@ -680,6 +738,9 @@ export function AppModalQuanLyTab({
                         level_4_timeline: Boolean(autoLevelConfigRaw?.levels?.level_4_timeline),
                       },
                     };
+                    const bothLevels12Off =
+                      !autoLevelConfig.levels[AUTO_SYNC_LEVEL_1] &&
+                      !autoLevelConfig.levels[AUTO_SYNC_LEVEL_2];
                     const practicalRole = explicitRole || effectiveRole || '';
                     const auto3SourceEligible = practicalRole === 'the-luc';
                     const isMainCharacterRole = effectiveRole === 'nhan-vat-chinh';
@@ -900,7 +961,7 @@ export function AppModalQuanLyTab({
                                     )}
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-1">
+                                <div className="flex flex-wrap items-center gap-1">
                                   <>
                                     <input
                                       ref={(el) => {
@@ -951,6 +1012,59 @@ export function AppModalQuanLyTab({
                                         title={isAutoPanelOpen ? 'Ẩn mục AUTO của tab này' : 'Mở mục AUTO của tab này'}
                                       >
                                         AUTO
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleSetTabAutoSyncRole(
+                                            tabLon.id,
+                                            tabNho.id,
+                                            isAutoOffForTab ? '' : 'khong-tu-dong'
+                                          )
+                                        }
+                                        className={`px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all shrink-0 max-sm:max-w-[4.5rem] leading-tight sm:whitespace-nowrap ${
+                                          isAutoOffForTab
+                                            ? 'border-emerald-700/45 bg-emerald-950/25 text-emerald-100 hover:bg-emerald-900/35'
+                                            : 'border-rose-700/45 bg-rose-950/25 text-rose-100 hover:bg-rose-900/35'
+                                        }`}
+                                        title={
+                                          isAutoOffForTab
+                                            ? 'Trả tab này về AUTO (tự nhận diện / chọn vai trò trong panel AUTO)'
+                                            : 'Tắt AUTO cho riêng tab nhỏ này (không đồng bộ theo cây)'
+                                        }
+                                      >
+                                        {isAutoOffForTab ? 'Bật AUTO' : 'Tắt AUTO'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={!autoLevelConfig.enabled}
+                                        onClick={() =>
+                                          handleSetTabAutoSyncLevels?.(tabLon.id, tabNho.id, {
+                                            ...autoLevelConfig,
+                                            enabled: true,
+                                            levels: {
+                                              ...autoLevelConfig.levels,
+                                              [AUTO_SYNC_LEVEL_1]: bothLevels12Off,
+                                              [AUTO_SYNC_LEVEL_2]: bothLevels12Off,
+                                            },
+                                          })
+                                        }
+                                        className={`px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all shrink-0 max-sm:max-w-[5rem] leading-tight sm:whitespace-nowrap ${
+                                          !autoLevelConfig.enabled
+                                            ? 'border-slate-800 bg-slate-950/40 text-slate-600 cursor-not-allowed'
+                                            : bothLevels12Off
+                                              ? 'border-amber-700/45 bg-amber-950/25 text-amber-100 hover:bg-amber-900/35'
+                                              : 'border-slate-600/50 bg-slate-900/70 text-slate-200 hover:border-slate-500'
+                                        }`}
+                                        title={
+                                          !autoLevelConfig.enabled
+                                            ? 'Bật «AUTO: Đang bật» trong panel AUTO trước khi chỉnh bậc.'
+                                            : bothLevels12Off
+                                              ? 'Khôi phục mặc định: bật bậc 1 (trong thẻ) và 2 (danh sách cùng tab).'
+                                              : 'Tab đặc thù chỉ cần liên kết (3) hoặc timeline (4): tắt hẳn bậc 1 và 2 cho tab này.'
+                                        }
+                                      >
+                                        {bothLevels12Off ? 'Bật bậc 1–2' : 'Tắt bậc 1–2'}
                                       </button>
                                     </>
                                   )}
@@ -1090,7 +1204,8 @@ export function AppModalQuanLyTab({
                                       AUTO theo bậc (1-4)
                                     </div>
                                     <div className="text-[12px] text-slate-300 font-serif mt-1">
-                                      Mặc định tab mới bật bậc 1–2. Với tab đặc thù, bạn có thể tắt riêng từng bậc ngay bên dưới.
+                                      Bậc 1–2 mặc định bật (AUTO trong thẻ & danh sách cùng tab). Bậc 3 cần thiết lập liên kết giữa tab.
+                                      Bậc 4 sinh mốc timeline khi nội dung khớp cú pháp. Tab chỉ cần 3–4: dùng nút «Tắt bậc 1–2» trên hàng tab hoặc tắt từng ô dưới đây.
                                     </div>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2">

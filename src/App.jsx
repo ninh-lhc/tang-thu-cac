@@ -1913,7 +1913,7 @@ export default function App() {
     if (activeNovelData && Array.isArray(activeNovelData.tabsConfig)) return activeNovelData.tabsConfig;
     return globalTabsConfig;
   }, [activeNovelData, globalTabsConfig, activeNovelDataRef]);
-  const buildTabScopeLabel = (lonId, nhoId, currentTabs = getTabsToUpdate()) => {
+  const buildTabScopeLabel = useCallback((lonId, nhoId, currentTabs = getTabsToUpdate()) => {
     const lon = (currentTabs || []).find((tab) => tab.id === lonId);
     if (!lon) return 'Cây thư mục';
     if (!nhoId) return safeString(lon.label || lonId) || 'Cây thư mục';
@@ -1921,7 +1921,7 @@ export default function App() {
     const lonLabel = safeString(lon.label || lonId).trim();
     const nhoLabel = safeString(nho?.label || nhoId).trim();
     return [lonLabel, nhoLabel].filter(Boolean).join(' > ') || 'Cây thư mục';
-  };
+  }, [getTabsToUpdate]);
   const setTabsConfig = useCallback(
     (
       newTabs,
@@ -2414,6 +2414,69 @@ export default function App() {
     });
     persistGenreTemplateFromTabs(current);
   };
+
+  /** Đặt vai trò AUTO «tắt» cho mọi tab sưu tập trong phạm vi; lonIdFilter=null là toàn cây. */
+  const handleBulkDisableTabAutoSync = useCallback(
+    (lonIdFilter = null) => {
+      const current = structuredClone(getTabsToUpdate());
+      const lons = lonIdFilter ? current.filter((t) => t && t.id === lonIdFilter) : current;
+      if (lonIdFilter && lons.length === 0) {
+        showToast('Không tìm thấy tab lớn đó trong cây hiện tại.', 'warning');
+        return;
+      }
+      let collectionCount = 0;
+      let changed = false;
+      for (const lon of lons) {
+        for (const nho of lon?.subTabs || []) {
+          if (!nho || nho.viewType !== 'collection-track') continue;
+          collectionCount++;
+          const hasTargets =
+            (Array.isArray(nho.autoSyncTargetPaths) && nho.autoSyncTargetPaths.length > 0) ||
+            Boolean(nho.autoSyncTargetPath);
+          const hasFieldMap = nho.autoSyncFieldMap && Object.keys(nho.autoSyncFieldMap).length > 0;
+          const needsWrite =
+            nho.autoSyncRole !== AUTO_SYNC_ROLE_OFF || hasTargets || hasFieldMap;
+          if (needsWrite) {
+            changed = true;
+            nho.autoSyncRole = AUTO_SYNC_ROLE_OFF;
+            delete nho.autoSyncTargetPaths;
+            delete nho.autoSyncTargetPath;
+            delete nho.autoSyncFieldMap;
+          }
+        }
+      }
+      if (collectionCount === 0) {
+        showToast('Không có tab sưu tập (lưới) trong phạm vi để tắt AUTO.', 'warning');
+        return;
+      }
+      if (!changed) {
+        showToast(
+          lonIdFilter
+            ? 'Mọi tab sưu tập trong tab lớn này đã tắt AUTO.'
+            : 'Mọi tab sưu tập trong cây đã tắt AUTO.',
+          'success'
+        );
+        return;
+      }
+      const scopeLabel = lonIdFilter
+        ? buildTabScopeLabel(lonIdFilter, null, current)
+        : 'Cây thư mục';
+      setTabsConfig(current, {
+        resyncAuto: true,
+        autoSyncPlan: buildFullAutoSyncPlan(),
+        autoSyncReason: 'bulk_disable_auto',
+        autoSyncScopeLabel: scopeLabel,
+      });
+      persistGenreTemplateFromTabs(current);
+      showToast(
+        lonIdFilter
+          ? `Đã tắt AUTO cho mọi tab sưu tập trong «${safeString(lons[0]?.label || lonIdFilter)}».`
+          : 'Đã tắt AUTO cho toàn bộ tab sưu tập trong cây.',
+        'success'
+      );
+    },
+    [getTabsToUpdate, setTabsConfig, showToast, persistGenreTemplateFromTabs, buildTabScopeLabel]
+  );
 
   const handleSetTabAutoSyncFieldMap = (lonId, nhoId, fieldKey, nextFieldIdValue) => {
     const current = structuredClone(getTabsToUpdate());
@@ -3537,6 +3600,7 @@ export default function App() {
     requestPropagateMapParentTierFieldMapToLon,
     handleSetTabFieldSource,
     handleApplySuggestedAutoSyncSetup,
+    handleBulkDisableTabAutoSync,
     handleResyncAutoTabs,
     handleSaveCurrentTabsAsGenreTemplate,
     handleResetNovelSuggestionLists,

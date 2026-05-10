@@ -170,6 +170,7 @@ export function AppModalLayer({
   requestPropagateMapParentTierFieldMapToLon,
   handleSetTabFieldSource,
   handleApplySuggestedAutoSyncSetup,
+  handleBulkDisableTabAutoSync,
   handleResyncAutoTabs,
   handleSaveCurrentTabsAsGenreTemplate,
   handleResetNovelSuggestionLists,
@@ -432,9 +433,11 @@ export function AppModalLayer({
           handleSetTabMapEntrySuggestions={handleSetTabMapEntrySuggestions}
           handleSetTabTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
           handleApplySuggestedAutoSyncSetup={handleApplySuggestedAutoSyncSetup}
+          handleBulkDisableTabAutoSync={handleBulkDisableTabAutoSync}
           handleResyncAutoTabs={handleResyncAutoTabs}
           handleSaveCurrentTabsAsGenreTemplate={handleSaveCurrentTabsAsGenreTemplate}
           handleResetNovelSuggestionLists={handleResetNovelSuggestionLists}
+          activeTabLon={activeTabLon}
           setConfirmDialog={setConfirmDialog}
           showToast={showToast}
         />
