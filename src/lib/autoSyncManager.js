@@ -13,7 +13,6 @@ import {
   AUTO_SYNC_LEVEL_1,
   AUTO_SYNC_LEVEL_2,
   AUTO_SYNC_LEVEL_3,
-  AUTO_SYNC_LEVEL_4,
   getEffectiveTabAutoSyncLevelConfig,
 } from './tabAutoSyncLevels.js';
 import { getEffectiveAutoSyncRole } from './tabAutoSyncRole.js';
@@ -87,7 +86,8 @@ function buildEnginesForTabContext(tabContext = {}, { includeCollectionCards = t
   if (levelConfig.levels[AUTO_SYNC_LEVEL_2] && includeCollectionCards && isCollectionTab && role !== 'khong-tu-dong') {
     engineSet.add(AUTO_SYNC_ENGINE_COLLECTION_CARDS);
   }
-  if (levelConfig.levels[AUTO_SYNC_LEVEL_4] && isCollectionTab && tabContext?.activeTabLon !== 'nhan-vat') {
+  // Timeline chủ sở hữu (cú pháp trên thẻ): luôn quét khi AUTO tab bật — không còn cờ bậc 4 trên UI.
+  if (isCollectionTab && tabContext?.activeTabLon !== 'nhan-vat' && role !== 'khong-tu-dong') {
     engineSet.add(AUTO_SYNC_ENGINE_OWNER_TIMELINE);
   }
 
@@ -114,7 +114,9 @@ function buildCleanupEnginesForTabContext(tabContext = {}, options = {}) {
   const role = getEffectiveAutoSyncRole(tabContext);
   getAutoSyncEnginesForRole(role).forEach((engineId) => engineSet.add(engineId));
   if (isCollectionTab && role !== 'khong-tu-dong') engineSet.add(AUTO_SYNC_ENGINE_COLLECTION_CARDS);
-  if (isCollectionTab && tabContext?.activeTabLon !== 'nhan-vat') engineSet.add(AUTO_SYNC_ENGINE_OWNER_TIMELINE);
+  if (isCollectionTab && tabContext?.activeTabLon !== 'nhan-vat' && role !== 'khong-tu-dong') {
+    engineSet.add(AUTO_SYNC_ENGINE_OWNER_TIMELINE);
+  }
   return sortEngines([...engineSet]);
 }
 

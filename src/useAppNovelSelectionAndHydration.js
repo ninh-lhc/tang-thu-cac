@@ -99,7 +99,11 @@ export function useAppNovelSelectionAndHydration({
           const recoveredFromBackup = Boolean(data.__recoveredFromBackup);
           if (recoveredFromBackup) delete data.__recoveredFromBackup;
           setActiveNovelDirHandle(loaded.novelDir ?? null);
-          if (!data.tabsConfig) data.tabsConfig = structuredClone(globalTabsConfig);
+          let repairedEmptyTabsConfig = false;
+          if (!Array.isArray(data.tabsConfig) || data.tabsConfig.length === 0) {
+            data.tabsConfig = structuredClone(globalTabsConfig);
+            repairedEmptyTabsConfig = true;
+          }
           const partialListCardSync = data.__partialData ? syncAllCollectionListCardsDetailed(data) : null;
           const autoSyncResult = !data.__partialData
             ? runNovelAutoSyncPlan(data, buildAutoSyncPlanFromTabsConfig(data.tabsConfig || []), { recordLog: false })
@@ -143,7 +147,7 @@ export function useAppNovelSelectionAndHydration({
               );
             }
           }
-          if (migrated !== data || recoveredFromBackup) {
+          if (migrated !== data || recoveredFromBackup || repairedEmptyTabsConfig) {
             void syncNovel(migrated, dirHandle);
           }
           if (tabAt?.lonId) {
@@ -251,7 +255,7 @@ export function useAppNovelSelectionAndHydration({
           cleanupAutoRelationLegacyInfoForNovel(fullData);
           const recoveredFromBackup = Boolean(fullData.__recoveredFromBackup);
           if (recoveredFromBackup) delete fullData.__recoveredFromBackup;
-          const missingTabsConfig = !fullData.tabsConfig;
+          const missingTabsConfig = !Array.isArray(fullData.tabsConfig) || fullData.tabsConfig.length === 0;
           if (missingTabsConfig) fullData.tabsConfig = structuredClone(globalTabsConfig);
           const autoSyncResult = runNovelAutoSyncPlan(
             fullData,

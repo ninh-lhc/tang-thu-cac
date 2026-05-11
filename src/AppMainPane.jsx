@@ -30,12 +30,8 @@ export function AppMainPane({
   setMenu2Expanded,
   handleMenu2MouseEnter,
   handleMenu2MouseLeave,
-  sidebarGrouped,
-  setSidebarGrouped,
-  tabGroups,
   sortedTabs,
-  collapsedTabGroups,
-  toggleTabGroupCollapse,
+  tocRailNavigationLocked = false,
   activeTabLon,
   activeTabNho,
   activeTabCon,
@@ -91,12 +87,8 @@ export function AppMainPane({
             setMenu2Expanded={setMenu2Expanded}
             handleMenu2MouseEnter={handleMenu2MouseEnter}
             handleMenu2MouseLeave={handleMenu2MouseLeave}
-            sidebarGrouped={sidebarGrouped}
-            setSidebarGrouped={setSidebarGrouped}
-            tabGroups={tabGroups}
             sortedTabs={sortedTabs}
-            collapsedTabGroups={collapsedTabGroups}
-            toggleTabGroupCollapse={toggleTabGroupCollapse}
+            navigationLocked={tocRailNavigationLocked}
             activeTabLon={activeTabLon}
             activeTabNho={activeTabNho}
             activeTabCon={activeTabCon}

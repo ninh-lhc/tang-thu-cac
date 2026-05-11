@@ -20,7 +20,7 @@
 //   AppShellOverlays.jsx - lightbox, toast, spinner
 //   AppListCardInfoSearch.jsx - tìm trong nội dung thẻ Danh sách (AUTO)
 //   entityProfilePrint.js - template + popup print cho export hồ sơ PDF
-//   lib/appTabGroups, appDashboardStats, buildEntityLinkMap, filterNovelsForLibrary, buildCurrentContextDirHandle
+//   appDashboardStats, buildEntityLinkMap, filterNovelsForLibrary, buildCurrentContextDirHandle
 //   useAppNovelCrud.js - novel modal state + create/edit/delete handlers
 //   useAppPhimTatToanCuc.js - phím tắt Ctrl+K, /, Escape...
 //   lib/tinhThongKeNhanhTruyen, locLenhNhanhCommandPalette, xrefBangDanhMucThucThe, xrefChonMucThuThap
@@ -63,7 +63,6 @@ import {
 import { computeRelatedEntities } from './lib/computeRelatedEntities.js';
 import { findEntitiesByHintInNovel } from './appNhatKyVaGoiThe.js';
 import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
-import { buildTabGroups } from './lib/appTabGroups.js';
 import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
 import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
@@ -141,6 +140,7 @@ import {
   mergeGenreTabsTemplatesFromLocalStorage,
   saveGenreTabsTemplate,
 } from './lib/genreTabsTemplateStore.js';
+import { resolveTabsConfigForGenreSelection } from './lib/resolveTabsConfigForGenreSelection.js';
 import {
   ensureWikiAliasInFieldsTemplate,
   sanitizeFieldsTemplate,
@@ -472,11 +472,11 @@ export default function App() {
     [dirHandle, activeNovelDirHandle]
   );
 
-  const activeTabs = useMemo(() => activeNovelData?.tabsConfig || globalTabsConfig, [activeNovelData, globalTabsConfig]);
+  const activeTabs = useMemo(() => {
+    const tc = activeNovelData?.tabsConfig;
+    return Array.isArray(tc) && tc.length > 0 ? tc : globalTabsConfig;
+  }, [activeNovelData?.tabsConfig, globalTabsConfig]);
   const sortedTabs = useMemo(() => sortTabsAlphabetically(activeTabs), [activeTabs]);
-
-  const tabGroups = useMemo(() => buildTabGroups(sortedTabs), [sortedTabs]);
-
 
   const dirName = typeof dirHandle === 'string' ? 'Bộ nhớ đệm' : (dirHandle?.name || '');
   
@@ -574,18 +574,12 @@ export default function App() {
   const {
     menu2Expanded,
     setMenu2Expanded,
-    sidebarGrouped,
-    setSidebarGrouped,
-    collapsedTabGroups,
     handleMenu2MouseEnter,
     handleMenu2MouseLeave,
-    toggleTabGroupCollapse,
     handleSelectTabLon,
     handleSelectTabNho,
     handleSelectTabCon,
   } = useAppTocRail({
-    activeNovelId: activeNovelData?.id,
-    tabGroups,
     activeTabLon,
     activeTabNho,
     activeTabCon,
@@ -1671,6 +1665,25 @@ export default function App() {
     activeNovelDataRef,
   });
 
+  const isTocRailCreatePreview =
+    Boolean(isAddNovelOpen && novelModalMode === 'create' && activeNovelData);
+
+  const tocRailPreviewBaseTabs = useMemo(() => {
+    if (!isTocRailCreatePreview) return null;
+    return resolveTabsConfigForGenreSelection(novelForm.genres, novelForm.tabsConfig);
+  }, [isTocRailCreatePreview, novelForm.genres, novelForm.tabsConfig]);
+
+  const tocRailSortedTabs = useMemo(() => {
+    if (!isTocRailCreatePreview) return sortedTabs;
+    const resolved = tocRailPreviewBaseTabs;
+    const fallback =
+      Array.isArray(globalTabsConfig) && globalTabsConfig.length > 0
+        ? globalTabsConfig
+        : INITIAL_TABS_CONFIG;
+    const raw = Array.isArray(resolved) && resolved.length > 0 ? resolved : fallback;
+    return sortTabsAlphabetically(raw);
+  }, [isTocRailCreatePreview, tocRailPreviewBaseTabs, globalTabsConfig, sortedTabs]);
+
   const {
     showConnectReminder,
     dismissConnectReminder,
@@ -2009,6 +2022,7 @@ export default function App() {
     });
     showToast('Đã áp dụng gợi ý vai trò và ánh xạ AUTO theo cây thư mục.', 'success');
   };
+  /** Chỉ lưu khi người dùng chủ động — không tự ghi mẫu khi chỉnh AUTO/tab (tránh ghi đè mẫu thể loại). */
   const handleSaveCurrentTabsAsGenreTemplate = useCallback(() => {
     if (!activeNovelData) {
       showToast('Cần mở truyện trước khi lưu mẫu cây thư mục.', 'warning');
@@ -2059,21 +2073,6 @@ export default function App() {
     setTabsConfig(strippedTabs, { resyncAuto: false });
     showToast('Đã reset toàn bộ list gợi ý của truyện hiện tại.', 'success');
   }, [activeNovelData, showToast, setTabsConfig]);
-  const persistGenreTemplateFromTabs = useCallback(
-    (tabsConfig) => {
-      if (!activeNovelData || !Array.isArray(tabsConfig) || tabsConfig.length === 0) return;
-      const genres = Array.isArray(activeNovelData.genres)
-        ? activeNovelData.genres.filter(Boolean)
-        : typeof activeNovelData.genres === 'string'
-          ? [activeNovelData.genres]
-          : activeNovelData.genre
-            ? [activeNovelData.genre]
-            : [];
-      if (genres.length === 0) return;
-      saveGenreTabsTemplate(genres, tabsConfig);
-    },
-    [activeNovelData]
-  );
   const buildAutoSyncContext = (lonId, nhoId, nho, parentLabel = '') => ({
     activeTabLon: lonId,
     activeTabNho: nhoId,
@@ -2416,7 +2415,6 @@ export default function App() {
       autoSyncReason: 'set_auto_role',
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
-    persistGenreTemplateFromTabs(current);
   };
 
   /** Đặt vai trò AUTO «tắt» cho mọi tab sưu tập trong phạm vi; lonIdFilter=null là toàn cây. */
@@ -2471,7 +2469,6 @@ export default function App() {
         autoSyncReason: 'bulk_disable_auto',
         autoSyncScopeLabel: scopeLabel,
       });
-      persistGenreTemplateFromTabs(current);
       showToast(
         lonIdFilter
           ? `Đã tắt AUTO cho mọi tab sưu tập trong «${safeString(lons[0]?.label || lonIdFilter)}».`
@@ -2479,7 +2476,7 @@ export default function App() {
         'success'
       );
     },
-    [getTabsToUpdate, setTabsConfig, showToast, persistGenreTemplateFromTabs, buildTabScopeLabel]
+    [getTabsToUpdate, setTabsConfig, showToast, buildTabScopeLabel]
   );
 
   const handleSetTabAutoSyncFieldMap = (lonId, nhoId, fieldKey, nextFieldIdValue) => {
@@ -2512,7 +2509,6 @@ export default function App() {
       autoSyncReason: 'set_field_map',
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
-    persistGenreTemplateFromTabs(current);
   };
 
   const handleSetTabAutoSyncTargets = (lonId, nhoId, nextTargetPaths) => {
@@ -2540,7 +2536,6 @@ export default function App() {
       autoSyncReason: 'set_auto_targets',
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
-    persistGenreTemplateFromTabs(current);
   };
 
   const handleSetTabMapEntrySuggestions = (lonId, nhoId, which, text, options = {}) => {
@@ -3227,7 +3222,6 @@ export default function App() {
       autoSyncReason: 'set_auto_levels',
       autoSyncScopeLabel: buildTabScopeLabel(lonId, nhoId, current),
     });
-    persistGenreTemplateFromTabs(current);
   };
 
   // ==========================================
@@ -3687,12 +3681,8 @@ export default function App() {
           setMenu2Expanded={setMenu2Expanded}
           handleMenu2MouseEnter={handleMenu2MouseEnter}
           handleMenu2MouseLeave={handleMenu2MouseLeave}
-          sidebarGrouped={sidebarGrouped}
-          setSidebarGrouped={setSidebarGrouped}
-          tabGroups={tabGroups}
-          sortedTabs={sortedTabs}
-          collapsedTabGroups={collapsedTabGroups}
-          toggleTabGroupCollapse={toggleTabGroupCollapse}
+          sortedTabs={tocRailSortedTabs}
+          tocRailNavigationLocked={isTocRailCreatePreview}
           activeTabLon={activeTabLon}
           activeTabNho={activeTabNho}
           activeTabCon={activeTabCon}

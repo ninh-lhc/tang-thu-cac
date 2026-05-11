@@ -27,10 +27,6 @@ function TocRailHarness() {
     setMenu2Expanded,
     handleSelectTabLon,
   } = useAppTocRail({
-    activeNovelId: 'novel-1',
-    tabGroups: [
-      { groupLabel: 'He thong', tabs: [{ id: 'tu-luyen' }, { id: 'ban-do' }] },
-    ],
     activeTabLon,
     activeTabNho,
     activeTabCon,

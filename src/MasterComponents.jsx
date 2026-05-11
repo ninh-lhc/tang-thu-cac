@@ -88,6 +88,7 @@ import { composeForceQuickDisplayLine, extractForceQuickRankLabel } from './lib/
 import { inferOrgTypeFromContext, inferOrgTypeFromTabSlug } from './lib/forceOrgTypeInfer.js';
 import { mergeTabsByGenres } from './genreTabsMap.js';
 import { getGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
+import { resolveTabsConfigForGenreSelection } from './lib/resolveTabsConfigForGenreSelection.js';
 import { searchNovelData, dedupeDeepSearchResults, metadataSearchHits } from './deepSearchCore.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
 import {
@@ -5221,10 +5222,8 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
                          type="button"
                          disabled={(formData.genres || []).length === 0}
                          onClick={() => {
-                          const cfg = hasSavedGenreTemplate
-                            ? savedGenreTemplate.tabsConfig
-                            : mergeTabsByGenres(formData.genres || []);
-                           if (cfg) patchFormData({ tabsConfig: cfg });
+                          const cfg = resolveTabsConfigForGenreSelection(formData.genres || [], null);
+                          if (cfg) patchFormData({ tabsConfig: structuredClone(cfg) });
                          }}
                          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-serif bg-amber-900/30 border border-amber-600/40 text-amber-300 hover:bg-amber-800/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                        >

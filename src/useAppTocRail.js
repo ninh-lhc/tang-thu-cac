@@ -8,8 +8,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export function useAppTocRail({
-  activeNovelId,
-  tabGroups,
   activeTabLon,
   activeTabNho,
   activeTabCon,
@@ -29,10 +27,7 @@ export function useAppTocRail({
   setIsEntityEditing,
 }) {
   const [menu2Expanded, setMenu2Expanded] = useState(true);
-  const [collapsedTabGroups, setCollapsedTabGroups] = useState(() => new Set());
-  const [sidebarGrouped, setSidebarGrouped] = useState(true);
   const menu2LeaveCollapseTimeoutRef = useRef(null);
-  const lastSyncedActiveTabRef = useRef(null);
 
   const handleMenu2MouseEnter = useCallback(() => {
     if (menu2LeaveCollapseTimeoutRef.current) {
@@ -50,15 +45,6 @@ export function useAppTocRail({
       setMenu2Expanded(false);
       menu2LeaveCollapseTimeoutRef.current = null;
     }, 140);
-  }, []);
-
-  const toggleTabGroupCollapse = useCallback((groupLabel) => {
-    setCollapsedTabGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(groupLabel)) next.delete(groupLabel);
-      else next.add(groupLabel);
-      return next;
-    });
   }, []);
 
   const resetTabSelection = useCallback((tabId, { expandMenu = false } = {}) => {
@@ -173,37 +159,11 @@ export function useAppTocRail({
     };
   }, []);
 
-  useEffect(() => {
-    const labels = tabGroups.filter((group) => group.groupLabel).map((group) => group.groupLabel);
-    const microtask = queueMicrotask(() => setCollapsedTabGroups(new Set(labels)));
-    lastSyncedActiveTabRef.current = null;
-    return () => microtask;
-  }, [activeNovelId, tabGroups]);
-
-  useEffect(() => {
-    if (activeTabLon === lastSyncedActiveTabRef.current) return;
-    lastSyncedActiveTabRef.current = activeTabLon;
-    const group = tabGroups.find((item) => item.tabs.some((tab) => tab.id === activeTabLon));
-    if (group?.groupLabel) {
-      queueMicrotask(() => {
-        setCollapsedTabGroups((prev) => {
-          const next = new Set(prev);
-          next.delete(group.groupLabel);
-          return next;
-        });
-      });
-    }
-  }, [activeTabLon, tabGroups]);
-
   return {
     menu2Expanded,
     setMenu2Expanded,
-    sidebarGrouped,
-    setSidebarGrouped,
-    collapsedTabGroups,
     handleMenu2MouseEnter,
     handleMenu2MouseLeave,
-    toggleTabGroupCollapse,
     handleSelectTabLon,
     handleSelectTabNho,
     handleSelectTabCon,

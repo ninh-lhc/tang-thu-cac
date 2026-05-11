@@ -1,6 +1,7 @@
 export const AUTO_SYNC_LEVEL_1 = 'level_1_card';
 export const AUTO_SYNC_LEVEL_2 = 'level_2_list';
 export const AUTO_SYNC_LEVEL_3 = 'level_3_linked';
+/** Lưu file cũ; planner AUTO không còn đọc cờ này — timeline chủ luôn quét theo cú pháp khi tab bật. */
 export const AUTO_SYNC_LEVEL_4 = 'level_4_timeline';
 
 export const AUTO_SYNC_LEVEL_ORDER = Object.freeze([

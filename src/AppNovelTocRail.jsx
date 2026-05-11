@@ -6,7 +6,7 @@
 // ==========================================
 
 import React from 'react';
-import { ChevronDown, ChevronRight, LayoutGrid, Layers, Network } from 'lucide-react';
+import { ChevronDown, ChevronRight, LayoutGrid, Network } from 'lucide-react';
 import { getIconComponent, safeString } from './MasterUtils.jsx';
 
 export function AppNovelTocRail({
@@ -14,12 +14,8 @@ export function AppNovelTocRail({
   setMenu2Expanded,
   handleMenu2MouseEnter,
   handleMenu2MouseLeave,
-  sidebarGrouped,
-  setSidebarGrouped,
-  tabGroups,
   sortedTabs,
-  collapsedTabGroups,
-  toggleTabGroupCollapse,
+  navigationLocked = false,
   activeTabLon,
   activeTabNho,
   activeTabCon,
@@ -48,6 +44,7 @@ export function AppNovelTocRail({
                 type="button"
                 onClick={(event) => {
                   event.stopPropagation();
+                  if (navigationLocked) return;
                   handleSelectTabNho(tab.id, sub.id);
                 }}
                 className={`w-full text-left py-2 px-3 text-sm rounded-md font-serif flex items-center justify-between transition-colors ${
@@ -83,6 +80,7 @@ export function AppNovelTocRail({
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
+                        if (navigationLocked) return;
                         handleSelectTabCon(con.id);
                       }}
                       className={`w-full text-left py-1.5 px-3 text-xs rounded-md font-serif truncate transition-colors ${
@@ -109,7 +107,10 @@ export function AppNovelTocRail({
       <div key={tab.id} className="mb-1">
         <button
           type="button"
-          onClick={() => handleSelectTabLon(tab.id)}
+          onClick={() => {
+            if (navigationLocked) return;
+            handleSelectTabLon(tab.id);
+          }}
           className={`w-full flex items-center rounded-lg transition-colors overflow-hidden whitespace-nowrap ${
             menu2Expanded ? 'p-3 justify-start' : 'p-2 justify-center'
           } ${
@@ -149,8 +150,14 @@ export function AppNovelTocRail({
           className={`font-serif text-amber-500 font-bold text-[10px] uppercase tracking-widest transition-all flex items-center gap-2 ${
             menu2Expanded ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'
           }`}
+          title={navigationLocked ? 'Đang xem trước mục lục truyện mới (theo thể loại)' : undefined}
         >
           Mục Lục
+          {navigationLocked && (
+            <span className="ml-1 rounded bg-cyan-950/80 px-1 py-0.5 text-[8px] font-bold normal-case tracking-normal text-cyan-300/90">
+              xem trước
+            </span>
+          )}
         </button>
         {!menu2Expanded && (
           <button
@@ -163,75 +170,28 @@ export function AppNovelTocRail({
           </button>
         )}
         {menu2Expanded && (
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setSidebarGrouped((prev) => !prev)}
-              className={`p-1.5 rounded-lg transition-colors ${
-                sidebarGrouped
-                  ? 'text-amber-500 bg-amber-900/30'
-                  : 'text-slate-500 hover:text-amber-500 hover:bg-slate-800'
-              }`}
-              title={sidebarGrouped ? 'Tắt gom nhóm' : 'Bật gom nhóm'}
-            >
-              <Layers size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsManageTabsOpen(true)}
-              className="p-1.5 text-amber-600 hover:text-amber-400 rounded-lg hover:bg-slate-800 transition-colors"
-            >
-              <Network size={18} />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (navigationLocked) return;
+              setIsManageTabsOpen(true);
+            }}
+            disabled={navigationLocked}
+            className="p-1.5 text-amber-600 hover:text-amber-400 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+            title={navigationLocked ? 'Đóng Khai Sinh Thư Tịch để quản lý tab truyện hiện tại' : 'Quản lý tab'}
+          >
+            <Network size={18} />
+          </button>
         )}
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
         <div className="py-3 flex flex-col">
-          {sidebarGrouped
-            ? tabGroups
-                .filter((group) => group.tabs.length > 0)
-                .map((group) => {
-                  const isCollapsed =
-                    group.groupLabel && collapsedTabGroups.has(group.groupLabel);
-                  return (
-                    <div
-                      key={group.groupLabel || 'tong-quan'}
-                      className={`${menu2Expanded ? 'px-3' : 'px-1'} mb-1`}
-                    >
-                      {group.groupLabel ? (
-                        <button
-                          type="button"
-                          onClick={() => toggleTabGroupCollapse(group.groupLabel)}
-                          className="w-full flex items-center gap-2 py-2 px-2 rounded-md text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-amber-500 hover:bg-slate-800/50 transition-colors"
-                        >
-                          {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                          <span
-                            className={`flex-1 min-w-0 text-left truncate transition-[opacity,max-width] duration-150 ${
-                              menu2Expanded ? 'opacity-100 max-w-[999px]' : 'opacity-0 max-w-0 overflow-hidden'
-                            }`}
-                          >
-                            {group.groupLabel}
-                          </span>
-                          <span
-                            className={`text-slate-600 transition-[opacity,max-width] duration-150 ${
-                              menu2Expanded ? 'opacity-100 max-w-[999px]' : 'opacity-0 max-w-0 overflow-hidden'
-                            }`}
-                          >
-                            ({group.tabs.length})
-                          </span>
-                        </button>
-                      ) : null}
-                      {(!group.groupLabel || !isCollapsed) && group.tabs.map(renderTabButton)}
-                    </div>
-                  );
-                })
-            : sortedTabs.map((tab) => (
-                <div key={tab.id} className={`${menu2Expanded ? 'px-3' : 'px-1'} mb-1`}>
-                  {renderTabButton(tab)}
-                </div>
-              ))}
+          {sortedTabs.map((tab) => (
+            <div key={tab.id} className={`${menu2Expanded ? 'px-3' : 'px-1'} mb-1`}>
+              {renderTabButton(tab)}
+            </div>
+          ))}
         </div>
       </div>
     </div>

@@ -9,6 +9,7 @@ import { useCallback, useState } from 'react';
 import { ensureCollectionListCardsForNovel } from './lib/collectionListCardSync.js';
 import { removeNovelStorageFromRoot } from './lib/novelDiskLayout.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
+import { resolveTabsConfigForGenreSelection } from './lib/resolveTabsConfigForGenreSelection.js';
 import { safeString, toDisplayTitleCase } from './MasterUtils.jsx';
 
 const DEFAULT_THEME = 'theme-tien-hiep';
@@ -128,14 +129,12 @@ export function useAppNovelCrud({
         folderName,
       };
 
-      const tabsToUse =
-        hydrateTabsAutoSyncConfigs(
-          stripSuggestionSeedsFromTabsConfig(
-            Array.isArray(novelForm.tabsConfig) && novelForm.tabsConfig.length > 0
-              ? structuredClone(novelForm.tabsConfig)
-              : structuredClone(initialTabsConfig)
-          )
-        ).tabsConfig;
+      const rawTabsForCreate =
+        resolveTabsConfigForGenreSelection(novelForm.genres, novelForm.tabsConfig) ||
+        structuredClone(initialTabsConfig);
+      const tabsToUse = hydrateTabsAutoSyncConfigs(
+        stripSuggestionSeedsFromTabsConfig(structuredClone(rawTabsForCreate))
+      ).tabsConfig;
       const newFullData = {
         ...newMeta,
         data: {},
