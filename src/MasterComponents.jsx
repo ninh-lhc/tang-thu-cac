@@ -1604,16 +1604,19 @@ export const ModalEntity = ({
     [showGenericQuickEntry, tabConfig, fieldsTemplate, activeNovelData, parentTabId, parentLabel]
   );
   const genericQuickListPrefix = useId().replace(/:/g, '');
-  /** Các slot dùng để ghép `f_status` (bỏ `f_status` nếu có — ô trạng thái chính vẫn ở form). */
+  /**
+   * Các slot dùng để tự ghép dòng «Trạng thái / Chuỗi hiển thị» (`f_status`) từ các ô nhanh khác.
+   * Khi user đã đặt `f_status` làm một ô trong lưới gợi ý — tắt ghép tự động (tránh ghi đè chip Phẩm cấp).
+   */
   const genericQuickStatusSourceFieldIds = useMemo(() => {
     if (!genericQuickResolved?.slots) return [];
-    return genericQuickResolved.slots
-      .map((s) => safeString(s.fieldId).trim())
-      .filter((fid) => fid && fid !== 'f_status');
+    const ids = genericQuickResolved.slots.map((s) => safeString(s.fieldId).trim()).filter(Boolean);
+    if (ids.includes('f_status')) return [];
+    return ids;
   }, [genericQuickResolved]);
   const genericQuickSlotsVisible = useMemo(() => {
     if (!genericQuickResolved?.slots) return [];
-    return genericQuickResolved.slots.filter((s) => safeString(s.fieldId).trim() && s.fieldId !== 'f_status');
+    return genericQuickResolved.slots.filter((s) => safeString(s.fieldId).trim());
   }, [genericQuickResolved]);
   const mapQuickLabels = useMemo(
     () => resolveQuickSlotLabels(fieldsTemplate, MAP_QUICK_SLOTS),
@@ -2361,6 +2364,8 @@ export const ModalEntity = ({
   ]);
   /** Trước Lưu thông tin / ttc-save: ghi list gợi ý bản đồ (draft) nếu panel đang mở — tránh mất sửa khi quên bấm «Lưu list». */
   const flushMapListDraftsForMainSaveRef = useRef(() => {});
+  /** Ghi nháp «ô gợi ý nhanh» vào mẫu tab (cục bộ) nếu chưa bấm «Áp dụng» — AppEntityQuickEntryConfig đăng ký. */
+  const flushEntityQuickEntryBeforeMainSaveRef = useRef(null);
   useEffect(() => {
     flushMapListDraftsForMainSaveRef.current = () => {
       if (mapRealmListPanelOpen) handleSaveMapRealmListDraft();
@@ -2630,6 +2635,7 @@ export const ModalEntity = ({
       if (event?.defaultPrevented) return;
       if (trapEl && activeEl && !trapEl.contains(activeEl)) return;
       flushMapListDraftsForMainSaveRef.current();
+      flushEntityQuickEntryBeforeMainSaveRef.current?.();
       onSave(formData, dynamicData, null);
       onClose();
       if (event?.cancelable) event.preventDefault();
@@ -3304,9 +3310,9 @@ export const ModalEntity = ({
                   <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
                     {entityCreateTemplateTitle}
                   </div>
-                  <div className="mt-0.5 line-clamp-2 text-[9px] font-serif leading-snug text-slate-500">
-                    Mẫu trường, list gợi ý, nguồn dữ liệu — cùng cho bản đồ, thế lực, lưới. Với mục lưới, bố cục ô
-                    gợi ý ở cuối mục.
+                  <div className="mt-0.5 line-clamp-3 text-[9px] font-serif leading-snug text-slate-500">
+                    «Trường thông tin» phía trên; ngay dưới là khối <strong className="text-amber-200/85">viền vàng</strong>{' '}
+                    «Cấu hình mẫu: các ô gợi ý nhanh» — mở mặc định: chọn trường cho từng ô Tổng quan, Cục bộ / Khu vực, Áp dụng.
                   </div>
                 </div>
                 <div className="space-y-2 bg-slate-900/25 px-3 py-2.5">
@@ -3344,6 +3350,9 @@ export const ModalEntity = ({
                     onSetTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
                     onRequestPropagateToLon={requestPropagateEntityQuickEntryToLon}
                     onRequestPropagateToAllLons={requestPropagateEntityQuickEntryToAllLons}
+                    registerFlushEntityQuickEntry={(fn) => {
+                      flushEntityQuickEntryBeforeMainSaveRef.current = fn;
+                    }}
                     showToast={showToast}
                     showQuickEntrySlots={showGenericQuickEntry}
                   />
@@ -3356,9 +3365,9 @@ export const ModalEntity = ({
                   <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
                     {entityCreateTemplateTitle}
                   </div>
-                  <div className="mt-0.5 line-clamp-2 text-[9px] font-serif leading-snug text-slate-500">
-                    Mẫu trường, list gợi ý, nguồn dữ liệu — cùng cho bản đồ, thế lực, lưới. Với mục lưới, bố cục ô
-                    gợi ý ở cuối mục.
+                  <div className="mt-0.5 line-clamp-3 text-[9px] font-serif leading-snug text-slate-500">
+                    «Trường thông tin» bên dưới; tiếp theo khối <strong className="text-amber-200/85">viền vàng</strong> «Cấu hình
+                    mẫu: các ô gợi ý nhanh» (chọn trường cho ô gợi ý Tổng quan).
                   </div>
                 </div>
                 <span className="shrink-0 text-[9px] font-bold text-amber-200/80">Mở</span>
@@ -3398,6 +3407,9 @@ export const ModalEntity = ({
                   onSetTemplateFieldSortPrefix={handleSetTabTemplateFieldSortPrefix}
                   onRequestPropagateToLon={requestPropagateEntityQuickEntryToLon}
                   onRequestPropagateToAllLons={requestPropagateEntityQuickEntryToAllLons}
+                  registerFlushEntityQuickEntry={(fn) => {
+                    flushEntityQuickEntryBeforeMainSaveRef.current = fn;
+                  }}
                   showToast={showToast}
                   showQuickEntrySlots={showGenericQuickEntry}
                 />
@@ -3546,6 +3558,7 @@ export const ModalEntity = ({
             onClick={() => {
               if (!formData.name.trim()) return;
               flushMapListDraftsForMainSaveRef.current();
+              flushEntityQuickEntryBeforeMainSaveRef.current?.();
               onSave(formData, dynamicData, null);
               onClose();
             }}

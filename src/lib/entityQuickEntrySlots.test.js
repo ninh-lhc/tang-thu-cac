@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { pickDefaultQuickFieldIds, pickDefaultQuickFieldIdsForModalGrid, resolveEntityQuickSlots, fitEntityQuickEntrySlotsToTemplate, applyEntityQuickEntryToNho } from './entityQuickEntrySlots.js';
+import {
+  pickDefaultQuickFieldIds,
+  pickDefaultQuickFieldIdsForModalGrid,
+  resolveEntityQuickSlots,
+  fitEntityQuickEntrySlotsToTemplate,
+  applyEntityQuickEntryToNho,
+  filterAllowedQuickEntrySlotIds,
+} from './entityQuickEntrySlots.js';
 
 describe('entityQuickEntrySlots', () => {
+  it('filterAllowedQuickEntrySlotIds chỉ bỏ f_alias', () => {
+    expect(filterAllowedQuickEntrySlotIds(['f_status', 'f_title', 'f_alias', 'f_desc'])).toEqual([
+      'f_status',
+      'f_title',
+      'f_desc',
+    ]);
+    expect(filterAllowedQuickEntrySlotIds(['f_alias'])).toEqual([]);
+  });
+
   it('pickDefaultQuickFieldIds ưu tiên f_status / f_title / f_desc', () => {
     const ids = pickDefaultQuickFieldIds([
       { id: 'f_custom', label: 'X' },
@@ -44,7 +60,7 @@ describe('entityQuickEntrySlots', () => {
     expect(ids[2]).toBe('f_nguon');
   });
 
-  it('resolveEntityQuickSlots merge gợi ý user + seed', () => {
+  it('resolveEntityQuickSlots: đã có list mẫu thì không trộn seed thể loại', () => {
     const r = resolveEntityQuickSlots({
       tabConfig: {
         label: 'Thử nghiệm',
@@ -64,13 +80,38 @@ describe('entityQuickEntrySlots', () => {
       parentTabId: 'test-lon',
       parentLabel: 'Tab lớn',
     });
-    expect(r.slots).toHaveLength(2);
+    expect(r.slots).toHaveLength(3);
     expect(r.dualFirstRow).toBe(false);
-    expect(r.slots[0].fieldId).toBe('f_title');
-    expect(r.slots[0].suggestions).toContain('Tùy chỉnh A');
+    expect(r.slots[0].fieldId).toBe('f_status');
+    expect(r.slots[1].fieldId).toBe('f_title');
+    expect(r.slots[1].suggestions).toEqual(['Tùy chỉnh A']);
+    expect(r.slots[1].suggestions).not.toContain('Hệ phụ');
   });
 
-  it('resolveEntityQuickSlots bỏ f_status khỏi quick grid và giữ tối đa cột còn lại', () => {
+  it('resolveEntityQuickSlots: f_status có list mẫu thì không ghép seed cảnh giới', () => {
+    const r = resolveEntityQuickSlots({
+      tabConfig: {
+        label: 'Đạo Cụ',
+        fieldSuggestionLists: {
+          f_status: ['Bạch Sắc (Phổ thông)', 'Lục Sắc (Hi hữu)'],
+        },
+        entityQuickEntry: { slotFields: ['f_status', 'f_title'], slotLabels: ['', ''] },
+      },
+      fieldsTemplate: [
+        { id: 'f_status', label: 'Phẩm cấp' },
+        { id: 'f_title', label: 'Tên' },
+        { id: 'f_desc', label: 'Mô tả' },
+      ],
+      activeNovelData: { genres: ['Tiên Hiệp'] },
+      parentTabId: 'x',
+      parentLabel: 'y',
+    });
+    const st = r.slots.find((s) => s.fieldId === 'f_status');
+    expect(st?.suggestions).toEqual(['Bạch Sắc (Phổ thông)', 'Lục Sắc (Hi hữu)']);
+    expect(st?.suggestions).not.toContain('Luyện Khí');
+  });
+
+  it('resolveEntityQuickSlots giữ f_status trong lưới khi user cấu hình', () => {
     const r = resolveEntityQuickSlots({
       tabConfig: {
         entityQuickEntry: {
@@ -90,20 +131,46 @@ describe('entityQuickEntrySlots', () => {
       parentTabId: 'x',
       parentLabel: 'y',
     });
-    expect(r.slots).toHaveLength(3);
-    expect(r.slotFields).toEqual(['f_title', 'f_desc', 'f_cap']);
+    expect(r.slots).toHaveLength(4);
+    expect(r.slotFields).toEqual(['f_status', 'f_title', 'f_desc', 'f_cap']);
   });
 
-  it('fitEntityQuickEntrySlotsToTemplate bỏ id không thuộc mẫu và bỏ f_status khỏi quick grid', () => {
+  it('fitEntityQuickEntrySlotsToTemplate bỏ id không thuộc mẫu; giữ f_status khi có trong nguồn', () => {
     const { slotFields, slotLabels } = fitEntityQuickEntrySlotsToTemplate(
       ['f_status', 'f_unknown', 'f_title'],
       ['a', 'b', 'c'],
       [{ id: 'f_status' }, { id: 'f_title' }, { id: 'f_desc' }, { id: 'f_cap' }]
     );
-    expect(slotFields).toEqual(['f_title', 'f_desc', 'f_cap']);
-    expect(slotLabels[0]).toBe('c');
-    expect(slotLabels[1]).toBe('');
+    expect(slotFields).toEqual(['f_status', 'f_title', 'f_desc', 'f_cap']);
+    expect(slotLabels[0]).toBe('a');
+    expect(slotLabels[1]).toBe('c');
     expect(slotLabels[2]).toBe('');
+    expect(slotLabels[3]).toBe('');
+  });
+
+  it('resolveEntityQuickSlots không ghép thêm ô mặc định khi user đã lưu ít hơn 4 trường', () => {
+    const r = resolveEntityQuickSlots({
+      tabConfig: {
+        label: 'Tài nguyên',
+        fieldSuggestionLists: {},
+        entityQuickEntry: {
+          slotFields: ['f_nguon', 'f_cap'],
+          slotLabels: ['', ''],
+        },
+      },
+      fieldsTemplate: [
+        { id: 'f_status', label: 'S' },
+        { id: 'f_title', label: 'T' },
+        { id: 'f_nguon', label: 'Nguồn' },
+        { id: 'f_cap', label: 'Cấp' },
+        { id: 'f_desc', label: 'Mô tả' },
+      ],
+      activeNovelData: { genres: ['Tiên Hiệp'] },
+      parentTabId: 'x',
+      parentLabel: 'y',
+    });
+    expect(r.slotFields).toEqual(['f_nguon', 'f_cap']);
+    expect(r.slots).toHaveLength(2);
   });
 
   it('resolveEntityQuickSlots bật dualFirstRow khi tab cấu hình', () => {
@@ -127,7 +194,8 @@ describe('entityQuickEntrySlots', () => {
     });
     expect(r.dualFirstRow).toBe(true);
     expect(r.slotFields[0]).toBe('f_cap');
-    expect(r.slotFields[1]).toBe('f_desc');
+    expect(r.slotFields[1]).toBe('f_status');
+    expect(r.slotFields[2]).toBe('f_desc');
   });
 
   it('applyEntityQuickEntryToNho chỉ sửa collection-track, cắt theo mẫu, merge tùy chọn', () => {
@@ -150,11 +218,27 @@ describe('entityQuickEntrySlots', () => {
     expect(nho.entityQuickEntry.other).toBe(1);
     expect(nho.entityQuickEntry.dualFirstRow).toBe(true);
     expect(nho.entityQuickEntry.useSelectUi).toBe(true);
-    expect(nho.entityQuickEntry.slotFields).toEqual(['f_title', 'f_desc']);
+    expect(nho.entityQuickEntry.slotFields).toEqual(['f_status', 'f_title', 'f_desc']);
   });
 
   it('applyEntityQuickEntryToNho bỏ qua khi không phải collection-track', () => {
     const nho = { viewType: 'milestone', entityQuickEntry: {} };
     expect(applyEntityQuickEntryToNho(nho, ['f_status'], ['x'])).toBe(false);
+  });
+
+  it('applyEntityQuickEntryToNho ưu tiên fieldsTemplateForFit khi truyền (khớp mẫu đã resolve)', () => {
+    const nho = {
+      viewType: 'collection-track',
+      fieldsTemplate: [{ id: 'f_title' }],
+      entityQuickEntry: {},
+    };
+    const resolvedWide = [
+      { id: 'f_title' },
+      { id: 'f_extra' },
+      { id: 'f_desc' },
+    ];
+    applyEntityQuickEntryToNho(nho, ['f_extra', 'f_title'], ['nhãn extra', ''], {}, resolvedWide);
+    expect(nho.entityQuickEntry.slotFields[0]).toBe('f_extra');
+    expect(nho.entityQuickEntry.slotLabels[0]).toBe('nhãn extra');
   });
 });

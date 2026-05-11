@@ -47,7 +47,11 @@ import { AdvancedFieldSelect } from './AppAdvancedFieldSelect.jsx';
 import { AppLibrarySidebar } from './AppLibrarySidebar.jsx';
 import { getEntityFieldValue } from './lib/entityFieldValue.js';
 import { buildEntitySearchIndexMap, applyEntityCollectionFilters } from './lib/entityCollectionQuery.js';
-import { MAX_QUICK_ENTRY_SLOTS, applyEntityQuickEntryToNho } from './lib/entityQuickEntrySlots.js';
+import {
+  MAX_QUICK_ENTRY_SLOTS,
+  applyEntityQuickEntryToNho,
+  filterAllowedQuickEntrySlotIds,
+} from './lib/entityQuickEntrySlots.js';
 import { useEntityCollectionQueryState } from './useEntityCollectionQueryState.js';
 import {
   buildNovelSearchIndex,
@@ -3005,12 +3009,18 @@ export default function App() {
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
-    if (!nho || nho.viewType !== 'collection-track') return;
-    const templateIds = new Set((nho.fieldsTemplate || []).map((f) => safeString(f?.id).trim()).filter(Boolean));
-    const ids = (Array.isArray(slotFields) ? slotFields : []).map((x) => safeString(x).trim()).filter(Boolean).slice(0, MAX_QUICK_ENTRY_SLOTS);
-    if (ids.length < 1 || new Set(ids).size !== ids.length) return;
-    if (!ids.every((id) => templateIds.has(id))) return;
-    const labels = ids.map((_, i) => safeString(slotLabels?.[i] ?? '').trim());
+    if (!nho || nho.viewType !== 'collection-track') return false;
+    /** Khớp modal Khởi tạo thẻ: `resolveFieldsTemplate` có thể thêm f_alias / f_muc_luc_danh_sach so với `fieldsTemplate` gốc trên tab. */
+    const resolvedTemplate = resolveFieldsTemplate(nho, lonId, safeString(lon?.label || ''));
+    const templateIds = new Set(resolvedTemplate.map((f) => safeString(f?.id).trim()).filter(Boolean));
+    const rawOrder = (Array.isArray(slotFields) ? slotFields : []).map((x) => safeString(x).trim()).filter(Boolean);
+    const ids = filterAllowedQuickEntrySlotIds(slotFields);
+    if (ids.length < 1 || new Set(ids).size !== ids.length) return false;
+    if (!ids.every((id) => templateIds.has(id))) return false;
+    const labels = ids.map((fid) => {
+      const idx = rawOrder.indexOf(fid);
+      return idx >= 0 ? safeString(slotLabels?.[idx] ?? '').trim() : '';
+    });
     const prev = nho.entityQuickEntry && typeof nho.entityQuickEntry === 'object' ? { ...nho.entityQuickEntry } : {};
     nho.entityQuickEntry = {
       ...prev,
@@ -3024,6 +3034,7 @@ export default function App() {
       nho.entityQuickEntry.useSelectUi = Boolean(options.useSelectUi);
     }
     setTabsConfig(current, { resyncAuto: false });
+    return true;
   };
 
   const sanitizeFieldSuggestionDependenciesForTab = useCallback((nho, dependencies) => {
@@ -3131,7 +3142,8 @@ export default function App() {
       if (!lon || !Array.isArray(lon.subTabs)) return;
       let count = 0;
       lon.subTabs.forEach((nho) => {
-        if (applyEntityQuickEntryToNho(nho, slotFields, slotLabels, options)) count += 1;
+        const resolved = resolveFieldsTemplate(nho, lon.id, safeString(lon?.label || ''));
+        if (applyEntityQuickEntryToNho(nho, slotFields, slotLabels, options, resolved)) count += 1;
       });
       if (count === 0) {
         showToast('Không có tab sưu tập nào dưới tab lớn này.', 'warning');
@@ -3152,7 +3164,8 @@ export default function App() {
       current.forEach((lon) => {
         if (!Array.isArray(lon.subTabs)) return;
         lon.subTabs.forEach((nho) => {
-          if (applyEntityQuickEntryToNho(nho, slotFields, slotLabels, options)) count += 1;
+          const resolved = resolveFieldsTemplate(nho, lon.id, safeString(lon?.label || ''));
+          if (applyEntityQuickEntryToNho(nho, slotFields, slotLabels, options, resolved)) count += 1;
         });
       });
       if (count === 0) {

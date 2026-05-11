@@ -1,6 +1,6 @@
 /**
  * Ô gợi ý nhanh khi Khởi tạo thẻ (tab không phải Bản đồ / Thế lực).
- * Kết hợp entityQuickEntry trên tab + fieldSuggestionLists + seed theo thể loại & tên tab.
+ * Kết hợp entityQuickEntry trên tab + fieldSuggestionLists; seed theo thể loại chỉ khi list mẫu trống (tránh trộn cảnh giới vào Phẩm cấp đồ vật).
  * Cấu hình: đúng {@link MAX_QUICK_ENTRY_SLOTS} trường (mặc định/ tối đa 4) khi mẫu tab đủ cột; ít hơn nếu mẫu ít trường.
  * `entityQuickEntry.dualFirstRow`: cờ lịch sử (giao diện lưới xếp tự động theo số cột).
  */
@@ -38,8 +38,23 @@ function templateFieldIds(fieldsTemplate) {
     .filter((id) => id && id !== 'f_alias');
 }
 
-/** Trường không đặt ở lưới «Gợi ý nhanh» (có Ô riêng dưới cùng form). */
-const EXCLUDED_FROM_MODAL_QUICK_GRID = new Set(['f_status', 'f_alias']);
+/**
+ * Id không bao giờ gán vào ô gợi ý nhanh (biệt danh wiki — trùng ô khác).
+ * `f_status` (Phẩm cấp / trạng thái) **được phép** nếu người dùng muốn gợi ý nhanh cùng ô chính.
+ */
+export const EXCLUDED_FROM_MODAL_QUICK_GRID = new Set(['f_alias']);
+
+/** Khi tự chọn bộ ô mặc định: vẫn bỏ f_status để tránh trùng ô chính (trừ khi user cấu hình tay). */
+const SKIPPED_IN_DEFAULT_QUICK_GRID = new Set(['f_status', 'f_alias']);
+
+/** Bỏ id không hợp lệ cho ô gợi ý nhanh trước khi validate / lưu. */
+export function filterAllowedQuickEntrySlotIds(slotFields) {
+  return (Array.isArray(slotFields) ? slotFields : [])
+    .map((x) => String(x || '').trim())
+    .filter(Boolean)
+    .filter((id) => !EXCLUDED_FROM_MODAL_QUICK_GRID.has(id))
+    .slice(0, MAX_QUICK_ENTRY_SLOTS);
+}
 
 /** Chọn 4 field mặc định từ template (ưu tiên f_status, f_title, f_desc…). */
 export function pickDefaultQuickFieldIds(fieldsTemplate) {
@@ -68,12 +83,12 @@ export function pickDefaultQuickFieldIdsForModalGrid(fieldsTemplate) {
   }
   const picked = [];
   for (const pref of PREFERRED_FIELD_ORDER) {
-    if (EXCLUDED_FROM_MODAL_QUICK_GRID.has(pref)) continue;
+    if (SKIPPED_IN_DEFAULT_QUICK_GRID.has(pref)) continue;
     if (ids.includes(pref) && !picked.includes(pref)) picked.push(pref);
     if (picked.length >= DEFAULT_QUICK_ENTRY_SLOT_COUNT) return picked.slice(0, DEFAULT_QUICK_ENTRY_SLOT_COUNT);
   }
   for (const id of ids) {
-    if (EXCLUDED_FROM_MODAL_QUICK_GRID.has(id)) continue;
+    if (SKIPPED_IN_DEFAULT_QUICK_GRID.has(id)) continue;
     if (!picked.includes(id)) picked.push(id);
     if (picked.length >= DEFAULT_QUICK_ENTRY_SLOT_COUNT) break;
   }
@@ -94,12 +109,14 @@ function normalizeSlotFields(raw, templateIds) {
 }
 
 /**
- * Bổ sung theo mẫu để luôn đủ tối đa {@link MAX_QUICK_ENTRY_SLOTS} cột hợp lệ
- * (hoặc hết cột mẫu nếu ít hơn 4). Giữ thứ tự ưu từ `ordered` (đã nằm trong mẫu).
+ * Chuẩn hóa thứ tự + hợp lệ theo mẫu (bỏ id không thuộc lưới ô nhanh).
+ * `fillToMax: true` (mặc định): bổ sung tới tối đa {@link MAX_QUICK_ENTRY_SLOTS} cột — dùng khi chưa có cấu hình user.
+ * `fillToMax: false`: chỉ giữ các id đã truyền (sau lọc mẫu), không ghép thêm ô mặc định — khớp «Áp dụng» trong modal.
  */
-function finalizeQuickSlotFieldIds(ordered, templateList) {
+function finalizeQuickSlotFieldIds(ordered, templateList, options = {}) {
+  const fillToMax = options.fillToMax !== false;
   const templateListArr = Array.isArray(templateList) ? templateList : [];
-  const templateIdsArr = templateFieldIds(templateListArr).filter((id) => !EXCLUDED_FROM_MODAL_QUICK_GRID.has(id));
+  const templateIdsArr = templateFieldIds(templateListArr);
   if (templateIdsArr.length < 1) return [];
   const cap = Math.min(MAX_QUICK_ENTRY_SLOTS, templateIdsArr.length);
   const tset = new Set(templateIdsArr);
@@ -109,6 +126,7 @@ function finalizeQuickSlotFieldIds(ordered, templateList) {
     out.push(id);
     if (out.length >= cap) return out;
   }
+  if (!fillToMax) return out;
   for (const id of pickDefaultQuickFieldIdsForModalGrid(templateListArr)) {
     if (!tset.has(id) || out.includes(id)) continue;
     out.push(id);
@@ -123,7 +141,8 @@ function finalizeQuickSlotFieldIds(ordered, templateList) {
 }
 
 /**
- * Cấu hình đã lưu (1–4 id hợp lệ) hoặc bộ mặc định; luôn resolve đủ 4 cột nếu mẫu cho phép.
+ * Cấu hình đã lưu (1–4 id hợp lệ) hoặc bộ mặc định.
+ * Khi user đã lưu `slotFields` hợp lệ: không tự ghép thêm ô mặc định (tránh «Áp dụng» xong vẫn thấy f_title/f_desc dư).
  * @param {{ entityQuickEntry?: { slotFields?: string[] } } | null | undefined} tabNho
  * @param {Array<{ id?: string }>} fieldsTemplate
  * @returns {string[]}
@@ -134,8 +153,9 @@ export function getEffectiveQuickEntrySlotFields(tabNho, fieldsTemplate) {
   const defaultSlots = pickDefaultQuickFieldIdsForModalGrid(templateList);
   const raw = tabNho?.entityQuickEntry?.slotFields;
   const n = normalizeSlotFields(raw, templateIds);
-  const base = n && n.length > 0 ? n : defaultSlots;
-  return finalizeQuickSlotFieldIds(base, templateList);
+  const hadExplicitUser = Boolean(n && n.length > 0);
+  const base = hadExplicitUser ? n : defaultSlots;
+  return finalizeQuickSlotFieldIds(base, templateList, { fillToMax: !hadExplicitUser });
 }
 
 /**
@@ -182,14 +202,17 @@ export function fitEntityQuickEntrySlotsToTemplate(sourceSlotFields, sourceSlotL
  * @param {string[]|undefined} sourceSlotFields
  * @param {string[]|undefined} sourceSlotLabels
  * @param {{ dualFirstRow?: boolean, useSelectUi?: boolean }} [options]
+ * @param {Array<{ id?: string }>|undefined} [fieldsTemplateForFit] — mẫu đã resolve (giống modal); mặc định `nho.fieldsTemplate`.
  * @returns {boolean} đã ghi
  */
-export function applyEntityQuickEntryToNho(nho, sourceSlotFields, sourceSlotLabels, options = {}) {
+export function applyEntityQuickEntryToNho(nho, sourceSlotFields, sourceSlotLabels, options = {}, fieldsTemplateForFit) {
   if (!nho || nho.viewType !== 'collection-track') return false;
+  const templateList =
+    Array.isArray(fieldsTemplateForFit) && fieldsTemplateForFit.length > 0 ? fieldsTemplateForFit : nho.fieldsTemplate;
   const { slotFields, slotLabels } = fitEntityQuickEntrySlotsToTemplate(
     sourceSlotFields,
     sourceSlotLabels,
-    nho.fieldsTemplate
+    templateList
   );
   const prev = nho.entityQuickEntry && typeof nho.entityQuickEntry === 'object' ? { ...nho.entityQuickEntry } : {};
   nho.entityQuickEntry = {
@@ -244,7 +267,7 @@ function getCapSeeds(flavor) {
 }
 
 /**
- * Gợi ý seed theo field + ngữ cảnh (không ghi đè list người dùng — chỉ merge).
+ * Gợi ý seed theo field + ngữ cảnh — chỉ dùng khi `fieldSuggestionLists` chưa có dòng cho trường đó.
  */
 export function getQuickEntrySeedLines(fieldId, flavor, tabLonLabel, tabNhoLabel) {
   const fid = String(fieldId || '').trim();
@@ -274,6 +297,7 @@ export function resolveEntityQuickSlots({
 
   const eq = tabConfig?.entityQuickEntry && typeof tabConfig.entityQuickEntry === 'object' ? tabConfig.entityQuickEntry : {};
   let baseFields = normalizeSlotFields(eq.slotFields, templateIds);
+  const hadExplicitUser = Boolean(baseFields && baseFields.length > 0);
   if (!baseFields) {
     baseFields = pickDefaultQuickFieldIdsForModalGrid(templateList);
   }
@@ -282,7 +306,7 @@ export function resolveEntityQuickSlots({
   baseFields.forEach((fid, i) => {
     labelByFid.set(fid, slotLabelsRaw[i] || '');
   });
-  const slotFields = finalizeQuickSlotFieldIds(baseFields, templateList);
+  const slotFields = finalizeQuickSlotFieldIds(baseFields, templateList, { fillToMax: !hadExplicitUser });
   const slotLabels = slotFields.map((fid) => labelByFid.get(fid) ?? '');
 
   const genres = normalizeNovelGenresForQuick(activeNovelData);
@@ -296,7 +320,8 @@ export function resolveEntityQuickSlots({
   const slots = slotFields.map((fieldId, idx) => {
     const userList = Array.isArray(lists[fieldId]) ? suggestionRowsToValues(lists[fieldId]) : [];
     const seeds = getQuickEntrySeedLines(fieldId, flavor, tabLonLabel, tabNhoLabel);
-    const suggestions = dedupeCaseInsensitive([...userList, ...seeds]);
+    const suggestions =
+      userList.length > 0 ? dedupeCaseInsensitive(userList) : dedupeCaseInsensitive([...userList, ...seeds]);
     const baseLabel = idToLabel.get(fieldId) || String(fieldId || '');
     const label = slotLabels[idx] || baseLabel;
     const sortPrefix = idToPrefix.get(fieldId) || '';

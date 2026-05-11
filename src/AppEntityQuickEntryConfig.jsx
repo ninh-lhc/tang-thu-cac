@@ -1,21 +1,20 @@
 /**
- * Cấu hình bố cục ô «Gợi ý nhanh» (entityQuickEntry) — nháp + Lưu tab này / Áp cả tab lớn / Áp mọi mục lớn.
- * Nhúng trong modal Khởi tạo thẻ (ModalEntity).
- * Import bởi: MasterComponents.jsx
+ * Cấu hình bố cục ô «Gợi ý nhanh» (entityQuickEntry) — nháp + Áp dụng (Cục bộ / Khu vực) / Áp mọi mục lớn.
+ * Đăng ký `registerFlushEntityQuickEntry`: trước «Lưu thông tin» modal gọi flush để ghi nháp vào mẫu tab (cục bộ).
+ * Nhúng trong modal Khởi tạo thẻ (ModalEntity). Import bởi: MasterComponents.jsx
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeftRight, Edit2, Plus, Save, Trash2 } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
 import { normalizeAsciiText } from './lib/statusHierarchyParser.js';
-import {
-  getEffectiveQuickEntrySlotFields,
-  MAX_QUICK_ENTRY_SLOTS,
-} from './lib/entityQuickEntrySlots.js';
+import { getEffectiveQuickEntrySlotFields, MAX_QUICK_ENTRY_SLOTS } from './lib/entityQuickEntrySlots.js';
 
 const DEP_SCOPE_LOCAL = 'local';
 const DEP_SCOPE_AREA = 'area';
 const TIER_SCOPE_LOCAL = 'local';
 const TIER_SCOPE_AREA = 'area';
+const SLOT_APPLY_SCOPE_LOCAL = 'local';
+const SLOT_APPLY_SCOPE_AREA = 'area';
 
 function buildQuickEntryState(entityQuickEntry, templateList) {
   const tabStub = { entityQuickEntry };
@@ -173,6 +172,8 @@ function AppEntityQuickEntryConfigBody({
   onRequestPropagateToLon,
   onRequestPropagateToAllLons,
   showToast,
+  /** ModalEntity gọi trước Lưu thông tin — ghi nháp ô gợi ý vào mẫu tab (không tự «Khu vực»). */
+  registerFlushEntityQuickEntry,
   /** false = tab Bản đồ / Thế lực (form gợi ý riêng); vẫn hiện «Phụ thuộc gợi ý». */
   showQuickEntrySlots = true,
 }) {
@@ -199,10 +200,21 @@ function AppEntityQuickEntryConfigBody({
   const savedDepsSig = useMemo(() => JSON.stringify(savedDeps), [savedDeps]);
   const savedTierSchema = useMemo(() => normalizeTierSchemaDraft(mapParentTierSchema), [mapParentTierSchema]);
   const savedTierSchemaSig = useMemo(() => JSON.stringify(savedTierSchema), [savedTierSchema]);
-  const selectable = useMemo(
-    () => templateList.filter((f) => f && f.id && f.id !== 'f_alias'),
-    [templateList]
-  );
+  /** Mọi trường mẫu (trừ biệt danh wiki); bỏ trùng `id` — dùng cho dropdown + nhóm «không gán ô nhanh». */
+  const catalogAllTemplateFields = useMemo(() => {
+    const out = [];
+    const seen = new Set();
+    for (const f of templateList) {
+      const id = safeString(f?.id).trim();
+      if (!id || id === 'f_alias') continue;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ ...f, id });
+    }
+    return out;
+  }, [templateList]);
+  /** Mọi trường gán được (đã bỏ f_alias khỏi catalog); gồm cả Phẩm cấp / f_status nếu có trong mẫu. */
+  const selectable = catalogAllTemplateFields;
   const savedTierFieldMap = useMemo(
     () => normalizeTierFieldMapDraft(mapParentTierFieldMap, selectable),
     [mapParentTierFieldMap, selectable]
@@ -212,6 +224,7 @@ function AppEntityQuickEntryConfigBody({
   const [draft, setDraft] = useState(() => saved);
   const [draftDeps, setDraftDeps] = useState(() => savedDeps);
   const [depScope, setDepScope] = useState(DEP_SCOPE_LOCAL);
+  const [slotApplyScope, setSlotApplyScope] = useState(SLOT_APPLY_SCOPE_LOCAL);
   const [tierScope, setTierScope] = useState(TIER_SCOPE_LOCAL);
   const [draftTierSchema, setDraftTierSchema] = useState(() => savedTierSchema);
   const [draftTierFieldMap, setDraftTierFieldMap] = useState(() => savedTierFieldMap);
@@ -232,19 +245,35 @@ function AppEntityQuickEntryConfigBody({
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const dirty = !statesEqual(draft, saved);
+  const draftRef = useRef(draft);
+  const savedRef = useRef(saved);
+  const slotApplyScopeRef = useRef(slotApplyScope);
+  useEffect(() => {
+    draftRef.current = draft;
+    savedRef.current = saved;
+    slotApplyScopeRef.current = slotApplyScope;
+  }, [draft, saved, slotApplyScope]);
   const hasTierFields = Boolean(draftTierFieldMap.scaleFieldId && draftTierFieldMap.parentFieldId);
   const { slotFields, slotLabels } = draft;
-  const optIds = new Set(selectable.map((f) => f.id));
+  const optIds = useMemo(() => new Set(catalogAllTemplateFields.map((f) => f.id)), [catalogAllTemplateFields]);
   const canAdd =
     slotFields.length < MAX_QUICK_ENTRY_SLOTS && selectable.some((f) => f && !slotFields.includes(f.id));
 
   const commitTabThis = useCallback(() => {
-    if (!canEditSlots) return;
-    onSetEntityQuickEntry(lon, nho, draft.slotFields, draft.slotLabels, {
+    if (!canEditSlots) return false;
+    const ok = onSetEntityQuickEntry(lon, nho, draft.slotFields, draft.slotLabels, {
       dualFirstRow: draft.dualFirstRow,
       useSelectUi: draft.useSelectUi,
     });
+    if (ok === false) {
+      showToast?.(
+        'Chưa lưu được ô gợi ý nhanh: kiểm tra mỗi ô chọn đúng một trường trong mẫu (không trùng, không rỗng).',
+        'warning'
+      );
+      return false;
+    }
     showToast?.('Đã lưu cấu hình ô gợi ý nhanh cho tab này (mẫu tab nhỏ).', 'success');
+    return true;
   }, [canEditSlots, lon, nho, draft, onSetEntityQuickEntry, showToast]);
 
   const handleRevert = useCallback(() => {
@@ -266,6 +295,46 @@ function AppEntityQuickEntryConfigBody({
       useSelectUi: draft.useSelectUi,
     });
   }, [canEditSlots, onRequestPropagateToAllLons, draft]);
+
+  const handleApplyQuickSlots = useCallback(() => {
+    if (!canEditSlots || !dirty) return;
+    if (slotApplyScope === SLOT_APPLY_SCOPE_AREA && typeof onRequestPropagateToLon === 'function') {
+      handlePropagateClick();
+      return;
+    }
+    commitTabThis();
+  }, [canEditSlots, dirty, slotApplyScope, onRequestPropagateToLon, handlePropagateClick, commitTabThis]);
+
+  useEffect(() => {
+    if (typeof registerFlushEntityQuickEntry !== 'function') return undefined;
+    const flush = () => {
+      if (!canEditSlots || !showQuickEntrySlots) return;
+      const d = draftRef.current;
+      const s = savedRef.current;
+      if (statesEqual(d, s)) return;
+      const ok = onSetEntityQuickEntry(lon, nho, d.slotFields, d.slotLabels, {
+        dualFirstRow: d.dualFirstRow,
+        useSelectUi: d.useSelectUi,
+      });
+      if (ok === false) {
+        showToast?.(
+          'Chưa lưu được ô gợi ý nhanh khi đóng / Lưu thông tin: kiểm tra các ô không trùng và thuộc mẫu tab.',
+          'warning'
+        );
+        return;
+      }
+      if (slotApplyScopeRef.current === SLOT_APPLY_SCOPE_AREA) {
+        showToast?.(
+          'Đã lưu ô gợi ý nhanh cho tab này. «Khu vực» chưa áp — bấm «Áp dụng» nếu cần ghi đè mọi tab cùng mục lớn.',
+          'warning'
+        );
+      } else {
+        showToast?.('Đã lưu cấu hình ô gợi ý nhanh cho tab này (mẫu tab nhỏ).', 'success');
+      }
+    };
+    registerFlushEntityQuickEntry(flush);
+    return () => registerFlushEntityQuickEntry(null);
+  }, [registerFlushEntityQuickEntry, canEditSlots, showQuickEntrySlots, lon, nho, onSetEntityQuickEntry, showToast]);
   const depsDirty = useMemo(() => {
     return JSON.stringify(draftDeps) !== savedDepsSig;
   }, [draftDeps, savedDepsSig]);
@@ -347,19 +416,20 @@ function AppEntityQuickEntryConfigBody({
   ]);
 
   return (
-    <details className="rounded-xl border border-amber-800/40 bg-amber-950/12 p-2.5">
+    <details className="rounded-xl border border-amber-800/40 bg-amber-950/12 p-2.5" defaultOpen>
       <summary className="cursor-pointer list-none">
         <div className="flex items-center justify-between gap-2">
           <div>
             <div className="text-[9px] font-bold text-amber-300/95 uppercase tracking-widest">
               Cấu hình mẫu: các ô gợi ý nhanh
             </div>
-            <div className="text-[10px] text-slate-400 font-serif mt-0.5 leading-snug line-clamp-2">
+            <div className="text-[10px] text-slate-400 font-serif mt-0.5 leading-snug line-clamp-3">
               {showQuickEntrySlots && canEditSlots ? (
                 <>
-                  Chỉnh tại đây, rồi <strong className="text-amber-200/90">Lưu (tab này)</strong> — chưa lưu thì cấu hình mẫu trên
-                  truyện chưa đổi. Tối đa {MAX_QUICK_ENTRY_SLOTS} trường; thêm{' '}
-                  <code className="text-amber-200/90">f_*</code> ở «Trường thông tin (mẫu tab)» cùng mục nâng cao, phía trên khối cấu hình ô.
+                  Ngay <strong className="text-amber-200/90">đầu khối vàng</strong>: chọn trường cho từng ô (tối đa{' '}
+                  {MAX_QUICK_ENTRY_SLOTS}), phạm vi <strong className="text-emerald-200/90">Cục bộ / Khu vực</strong>, rồi{' '}
+                  <strong className="text-amber-200/90">Áp dụng</strong>. «Phụ thuộc gợi ý» nằm bên dưới (tuỳ chọn). Thêm{' '}
+                  <code className="text-amber-200/90">f_*</code> ở «Trường thông tin» phía trên.
                 </>
               ) : (
                 <>
@@ -370,12 +440,263 @@ function AppEntityQuickEntryConfigBody({
               )}
             </div>
           </div>
-          <div className="text-[9px] text-amber-200/80 font-semibold shrink-0">Mở</div>
+          <div className="text-[9px] text-amber-200/80 font-semibold shrink-0" title="Thu gọn / mở lại khối này">
+            Thu / mở
+          </div>
         </div>
       </summary>
       <div className="mt-2 space-y-2">
+        {canEditSlots && showQuickEntrySlots && dirty && (
+          <p className="text-[10px] text-amber-200/90 font-serif rounded-md border border-amber-800/50 bg-amber-950/30 px-2 py-1">
+            Có thay đổi chưa lưu mẫu tab.
+          </p>
+        )}
+        {canEditSlots && showQuickEntrySlots && (
+          <>
+            <div className="flex flex-wrap items-end gap-2">
+              {typeof onRequestPropagateToLon === 'function' && (
+                <div className="w-full max-w-[16rem] space-y-1">
+                  <div className="text-[9px] font-bold text-emerald-200/90 uppercase tracking-widest">Phạm vi áp dụng</div>
+                  <div className="grid grid-cols-2 rounded-md border border-emerald-900/45 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setSlotApplyScope(SLOT_APPLY_SCOPE_LOCAL)}
+                      className={depScopeButtonClass(slotApplyScope === SLOT_APPLY_SCOPE_LOCAL)}
+                      aria-pressed={slotApplyScope === SLOT_APPLY_SCOPE_LOCAL}
+                      title="Chỉ tab con đang mở"
+                    >
+                      Cục bộ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSlotApplyScope(SLOT_APPLY_SCOPE_AREA)}
+                      className={depScopeButtonClass(slotApplyScope === SLOT_APPLY_SCOPE_AREA)}
+                      aria-pressed={slotApplyScope === SLOT_APPLY_SCOPE_AREA}
+                      title="Ghi đè mọi tab con cùng tab lớn"
+                    >
+                      Khu vực
+                    </button>
+                  </div>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleApplyQuickSlots}
+                disabled={!dirty}
+                className="inline-flex items-center gap-1 rounded-md border border-emerald-800/50 bg-emerald-950/40 px-2 py-1 text-[9px] font-bold text-emerald-100 hover:bg-emerald-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Save size={12} /> Áp dụng
+              </button>
+              <button
+                type="button"
+                onClick={handleRevert}
+                disabled={!dirty}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-600 bg-slate-950/60 px-2 py-1 text-[9px] font-bold text-slate-300 hover:bg-slate-800/50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Hoàn tác
+              </button>
+              {typeof onRequestPropagateToAllLons === 'function' && (
+                <button
+                  type="button"
+                  onClick={handlePropagateAllLonsClick}
+                  className="inline-flex items-center gap-1 rounded-md border border-violet-800/50 bg-violet-950/35 px-2 py-1 text-[9px] font-bold text-violet-100 hover:bg-violet-900/40"
+                >
+                  Áp mọi mục lớn
+                </button>
+              )}
+            </div>
+            <p
+              className="text-[9px] text-slate-500 font-serif leading-snug line-clamp-2"
+              title="«Khu vực» / «Áp mọi mục lớn» dùng nháp hiện tại — xác nhận rồi ghi đè các tab sưu tập theo phạm vi. «Cục bộ» ghi ngay tab con đang mở."
+            >
+              «Khu vực» / «Áp mọi mục lớn»: nháp hiện tại, xác nhận rồi ghi đè. «Cục bộ»: ghi ngay tab này. Danh sách (AUTO)
+              từng mục: chỉnh riêng từng tab con.
+            </p>
+          </>
+        )}
+        {canEditSlots && showQuickEntrySlots && (catalogAllTemplateFields.length === 0 ? (
+          <p className="text-[11px] text-amber-100/90 font-serif">
+            Thêm trường ở «Trường thông tin (mẫu tab)» trong cùng mục nâng cao (trên) để gán ô gợi ý.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-[10px] text-slate-400 font-serif leading-snug">
+              Chọn trường cho từng ô — danh sách gồm <strong className="text-amber-200/90">mọi trường trong mẫu</strong> (trừ
+              biệt danh wiki <code className="font-mono text-amber-200/85">f_alias</code>). Có thể gán cả{' '}
+              <code className="font-mono text-amber-200/85">f_status</code> (Phẩm cấp) nếu muốn gợi ý nhanh cùng ô chính;
+              khi đó cơ chế «tự ghép trạng thái từ các ô khác» sẽ tắt để không ghi đè chip. Trùng{' '}
+              <code className="font-mono text-amber-200/85">id</code> chỉ một dòng trong mẫu.
+            </p>
+            {slotFields.map((fieldId, idx) => {
+              const qlabId = `ttc-entity-quick-slot-label-${pathKey}-${idx}`;
+              const fieldForSlot = templateList.find((f) => f && f.id === fieldId);
+              const sortPrefixValue = safeString(fieldForSlot?.sortPrefix).trim();
+              const sortPrefixInputId = `ttc-entity-quick-sort-${pathKey}-${idx}`;
+              return (
+                <div
+                  key={`quick-slot-${pathKey}-${fieldId}-${idx}`}
+                  className="rounded-lg border border-amber-900/25 bg-slate-950/40 p-2 space-y-2"
+                >
+                  <div className="flex flex-wrap items-end gap-2">
+                    <span className="text-[10px] font-bold text-slate-500 w-8 shrink-0 pb-2">Ô {idx + 1}</span>
+                    <select
+                      value={fieldId}
+                      onChange={(e) => {
+                        const v = safeString(e.target.value).trim();
+                        setDraft((d) => {
+                          const next = { ...d, slotFields: [...d.slotFields], slotLabels: [...d.slotLabels] };
+                          const twin = next.slotFields.findIndex((x, j) => x === v && j !== idx);
+                          if (twin >= 0) next.slotFields[twin] = next.slotFields[idx];
+                          next.slotFields[idx] = v;
+                          return next;
+                        });
+                      }}
+                      aria-label={`Chọn trường cho ô gợi ý nhanh ${idx + 1}`}
+                      className="min-h-9 min-w-[160px] flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 font-mono outline-none focus:border-amber-600/50"
+                    >
+                      {!optIds.has(fieldId) && <option value={fieldId}>{fieldId} (cần khớp template)</option>}
+                      {selectable.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {safeString(f.label) || f.id} ({f.id})
+                        </option>
+                      ))}
+                    </select>
+                    <div className="shrink-0 w-[4.5rem] space-y-0.5">
+                      <div className="text-[9px] font-bold uppercase tracking-wide text-emerald-200/80">Thứ tự</div>
+                      <input
+                        id={sortPrefixInputId}
+                        type="text"
+                        key={`qsp-${pathKey}-${fieldId}-${sortPrefixValue}`}
+                        defaultValue={sortPrefixValue}
+                        onBlur={(e) => {
+                          if (typeof onSetTemplateFieldSortPrefix !== 'function') return;
+                          onSetTemplateFieldSortPrefix(lon, nho, fieldId, e.target.value);
+                        }}
+                        disabled={!fieldId}
+                        title="Lưu khi rời ô — mẫu trường chung cả tab; hiển thị trước nhãn ở khối gợi ý."
+                        placeholder="I / 1"
+                        aria-label={`Ký hiệu thứ tự cho trường ${fieldId || 'ô gợi ý'}`}
+                        className="w-full bg-slate-950 border border-emerald-800/50 rounded-lg px-2 py-1.5 text-[11px] text-emerald-100 font-mono outline-none focus:border-emerald-500/70 disabled:opacity-40"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1 pl-0 md:pl-10">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-amber-200/85">
+                        Nhãn hiển thị (ô gợi ý)
+                      </span>
+                      <button
+                        type="button"
+                        title="Gõ vào ô dưới"
+                        onClick={() => document.getElementById(qlabId)?.focus()}
+                        className="inline-flex items-center gap-1 rounded-md border border-amber-800/50 bg-amber-950/35 px-2 py-0.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/45"
+                      >
+                        <Edit2 size={12} /> Sửa nhãn
+                      </button>
+                    </div>
+                    <input
+                      id={qlabId}
+                      type="text"
+                      value={slotLabels[idx] ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setDraft((d) => {
+                          const nextLabels = [...d.slotLabels];
+                          while (nextLabels.length < d.slotFields.length) nextLabels.push('');
+                          nextLabels[idx] = val;
+                          return { ...d, slotLabels: nextLabels };
+                        });
+                      }}
+                      placeholder="Để trống = dùng tên trường trong hồ sơ tab"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-serif outline-none focus:border-amber-600/45"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={!canAdd}
+                onClick={() => {
+                  const used = new Set(slotFields);
+                  const pick = selectable.find((f) => f.id && !used.has(f.id));
+                  if (!pick) return;
+                  setDraft((d) => ({
+                    ...d,
+                    slotFields: [...d.slotFields, pick.id],
+                    slotLabels: [...d.slotLabels, ''],
+                  }));
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-800/50 bg-amber-950/40 px-2.5 py-1.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus size={14} /> Thêm ô
+              </button>
+              <button
+                type="button"
+                disabled={slotFields.length <= 1}
+                onClick={() => {
+                  setDraft((d) => ({
+                    ...d,
+                    slotFields: d.slotFields.slice(0, -1),
+                    slotLabels: d.slotLabels.slice(0, -1),
+                  }));
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950/50 px-2.5 py-1.5 text-[10px] font-bold text-slate-300 hover:bg-slate-800/50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Trash2 size={14} /> Bớt một ô
+              </button>
+              <span className="text-[10px] text-slate-500 font-serif">
+                Tối đa {MAX_QUICK_ENTRY_SLOTS} ô · {slotFields.length} ô hiện tại
+              </span>
+            </div>
+            <div className="space-y-2 rounded-lg border border-amber-900/35 bg-slate-950/55 px-2.5 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="inline-flex cursor-pointer items-start gap-2 text-[11px] text-slate-300 font-serif leading-snug">
+                  <input
+                    type="checkbox"
+                    checked={draft.dualFirstRow}
+                    onChange={(e) => setDraft((d) => ({ ...d, dualFirstRow: e.target.checked }))}
+                    className="mt-0.5 rounded border-slate-600"
+                  />
+                  <span>
+                    Hai ô đầu <strong className="text-amber-200">song song</strong> (cạnh nhau trên màn hình rộng).
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  disabled={slotFields.length < 2}
+                  onClick={() => {
+                    setDraft((d) => {
+                      if (d.slotFields.length < 2) return d;
+                      const nextF = [d.slotFields[1], d.slotFields[0], ...d.slotFields.slice(2)];
+                      const nextL = [d.slotLabels[1], d.slotLabels[0], ...d.slotLabels.slice(2)];
+                      return { ...d, slotFields: nextF, slotLabels: nextL };
+                    });
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-800/50 bg-amber-950/40 px-2.5 py-1.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Hoán đổi trường và nhãn của ô 1 và ô 2"
+                >
+                  <ArrowLeftRight size={14} /> Đổi ô 1 ↔ 2
+                </button>
+              </div>
+              <label className="inline-flex cursor-pointer items-start gap-2 text-[11px] text-slate-300 font-serif leading-snug">
+                <input
+                  type="checkbox"
+                  checked={draft.useSelectUi}
+                  onChange={(e) => setDraft((d) => ({ ...d, useSelectUi: e.target.checked }))}
+                  className="mt-0.5 rounded border-slate-600"
+                />
+                <span>
+                  Dùng <strong className="text-amber-200">menu chọn (select)</strong> cho mọi ô (kèm ô gõ dưới mỗi ô); tắt = gõ + gợi
+                  ý datalist.
+                </span>
+              </label>
+            </div>
+          </div>
+        ))}
         {canEditDeps && (
-        <details className="rounded-lg border border-violet-900/35 bg-slate-950/45 p-2" defaultOpen>
+        <details className="rounded-lg border border-violet-900/35 bg-slate-950/45 p-2" defaultOpen={!showQuickEntrySlots}>
           <summary className="cursor-pointer text-[10px] font-bold text-violet-200 uppercase tracking-widest">
             Phụ thuộc gợi ý (Trường A → Trường B)
           </summary>
@@ -658,231 +979,6 @@ function AppEntityQuickEntryConfigBody({
             </div>
           </details>
         )}
-        {canEditSlots && showQuickEntrySlots && dirty && (
-          <p className="text-[10px] text-amber-200/90 font-serif rounded-md border border-amber-800/50 bg-amber-950/30 px-2 py-1">
-            Có thay đổi chưa lưu mẫu tab.
-          </p>
-        )}
-        {canEditSlots && showQuickEntrySlots && (
-          <>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={commitTabThis}
-                disabled={!dirty}
-                className="inline-flex items-center gap-1 rounded-md border border-emerald-800/50 bg-emerald-950/40 px-2 py-1 text-[9px] font-bold text-emerald-100 hover:bg-emerald-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Save size={12} /> Lưu (tab này)
-              </button>
-              <button
-                type="button"
-                onClick={handleRevert}
-                disabled={!dirty}
-                className="inline-flex items-center gap-1 rounded-md border border-slate-600 bg-slate-950/60 px-2 py-1 text-[9px] font-bold text-slate-300 hover:bg-slate-800/50 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Hoàn tác
-              </button>
-              {typeof onRequestPropagateToLon === 'function' && (
-                <button
-                  type="button"
-                  onClick={handlePropagateClick}
-                  className="inline-flex items-center gap-1 rounded-md border border-cyan-800/50 bg-cyan-950/35 px-2 py-1 text-[9px] font-bold text-cyan-100 hover:bg-cyan-900/40"
-                >
-                  Áp cả tab lớn
-                </button>
-              )}
-              {typeof onRequestPropagateToAllLons === 'function' && (
-                <button
-                  type="button"
-                  onClick={handlePropagateAllLonsClick}
-                  className="inline-flex items-center gap-1 rounded-md border border-violet-800/50 bg-violet-950/35 px-2 py-1 text-[9px] font-bold text-violet-100 hover:bg-violet-900/40"
-                >
-                  Áp mọi mục lớn
-                </button>
-              )}
-            </div>
-            <p
-              className="text-[9px] text-slate-500 font-serif leading-snug line-clamp-2"
-              title="«Áp cả tab lớn» / «Áp mọi mục lớn» dùng nháp hiện tại (kể cả chưa Lưu) — xác nhận rồi ghi đè mọi tab sưu tập theo phạm vi. Thứ tự từng dòng trong «Danh sách (AUTO)» chỉnh trên từng mục con."
-            >
-              «Áp cả / Áp mọi mục lớn» dùng nháp hiện tại; xác nhận rồi ghi đè. Danh sách (AUTO) từng mục: chỉnh riêng từng
-              mục con.
-            </p>
-          </>
-        )}
-        {canEditSlots && showQuickEntrySlots && (selectable.length === 0 ? (
-          <p className="text-[11px] text-amber-100/90 font-serif">
-            Thêm trường ở «Trường thông tin (mẫu tab)» trong cùng mục nâng cao (trên) để gán ô gợi ý.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {slotFields.map((fieldId, idx) => {
-              const qlabId = `ttc-entity-quick-slot-label-${pathKey}-${idx}`;
-              const fieldForSlot = templateList.find((f) => f && f.id === fieldId);
-              const sortPrefixValue = safeString(fieldForSlot?.sortPrefix).trim();
-              const sortPrefixInputId = `ttc-entity-quick-sort-${pathKey}-${idx}`;
-              return (
-                <div
-                  key={`quick-slot-${pathKey}-${fieldId}-${idx}`}
-                  className="rounded-lg border border-amber-900/25 bg-slate-950/40 p-2 space-y-2"
-                >
-                  <div className="flex flex-wrap items-end gap-2">
-                    <span className="text-[10px] font-bold text-slate-500 w-8 shrink-0 pb-2">Ô {idx + 1}</span>
-                    <select
-                      value={fieldId}
-                      onChange={(e) => {
-                        const v = safeString(e.target.value).trim();
-                        setDraft((d) => {
-                          const next = { ...d, slotFields: [...d.slotFields], slotLabels: [...d.slotLabels] };
-                          const twin = next.slotFields.findIndex((x, j) => x === v && j !== idx);
-                          if (twin >= 0) next.slotFields[twin] = next.slotFields[idx];
-                          next.slotFields[idx] = v;
-                          return next;
-                        });
-                      }}
-                      className="min-w-[160px] flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 font-mono outline-none focus:border-amber-600/50"
-                    >
-                      {!optIds.has(fieldId) && <option value={fieldId}>{fieldId} (cần khớp template)</option>}
-                      {selectable.map((f) => (
-                        <option key={f.id} value={f.id}>
-                          {safeString(f.label) || f.id} ({f.id})
-                        </option>
-                      ))}
-                    </select>
-                    <div className="shrink-0 w-[4.5rem] space-y-0.5">
-                      <div className="text-[9px] font-bold uppercase tracking-wide text-emerald-200/80">Thứ tự</div>
-                      <input
-                        id={sortPrefixInputId}
-                        type="text"
-                        key={`qsp-${pathKey}-${fieldId}-${sortPrefixValue}`}
-                        defaultValue={sortPrefixValue}
-                        onBlur={(e) => {
-                          if (typeof onSetTemplateFieldSortPrefix !== 'function') return;
-                          onSetTemplateFieldSortPrefix(lon, nho, fieldId, e.target.value);
-                        }}
-                        disabled={!fieldId}
-                        title="Lưu khi rời ô — mẫu trường chung cả tab; hiển thị trước nhãn ở khối gợi ý."
-                        placeholder="I / 1"
-                        aria-label={`Ký hiệu thứ tự cho trường ${fieldId || 'ô gợi ý'}`}
-                        className="w-full bg-slate-950 border border-emerald-800/50 rounded-lg px-2 py-1.5 text-[11px] text-emerald-100 font-mono outline-none focus:border-emerald-500/70 disabled:opacity-40"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1 pl-0 md:pl-10">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wide text-amber-200/85">
-                        Nhãn hiển thị (ô gợi ý)
-                      </span>
-                      <button
-                        type="button"
-                        title="Gõ vào ô dưới"
-                        onClick={() => document.getElementById(qlabId)?.focus()}
-                        className="inline-flex items-center gap-1 rounded-md border border-amber-800/50 bg-amber-950/35 px-2 py-0.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/45"
-                      >
-                        <Edit2 size={12} /> Sửa nhãn
-                      </button>
-                    </div>
-                    <input
-                      id={qlabId}
-                      type="text"
-                      value={slotLabels[idx] ?? ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setDraft((d) => {
-                          const nextLabels = [...d.slotLabels];
-                          while (nextLabels.length < d.slotFields.length) nextLabels.push('');
-                          nextLabels[idx] = val;
-                          return { ...d, slotLabels: nextLabels };
-                        });
-                      }}
-                      placeholder="Để trống = dùng tên trường trong hồ sơ tab"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-serif outline-none focus:border-amber-600/45"
-                    />
-                  </div>
-                </div>
-              );
-            })}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={!canAdd}
-                onClick={() => {
-                  const used = new Set(slotFields);
-                  const pick = selectable.find((f) => f.id && !used.has(f.id));
-                  if (!pick) return;
-                  setDraft((d) => ({
-                    ...d,
-                    slotFields: [...d.slotFields, pick.id],
-                    slotLabels: [...d.slotLabels, ''],
-                  }));
-                }}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-800/50 bg-amber-950/40 px-2.5 py-1.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Plus size={14} /> Thêm ô
-              </button>
-              <button
-                type="button"
-                disabled={slotFields.length <= 1}
-                onClick={() => {
-                  setDraft((d) => ({
-                    ...d,
-                    slotFields: d.slotFields.slice(0, -1),
-                    slotLabels: d.slotLabels.slice(0, -1),
-                  }));
-                }}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950/50 px-2.5 py-1.5 text-[10px] font-bold text-slate-300 hover:bg-slate-800/50 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Trash2 size={14} /> Bớt một ô
-              </button>
-              <span className="text-[10px] text-slate-500 font-serif">
-                Tối đa {MAX_QUICK_ENTRY_SLOTS} ô · {slotFields.length} ô hiện tại
-              </span>
-            </div>
-            <div className="space-y-2 rounded-lg border border-amber-900/35 bg-slate-950/55 px-2.5 py-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="inline-flex cursor-pointer items-start gap-2 text-[11px] text-slate-300 font-serif leading-snug">
-                  <input
-                    type="checkbox"
-                    checked={draft.dualFirstRow}
-                    onChange={(e) => setDraft((d) => ({ ...d, dualFirstRow: e.target.checked }))}
-                    className="mt-0.5 rounded border-slate-600"
-                  />
-                  <span>
-                    Hai ô đầu <strong className="text-amber-200">song song</strong> (cạnh nhau trên màn hình rộng).
-                  </span>
-                </label>
-                <button
-                  type="button"
-                  disabled={slotFields.length < 2}
-                  onClick={() => {
-                    setDraft((d) => {
-                      if (d.slotFields.length < 2) return d;
-                      const nextF = [d.slotFields[1], d.slotFields[0], ...d.slotFields.slice(2)];
-                      const nextL = [d.slotLabels[1], d.slotLabels[0], ...d.slotLabels.slice(2)];
-                      return { ...d, slotFields: nextF, slotLabels: nextL };
-                    });
-                  }}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-800/50 bg-amber-950/40 px-2.5 py-1.5 text-[10px] font-bold text-amber-100 hover:bg-amber-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="Hoán đổi trường và nhãn của ô 1 và ô 2"
-                >
-                  <ArrowLeftRight size={14} /> Đổi ô 1 ↔ 2
-                </button>
-              </div>
-              <label className="inline-flex cursor-pointer items-start gap-2 text-[11px] text-slate-300 font-serif leading-snug">
-                <input
-                  type="checkbox"
-                  checked={draft.useSelectUi}
-                  onChange={(e) => setDraft((d) => ({ ...d, useSelectUi: e.target.checked }))}
-                  className="mt-0.5 rounded border-slate-600"
-                />
-                <span>
-                  Dùng <strong className="text-amber-200">menu chọn (select)</strong> cho mọi ô (kèm ô gõ dưới mỗi ô); tắt = gõ + gợi
-                  ý datalist.
-                </span>
-              </label>
-            </div>
-          </div>
-        ))}
       </div>
     </details>
   );
