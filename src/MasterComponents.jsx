@@ -1699,6 +1699,8 @@ export const ModalEntity = ({
   );
   /** true = người dùng đang giữ chuỗi hiển thị khác bản ghép từ ô nhanh; sửa ô nhanh hoặc xóa trống ô chuỗi → tắt. */
   const genericQuickFStatusUserOverrideRef = useRef(false);
+  /** Chặn effect hydrate chạy lại khi chỉ cập nhật cấu hình cùng tab lúc modal đang mở. */
+  const entityModalHydratedKeyRef = useRef('');
   useEffect(() => {
     mapQuickSystemRef.current = mapQuickSystem;
   }, [mapQuickSystem]);
@@ -2459,7 +2461,13 @@ export const ModalEntity = ({
   };
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      entityModalHydratedKeyRef.current = '';
+      return;
+    }
+    const hydrateKey = `${safeString(tabConfig?.id).trim()}|${safeString(initialData?.id).trim() || 'new'}`;
+    if (entityModalHydratedKeyRef.current === hydrateKey) return;
+    entityModalHydratedKeyRef.current = hydrateKey;
     /* eslint-disable react-hooks/set-state-in-effect -- dialog cần hydrate state khi mở */
     if (initialData) {
       setFormData({

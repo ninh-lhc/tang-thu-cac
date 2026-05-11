@@ -111,6 +111,24 @@ describe('entityQuickEntrySlots', () => {
     expect(st?.suggestions).not.toContain('Luyện Khí');
   });
 
+  it('resolveEntityQuickSlots tôn trọng nguồn subTabLabel cho f_title', () => {
+    const r = resolveEntityQuickSlots({
+      tabConfig: {
+        id: 'dao-cu',
+        label: 'Đạo Cụ & Tiêu Hao',
+        fieldSource: { f_title: { kind: 'subTabLabel' } },
+        entityQuickEntry: { slotFields: ['f_title'], slotLabels: [''] },
+      },
+      fieldsTemplate: [{ id: 'f_title', label: 'Phân loại' }, { id: 'f_desc', label: 'Mô tả' }],
+      activeNovelData: { genres: ['Tiên Hiệp'] },
+      parentTabId: 'vat-pham',
+      parentLabel: 'Vật phẩm',
+    });
+    expect(r.slots).toHaveLength(1);
+    expect(r.slots[0].suggestions).toEqual(['Đạo Cụ & Tiêu Hao']);
+    expect(r.slots[0].suggestions).not.toContain('Hệ phụ');
+  });
+
   it('resolveEntityQuickSlots giữ f_status trong lưới khi user cấu hình', () => {
     const r = resolveEntityQuickSlots({
       tabConfig: {

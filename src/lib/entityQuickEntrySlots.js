@@ -9,6 +9,7 @@ export const DEFAULT_QUICK_ENTRY_SLOT_COUNT = 4;
 import { resolveMapFieldPresetFlavor, MAP_FIELD_PRESET_FLAVOR } from './mapEntityFieldPresets.js';
 import { normalizeAsciiText } from './statusHierarchyParser.js';
 import { suggestionRowsToValues } from './suggestionRowFormat.js';
+import { FIELD_SOURCE_KIND, getFieldSourceDescriptor, resolveFieldValueSource } from './fieldValueSources.js';
 
 const PREFERRED_FIELD_ORDER = ['f_status', 'f_title', 'f_desc', 'f_cap', 'f_vi_tri', 'f_dia_ban'];
 
@@ -286,6 +287,7 @@ export function resolveEntityQuickSlots({
   tabConfig,
   fieldsTemplate,
   activeNovelData,
+  parentTabId,
   parentLabel: tabLonLabel,
 }) {
   const templateList = Array.isArray(fieldsTemplate) ? fieldsTemplate : [];
@@ -320,8 +322,23 @@ export function resolveEntityQuickSlots({
   const slots = slotFields.map((fieldId, idx) => {
     const userList = Array.isArray(lists[fieldId]) ? suggestionRowsToValues(lists[fieldId]) : [];
     const seeds = getQuickEntrySeedLines(fieldId, flavor, tabLonLabel, tabNhoLabel);
+    const sourceDescriptor = getFieldSourceDescriptor(tabConfig, fieldId);
+    const source = resolveFieldValueSource({
+      fieldId,
+      tabConfig,
+      parentTabId,
+      parentLabel: tabLonLabel,
+      activeNovelData,
+    });
+    const sourceSuggestions = dedupeCaseInsensitive(source?.suggestions || []);
     const suggestions =
-      userList.length > 0 ? dedupeCaseInsensitive(userList) : dedupeCaseInsensitive([...userList, ...seeds]);
+      sourceDescriptor.kind && sourceDescriptor.kind !== FIELD_SOURCE_KIND.MANUAL
+        ? sourceSuggestions
+        : sourceSuggestions.length > 0
+          ? sourceSuggestions
+          : userList.length > 0
+            ? dedupeCaseInsensitive(userList)
+            : dedupeCaseInsensitive([...userList, ...seeds]);
     const baseLabel = idToLabel.get(fieldId) || String(fieldId || '');
     const label = slotLabels[idx] || baseLabel;
     const sortPrefix = idToPrefix.get(fieldId) || '';
