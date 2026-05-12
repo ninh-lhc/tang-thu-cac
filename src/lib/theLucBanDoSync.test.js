@@ -506,6 +506,17 @@ describe('theLucBanDoSync', () => {
     expect(String(huyetHoangDia?.info || '')).toContain('## Thế lực theo vị trí (AUTO)');
   });
 
+  it('does not treat long parent titles that merely contain «Thế Lực» as force root (e.g. Chư Thiên Thế Lực)', () => {
+    expect(
+      isForceCollectionScope({
+        activeTabLon: 'chu-thien-the-luc',
+        activeTabNho: 'di-toc',
+        currentTabConfig: { id: 'di-toc', label: 'Chư Thiên Dị Tộc', viewType: 'collection-track' },
+        parentLabel: 'Chư Thiên Thế Lực',
+      })
+    ).toBe(false);
+  });
+
   it('detects force scope by parent label even when tab id is custom', () => {
     expect(
       isForceCollectionScope({

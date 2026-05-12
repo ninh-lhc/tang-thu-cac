@@ -56,8 +56,10 @@ function normalizeKey(value) {
 }
 
 function looksLikeForceParent(value) {
-  const key = normalizeKey(value).replace(/-/g, ' ');
-  return key === 'the luc' || key.includes('the luc');
+  const key = normalizeKey(value).replace(/-/g, ' ').trim();
+  if (!key) return false;
+  // Không dùng includes: «Chư Thiên Thế Lực» → chu thien the luc chứa the luc nhưng không phải tab gốc Thế lực.
+  return key === 'the luc';
 }
 
 function looksLikeMapSubTab(value) {

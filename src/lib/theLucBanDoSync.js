@@ -70,8 +70,11 @@ function buildAutoFieldContext(context = {}) {
 }
 
 function isForceParentKey(value) {
-  const key = normalizeAscii(value).replace(/-/g, ' ');
-  return key === 'the luc' || key.includes('the luc');
+  const key = normalizeAscii(value).replace(/-/g, ' ').trim();
+  if (!key) return false;
+  // Chỉ khớp đúng cụm «Thế Lực» / id `the-luc` — không dùng includes: nhãn kiểu
+  // «Chư Thiên Thế Lực» (chu thien the luc) sẽ dương tính và tắt nhầm «Gợi ý nhanh» generic.
+  return key === 'the luc';
 }
 
 export function isForceCollectionScope({
