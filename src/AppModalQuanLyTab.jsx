@@ -32,16 +32,9 @@ import { resolveExplicitAutoSyncTargets, supportsAutoSyncLinkRole } from './lib/
 import {
   AUTO_SYNC_LEVEL_1,
   AUTO_SYNC_LEVEL_2,
-  AUTO_SYNC_LEVEL_3,
   getEffectiveTabAutoSyncLevelConfig,
 } from './lib/tabAutoSyncLevels.js';
 import { TAB_ICON_OPTIONS, extractNovelGenres, getAutoModeSummary, buildSimpleSetupSteps } from './lib/appModalQuanLyTabHelpers.js';
-import {
-  getQuickAuto3SourceOptions,
-  getQuickAuto3TargetOptions,
-  getQuickAuto3DefaultPair,
-  validateQuickAuto3Pair,
-} from './lib/autoSyncQuickLinkSetup.js';
 import { AppSectionErrorBoundary } from './AppSectionErrorBoundary.jsx';
 
 export function AppModalQuanLyTab({
@@ -60,7 +53,7 @@ export function AppModalQuanLyTab({
   handleAddTabNho,
   handleAddTabCon,
   handleSetTabAutoSyncRole,
-  handleSetTabAutoSyncTargets,
+  handleSetTabAutoSyncTargets: _handleSetTabAutoSyncTargets,
   handleSetTabAutoSyncLevels,
   handleSetTabAutoSyncFieldMap: _handleSetTabAutoSyncFieldMap,
   handleSetTabMapEntrySuggestions: _handleSetTabMapEntrySuggestions,
@@ -72,12 +65,10 @@ export function AppModalQuanLyTab({
   handleResetNovelSuggestionLists,
   activeTabLon,
   setConfirmDialog,
-  showToast,
+  showToast: _showToast,
 }) {
   const trapRef = useFocusTrap(true);
   const [showAutoOverview, setShowAutoOverview] = React.useState(false);
-  const [quickAuto3SourcePathOverride, setQuickAuto3SourcePathOverride] = React.useState(null);
-  const [quickAuto3TargetPathOverride, setQuickAuto3TargetPathOverride] = React.useState(null);
   const safeSortedTabs = React.useMemo(
     () => (Array.isArray(sortedTabs) ? sortedTabs : []),
     [sortedTabs]
@@ -88,17 +79,6 @@ export function AppModalQuanLyTab({
     [activeNovelData]
   );
   const simpleSetupSteps = React.useMemo(() => buildSimpleSetupSteps(diagnostics), [diagnostics]);
-  const quickAuto3SourceOptions = React.useMemo(
-    () => getQuickAuto3SourceOptions(safeSortedTabs).map((row) => ({ pathKey: row.pathKey, label: row.label })),
-    [safeSortedTabs]
-  );
-  const quickAuto3TargetOptions = React.useMemo(
-    () => getQuickAuto3TargetOptions(safeSortedTabs).map((row) => ({ pathKey: row.pathKey, label: row.label })),
-    [safeSortedTabs]
-  );
-  const quickAuto3DefaultPair = React.useMemo(() => getQuickAuto3DefaultPair(safeSortedTabs), [safeSortedTabs]);
-  const quickAuto3SourcePath = quickAuto3SourcePathOverride ?? quickAuto3DefaultPair.sourcePath;
-  const quickAuto3TargetPath = quickAuto3TargetPathOverride ?? quickAuto3DefaultPair.targetPath;
   const lonIconInputRefById = React.useRef({});
   const nhoIconInputRefByPath = React.useRef({});
   const bulkAutoLonMeta =
@@ -159,47 +139,6 @@ export function AppModalQuanLyTab({
       activeEl.blur();
     }
   }, [trapRef]);
-  const applyQuickAuto3Setup = React.useCallback(() => {
-    const sourcePath = safeString(quickAuto3SourcePath).trim();
-    const targetPath = safeString(quickAuto3TargetPath).trim();
-    const check = validateQuickAuto3Pair({ sourcePath, targetPath });
-    if (!check.ok) {
-      showToast?.(check.message);
-      return;
-    }
-    const [sourceLonId, sourceNhoId] = sourcePath.split('::');
-    const [targetLonId, targetNhoId] = targetPath.split('::');
-    const sourceLon = safeSortedTabs.find((lon) => safeString(lon?.id) === safeString(sourceLonId));
-    const sourceNho = sourceLon?.subTabs?.find((nho) => safeString(nho?.id) === safeString(sourceNhoId));
-    const targetLon = safeSortedTabs.find((lon) => safeString(lon?.id) === safeString(targetLonId));
-    const targetNho = targetLon?.subTabs?.find((nho) => safeString(nho?.id) === safeString(targetNhoId));
-    if (!sourceLon || !sourceNho || !targetLon || !targetNho) {
-      showToast?.('Không tìm thấy tab nguồn hoặc tab đích trong cây hiện tại.');
-      return;
-    }
-
-    handleSetTabAutoSyncRole?.(sourceLonId, sourceNhoId, 'the-luc');
-    handleSetTabAutoSyncRole?.(targetLonId, targetNhoId, 'ban-do');
-    handleSetTabAutoSyncTargets?.(sourceLonId, sourceNhoId, [targetPath]);
-    const sourceLevelConfig = getEffectiveTabAutoSyncLevelConfig(sourceNho);
-    handleSetTabAutoSyncLevels?.(sourceLonId, sourceNhoId, {
-      ...sourceLevelConfig,
-      enabled: true,
-      levels: {
-        ...sourceLevelConfig.levels,
-        [AUTO_SYNC_LEVEL_3]: true,
-      },
-    });
-    showToast?.('Đã áp dụng Auto 3: gán nguồn Thế lực -> đích Bản đồ và bật bậc 3.');
-  }, [
-    handleSetTabAutoSyncLevels,
-    handleSetTabAutoSyncRole,
-    handleSetTabAutoSyncTargets,
-    quickAuto3SourcePath,
-    quickAuto3TargetPath,
-    showToast,
-    safeSortedTabs,
-  ]);
 
   return (
     <div
@@ -253,7 +192,7 @@ export function AppModalQuanLyTab({
                     Thiết Lập AUTO
                   </div>
                   <p className="text-sm text-slate-100 font-semibold mt-1">
-                    Mặc định giữ cây thư mục gọn. Bảng AUTO / Auto 3 nhanh bên dưới; từng tab nhỏ chỉnh bằng nút trên hàng (không mở panel).
+                    Mặc định giữ cây thư mục gọn. Bảng AUTO chi tiết bên dưới; từng tab nhỏ chỉnh bằng nút trên hàng (không mở panel).
                   </p>
                   {novelGenres.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
@@ -380,68 +319,6 @@ export function AppModalQuanLyTab({
                   Sẽ cập nhật: {diagnostics.preview.touchedEntityCount}
                 </span>
               </div>
-              <div className="rounded-xl border border-indigo-800/40 bg-indigo-950/20 p-3 space-y-2">
-                <div className="text-[10px] uppercase tracking-wide text-indigo-300 font-bold">
-                  Auto 3 siêu nhanh
-                </div>
-                <div className="text-[12px] text-slate-300 font-serif">
-                  Chỉ chọn tab nguồn + tab đích. Hệ thống tự gán role, target và bật bậc 3 liên tab.
-                </div>
-                <div className="grid gap-2 md:grid-cols-2">
-                  <label className="flex flex-col gap-1 text-[11px] text-slate-300 font-semibold">
-                    Tab nguồn (Thế lực)
-                    <select
-                      value={quickAuto3SourcePath}
-                      onChange={(e) => setQuickAuto3SourcePathOverride(e.target.value)}
-                      className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 font-serif outline-none focus:border-indigo-500/60"
-                    >
-                      {quickAuto3SourceOptions.length === 0 && (
-                        <option value="">(Chưa có mục phù hợp — bật Lưới cho 2 mục)</option>
-                      )}
-                      {quickAuto3SourceOptions.map((option) => (
-                        <option key={`source-${option.pathKey}`} value={option.pathKey}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-1 text-[11px] text-slate-300 font-semibold">
-                    Tab đích (Bản đồ)
-                    <select
-                      value={quickAuto3TargetPath}
-                      onChange={(e) => setQuickAuto3TargetPathOverride(e.target.value)}
-                      className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 font-serif outline-none focus:border-indigo-500/60"
-                    >
-                      {quickAuto3TargetOptions.length === 0 && (
-                        <option value="">(Chưa có mục phù hợp — bật Lưới cho 2 mục)</option>
-                      )}
-                      {quickAuto3TargetOptions.map((option) => (
-                        <option key={`target-${option.pathKey}`} value={option.pathKey}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-[11px] text-slate-400 font-serif">
-                    Sau khi áp dụng, bạn chỉ cần bấm <strong className="text-indigo-100">Quét Lại AUTO</strong>.
-                  </div>
-                  <button
-                    type="button"
-                    onClick={applyQuickAuto3Setup}
-                    disabled={quickAuto3SourceOptions.length === 0 || quickAuto3TargetOptions.length === 0}
-                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold ${
-                      quickAuto3SourceOptions.length === 0 || quickAuto3TargetOptions.length === 0
-                        ? 'border-slate-700 bg-slate-900 text-slate-500 cursor-not-allowed'
-                        : 'border-indigo-700/55 bg-indigo-950/35 text-indigo-100 hover:bg-indigo-900/35'
-                    }`}
-                  >
-                    Tự cấu hình Auto 3
-                  </button>
-                </div>
-              </div>
-
               {showAutoOverview && (
                 <>
                   <div className="grid gap-3 md:grid-cols-4">

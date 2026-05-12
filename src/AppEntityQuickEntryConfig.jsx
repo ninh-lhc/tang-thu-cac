@@ -176,6 +176,8 @@ function AppEntityQuickEntryConfigBody({
   registerFlushEntityQuickEntry,
   /** false = tab Bản đồ / Thế lực (form gợi ý riêng); vẫn hiện «Phụ thuộc gợi ý». */
   showQuickEntrySlots = true,
+  /** true = Tổng quan modal dùng khối Bản đồ/Thế lực riêng; gợi ý chữ trong khối vàng vẫn khớp thực tế. */
+  overviewUsesDedicatedQuickForm = false,
 }) {
   const canEditSlots = typeof onSetEntityQuickEntry === 'function';
   const canEditDeps = typeof onSetFieldSuggestionDependencies === 'function';
@@ -426,6 +428,11 @@ function AppEntityQuickEntryConfigBody({
             <div className="text-[10px] text-slate-400 font-serif mt-0.5 leading-snug line-clamp-3">
               {showQuickEntrySlots && canEditSlots ? (
                 <>
+                  {overviewUsesDedicatedQuickForm ? (
+                    <>
+                      <strong className="text-slate-200/90">Tổng quan</strong> vẫn dùng form gợi ý riêng (Bản đồ / Thế lực).{' '}
+                    </>
+                  ) : null}
                   Ngay <strong className="text-amber-200/90">đầu khối vàng</strong>: chọn trường cho từng ô (tối đa{' '}
                   {MAX_QUICK_ENTRY_SLOTS}), phạm vi <strong className="text-emerald-200/90">Cục bộ / Khu vực</strong>, rồi{' '}
                   <strong className="text-amber-200/90">Áp dụng</strong>. «Phụ thuộc gợi ý» nằm bên dưới (tuỳ chọn). Thêm{' '}
@@ -696,7 +703,10 @@ function AppEntityQuickEntryConfigBody({
           </div>
         ))}
         {canEditDeps && (
-        <details className="rounded-lg border border-violet-900/35 bg-slate-950/45 p-2" defaultOpen={!showQuickEntrySlots}>
+        <details
+          className="rounded-lg border border-violet-900/35 bg-slate-950/45 p-2"
+          defaultOpen={!showQuickEntrySlots || overviewUsesDedicatedQuickForm}
+        >
           <summary className="cursor-pointer text-[10px] font-bold text-violet-200 uppercase tracking-widest">
             Phụ thuộc gợi ý (Trường A → Trường B)
           </summary>

@@ -79,7 +79,12 @@ describe('modal ttc-save scope', () => {
           initialData: null,
           parentTabId: 'ban-do',
           parentLabel: 'Ban do',
-          tabConfig: { id: 'tien-gioi', label: 'Tien gioi', viewType: 'collection-track' },
+          tabConfig: {
+            id: 'tien-gioi',
+            label: 'Tien gioi',
+            viewType: 'collection-track',
+            modalMapForceQuickForm: 'legacy',
+          },
         })}
       />
     );
@@ -103,7 +108,12 @@ describe('modal ttc-save scope', () => {
           initialData: null,
           parentTabId: 'ban-do',
           parentLabel: 'Ban do',
-          tabConfig: { id: 'am-gian', label: 'Âm Gian (Địa phủ)', viewType: 'collection-track' },
+          tabConfig: {
+            id: 'am-gian',
+            label: 'Âm Gian (Địa phủ)',
+            viewType: 'collection-track',
+            modalMapForceQuickForm: 'legacy',
+          },
         })}
       />
     );
@@ -120,7 +130,12 @@ describe('modal ttc-save scope', () => {
           initialData: null,
           parentTabId: 'ban-do',
           parentLabel: 'Ban do',
-          tabConfig: { id: 'tien-gioi', label: 'Tien gioi', viewType: 'collection-track' },
+          tabConfig: {
+            id: 'tien-gioi',
+            label: 'Tien gioi',
+            viewType: 'collection-track',
+            modalMapForceQuickForm: 'legacy',
+          },
         })}
       />
     );
@@ -178,7 +193,12 @@ describe('modal ttc-save scope', () => {
           initialData: null,
           parentTabId: 'the-luc',
           parentLabel: 'The luc',
-          tabConfig: { id: 'tong-mon', label: 'Tong mon', viewType: 'collection-track' },
+          tabConfig: {
+            id: 'tong-mon',
+            label: 'Tong mon',
+            viewType: 'collection-track',
+            modalMapForceQuickForm: 'legacy',
+          },
           activeNovelData,
         })}
       />
@@ -213,7 +233,12 @@ describe('modal ttc-save scope', () => {
           initialData: null,
           parentTabId: 'ban-do',
           parentLabel: 'Ban do',
-          tabConfig: { id: 'ban-do-su-nghiep', label: 'Ban do su nghiep', viewType: 'collection-track' },
+          tabConfig: {
+            id: 'ban-do-su-nghiep',
+            label: 'Ban do su nghiep',
+            viewType: 'collection-track',
+            modalMapForceQuickForm: 'legacy',
+          },
           activeNovelData,
         })}
       />
@@ -255,7 +280,12 @@ describe('modal ttc-save scope', () => {
           initialData: null,
           parentTabId: 'ban-do',
           parentLabel: 'Ban do',
-          tabConfig: { id: 'vi-dien', label: 'Vi dien', viewType: 'collection-track' },
+          tabConfig: {
+            id: 'vi-dien',
+            label: 'Vi dien',
+            viewType: 'collection-track',
+            modalMapForceQuickForm: 'legacy',
+          },
           activeNovelData,
         })}
       />

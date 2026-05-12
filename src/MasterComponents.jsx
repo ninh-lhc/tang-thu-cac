@@ -1460,6 +1460,7 @@ function inferSystemFromMapLocation(locationText, mapHintRecordsByName) {
   return inferForceSystemLabel(locationText);
 }
 
+/** Modal Khởi tạo / Tu bổ thẻ: mặc định «Gợi ý nhanh» = lưới ô theo `entityQuickEntry`; `tabConfig.modalMapForceQuickForm: 'legacy'` bật lại form Bản đồ/Thế lực cố định. */
 export const ModalEntity = ({
   isOpen,
   onClose,
@@ -1546,24 +1547,30 @@ export const ModalEntity = ({
   const isMapScope = Boolean(
     isMapScopeByLabel || (tabConfig?.viewType === 'collection-track' && hasMapTierProfileFields)
   );
+  /** `modalMapForceQuickForm: 'legacy'` trên tab nhỏ — khôi phục form gợi ý Bản đồ/Thế lực cố định; mặc định dùng lưới ô tùy chỉnh. */
+  const useLegacyModalMapForceQuick = tabConfig?.modalMapForceQuickForm === 'legacy';
+  // Chỉ tự bơm field Map/Force vào mẫu khi user chủ động bật form cũ; tránh tab có
+  // tên kiểu «Bản đồ»/«Thế lực» mặc nhiên bị khóa cấu hình ô gợi ý.
+  const mergeMapQuickTemplateFields = useLegacyModalMapForceQuick && isMapScope && !isForceScope;
+  const mergeForceQuickTemplateFields = useLegacyModalMapForceQuick && isForceScope;
   // Một tab chỉ nên render 1 khối "quick domain" để tránh trùng nội dung.
   // Với tab lai (match cả map + thế lực), ưu tiên form Thế lực vì dữ liệu đầu vào là rank + địa bàn.
-  const showForceQuickSection = isForceScope;
-  const showMapQuickSection = isMapScope && !isForceScope;
+  const showForceQuickSection = useLegacyModalMapForceQuick && isForceScope;
+  const showMapQuickSection = useLegacyModalMapForceQuick && isMapScope && !isForceScope;
   const fieldsTemplate = useMemo(() => {
-    if (!showMapQuickSection && !showForceQuickSection) return baseFieldsTemplate;
+    if (!mergeMapQuickTemplateFields && !mergeForceQuickTemplateFields) return baseFieldsTemplate;
     return mergeCollectionQuickSlotFieldsIntoTemplate(baseFieldsTemplate, {
-      map: showMapQuickSection,
-      force: showForceQuickSection,
+      map: mergeMapQuickTemplateFields,
+      force: mergeForceQuickTemplateFields,
     });
-  }, [baseFieldsTemplate, showMapQuickSection, showForceQuickSection]);
+  }, [baseFieldsTemplate, mergeMapQuickTemplateFields, mergeForceQuickTemplateFields]);
   const fStatusLabel = useMemo(() => {
     const f = fieldsTemplate.find((x) => x.id === 'f_status');
     return f?.label || 'Tóm tắt dưới tên';
   }, [fieldsTemplate]);
   const tabConfigForFieldEditor = useMemo(() => {
     const base = { ...(tabConfig || {}), fieldsTemplate };
-    if (!showMapQuickSection) return base;
+    if (!mergeMapQuickTemplateFields) return base;
     return {
       ...base,
       fieldsTemplate: (fieldsTemplate || []).map((f) => {
@@ -1572,13 +1579,13 @@ export const ModalEntity = ({
         return { ...(f || {}), label: 'Đặc Tính Địa Vực' };
       }),
     };
-  }, [tabConfig, fieldsTemplate, showMapQuickSection]);
+  }, [tabConfig, fieldsTemplate, mergeMapQuickTemplateFields]);
   const entityTemplateContextHint = useMemo(() => {
     const base =
       'Gợi ý nhanh (phần mở sẵn) để nhập. Chế độ Cục bộ / Khu vực: khối Trường dưới đây. Với lưới thường, thêm cấu hình bố cục ô ở cuối mục này.';
-    if (!showMapQuickSection) return base;
+    if (!mergeMapQuickTemplateFields || !useLegacyModalMapForceQuick) return base;
     return `${base} «Đặc Tính Địa Vực» không có field riêng trong mẫu — nhập ở Tổng quan được gộp vào Chuỗi hiển thị / dữ liệu auto.`;
-  }, [showMapQuickSection]);
+  }, [mergeMapQuickTemplateFields, useLegacyModalMapForceQuick]);
   const isCultivationScope = useMemo(
     () =>
       isCultivationRelationScope({
@@ -1589,8 +1596,10 @@ export const ModalEntity = ({
     [parentTabId, tabConfig]
   );
   const showGenericQuickEntry = Boolean(
-    tabConfig?.viewType === 'collection-track' && !isMapScope && !isForceScope
+    tabConfig?.viewType === 'collection-track' &&
+      !(useLegacyModalMapForceQuick && (isMapScope || isForceScope))
   );
+  const showTemplateQuickEntrySlots = Boolean(tabConfig?.viewType === 'collection-track');
   const genericQuickResolved = useMemo(
     () =>
       showGenericQuickEntry
@@ -1619,6 +1628,12 @@ export const ModalEntity = ({
     if (!genericQuickResolved?.slots) return [];
     return genericQuickResolved.slots.filter((s) => safeString(s.fieldId).trim());
   }, [genericQuickResolved]);
+  /** Ghép `f_status` từ các ô lưới — tắt khi modal đang dùng form map/force legacy (có compose riêng). */
+  const genericQuickComposesStatusLine = Boolean(
+    showGenericQuickEntry &&
+      genericQuickStatusSourceFieldIds.length > 0 &&
+      !(useLegacyModalMapForceQuick && (isMapScope || isForceScope))
+  );
   const mapQuickLabels = useMemo(
     () => resolveQuickSlotLabels(fieldsTemplate, MAP_QUICK_SLOTS),
     [fieldsTemplate]
@@ -1693,7 +1708,7 @@ export const ModalEntity = ({
   const [mapQuickParentTier2, setMapQuickParentTier2] = useState('');
   const [mapQuickParentTier3, setMapQuickParentTier3] = useState('');
   const mapQuickSystemRef = useRef('');
-  const parentTierProfileId = showMapQuickSection ? 'map-default' : '';
+  const parentTierProfileId = mergeMapQuickTemplateFields ? 'map-default' : '';
   const mapParentTierProfileConfig = useMemo(
     () => normalizeParentTierSchema(tabConfig?.mapEntrySuggestions?.parentTierSchema),
     [tabConfig]
@@ -1842,7 +1857,7 @@ export const ModalEntity = ({
         const rawPatch = typeof patch === 'function' ? patch(prev || {}) : patch;
         const nextPatch = rawPatch && typeof rawPatch === 'object' ? rawPatch : {};
         const merged = { ...(prev || {}), ...nextPatch };
-        if (showGenericQuickEntry && !isMapScope && !isForceScope && genericQuickStatusSourceFieldIds.length) {
+        if (genericQuickComposesStatusLine) {
           const patchKeys = Object.keys(nextPatch);
           const touchesQuickSource = patchKeys.some((k) => genericQuickStatusSourceFieldIds.includes(k));
           if (touchesQuickSource) {
@@ -1857,7 +1872,7 @@ export const ModalEntity = ({
             if (line) merged.f_status = line;
           }
         }
-        if (isMapScope && !isForceScope) {
+        if (useLegacyModalMapForceQuick && isMapScope && !isForceScope) {
           const patchKeys = Object.keys(nextPatch);
           const onlyStatus = patchKeys.length === 1 && patchKeys[0] === 'f_status';
           if (patchKeys.length > 0 && !onlyStatus) {
@@ -1871,7 +1886,8 @@ export const ModalEntity = ({
         return merged;
       }),
     [
-      showGenericQuickEntry,
+      genericQuickComposesStatusLine,
+      useLegacyModalMapForceQuick,
       isMapScope,
       isForceScope,
       genericQuickStatusSourceFieldIds,
@@ -2232,14 +2248,14 @@ export const ModalEntity = ({
     if (!lonId || !nhoId) return;
     if (tabConfig?.viewType !== 'collection-track') return;
     const want = [];
-    if (showMapQuickSection) {
+    if (mergeMapQuickTemplateFields) {
       MAP_QUICK_SLOTS.forEach((slot) => {
         const fid = safeString(slot.fieldId).trim();
         if (!fid) return;
         want.push({ id: fid, label: safeString(slot.defaultLabel).trim() || fid });
       });
     }
-    if (showForceQuickSection) {
+    if (mergeForceQuickTemplateFields) {
       FORCE_QUICK_SLOTS.forEach((slot) => {
         const fid = safeString(slot.fieldId).trim();
         if (!fid) return;
@@ -2255,8 +2271,8 @@ export const ModalEntity = ({
     handleEnsureTabTemplateFields(lonId, nhoId, missing);
   }, [
     isOpen,
-    showMapQuickSection,
-    showForceQuickSection,
+    mergeMapQuickTemplateFields,
+    mergeForceQuickTemplateFields,
     tabConfig,
     parentTabId,
     handleEnsureTabTemplateFields,
@@ -2436,7 +2452,7 @@ export const ModalEntity = ({
     });
   };
   const handleStatusFieldChange = (value) => {
-    if (showGenericQuickEntry && !isMapScope && !isForceScope && genericQuickStatusSourceFieldIds.length) {
+    if (genericQuickComposesStatusLine) {
       const line = genericQuickStatusSourceFieldIds
         .map((id) => safeString(dynamicData[id]).trim())
         .filter(Boolean)
@@ -2446,14 +2462,14 @@ export const ModalEntity = ({
       else genericQuickFStatusUserOverrideRef.current = trimmed !== line;
     }
     patchDynamicData({ f_status: value });
-    if (isMapScope) {
+    if (useLegacyModalMapForceQuick && isMapScope) {
       const parsed = parseMapQuickState({ ...dynamicData, f_status: value }, mapParentTierFieldMap);
       setMapQuickType(parsed.mapType);
       setMapQuickRealmSystem(parsed.realmSystem);
       setMapQuickSystem(parsed.mapSystem);
       return;
     }
-    if (isForceScope) {
+    if (useLegacyModalMapForceQuick && isForceScope) {
       setForceQuickRank(value);
       patchDynamicData({
         f_status: composeForceQuickDisplayLine(forceQuickType, forceQuickRealmSystem, value, forceQuickLocation),
@@ -2499,7 +2515,7 @@ export const ModalEntity = ({
         realmSystem: mapQuickRealmSystem,
         mapSystem: mapQuickSystem,
       };
-      if (isMapScope && !isForceScope) {
+      if (useLegacyModalMapForceQuick && isMapScope && !isForceScope) {
         initialDyn[mapTierScaleFieldId] = mapQuickState.realmSystem;
         if (mapTierScaleFieldId !== 'f_he_gioi_ban_do') initialDyn.f_he_gioi_ban_do = mapQuickState.realmSystem;
         initialDyn[mapTierParentFieldId] = mapQuickState.parentPath;
@@ -2511,7 +2527,7 @@ export const ModalEntity = ({
         );
       }
       const forceQuickState = parseForceQuickState(initialDyn);
-      if (isForceScope) {
+      if (useLegacyModalMapForceQuick && isForceScope) {
         initialDyn.f_status = composeForceQuickDisplayLine(
           forceQuickState.orgType,
           forceQuickState.realmSystem,
@@ -2520,7 +2536,7 @@ export const ModalEntity = ({
         );
       }
       const defaultForceType = safeString(forceTypeSource.defaultValue).trim();
-      if (isForceScope && !forceQuickState.orgType && defaultForceType) {
+      if (useLegacyModalMapForceQuick && isForceScope && !forceQuickState.orgType && defaultForceType) {
         forceQuickState.orgType = defaultForceType;
         initialDyn.f_loai_to_chuc = defaultForceType;
       }
@@ -2532,7 +2548,7 @@ export const ModalEntity = ({
         delete initialDyn.f_he_cap_the_luc;
         delete initialDyn.f_he_phan_cap;
       }
-      if (showGenericQuickEntry && !isMapScope && !isForceScope && genericQuickStatusSourceFieldIds.length) {
+      if (genericQuickComposesStatusLine) {
         const gParts = genericQuickStatusSourceFieldIds
           .map((id) => safeString(initialDyn[id]).trim())
           .filter(Boolean);
@@ -2563,7 +2579,7 @@ export const ModalEntity = ({
     } else {
       genericQuickFStatusUserOverrideRef.current = false;
       setFormData({ id: null, name: '', avatar: '', rawText: '' });
-      if (isMapScope && !isForceScope) {
+      if (useLegacyModalMapForceQuick && isMapScope && !isForceScope) {
         const defaultGioi = safeString(tabConfig?.label).trim();
         if (defaultGioi) {
           const realmOpts = buildMapRealmSystemOptions(tabConfig, defaultGioi);
@@ -2609,7 +2625,7 @@ export const ModalEntity = ({
       setForceQuickRealmSystem('');
       setForceQuickRank('');
       setForceQuickLocation('');
-      if (isForceScope) {
+      if (useLegacyModalMapForceQuick && isForceScope) {
         const defaultForceType = safeString(forceTypeSource.defaultValue).trim();
         if (defaultForceType) {
           setForceQuickType(defaultForceType);
@@ -2627,12 +2643,13 @@ export const ModalEntity = ({
     tabConfig,
     isMapScope,
     isForceScope,
+    useLegacyModalMapForceQuick,
     forceTypeSource.defaultValue,
     fieldsTemplate,
     mapParentTierFieldMap,
     mapTierScaleFieldId,
     mapTierParentFieldId,
-    showGenericQuickEntry,
+    genericQuickComposesStatusLine,
     genericQuickStatusSourceFieldIds,
   ]);
 
@@ -3321,7 +3338,8 @@ export const ModalEntity = ({
                   </div>
                   <div className="mt-0.5 line-clamp-3 text-[9px] font-serif leading-snug text-slate-500">
                     «Trường thông tin» phía trên; ngay dưới là khối <strong className="text-amber-200/85">viền vàng</strong>{' '}
-                    «Cấu hình mẫu: các ô gợi ý nhanh» — mở mặc định: chọn trường cho từng ô Tổng quan, Cục bộ / Khu vực, Áp dụng.
+                    «Cấu hình mẫu: các ô gợi ý nhanh» — chọn trường / phụ thuộc gợi ý; với Thế lực hoặc Bản đồ, tab{' '}
+                    <strong className="text-slate-400">Tổng quan</strong> vẫn dùng form gợi ý riêng phía trên.
                   </div>
                 </div>
                 <div className="space-y-2 bg-slate-900/25 px-3 py-2.5">
@@ -3363,7 +3381,8 @@ export const ModalEntity = ({
                       flushEntityQuickEntryBeforeMainSaveRef.current = fn;
                     }}
                     showToast={showToast}
-                    showQuickEntrySlots={showGenericQuickEntry}
+                    showQuickEntrySlots={showTemplateQuickEntrySlots}
+                    overviewUsesDedicatedQuickForm={Boolean(showMapQuickSection || showForceQuickSection)}
                   />
                 </div>
               </div>
@@ -3376,7 +3395,8 @@ export const ModalEntity = ({
                   </div>
                   <div className="mt-0.5 line-clamp-3 text-[9px] font-serif leading-snug text-slate-500">
                     «Trường thông tin» bên dưới; tiếp theo khối <strong className="text-amber-200/85">viền vàng</strong> «Cấu hình
-                    mẫu: các ô gợi ý nhanh» (chọn trường cho ô gợi ý Tổng quan).
+                    mẫu: các ô gợi ý nhanh» — chọn trường / phụ thuộc; Thế lực / Bản đồ: <strong className="text-slate-400">Tổng quan</strong>{' '}
+                    vẫn là form riêng.
                   </div>
                 </div>
                 <span className="shrink-0 text-[9px] font-bold text-amber-200/80">Mở</span>
@@ -3420,7 +3440,8 @@ export const ModalEntity = ({
                     flushEntityQuickEntryBeforeMainSaveRef.current = fn;
                   }}
                   showToast={showToast}
-                  showQuickEntrySlots={showGenericQuickEntry}
+                  showQuickEntrySlots={showTemplateQuickEntrySlots}
+                  overviewUsesDedicatedQuickForm={Boolean(showMapQuickSection || showForceQuickSection)}
                 />
               </div>
             </details>
