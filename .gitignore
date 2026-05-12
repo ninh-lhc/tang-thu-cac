@@ -22,7 +22,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-# Python (local scripts / tooling)
-__pycache__/
-*.py[cod]
