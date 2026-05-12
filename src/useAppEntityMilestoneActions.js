@@ -45,6 +45,7 @@ import {
   syncTheLucMapAutoBlocksDetailed,
 } from './lib/theLucBanDoSync.js';
 import { buildEntityNoteTemplate } from './lib/entityNoteTemplateVi.js';
+import { syncEntityNotesDisplayNameLine } from './lib/entityNotesDisplayNameSync.js';
 import { getEffectiveAutoSyncRole } from './lib/tabAutoSyncRole.js';
 
 export function useAppEntityMilestoneActions({
@@ -290,6 +291,13 @@ export function useAppEntityMilestoneActions({
               statusLine,
             });
             const nextName = normalizedEntityName;
+            if (prevName && nextName && prevName !== nextName) {
+              tabData.entities[idx].info = syncEntityNotesDisplayNameLine(
+                tabData.entities[idx].info,
+                prevName,
+                nextName
+              );
+            }
             if (activeTabLon !== 'nhan-vat' && prevName && nextName && prevName !== nextName) {
               ownerMilestoneRenameSynced = syncAutoOwnerMilestonesItemRename(nov, {
                 entityId: formData.id,
@@ -668,6 +676,7 @@ export function useAppEntityMilestoneActions({
           ent.milestones.sort((a, b) => a.chapter - b.chapter);
           if (prevName && nextEntityName && prevName !== nextEntityName) {
             ent.name = nextEntityName;
+            ent.info = syncEntityNotesDisplayNameLine(ent.info, prevName, nextEntityName);
             mergeAliasForCurrentTab(ent, prevName);
             timelineNameUpdated = true;
             if (activeTabLon !== 'nhan-vat') {
