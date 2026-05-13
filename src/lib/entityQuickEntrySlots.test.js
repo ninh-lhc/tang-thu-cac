@@ -88,6 +88,59 @@ describe('entityQuickEntrySlots', () => {
     expect(r.slots[1].suggestions).not.toContain('Hệ phụ');
   });
 
+  it('resolveEntityQuickSlots: f_desc có list mẫu thì preferMultilineQuickDesc false (UI gợi ý list)', () => {
+    const r = resolveEntityQuickSlots({
+      tabConfig: {
+        label: 'Kẻ địch',
+        fieldSuggestionLists: { f_desc: ['Phàm Trần Chi Cảnh', 'Siêu Phàm Truyền Kỳ'] },
+        entityQuickEntry: { slotFields: ['f_desc'], slotLabels: ['Tai Ách Cảnh Giới'] },
+      },
+      fieldsTemplate: [{ id: 'f_desc', label: 'Mô tả' }],
+      activeNovelData: { genres: ['Tiên Hiệp'] },
+      parentTabId: 'x',
+      parentLabel: 'y',
+    });
+    const d = r.slots.find((s) => s.fieldId === 'f_desc');
+    expect(d?.suggestions).toEqual(['Phàm Trần Chi Cảnh', 'Siêu Phàm Truyền Kỳ']);
+    expect(d?.preferMultilineQuickDesc).toBe(false);
+  });
+
+  it('resolveEntityQuickSlots: f_desc thủ công không list mẫu thì preferMultilineQuickDesc true', () => {
+    const r = resolveEntityQuickSlots({
+      tabConfig: {
+        label: 'Tab',
+        fieldSuggestionLists: {},
+        entityQuickEntry: { slotFields: ['f_desc', 'f_title'], slotLabels: ['', ''] },
+      },
+      fieldsTemplate: [
+        { id: 'f_desc', label: 'Mô tả' },
+        { id: 'f_title', label: 'T' },
+      ],
+      activeNovelData: { genres: ['Tiên Hiệp'] },
+      parentTabId: 'x',
+      parentLabel: 'y',
+    });
+    expect(r.slots.find((s) => s.fieldId === 'f_desc')?.preferMultilineQuickDesc).toBe(true);
+    expect(r.slots.find((s) => s.fieldId === 'f_title')?.preferMultilineQuickDesc).toBe(false);
+  });
+
+  it('resolveEntityQuickSlots: f_desc nguồn subTabLabel thì preferMultilineQuickDesc false', () => {
+    const r = resolveEntityQuickSlots({
+      tabConfig: {
+        id: 'dao-cu',
+        label: 'Đạo Cụ & Tiêu Hao',
+        fieldSource: { f_desc: { kind: 'subTabLabel' } },
+        entityQuickEntry: { slotFields: ['f_desc'], slotLabels: [''] },
+      },
+      fieldsTemplate: [{ id: 'f_desc', label: 'Mô tả' }],
+      activeNovelData: { genres: ['Tiên Hiệp'] },
+      parentTabId: 'vat-pham',
+      parentLabel: 'Vật phẩm',
+    });
+    expect(r.slots[0].fieldId).toBe('f_desc');
+    expect(r.slots[0].preferMultilineQuickDesc).toBe(false);
+  });
+
   it('resolveEntityQuickSlots: f_status có list mẫu thì không ghép seed cảnh giới', () => {
     const r = resolveEntityQuickSlots({
       tabConfig: {

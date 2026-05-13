@@ -281,7 +281,7 @@ export function getQuickEntrySeedLines(fieldId, flavor, tabLonLabel, tabNhoLabel
 }
 
 /**
- * @returns {{ slotFields: string[], slotLabels: string[], dualFirstRow: boolean, slots: { fieldId: string, label: string, suggestions: string[] }[] }}
+ * @returns {{ slotFields: string[], slotLabels: string[], dualFirstRow: boolean, slots: { fieldId: string, label: string, suggestions: string[], sortPrefix: string, preferMultilineQuickDesc: boolean }[] }}
  */
 export function resolveEntityQuickSlots({
   tabConfig,
@@ -339,10 +339,16 @@ export function resolveEntityQuickSlots({
           : userList.length > 0
             ? dedupeCaseInsensitive(userList)
             : dedupeCaseInsensitive([...userList, ...seeds]);
+    /** Chỉ ô «Mô tả» thuần (f_desc + thủ công + chưa có list mẫu / gợi ý nguồn): modal dùng textarea; có list mẫu hoặc nguồn động → input + datalist như trường khác. */
+    const preferMultilineQuickDesc =
+      fieldId === 'f_desc' &&
+      userList.length === 0 &&
+      sourceDescriptor.kind === FIELD_SOURCE_KIND.MANUAL &&
+      sourceSuggestions.length === 0;
     const baseLabel = idToLabel.get(fieldId) || String(fieldId || '');
     const label = slotLabels[idx] || baseLabel;
     const sortPrefix = idToPrefix.get(fieldId) || '';
-    return { fieldId, label, suggestions, sortPrefix };
+    return { fieldId, label, suggestions, sortPrefix, preferMultilineQuickDesc };
   });
 
   const dualFirstRow = eq.dualFirstRow === true;

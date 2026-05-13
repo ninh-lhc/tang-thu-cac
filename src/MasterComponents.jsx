@@ -1979,7 +1979,7 @@ export const ModalEntity = ({
     const fid = slot.fieldId;
     const val = safeString(dynamicData[fid]);
     const listDomId = `${genericQuickListPrefix}-q-${idx}-${String(fid).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-    const isLong = fid === 'f_desc';
+    const isLong = Boolean(slot.preferMultilineQuickDesc) && !quickUseSelect;
     if (isLong) {
       return (
         <textarea
