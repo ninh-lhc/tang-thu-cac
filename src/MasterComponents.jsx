@@ -86,7 +86,6 @@ import {
 } from './lib/statusHierarchyParser.js';
 import { composeForceQuickDisplayLine, extractForceQuickRankLabel } from './lib/forceQuickDisplayParse.js';
 import { inferOrgTypeFromContext, inferOrgTypeFromTabSlug } from './lib/forceOrgTypeInfer.js';
-import { mergeTabsByGenres } from './genreTabsMap.js';
 import { getGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
 import { resolveTabsConfigForGenreSelection } from './lib/resolveTabsConfigForGenreSelection.js';
 import { searchNovelData, dedupeDeepSearchResults, metadataSearchHits } from './deepSearchCore.js';
