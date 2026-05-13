@@ -88,9 +88,70 @@ describe('collectionListCardSync (flat mode)', () => {
     expect(info).toContain('Ghi chú map');
     expect(info).toContain('# Danh mục thẻ (AUTO)');
     expect(info).toContain('## Danh sách (2)');
-    expect(info).toContain('1. [[Băng Thiên Đại Lục]]');
-    expect(info).toContain('2. [[Thánh Thành]]');
+    expect(info).toContain('1. [[Thánh Thành]]');
+    expect(info).toContain('2. [[Băng Thiên Đại Lục]]');
+    expect(info).toContain('f_vi_tri');
+    expect(info).toContain('Hạ Giới · Băng Tinh');
+    expect(info).toContain('f_status');
+    expect(info).toContain('Đại Lục');
     expect(info).not.toContain('### ');
+  });
+
+  it('AUTO detail line includes f_to_chuc and short f_desc (sortPrefix order)', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'lon',
+          label: 'L',
+          subTabs: [
+            {
+              id: 'n',
+              label: 'Túc Địch',
+              viewType: 'collection-track',
+              fieldsTemplate: [
+                { id: 'f_to_chuc', label: 'Tai Ách Bản Chất', sortPrefix: '1' },
+                { id: 'f_vai_tro', label: 'Khởi Nguyên', sortPrefix: '2' },
+                { id: 'f_desc', label: 'Cảnh Giới', sortPrefix: '3' },
+                { id: 'f_cap', label: 'Tà Lực', sortPrefix: '4' },
+                { id: 'f_alias', label: 'Wiki' },
+              ],
+            },
+          ],
+        },
+      ],
+      data: {
+        lon: {
+          n: {
+            overview: '',
+            entities: [
+              { id: 'list', name: 'Danh sach n', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'e1',
+                name: 'Tam Phật Thủ',
+                info: '',
+                dynamicData: {
+                  f_to_chuc: 'Hư Không Ma Vật',
+                  f_vai_tro: 'Vô Tận Hư Không',
+                  f_desc: 'Phàm Trần Chi Cảnh (Cấp 1 - 99)',
+                  f_cap: 'Hư Không Đồng Hóa',
+                },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data.lon.n.entities[0].info || '');
+    expect(info).toContain('Tai Ách Bản Chất');
+    expect(info).toContain('Hư Không Ma Vật');
+    expect(info).toContain('Khởi Nguyên');
+    expect(info).toContain('Vô Tận Hư Không');
+    expect(info).toContain('Cảnh Giới');
+    expect(info).toContain('Phàm Trần Chi Cảnh (Cấp 1 - 99)');
+    expect(info).toContain('Tà Lực');
+    expect(info).toContain('Hư Không Đồng Hóa');
   });
 
   it('sorts AUTO lines by number of path segments, then by card name (vi)', () => {
@@ -115,8 +176,8 @@ describe('collectionListCardSync (flat mode)', () => {
     syncAllCollectionListCards(novel);
     const info = String(novel.data.t.n.entities[0].info || '');
     const lines = info.split('\n').filter((l) => /^\d+\./.test(l.trim()));
-    expect(lines[0].includes('[[Beta]]')).toBe(true);
-    expect(lines[1].includes('[[Alpha]]')).toBe(true);
+    expect(lines[0].includes('[[Alpha]]')).toBe(true);
+    expect(lines[1].includes('[[Beta]]')).toBe(true);
     expect(lines[2].includes('[[Gamma]]')).toBe(true);
   });
 
@@ -125,10 +186,10 @@ describe('collectionListCardSync (flat mode)', () => {
     syncAllCollectionListCards(novel);
     const info = String(novel.data['ban-do']['ha-gioi'].entities[0].info || '');
     expect(info).toContain(
-      '[[Băng Thiên Đại Lục]] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Hạ Giới**[/color] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Băng Tinh**[/color] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Đại Lục**[/color]'
+      '[[Băng Thiên Đại Lục]] [color=#8ca0be]·[/color] [color=#93c5fd]f_vi_tri[/color] [color=#a8c0d8]-[/color] [color=#f8fafc]**Hạ Giới · Băng Tinh**[/color] [color=#8ca0be]·[/color] [color=#93c5fd]f_status[/color] [color=#a8c0d8]-[/color] [color=#f8fafc]**Đại Lục**[/color]'
     );
     expect(info).toContain(
-      '[[Thánh Thành]] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Hạ Giới**[/color] [color=#94a3b8]**·**[/color] [[Băng Thiên Đại Lục]] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Thánh Trì**[/color]'
+      '[[Thánh Thành]] [color=#8ca0be]·[/color] [color=#93c5fd]f_vi_tri[/color] [color=#a8c0d8]-[/color] [color=#f8fafc]**Hạ Giới · Băng Thiên Đại Lục · Thánh Trì**[/color]'
     );
   });
 
@@ -136,7 +197,7 @@ describe('collectionListCardSync (flat mode)', () => {
     const novel = buildNovel();
     syncAllCollectionListCards(novel);
     const info = String(novel.data['he-thong']['goi-qua'].entities[0].info || '');
-    expect(info).toContain('[[Rương Đại Lễ]] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Lạc Nam**[/color]');
+    expect(info).toContain('[[Rương Đại Lễ]] [color=#8ca0be]·[/color] [color=#f8fafc]**Lạc Nam**[/color]');
   });
 
   it('recreates list card and reports recreated tabs', () => {
@@ -215,10 +276,10 @@ describe('collectionListCardSync (flat mode)', () => {
     syncAllCollectionListCards(novel);
     const info = String(novel.data['vat-pham']['linh-vat'].entities[0].info || '');
     expect(info).toContain(
-      '[[Thiên Tinh Châu]] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Hạ Giới**[/color] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Thiên phẩm**[/color]'
+      '[[Thiên Tinh Châu]] [color=#8ca0be]·[/color] [color=#93c5fd]Khu vực[/color] [color=#a8c0d8]-[/color] [color=#f8fafc]**Hạ Giới**[/color] [color=#8ca0be]·[/color] [color=#93c5fd]Phân tầng[/color] [color=#a8c0d8]-[/color] [color=#f8fafc]**Thiên phẩm**[/color]'
     );
     expect(info).not.toContain(
-      '[[Thiên Tinh Châu]] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Hạ Giới**[/color] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Thiên phẩm**[/color] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Lạc Nam**[/color]'
+      '[[Thiên Tinh Châu]] [color=#8ca0be]·[/color] [color=#f8fafc]**Hạ Giới**[/color] [color=#8ca0be]·[/color] [color=#f8fafc]**Thiên phẩm**[/color] [color=#8ca0be]·[/color] [color=#f8fafc]**Lạc Nam**[/color]'
     );
   });
 
@@ -247,7 +308,7 @@ describe('collectionListCardSync (flat mode)', () => {
     };
     syncAllCollectionListCards(novel);
     const info = String(novel.data['he-thong']['dao-cu'].entities[0].info || '');
-    expect(info).toContain('[[La Bàn Cổ]] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Mộ Dung Tuyết**[/color]');
+    expect(info).toContain('[[La Bàn Cổ]] [color=#8ca0be]·[/color] [color=#f8fafc]**Mộ Dung Tuyết**[/color]');
     expect(info).not.toContain('[[La Bàn Cổ]] - [[Mộ Dung Tuyết]]');
   });
 
@@ -291,7 +352,61 @@ describe('collectionListCardSync (flat mode)', () => {
     };
     syncAllCollectionListCards(novel);
     const info = String(novel.data['test-tab']['nho-1'].entities[0].info || '');
-    expect(info).toContain('[[Thực thể mẫu]] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Ác**[/color] [color=#94a3b8]**·**[/color] [color=#e2e8f0]**Bét**[/color]');
+    expect(info).toContain(
+      '[[Thực thể mẫu]] [color=#8ca0be]·[/color] [color=#93c5fd]A theo Số TT[/color] [color=#a8c0d8]-[/color] [color=#f8fafc]**Ác**[/color] [color=#8ca0be]·[/color] [color=#93c5fd]B trước theo mẫu[/color] [color=#a8c0d8]-[/color] [color=#f8fafc]**Bét**[/color]'
+    );
+  });
+
+  it('includes f_chu in AUTO detail when configured in fieldsTemplate (not dropped as «owner» id)', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'tab',
+          label: 'Tab',
+          subTabs: [
+            {
+              id: 'nho',
+              label: 'Con',
+              viewType: 'collection-track',
+              fieldsTemplate: [
+                { id: 'f_status', label: 'Phẩm cấp', sortPrefix: 'I' },
+                { id: 'f_title', label: 'Phân Loại', sortPrefix: 'II' },
+                { id: 'f_chu', label: 'Nguồn Gốc', sortPrefix: 'III' },
+              ],
+            },
+          ],
+        },
+      ],
+      data: {
+        tab: {
+          nho: {
+            overview: '',
+            entities: [
+              { id: 'list', name: 'Danh sach x', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'ent',
+                name: 'Item',
+                info: '',
+                dynamicData: {
+                  f_status: 'Kim',
+                  f_title: 'Loại A',
+                  f_chu: 'Chiến Trường',
+                },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data.tab.nho.entities[0].info || '');
+    expect(info).toContain('Phẩm cấp');
+    expect(info).toContain('Kim');
+    expect(info).toContain('Phân Loại');
+    expect(info).toContain('Loại A');
+    expect(info).toContain('Nguồn Gốc');
+    expect(info).toContain('Chiến Trường');
   });
 
   it('dedupes f_status path segments that overlap f_vi_tri in AUTO (fieldsTemplate)', () => {
@@ -359,7 +474,7 @@ describe('collectionListCardSync (flat mode)', () => {
     });
     syncAllCollectionListCards(novel);
     const info = String(novel.data['he-thong']['goi-qua'].entities[0].info || '');
-    expect(info).toContain('[[Rương Đại Lễ]] [color=#94a3b8]**·**[/color] [[Lạc Nam]]');
+    expect(info).toContain('[[Rương Đại Lễ]] [color=#8ca0be]·[/color] [[Lạc Nam]]');
   });
 
   it('outputs [[…]] for a bit only if the same text was inside [[…]] in a detail field', () => {
@@ -399,7 +514,7 @@ describe('collectionListCardSync (flat mode)', () => {
     syncAllCollectionListCards(novel);
     const info = String(novel.data['ban-do']['t1'].entities[0].info || '');
     expect(info).toContain('[[Việt Long Tinh]]');
-    expect(info).toContain('[color=#e2e8f0]**Băng Xa**[/color]');
+    expect(info).toContain('[color=#f8fafc]**Băng Xa**[/color]');
     expect(info).not.toContain('[[Băng Xa]]');
   });
 

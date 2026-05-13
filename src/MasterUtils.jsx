@@ -819,6 +819,9 @@ const GEO_PAREN_INLINE_CLASS = 'font-semibold text-violet-200/90';
 /** Ký tự vùng Private Use — không trùng văn bản thường; bọc id để tách ngoặc trước khi INLINE_MARK_SPLIT. */
 const WIKI_PH_START = '\uE140';
 const WIKI_PH_END = '\uE141';
+/** Giữ nguyên khối [color=…]…[/color] khi addressMeta tách ngoặc — tránh vỡ thẻ khi giá trị có (…). */
+const COLOR_PH_START = '\uE142';
+const COLOR_PH_END = '\uE143';
 
 /** Thay [[wiki]] bằng placeholder để tách ngoặc / sau dấu : không bị vỡ bởi INLINE_MARK_SPLIT. */
 function protectInlineWikiMarkers(raw, store) {
@@ -833,6 +836,31 @@ function unprotectInlineWikiMarkers(text, store) {
   return safeString(text).replace(new RegExp(`${WIKI_PH_START}(\\d+)${WIKI_PH_END}`, 'g'), (_, id) => store[Number(id)] ?? '');
 }
 
+function protectInlineColorMarkers(raw, colorStore) {
+  return safeString(raw).replace(
+    /\[color=(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)\]([\s\S]*?)\[\/color\]/gi,
+    (full) => {
+      const id = colorStore.length;
+      colorStore.push(full);
+      return `${COLOR_PH_START}${id}${COLOR_PH_END}`;
+    },
+  );
+}
+
+function unprotectInlineColorMarkers(text, colorStore) {
+  return safeString(text).replace(new RegExp(`${COLOR_PH_START}(\\d+)${COLOR_PH_END}`, 'g'), (_, id) => {
+    return colorStore[Number(id)] ?? '';
+  });
+}
+
+/** Mở color trước wiki: nội dung trong color có thể chứa placeholder wiki. */
+function unprotectAddressMetaInlinePlaceholders(text, wikiStore, colorStore) {
+  let s = safeString(text);
+  s = unprotectInlineColorMarkers(s, colorStore);
+  s = unprotectInlineWikiMarkers(s, wikiStore);
+  return s;
+}
+
 function splitOuterParensPreservingWiki(text) {
   const s = safeString(text);
   if (!s) return [{ type: 'text', text: '' }];
@@ -841,6 +869,16 @@ function splitOuterParensPreservingWiki(text) {
   while (i < s.length) {
     if (s[i] === WIKI_PH_START) {
       const end = s.indexOf(WIKI_PH_END, i + 1);
+      if (end === -1) {
+        out.push({ type: 'text', text: s.slice(i) });
+        break;
+      }
+      out.push({ type: 'text', text: s.slice(i, end + 1) });
+      i = end + 1;
+      continue;
+    }
+    if (s[i] === COLOR_PH_START) {
+      const end = s.indexOf(COLOR_PH_END, i + 1);
       if (end === -1) {
         out.push({ type: 'text', text: s.slice(i) });
         break;
@@ -872,6 +910,15 @@ function splitOuterParensPreservingWiki(text) {
           j = endPh + 1;
           continue;
         }
+        if (s[j] === COLOR_PH_START) {
+          const endC = s.indexOf(COLOR_PH_END, j + 1);
+          if (endC === -1) {
+            j = s.length;
+            break;
+          }
+          j = endC + 1;
+          continue;
+        }
         if (s.startsWith('[[', j)) {
           const endw = s.indexOf(']]', j + 2);
           if (endw === -1) {
@@ -895,7 +942,14 @@ function splitOuterParensPreservingWiki(text) {
       continue;
     }
     let j = i;
-    while (j < s.length && s[j] !== '(' && !s.startsWith('[[', j) && s[j] !== WIKI_PH_START) j += 1;
+    while (
+      j < s.length &&
+      s[j] !== '(' &&
+      !s.startsWith('[[', j) &&
+      s[j] !== WIKI_PH_START &&
+      s[j] !== COLOR_PH_START
+    )
+      j += 1;
     if (j > i) out.push({ type: 'text', text: s.slice(i, j) });
     i = j;
   }
@@ -903,11 +957,20 @@ function splitOuterParensPreservingWiki(text) {
   return out;
 }
 
-function renderParenAwareAddressFragments(text, ctx, wikiStore) {
+function renderParenAwareAddressFragments(text, ctx) {
+  const { wikiStore, colorStore } = ctx;
   const segs = splitOuterParensPreservingWiki(text);
   const baseOpts = { ...ctx.inlineOptions, addressMeta: false };
   const pi = (t) =>
-    processInline(unprotectInlineWikiMarkers(t, wikiStore), ctx.dirHandle, ctx.lookup, ctx.linkRegex, ctx.onNavigate, ctx.selfEntityId, baseOpts);
+    processInline(
+      unprotectAddressMetaInlinePlaceholders(t, wikiStore, colorStore),
+      ctx.dirHandle,
+      ctx.lookup,
+      ctx.linkRegex,
+      ctx.onNavigate,
+      ctx.selfEntityId,
+      baseOpts,
+    );
   return segs.map((seg, idx) => {
     if (seg.type === 'paren') {
       return (
@@ -928,6 +991,7 @@ function renderParenAwareAddressFragments(text, ctx, wikiStore) {
 function renderAddressMetaPlainSegmentFromProtected(
   prot,
   wikiStore,
+  colorStore,
   dirHandle,
   lookup,
   linkRegex,
@@ -935,11 +999,19 @@ function renderAddressMetaPlainSegmentFromProtected(
   selfEntityId,
   inlineOptions,
 ) {
-  const ctx = { dirHandle, lookup, linkRegex, onNavigate, selfEntityId, inlineOptions };
+  const ctx = { dirHandle, lookup, linkRegex, onNavigate, selfEntityId, inlineOptions, wikiStore, colorStore };
   const colonIdx = prot.indexOf(': ');
   const baseOpts = { ...inlineOptions, addressMeta: false };
   const pi = (t) =>
-    processInline(unprotectInlineWikiMarkers(t, wikiStore), dirHandle, lookup, linkRegex, onNavigate, selfEntityId, baseOpts);
+    processInline(
+      unprotectAddressMetaInlinePlaceholders(t, wikiStore, colorStore),
+      dirHandle,
+      lookup,
+      linkRegex,
+      onNavigate,
+      selfEntityId,
+      baseOpts,
+    );
 
   if (colonIdx !== -1) {
     const head = prot.slice(0, colonIdx + 1);
@@ -948,11 +1020,11 @@ function renderAddressMetaPlainSegmentFromProtected(
       <>
         {pi(head)}
         {' '}
-        <span className={GEO_COLON_VALUE_CLASS}>{renderParenAwareAddressFragments(tail, ctx, wikiStore)}</span>
+        <span className={GEO_COLON_VALUE_CLASS}>{renderParenAwareAddressFragments(tail, ctx)}</span>
       </>
     );
   }
-  return renderParenAwareAddressFragments(prot, ctx, wikiStore);
+  return renderParenAwareAddressFragments(prot, ctx);
 }
 
 export const processInline = (
@@ -969,7 +1041,9 @@ export const processInline = (
 
   if (addressMeta) {
     const wikiStore = [];
-    const prot = protectInlineWikiMarkers(safeString(text), wikiStore);
+    const colorStore = [];
+    let prot = protectInlineWikiMarkers(safeString(text), wikiStore);
+    prot = protectInlineColorMarkers(prot, colorStore);
     const hasColonValue = prot.includes(': ');
     const hasParenPair = prot.includes('(') && prot.includes(')');
     if (hasColonValue || hasParenPair) {
@@ -977,6 +1051,7 @@ export const processInline = (
       return renderAddressMetaPlainSegmentFromProtected(
         prot,
         wikiStore,
+        colorStore,
         dirHandle,
         lookupEarly,
         linkRegex,
@@ -1061,7 +1136,7 @@ export const processInline = (
       }
       if (part.startsWith('**') && part.endsWith('**')) {
         return (
-          <strong key={i} className="font-black tracking-[0.01em] text-slate-50">
+          <strong key={i} className="font-black tracking-[0.01em] text-inherit">
             {processInline(safeString(part.slice(2, -2)), dirHandle, lookup, linkRegex, onNavigate, selfEntityId, {
               ...inlineOptions,
               addressMeta: false,

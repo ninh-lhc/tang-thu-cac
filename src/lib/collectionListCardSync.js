@@ -3,8 +3,8 @@
  * A list card is any entity whose name starts with "Danh sach".
  * The helper keeps manual notes intact and only rewrites its AUTO block.
  * Ranh giới khối: dòng tiêu đề # Danh mục thẻ (AUTO) (không dùng <!-- --> để giao diện gọn).
- * Mỗi dòng: tên thẻ `[[…]]` + mức meta: `[color=…]**text**[/color]`; `[[mức]]` wiki không bọc màu;
- * dấu nối `·` đậm giữa các mức.
+ * Mỗi dòng: tên thẻ `[[…]]` + các mẩu «Tên hiển thị trường - giá trị» nối bằng dấu chấm giữa (·),
+ * vẫn bọc màu / [[wiki]] như trước; giá trị plain in đậm trong `[color]…[/color]` (strong kế thừa màu); khi giá trị có `[[wiki]]` và nhiều đoạn « · » thì tách để link đúng từng đoạn.
  * Sắp xếp danh sách: ít mẩu sau tên trước, nhiều mẩu sau; cùng số mẩu thì tên thẻ A–Z (vi).
  * Thế lực/bản đồ: một ## địa·loại·hệ (tổng), các ### theo cấp bậc; trong mỗi cấp sort tên A–Z.
  * Tab bản đồ trùng «giới» trong chuỗi: cây trie theo f_vi_tri/f_dia_ban (sâu tới ####…); gộp thẻ chỉ ghi tới tinh cầu vào cấp đại lục khi có thẻ khác chứng minh cấp con đó.
@@ -30,6 +30,8 @@ import { compareOutlineStrings } from './outlineListOrder.js';
 const LEGACY_AUTO_LIST_START = '<!-- AUTO_COLLECTION_LIST:START -->';
 const LEGACY_AUTO_LIST_END = '<!-- AUTO_COLLECTION_LIST:END -->';
 const AUTO_LIST_TITLE = '# Danh m\u1ee5c th\u1ebb (AUTO)';
+/** Giới hạn độ dài một mẩu «Nhãn - giá trị» sau [[Tên thẻ]] (tránh dòng AUTO quá dài). */
+const AUTO_LIST_LABELED_FIELD_MAX_LEN = 180;
 
 const ATTRIBUTE_GROUP_ORDER = [
   'bang',
@@ -838,7 +840,7 @@ function collectTemplateDetailFieldIds(tabConfig) {
     const fieldId = safeString(field?.id).trim();
     const label = safeString(field?.label).trim();
     if (!fieldId || ownerFieldIds.has(fieldId)) return;
-    if (/^(f_alias|f_desc|f_mo_ta|f_ghi_chu|f_note|f_notes|f_noi_dung|f_content)$/i.test(fieldId)) return;
+    if (/^(f_alias|f_mo_ta|f_ghi_chu|f_note|f_notes|f_noi_dung|f_content)$/i.test(fieldId)) return;
     const signature = `${fieldId} ${label}`;
     if (/(vi_tri|dia_ban|status|cap|title|vị trí|địa bàn|trạng thái|cấp|tiêu đề)/i.test(signature)) {
       highPriority.push(fieldId);
@@ -862,7 +864,7 @@ function getDetailFieldObjectsForListDisplay(tabConfig) {
   all.forEach((field, index) => {
     const fieldId = safeString(field?.id).trim();
     if (!fieldId || ownerFieldIds.has(fieldId)) return;
-    if (/^(f_alias|f_desc|f_mo_ta|f_ghi_chu|f_note|f_notes|f_noi_dung|f_content)$/i.test(fieldId)) {
+    if (/^(f_alias|f_mo_ta|f_ghi_chu|f_note|f_notes|f_noi_dung|f_content)$/i.test(fieldId)) {
       return;
     }
     out.push({ field, fieldId, index });
@@ -881,26 +883,67 @@ function getDetailFieldObjectsForListDisplay(tabConfig) {
   return out;
 }
 
-function pushValueBitsForListField(fieldId, rawValue, pushBit) {
+function pickFirstFieldEntry(entity, fieldIds) {
+  for (const fieldId of fieldIds) {
+    const id = safeString(fieldId).trim();
+    if (!id) continue;
+    const value = safeString(entity?.dynamicData?.[id] || entity?.[id]).trim();
+    if (value) return { fieldId: id, value };
+  }
+  return null;
+}
+
+function findTemplateFieldById(tabConfig, fieldId) {
+  const id = safeString(fieldId).trim();
+  if (!id) return null;
+  return getTabTemplateFields(tabConfig).find((f) => safeString(f?.id).trim() === id) || null;
+}
+
+/** Tách giá trị một trường thành các token hiển thị (cùng quy tắc tách cũ, không bọc nhãn). */
+function collectListFieldTokens(fieldId, rawValue) {
   const v = safeString(rawValue).trim();
-  if (!v || v.length > 80) return;
+  if (!v || v.length > 80) return [];
   const fid = safeString(fieldId).trim();
   const sig = `${fid} `;
   if (/(vi_tri|dia_ban|vị trí|địa bàn)/i.test(sig)) {
-    splitMapHierarchyTokens(v).forEach((t) => pushBit(t));
-    return;
+    return splitMapHierarchyTokens(v);
   }
   if (/(^f_status$|^f_cap$|f_title|f_he_gioi)/i.test(fid) || /(status|cap|title|tiêu đề)/i.test(sig)) {
+    const out = [];
     extractMapStatusSegments(v).forEach((seg) => {
-      splitMapHierarchyTokens(seg).forEach((t) => pushBit(t));
+      splitMapHierarchyTokens(seg).forEach((t) => {
+        const s = safeString(t).trim();
+        if (s) out.push(s);
+      });
     });
-    return;
+    return out;
+  }
+  if (fid === 'f_desc') {
+    return [v];
   }
   if (/[·•>|/,-]/.test(v)) {
-    splitMapHierarchyTokens(v).forEach((t) => pushBit(t));
-    return;
+    return splitMapHierarchyTokens(v);
   }
-  pushBit(v);
+  return [v];
+}
+
+function listFieldTemplateLabel(field, fieldId) {
+  const L = safeString(field?.label).trim();
+  if (L) return L;
+  return safeString(fieldId).trim();
+}
+
+function pushLabeledListFieldBits(field, fieldId, rawValue, pushBit, precomputedTokens = null) {
+  const fid = safeString(fieldId).trim();
+  const label = listFieldTemplateLabel(field || {}, fid);
+  const tokens =
+    precomputedTokens != null ? precomputedTokens.filter((t) => safeString(t).trim()) : collectListFieldTokens(fid, rawValue);
+  if (tokens.length === 0) return;
+  const valuePart = tokens.join(' · ');
+  const piece = label ? `${label} - ${valuePart}` : valuePart;
+  const pieceTrim = piece.trim();
+  if (!pieceTrim || pieceTrim.length > AUTO_LIST_LABELED_FIELD_MAX_LEN) return;
+  pushBit(pieceTrim);
 }
 
 function resolveOwnerLabel(entity, ownerLookupEntities = [], tabConfig = null) {
@@ -954,7 +997,12 @@ function isOwnerLikeFieldId(fieldId) {
   const fid = safeString(fieldId).trim().toLowerCase();
   if (!fid) return false;
   if (/loai_to_chuc/.test(fid)) return false;
-  return /(chu|owner|so_huu|phai|to_chuc|the_luc|phe)/.test(fid);
+  /** `f_to_chuc` hay gán nhãn «bản chất / phân loại» (vd. Túc địch), không chỉ quyền sở hữu — vẫn đưa vào mẩu AUTO. */
+  if (fid === 'f_to_chuc') return false;
+  /** Không dùng mẫu /chu/ — khớp nhầm mọi id chứa «chu» (vd. f_chu = Nguồn gốc trong mẫu). */
+  return /(owner|so_huu|phai|to_chuc|the_luc|phe|mon_phai|tong_phai|tong_mon|khe_chu|nguoi_so_huu|nguoi_su_dung|nguoi_tu_luyen|truyen_nhan)/.test(
+    fid
+  );
 }
 
 function collectDefaultEntityDetailBitsLegacy(entity, tabConfig = null) {
@@ -981,16 +1029,16 @@ function collectDefaultEntityDetailBitsLegacy(entity, tabConfig = null) {
     'f_cap',
     'f_title',
   ];
-  const locationChain = pickFirstFilled(entity, locationCandidateFieldIds);
-  if (locationChain) {
-    splitMapHierarchyTokens(locationChain).forEach(pushBit);
+  const locEntry = pickFirstFieldEntry(entity, locationCandidateFieldIds);
+  if (locEntry) {
+    const locField = findTemplateFieldById(tabConfig, locEntry.fieldId);
+    pushLabeledListFieldBits(locField || { id: locEntry.fieldId, label: '' }, locEntry.fieldId, locEntry.value, pushBit);
   }
 
-  const statusChain = pickFirstFilled(entity, statusCandidateFieldIds);
-  if (statusChain) {
-    extractMapStatusSegments(statusChain).forEach((seg) => {
-      splitMapHierarchyTokens(seg).forEach(pushBit);
-    });
+  const stEntry = pickFirstFieldEntry(entity, statusCandidateFieldIds);
+  if (stEntry) {
+    const stField = findTemplateFieldById(tabConfig, stEntry.fieldId);
+    pushLabeledListFieldBits(stField || { id: stEntry.fieldId, label: '' }, stEntry.fieldId, stEntry.value, pushBit);
   }
 
   // Đồng bộ trải nghiệm giữa tab bản đồ và tab khác:
@@ -999,7 +1047,6 @@ function collectDefaultEntityDetailBitsLegacy(entity, tabConfig = null) {
   if (entity?.dynamicData && typeof entity.dynamicData === 'object') {
     const skipKeys = new Set([
       'f_alias',
-      'f_desc',
       'f_mo_ta',
       'f_ghi_chu',
       'f_note',
@@ -1019,11 +1066,8 @@ function collectDefaultEntityDetailBitsLegacy(entity, tabConfig = null) {
       if (!value) return;
       if (value.length > 80) return;
       if (normalize(value) === normalize(entity?.name)) return;
-      if (/[·•>|/,-]/.test(value)) {
-        splitMapHierarchyTokens(value).forEach(pushBit);
-      } else {
-        pushBit(value);
-      }
+      const fieldObj = findTemplateFieldById(tabConfig, fieldId);
+      pushLabeledListFieldBits(fieldObj || { id: fieldId, label: '' }, fieldId, rawValue, pushBit);
     });
   }
 
@@ -1062,7 +1106,6 @@ function collectWikiInnerNormsFromDetailFieldSources(entity, tabConfig) {
   const dyn = entity?.dynamicData && typeof entity.dynamicData === 'object' ? entity.dynamicData : {};
   const skipKeys = new Set([
     'f_alias',
-    'f_desc',
     'f_mo_ta',
     'f_ghi_chu',
     'f_note',
@@ -1142,10 +1185,16 @@ function ownerFieldRawHadWikiForLabel(entity, tabConfig, ownerLabel) {
   return false;
 }
 
-/** Mức meta (không phải link wiki): chữ sáng, in đậm, dễ tách với huy hiệu [[…]]. */
-const AUTO_LIST_PLAIN_BIT_COLOR = '#e2e8f0';
-/** Dấu nối giữa tên/ các mức (màu lạnh, in đậm). */
-const AUTO_LIST_META_SEP = ` [color=#94a3b8]**·**[/color] `;
+/** Giá trị mẩu AUTO — tông trắng xám sáng; in đậm bằng ** (strong kế thừa màu span trong processInline). */
+const AUTO_LIST_FIELD_VALUE_COLOR = '#f8fafc';
+/** Nhãn trường (mẫu / id hiển thị) — xanh sáng, tách biệt giá trị. */
+const AUTO_LIST_FIELD_NAME_COLOR = '#93c5fd';
+/** Dấu «-» giữa nhãn và giá trị (cùng tông meta với dấu ·). */
+const AUTO_LIST_META_MINUS_COLOR = '#a8c0d8';
+/** Giữ tương thích tên hằng cũ (cùng màu giá trị). */
+const AUTO_LIST_PLAIN_BIT_COLOR = AUTO_LIST_FIELD_VALUE_COLOR;
+/** Dấu nối giữa các mẩu (màu meta dễ đọc trên nền tối). */
+const AUTO_LIST_META_SEP = ` [color=#8ca0be]·[/color] `;
 /** Giữ tên hằng cũ cho API join (cùng giá trị với dấu nối mới). */
 const AUTO_LIST_DETAIL_SEP = AUTO_LIST_META_SEP;
 
@@ -1153,6 +1202,13 @@ function autoListSanitizeForColorTagInner(raw) {
   return safeString(raw)
     .trim()
     .replace(/\[\/color\]/gi, '/color');
+}
+
+/** Bọc giá trị plain: màu + in đậm; gỡ `**` lồng để không vỡ markdown. */
+function autoListWrapValueColoredBold(colorHex, rawInner) {
+  const inner = autoListSanitizeForColorTagInner(rawInner).replace(/\*\*/g, '');
+  if (!inner) return '';
+  return `[color=${colorHex}]**${inner}**[/color]`;
 }
 
 function autoListSanitizeWikiBracketInner(raw) {
@@ -1167,23 +1223,49 @@ function getLinkableEntityMatchForAutoList(inner, ownerLookupEntities) {
   return match;
 }
 
+function formatOneAutoListDetailSegment(seg, wikiNorms, ownerLookupEntities) {
+  const inner = autoListSanitizeForColorTagInner(seg);
+  const n = normalize(inner);
+  const fromFieldWiki = wikiNorms.has(n);
+  const entMatch = getLinkableEntityMatchForAutoList(inner, ownerLookupEntities);
+  const useWiki = fromFieldWiki || !!entMatch;
+  if (!useWiki) {
+    return autoListWrapValueColoredBold(AUTO_LIST_FIELD_VALUE_COLOR, inner);
+  }
+  const linkLabel = entMatch?.entity?.name
+    ? autoListSanitizeWikiBracketInner(safeString(entMatch.entity.name).trim())
+    : autoListSanitizeWikiBracketInner(inner);
+  return `[[${linkLabel}]]`;
+}
+
+function formatLabeledAutoListFieldPreview(labelPart, valuePart, wikiNorms, ownerLookupEntities) {
+  const lp = autoListSanitizeForColorTagInner(labelPart);
+  const vp = autoListSanitizeForColorTagInner(valuePart);
+  const nameSeg = `[color=${AUTO_LIST_FIELD_NAME_COLOR}]${lp}[/color] [color=${AUTO_LIST_META_MINUS_COLOR}]-[/color]`;
+  if (vp.includes('[[')) {
+    const segs = vp.split(/\s·\s/).map((s) => s.trim()).filter(Boolean);
+    if (segs.length > 1) {
+      const parts = segs.map((seg) => formatOneAutoListDetailSegment(seg, wikiNorms, ownerLookupEntities));
+      return `${nameSeg} ${parts.join(AUTO_LIST_DETAIL_SEP)}`;
+    }
+  }
+  const valueSeg = formatOneAutoListDetailSegment(vp, wikiNorms, ownerLookupEntities);
+  return `${nameSeg} ${valueSeg}`;
+}
+
 function formatAutoListDetailBitsForPreview(detailBits, entity, tabConfig, ownerLookupEntities) {
   if (!Array.isArray(detailBits) || detailBits.length === 0) return '';
   const wikiNorms = collectWikiInnerNormsFromDetailFieldSources(entity, tabConfig);
   return detailBits
     .map((b) => {
-      const inner = autoListSanitizeForColorTagInner(b);
-      const n = normalize(inner);
-      const fromFieldWiki = wikiNorms.has(n);
-      const entMatch = getLinkableEntityMatchForAutoList(inner, ownerLookupEntities);
-      const useWiki = fromFieldWiki || !!entMatch;
-      if (!useWiki) {
-        return `[color=${AUTO_LIST_PLAIN_BIT_COLOR}]**${inner}**[/color]`;
+      const raw = autoListSanitizeForColorTagInner(b);
+      const labeled = /^(.+?)\s-\s(.+)$/.exec(raw);
+      if (labeled) {
+        const labelPart = labeled[1].trim();
+        const valuePart = labeled[2].trim();
+        return formatLabeledAutoListFieldPreview(labelPart, valuePart, wikiNorms, ownerLookupEntities);
       }
-      const linkLabel = entMatch?.entity?.name
-        ? autoListSanitizeWikiBracketInner(safeString(entMatch.entity.name).trim())
-        : autoListSanitizeWikiBracketInner(inner);
-      return `[[${linkLabel}]]`;
+      return formatOneAutoListDetailSegment(raw, wikiNorms, ownerLookupEntities);
     })
     .join(AUTO_LIST_DETAIL_SEP);
 }
@@ -1207,9 +1289,34 @@ function collectDefaultEntityDetailBits(entity, tabConfig = null) {
     seen.add(key);
     bits.push(value);
   };
-  ordered.forEach(({ fieldId }) => {
+  const pathDedupeSeen = new Set();
+  const isLocFieldForDedupe = (fid) =>
+    /(vi_tri|dia_ban|vị trí|địa bàn)/i.test(`${safeString(fid).trim()} `);
+  const isStatusLikeForPathDedupe = (fid) => {
+    const x = safeString(fid).trim();
+    const sig = `${x} `;
+    return /(^f_status$|^f_cap$|f_title|f_he_gioi)/i.test(x) || /(status|cap|title|tiêu đề)/i.test(sig);
+  };
+
+  ordered.forEach(({ field, fieldId }) => {
+    const fid = safeString(fieldId).trim();
     const rawValue = entity?.dynamicData?.[fieldId];
-    pushValueBitsForListField(fieldId, rawValue, pushBit);
+    let tokens = collectListFieldTokens(fid, rawValue);
+    if (!tokens.length) return;
+    if (isLocFieldForDedupe(fid)) {
+      tokens.forEach((t) => pathDedupeSeen.add(normalize(t)));
+    } else if (isStatusLikeForPathDedupe(fid)) {
+      const next = tokens.filter((t) => {
+        const nk = normalize(t);
+        if (!nk) return false;
+        if (pathDedupeSeen.has(nk)) return false;
+        pathDedupeSeen.add(nk);
+        return true;
+      });
+      tokens = next;
+    }
+    if (!tokens.length) return;
+    pushLabeledListFieldBits(field || { id: fieldId, label: '' }, fieldId, rawValue, pushBit, tokens);
   });
   return bits.slice(0, 8);
 }
@@ -1218,12 +1325,10 @@ function buildAutoListEntryPayload(entity, ownerLookupEntities = [], tabConfig =
   const name = safeString(entity?.name).trim();
   if (!name) return null;
   const ownerLabel = resolveOwnerLabel(entity, ownerLookupEntities, tabConfig);
-  const ownerNorm = normalize(ownerLabel);
   const detailBits = collectDefaultEntityDetailBits(entity, tabConfig).filter((bit) => {
     const bitNorm = normalize(bit);
     if (!bitNorm) return false;
     if (bitNorm === normalize(name)) return false;
-    if (ownerNorm && bitNorm === ownerNorm) return false;
     return true;
   });
   return { name, detailBits, ownerLabel };
@@ -1256,7 +1361,7 @@ function renderAutoListEntry(entity, ownerLookupEntities = [], tabConfig = null)
     const entMatch = getLinkableEntityMatchForAutoList(oPlain, ownerLookupEntities);
     const useWiki = fromFieldWiki || !!entMatch;
     if (!useWiki) {
-      return `[[${name}]]${AUTO_LIST_DETAIL_SEP}[color=${AUTO_LIST_PLAIN_BIT_COLOR}]**${oPlain}**[/color]`;
+      return `[[${name}]]${AUTO_LIST_DETAIL_SEP}${autoListWrapValueColoredBold(AUTO_LIST_FIELD_VALUE_COLOR, oPlain)}`;
     }
     const linkLabel = entMatch?.entity?.name
       ? autoListSanitizeWikiBracketInner(safeString(entMatch.entity.name).trim())

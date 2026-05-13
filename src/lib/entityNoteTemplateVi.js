@@ -1,6 +1,6 @@
 // Build a starter note skeleton for newly created entities.
 // Used by the create-save flow so the detail editor opens with a tab-aware template.
-// Keep it simple and editable: users can delete empty lines and add new ones freely.
+// mergeEntityNoteDetailSectionFromDynamicData: lưu form sửa thẻ — đồng bộ lại khối «Thông tin chi tiết» theo dynamicData, giữ phần sau «# Ghi chú».
 // Tránh hai bullet trùng chữ: `f_status` thường tự ghép từ ô Gợi ý nhanh — nếu trùng hệt một trường khác trong mẫu thì không lặp lại trong skeleton.
 
 import { safeString } from '../MasterUtils.jsx';
@@ -78,13 +78,11 @@ function buildAutoHintLines(tabLabel, parentLabel) {
   return ['- Cách phân nhóm: tự phân loại theo tab hiện tại'];
 }
 
-export function buildEntityNoteTemplate({
-  entityName = '',
-  tabLabel = '',
-  parentLabel = '',
-  fieldsTemplate = [],
-  dynamicData = {},
-}) {
+/**
+ * Khối «# Thông tin chi tiết» (đến dòng trống ngay trước `# Ghi chú` trong mẫu mặc định).
+ * Dùng khi tạo thẻ mới và khi lưu form để đồng bộ bullet theo dynamicData.
+ */
+export function buildEntityNoteDetailSectionLines({ entityName = '', fieldsTemplate = [], dynamicData = {} }) {
   const canonicalName = safeString(entityName).trim();
   const fields = Array.isArray(fieldsTemplate) ? fieldsTemplate : [];
   const lines = [];
@@ -112,6 +110,58 @@ export function buildEntityNoteTemplate({
   }
 
   lines.push('');
+  return lines;
+}
+
+const SECTION_DETAIL_RE = /^#\s*Thông tin chi tiết\s*$/i;
+const SECTION_GHICHU_RE = /^#\s*Ghi chú\s*$/i;
+const SECTION_AUTO_RE = /^#\s*AUTO\s*$/i;
+
+/**
+ * Khi user sửa form và lưu: cập nhật khối «Thông tin chi tiết» theo dynamicData + tên,
+ * giữ nguyên phần từ `# Ghi chú` trở đi (ghi chép tay / AUTO gợi ý).
+ * Không thấy tiêu đề mẫu → giữ nguyên info (tránh phá ghi chép tùy biến).
+ */
+export function mergeEntityNoteDetailSectionFromDynamicData(prevInfo, merge) {
+  const src = safeString(prevInfo);
+  if (!src.trim()) return src;
+  const lines = src.split('\n');
+  const iDetail = lines.findIndex((l) => SECTION_DETAIL_RE.test(l.trim()));
+  if (iDetail === -1) return prevInfo;
+
+  let iAfter = -1;
+  for (let j = iDetail + 1; j < lines.length; j += 1) {
+    const t = lines[j].trim();
+    if (SECTION_GHICHU_RE.test(t)) {
+      iAfter = j;
+      break;
+    }
+  }
+  if (iAfter === -1) {
+    for (let j = iDetail + 1; j < lines.length; j += 1) {
+      const t = lines[j].trim();
+      if (SECTION_AUTO_RE.test(t)) {
+        iAfter = j;
+        break;
+      }
+    }
+  }
+  if (iAfter === -1) iAfter = lines.length;
+
+  const nextDetail = buildEntityNoteDetailSectionLines(merge);
+  const out = [...lines.slice(0, iDetail), ...nextDetail, ...lines.slice(iAfter)];
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
+}
+
+export function buildEntityNoteTemplate({
+  entityName = '',
+  tabLabel = '',
+  parentLabel = '',
+  fieldsTemplate = [],
+  dynamicData = {},
+}) {
+  const lines = buildEntityNoteDetailSectionLines({ entityName, fieldsTemplate, dynamicData });
+
   lines.push('# Ghi chú');
   lines.push('');
   lines.push('[[Tên nhân vật]] (37) ?');

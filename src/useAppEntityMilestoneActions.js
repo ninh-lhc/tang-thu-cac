@@ -44,7 +44,7 @@ import {
   syncAllTheLucMapAutoBlocksDetailed,
   syncTheLucMapAutoBlocksDetailed,
 } from './lib/theLucBanDoSync.js';
-import { buildEntityNoteTemplate } from './lib/entityNoteTemplateVi.js';
+import { buildEntityNoteTemplate, mergeEntityNoteDetailSectionFromDynamicData } from './lib/entityNoteTemplateVi.js';
 import { getEffectiveAutoSyncRole } from './lib/tabAutoSyncRole.js';
 
 export function useAppEntityMilestoneActions({
@@ -272,6 +272,18 @@ export function useAppEntityMilestoneActions({
               ...tabData.entities[idx],
               dynamicData: mergedDyn,
             });
+            const preservedInfo = safeString(tabData.entities[idx].info);
+            const mergedInfo = copyRawToInfo
+              ? preservedInfo
+              : mergeEntityNoteDetailSectionFromDynamicData(preservedInfo, {
+                  entityName: normalizedEntityName,
+                  fieldsTemplate: resolveFieldsTemplate(
+                    currentTabConfig,
+                    activeTabLon,
+                    currentTabConfig?._parentLabel || ''
+                  ),
+                  dynamicData: mergedDyn,
+                });
             tabData.entities[idx] = {
               ...tabData.entities[idx],
               name: normalizedEntityName,
@@ -280,6 +292,7 @@ export function useAppEntityMilestoneActions({
               status: statusLine,
               dynamicData: mergedDyn,
               images: prevImages,
+              info: mergedInfo,
             };
             applyAutoRelationNotesForEntity(nov, {
               sourceEntity: tabData.entities[idx],

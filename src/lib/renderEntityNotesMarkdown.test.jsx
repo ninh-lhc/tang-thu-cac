@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
+import { safeString } from '../MasterUtils.jsx';
 import {
   buildEntityNotesPreviewModel,
   computeEntityNotesHeadingSectionCounts,
@@ -98,7 +99,7 @@ describe('renderEntityNotesMarkdown', () => {
 
     const strong = container.querySelector('strong');
     expect(strong).not.toBeNull();
-    expect(strong?.className).toContain('text-slate-50');
+    expect(strong?.className).toContain('text-inherit');
     expect(strong?.className).not.toContain('text-amber-400');
   });
 
@@ -167,6 +168,33 @@ describe('renderEntityNotesMarkdown', () => {
     expect(strong).not.toBeNull();
     expect(strong?.textContent).toContain('Ton Luc');
     expect(strong?.className).toContain('font-black');
+  });
+
+  it('keeps [color] blocks intact in ordered list lines when values contain parentheses (address meta)', () => {
+    const md = [
+      '## Danh sach (1)',
+      '',
+      '1. [[Ten The]] [color=#e2e8f0]**Nhan - Gia tri (Cap 1 - 99)**[/color]',
+    ].join('\n');
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(md, null, [{ id: 'e1', name: 'Ten The' }], null, vi.fn())}
+      </div>,
+    );
+    expect(container.textContent).toContain('Gia tri (Cap 1 - 99)');
+    expect(container.textContent).not.toContain('[/color]');
+    expect(container.textContent).not.toContain('[color=');
+  });
+
+  it('applies distinct [color] for AUTO-style label vs bold value (strong inherits span color)', () => {
+    const md =
+      '1. [[X]] [color=#93c5fd]Nhan truong[/color] [color=#a8c0d8]-[/color] [color=#f8fafc]**Gia tri**[/color]';
+    const { container } = render(
+      <div>{renderEntityNotesMarkdown(md, null, [{ id: '1', name: 'X' }], null, vi.fn())}</div>,
+    );
+    const styles = [...container.querySelectorAll('[style]')].map((el) => safeString(el.getAttribute('style')));
+    expect(styles.some((s) => s.includes('147, 197, 253'))).toBe(true);
+    expect(styles.some((s) => s.includes('248, 250, 252'))).toBe(true);
   });
 
   it('builds TOC metadata and renders semantic callouts', () => {

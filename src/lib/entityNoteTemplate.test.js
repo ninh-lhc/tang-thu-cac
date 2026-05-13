@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildEntityNoteTemplate } from './entityNoteTemplateVi.js';
+import { buildEntityNoteTemplate, mergeEntityNoteDetailSectionFromDynamicData } from './entityNoteTemplateVi.js';
 
 describe('entityNoteTemplate', () => {
   it('prefills an editable skeleton with values', () => {
@@ -76,5 +76,46 @@ describe('entityNoteTemplate', () => {
 
     expect(text).toContain('- Chuỗi hiển thị: Một · Hai');
     expect(text).toContain('- Khác: Một');
+  });
+
+  it('mergeEntityNoteDetailSectionFromDynamicData refreshes bullets but keeps Ghi chú and below', () => {
+    const before = [
+      '# Thông tin chi tiết',
+      '',
+      '> Xóa dòng không cần, thêm dòng cần bổ sung.',
+      '',
+      '- Danh xưng / Tên gọi: Old',
+      '- A: one',
+      '',
+      '# Ghi chú',
+      '',
+      'User prose stays.',
+      '',
+      '# AUTO',
+      '> hint',
+    ].join('\n');
+
+    const after = mergeEntityNoteDetailSectionFromDynamicData(before, {
+      entityName: 'New',
+      fieldsTemplate: [
+        { id: 'f_a', label: 'A' },
+        { id: 'f_b', label: 'B' },
+      ],
+      dynamicData: { f_a: 'two', f_b: 'three' },
+    });
+
+    expect(after).toContain('- Danh xưng / Tên gọi: New');
+    expect(after).toContain('- A: two');
+    expect(after).toContain('- B: three');
+    expect(after).not.toContain('- A: one');
+    expect(after).toContain('User prose stays.');
+    expect(after).toContain('# AUTO');
+  });
+
+  it('mergeEntityNoteDetailSectionFromDynamicData leaves custom info unchanged when no detail heading', () => {
+    const custom = '# Tiểu sử\n\nFree text.';
+    expect(mergeEntityNoteDetailSectionFromDynamicData(custom, { entityName: 'X', fieldsTemplate: [], dynamicData: {} })).toBe(
+      custom
+    );
   });
 });
