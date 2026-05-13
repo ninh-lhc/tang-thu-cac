@@ -40,4 +40,41 @@ describe('entityNoteTemplate', () => {
     expect(text).toContain('Vo Danh');
     expect(text).toContain('- ');
   });
+
+  it('omits f_status line when it only duplicates another field (auto-compose / renamed label)', () => {
+    const text = buildEntityNoteTemplate({
+      entityName: 'Demi',
+      tabLabel: 'Dao Quan',
+      parentLabel: 'Suu Tap',
+      fieldsTemplate: [
+        { id: 'f_status', label: 'Cấu tạo' },
+        { id: 'f_binh_chuyen', label: 'Binh chủng chuyên dụng' },
+      ],
+      dynamicData: {
+        f_status: 'Đại Tần Duệ Sĩ',
+        f_binh_chuyen: 'Đại Tần Duệ Sĩ',
+      },
+    });
+
+    expect(text).not.toContain('- Cấu tạo:');
+    expect(text).toContain('- Binh chủng chuyên dụng: Đại Tần Duệ Sĩ');
+  });
+
+  it('keeps f_status when its value differs from other fields', () => {
+    const text = buildEntityNoteTemplate({
+      entityName: 'A',
+      tabLabel: 'T',
+      fieldsTemplate: [
+        { id: 'f_status', label: 'Chuỗi hiển thị' },
+        { id: 'f_x', label: 'Khác' },
+      ],
+      dynamicData: {
+        f_status: 'Một · Hai',
+        f_x: 'Một',
+      },
+    });
+
+    expect(text).toContain('- Chuỗi hiển thị: Một · Hai');
+    expect(text).toContain('- Khác: Một');
+  });
 });

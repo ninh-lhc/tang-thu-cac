@@ -1,9 +1,24 @@
 // Build a starter note skeleton for newly created entities.
 // Used by the create-save flow so the detail editor opens with a tab-aware template.
 // Keep it simple and editable: users can delete empty lines and add new ones freely.
+// Tránh hai bullet trùng chữ: `f_status` thường tự ghép từ ô Gợi ý nhanh — nếu trùng hệt một trường khác trong mẫu thì không lặp lại trong skeleton.
 
 import { safeString } from '../MasterUtils.jsx';
 import { normalizeAsciiText } from './statusHierarchyParser.js';
+
+const STATUS_LINE_FIELD_ID = 'f_status';
+
+/** true khi nên bỏ dòng «Chuỗi hiển thị» trong skeleton vì trùng một trường chi tiết (đã có bullet riêng). */
+function shouldOmitRedundantStatusLine(fields, dynamicData) {
+  const v = safeString(dynamicData?.[STATUS_LINE_FIELD_ID]).trim();
+  if (!v) return false;
+  for (const field of fields) {
+    const fid = safeString(field?.id).trim();
+    if (!fid || fid === STATUS_LINE_FIELD_ID) continue;
+    if (safeString(dynamicData?.[fid]).trim() === v) return true;
+  }
+  return false;
+}
 
 function buildAutoHintLines(tabLabel, parentLabel) {
   const scope = normalizeAsciiText([parentLabel, tabLabel].filter(Boolean).join(' '));
@@ -85,7 +100,10 @@ export function buildEntityNoteTemplate({
   if (fields.length === 0) {
     lines.push('- Nội dung:');
   } else {
+    const omitStatusDuplicate = shouldOmitRedundantStatusLine(fields, dynamicData);
     fields.forEach((field) => {
+      const fid = safeString(field?.id).trim();
+      if (omitStatusDuplicate && fid === STATUS_LINE_FIELD_ID) return;
       const label = safeString(field?.label).trim();
       if (!label) return;
       const value = safeString(dynamicData?.[field.id]).trim();

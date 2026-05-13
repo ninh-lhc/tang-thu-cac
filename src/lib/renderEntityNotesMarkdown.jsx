@@ -82,7 +82,7 @@ const makeAnchorId = (label, usedAnchors) => {
 
 /**
  * Số dòng danh sách (- / *) hoặc danh sách số trong từng khoảng dưới mỗi tiêu đề (đến tiêu đề cùng hoặc cao hơn).
- * Dùng cho preview ghi chép / AUTO Thế Lực ↔ Bản đồ: tự khớp khi nội dung markdown đổi.
+ * Dùng cho metadata TOC (count) / logic đồng bộ; không hiển thị trên giao diện.
  */
 export function computeEntityNotesHeadingSectionCounts(lines) {
   const arr = Array.isArray(lines) ? lines : [];
@@ -192,11 +192,6 @@ function renderBlocksFromLines(lines, context, options = {}) {
   const { dirHandle, lookup, linkRegex, onNavigate, selfEntityId } = context;
   const headingCountsByLine =
     headingCountsInjected || (skipHeadingCountScan ? null : computeEntityNotesHeadingSectionCounts(lines));
-  const renderCountSuffix = (lineNo, className) => {
-    const c = headingCountsByLine?.get(lineNo);
-    if (c == null || c <= 0) return null;
-    return <span className={className}>({c})</span>;
-  };
   const blocks = [];
   const toc = [];
   let lineIndex = 0;
@@ -256,7 +251,6 @@ function renderBlocksFromLines(lines, context, options = {}) {
           className={mergeClassName(jumpProps, 'mt-8 mb-5 border-b border-violet-500/20 pb-3 text-[2.15rem] font-heading font-bold text-slate-50')}
         >
           {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
-          {renderCountSuffix(lineNo, 'ml-2 text-[0.55em] font-semibold tabular-nums text-cyan-200/80')}
         </h1>
       );
       lineIndex += 1;
@@ -275,7 +269,6 @@ function renderBlocksFromLines(lines, context, options = {}) {
           className={mergeClassName(jumpProps, 'mt-8 mb-4 border-l-4 border-violet-500/35 pl-4 text-[1.7rem] font-heading font-bold text-violet-100')}
         >
           {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
-          {renderCountSuffix(lineNo, 'ml-2 text-[0.58em] font-semibold tabular-nums text-violet-300/85')}
         </h2>
       );
       lineIndex += 1;
@@ -294,7 +287,6 @@ function renderBlocksFromLines(lines, context, options = {}) {
           className={mergeClassName(jumpProps, 'mt-6 mb-3 text-[1.15rem] font-bold uppercase tracking-[0.18em] text-amber-200/85')}
         >
           {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
-          {renderCountSuffix(lineNo, 'ml-2 text-[0.75em] font-semibold tabular-nums text-amber-200/70')}
         </h3>
       );
       lineIndex += 1;
@@ -347,7 +339,6 @@ function renderBlocksFromLines(lines, context, options = {}) {
           </span>
           <h3 className="text-[1.55rem] leading-tight font-heading font-bold text-violet-200">
             {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
-            {renderCountSuffix(lineNo, 'ml-2 text-[0.65em] font-semibold tabular-nums text-violet-300/80')}
           </h3>
         </div>
       );

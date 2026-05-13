@@ -193,7 +193,7 @@ describe('renderEntityNotesMarkdown', () => {
     expect(container.textContent).toContain('Dieu can nho');
   });
 
-  it('đếm mục danh sách theo từng tiêu đề (# / ## / ###) cho thống kê (n)', () => {
+  it('đếm mục danh sách theo tiêu đề cho TOC; không gắn (n) sau tiêu đề khi render', () => {
     const md = [
       '# Bang Thien',
       '## De Quoc',
@@ -215,9 +215,10 @@ describe('renderEntityNotesMarkdown', () => {
     ]);
     const { container } = render(<div>{model.blocks}</div>);
     expect(container.textContent).toContain('Bang Thien');
-    expect(container.textContent).toMatch(/\(3\)/);
-    expect(container.textContent).toMatch(/\(2\)/);
-    expect(container.textContent).toMatch(/\(1\)/);
+    const flat = container.textContent.replace(/\s+/g, ' ').trim();
+    expect(flat).not.toMatch(/Bang Thien\s*\(\d+\)/);
+    expect(flat).not.toMatch(/De Quoc\s*\(\d+\)/);
+    expect(flat).not.toMatch(/Gia Toc\s*\(\d+\)/);
   });
 
   it('renders auto-sync footer quote as subtle footer note', () => {

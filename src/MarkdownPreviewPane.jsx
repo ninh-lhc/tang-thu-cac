@@ -59,9 +59,7 @@ export const MarkdownPreviewPane = memo(function MarkdownPreviewPane({
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-[11px] text-slate-400 transition-colors hover:bg-slate-900 hover:text-violet-200"
                       style={{ paddingInlineStart: `${0.5 + Math.max(0, item.level - 1) * 0.65}rem` }}
                     >
-                      {typeof item.count === 'number' && item.count > 0
-                        ? `${item.title} (${item.count})`
-                        : item.title}
+                      {item.title}
                     </button>
                   ))}
                 </div>
