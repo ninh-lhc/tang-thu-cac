@@ -57,7 +57,7 @@ export function filterAllowedQuickEntrySlotIds(slotFields) {
     .slice(0, MAX_QUICK_ENTRY_SLOTS);
 }
 
-/** Chọn 4 field mặc định từ template (ưu tiên f_status, f_title, f_desc…). */
+/** Chọn tối đa {@link DEFAULT_QUICK_ENTRY_SLOT_COUNT} field mặc định từ template (ưu tiên f_status, f_title, f_desc…). */
 export function pickDefaultQuickFieldIds(fieldsTemplate) {
   const ids = templateFieldIds(fieldsTemplate);
   if (ids.length === 0) return ['f_status', 'f_title', 'f_desc'];
@@ -74,8 +74,8 @@ export function pickDefaultQuickFieldIds(fieldsTemplate) {
 }
 
 /**
- * Bộ 4 ô gợi ý mặc định trên form Khởi tạo: không ăn f_status / f_alias
- * (đã là «Trạng thái / Cấp» + biệt danh ở dưới) — thường 4 thẻ khi mẫu tab đủ cột.
+ * Bộ ô gợi ý mặc định trên form Khởi tạo: không ăn f_status / f_alias
+ * (đã là «Trạng thái / Cấp» + biệt danh ở dưới) — tối đa {@link DEFAULT_QUICK_ENTRY_SLOT_COUNT} thẻ khi mẫu tab đủ cột.
  */
 export function pickDefaultQuickFieldIdsForModalGrid(fieldsTemplate) {
   const ids = templateFieldIds(fieldsTemplate);

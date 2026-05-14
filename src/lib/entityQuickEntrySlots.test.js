@@ -45,6 +45,7 @@ describe('entityQuickEntrySlots', () => {
       parentLabel: 'y',
     });
     expect(r.slots).toHaveLength(4);
+    expect(r.slotFields).toEqual(['f_title', 'f_desc', 'f_chu', 'f_linh_the']);
     expect(r.slotFields.every((id) => id !== 'f_status' && id !== 'f_alias')).toBe(true);
   });
 
@@ -219,7 +220,7 @@ describe('entityQuickEntrySlots', () => {
     expect(slotLabels[3]).toBe('');
   });
 
-  it('resolveEntityQuickSlots không ghép thêm ô mặc định khi user đã lưu ít hơn 4 trường', () => {
+  it('resolveEntityQuickSlots không ghép thêm ô mặc định khi user đã lưu ít hơn tối đa trường', () => {
     const r = resolveEntityQuickSlots({
       tabConfig: {
         label: 'Tài nguyên',

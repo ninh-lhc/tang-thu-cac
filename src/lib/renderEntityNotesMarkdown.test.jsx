@@ -296,4 +296,22 @@ describe('renderEntityNotesMarkdown', () => {
     const wikiSpans = container.querySelectorAll('.inline-flex.items-center');
     expect(wikiSpans.length).toBeGreaterThanOrEqual(2);
   });
+
+  it('ordered list: renders [color]…[/color] with parentheses inside bold (AUTO danh sách meta)', () => {
+    const md = [
+      '## Danh sách (1)',
+      '',
+      '1. [[Lý Mộ]] • [color=#e2e8f0]**Bất Hủ Tiên Thần (Cấp 200 đến 499)**[/color]',
+    ].join('\n');
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(md, null, [{ id: 'e', name: 'Lý Mộ' }], null, vi.fn())}
+      </div>
+    );
+
+    expect(container.textContent).not.toContain('[color=');
+    expect(container.textContent).not.toContain('[/color]');
+    expect(container.textContent).toContain('Bất Hủ Tiên Thần');
+    expect(container.textContent).toContain('Cấp 200 đến 499');
+  });
 });

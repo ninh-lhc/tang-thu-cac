@@ -143,15 +143,24 @@ const isBlockBoundary = (line) => {
   );
 };
 
-const ADDRESS_META_OPTS = { addressMeta: true };
+/**
+ * Bullet / list: bật addressMeta (địa chỉ bản đồ) trừ khi có `[color=…]` — tách ngoặc theo () làm vỡ
+ * khối màu khi phần in đậm có (Cấp …) bên trong `[color]…[/color]`.
+ */
+const listInlineOptsForBody = (body) => {
+  const s = safeString(body);
+  if (/\[color=/i.test(s)) return { addressMeta: false };
+  return { addressMeta: true };
+};
 
 const renderInlineBodyWithLeadLabel = (body, context) => {
   const normalized = safeString(body);
   const match = normalized.match(LEAD_BOLD_LABEL_RE);
   const { dirHandle, lookup, linkRegex, onNavigate, selfEntityId } = context;
+  const listOpts = listInlineOptsForBody(normalized);
 
   if (!match) {
-    return processInline(normalized, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ADDRESS_META_OPTS);
+    return processInline(normalized, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, listOpts);
   }
 
   const labelText = safeString(match[1]).trim();
@@ -172,7 +181,7 @@ const renderInlineBodyWithLeadLabel = (body, context) => {
       </div>
       {restText ? (
         <div className="pl-0.5">
-          {processInline(restText, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ADDRESS_META_OPTS)}
+          {processInline(restText, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, listInlineOptsForBody(restText))}
         </div>
       ) : null}
     </div>

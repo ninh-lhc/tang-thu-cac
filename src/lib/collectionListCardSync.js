@@ -26,6 +26,7 @@ import { normalizeTabAutoSyncLevelConfig } from './tabAutoSyncLevels.js';
 import { inferForceSystemLabel } from './forceRankLadder.js';
 import { classifyOrgType, inferOrgTypeFromContext, inferOrgTypeFromTabSlug } from './forceOrgTypeInfer.js';
 import { compareOutlineStrings } from './outlineListOrder.js';
+import { MAX_QUICK_ENTRY_SLOTS } from './entityQuickEntrySlots.js';
 
 const LEGACY_AUTO_LIST_START = '<!-- AUTO_COLLECTION_LIST:START -->';
 const LEGACY_AUTO_LIST_END = '<!-- AUTO_COLLECTION_LIST:END -->';
@@ -1005,6 +1006,19 @@ function isOwnerLikeFieldId(fieldId) {
   );
 }
 
+/**
+ * Trường đưa vào hậu tố dòng AUTO: nếu có ít nhất một `sortPrefix` (Số TT) trên mẫu,
+ * chỉ các trường **đã nhập Số TT**, thứ tự 1 → 2 → 3 → 4 (theo `compareOutlineStrings`).
+ * Nếu không ai có Số TT: tối đa {@link MAX_QUICK_ENTRY_SLOTS} trường chi tiết đầu tiên (tương thích tab cũ).
+ */
+function getAutoListDetailFieldObjects(tabConfig) {
+  const orderedObjects = getDetailFieldObjectsForListDisplay(tabConfig);
+  if (!orderedObjects || orderedObjects.length === 0) return null;
+  const numbered = orderedObjects.filter((row) => safeString(row.field?.sortPrefix).trim());
+  if (numbered.length > 0) return numbered.slice(0, MAX_QUICK_ENTRY_SLOTS);
+  return orderedObjects.slice(0, MAX_QUICK_ENTRY_SLOTS);
+}
+
 function collectDefaultEntityDetailBitsLegacy(entity, tabConfig = null) {
   const bits = [];
   const seen = new Set();
@@ -1113,9 +1127,9 @@ function collectWikiInnerNormsFromDetailFieldSources(entity, tabConfig) {
     'f_noi_dung',
     'f_content',
   ]);
-  const ordered = getDetailFieldObjectsForListDisplay(tabConfig);
-  if (ordered && ordered.length > 0) {
-    ordered.forEach(({ fieldId }) => {
+  const orderedObjects = getAutoListDetailFieldObjects(tabConfig);
+  if (orderedObjects && orderedObjects.length > 0) {
+    orderedObjects.forEach(({ fieldId }) => {
       const fid = safeString(fieldId).trim().toLowerCase();
       if (skipKeys.has(fid) || isOwnerLikeFieldId(fid)) return;
       addText(dyn[fieldId]);
@@ -1197,6 +1211,8 @@ const AUTO_LIST_PLAIN_BIT_COLOR = AUTO_LIST_FIELD_VALUE_COLOR;
 const AUTO_LIST_META_SEP = ` [color=#8ca0be]·[/color] `;
 /** Giữ tên hằng cũ cho API join (cùng giá trị với dấu nối mới). */
 const AUTO_LIST_DETAIL_SEP = AUTO_LIST_META_SEP;
+/** Trần mức khi một trường (vd. chuỗi địa) tách thành nhiều mẩu — không giới hạn số *trường* đã gán Số TT. */
+const AUTO_LIST_DETAIL_BIT_CAP = 32;
 
 function autoListSanitizeForColorTagInner(raw) {
   return safeString(raw)
@@ -1271,11 +1287,12 @@ function formatAutoListDetailBitsForPreview(detailBits, entity, tabConfig, owner
 }
 
 /**
- * Các mẩu sau `[[Tên thẻ]]` trong khối Danh sách (AUTO). Nếu tab có mẫu trường, thứ tự
- * bám theo `sortPrefix` (Ký hiệu / Số TT); nếu không, giữ tương thích với cách cũ.
+ * Các mẩu sau `[[Tên thẻ]]` trong khối Danh sách (AUTO). Khi có mẫu tab: nếu có Số TT
+ * (`sortPrefix`) thì chỉ các trường đã nhập số, thứ tự 1→2→3→4; không thì tối đa
+ * {@link MAX_QUICK_ENTRY_SLOTS} trường đầu theo mẫu. Không có mẫu → legacy.
  */
 function collectDefaultEntityDetailBits(entity, tabConfig = null) {
-  const ordered = getDetailFieldObjectsForListDisplay(tabConfig);
+  const ordered = getAutoListDetailFieldObjects(tabConfig);
   if (!ordered) {
     return collectDefaultEntityDetailBitsLegacy(entity, tabConfig);
   }
@@ -1318,7 +1335,7 @@ function collectDefaultEntityDetailBits(entity, tabConfig = null) {
     if (!tokens.length) return;
     pushLabeledListFieldBits(field || { id: fieldId, label: '' }, fieldId, rawValue, pushBit, tokens);
   });
-  return bits.slice(0, 8);
+  return bits.slice(0, AUTO_LIST_DETAIL_BIT_CAP);
 }
 
 function buildAutoListEntryPayload(entity, ownerLookupEntities = [], tabConfig = null) {

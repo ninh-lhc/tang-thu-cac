@@ -409,6 +409,63 @@ describe('collectionListCardSync (flat mode)', () => {
     expect(info).toContain('Chiến Trường');
   });
 
+  it('AUTO suffix chỉ gồm trường đã gán Số TT, thứ tự 1→2→3 (bỏ trường không có Số TT)', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'tab-x',
+          label: 'Tab X',
+          subTabs: [
+            {
+              id: 'nho-y',
+              label: 'Nhỏ Y',
+              viewType: 'collection-track',
+              fieldsTemplate: [
+                { id: 'f_mo_ta', label: 'Bỏ qua' },
+                { id: 'f_four', label: 'Không số' },
+                { id: 'f_b', label: 'B', sortPrefix: '2' },
+                { id: 'f_a', label: 'A', sortPrefix: '1' },
+                { id: 'f_c', label: 'C', sortPrefix: '3' },
+              ],
+            },
+          ],
+        },
+      ],
+      data: {
+        'tab-x': {
+          'nho-y': {
+            overview: '',
+            entities: [
+              { id: 'list-1', name: 'Danh sach x', info: '', dynamicData: {}, milestones: [] },
+              {
+                id: 'e-1',
+                name: 'Thực thể X',
+                info: '',
+                dynamicData: { f_four: 'Dư', f_a: 'Một', f_b: 'Hai', f_c: 'Ba' },
+                milestones: [],
+              },
+            ],
+          },
+        },
+      },
+    };
+    syncAllCollectionListCards(novel);
+    const info = String(novel.data['tab-x']['nho-y'].entities[0].info || '');
+    expect(info).toContain('[[Thực thể X]]');
+    expect(info).toContain('[color=#f8fafc]**Một**[/color]');
+    expect(info).toContain('[color=#f8fafc]**Hai**[/color]');
+    expect(info).toContain('[color=#f8fafc]**Ba**[/color]');
+    expect(info).not.toContain('**Dư**');
+    const line = info.split('\n').find((l) => /^\d+\./.test(l.trim()) && l.includes('Thực thể X'));
+    expect(line).toBeDefined();
+    const idxMột = line.indexOf('Một');
+    const idxHai = line.indexOf('Hai');
+    const idxBa = line.indexOf('Ba');
+    expect(idxMột).toBeGreaterThan(0);
+    expect(idxHai).toBeGreaterThan(idxMột);
+    expect(idxBa).toBeGreaterThan(idxHai);
+  });
+
   it('dedupes f_status path segments that overlap f_vi_tri in AUTO (fieldsTemplate)', () => {
     const novel = {
       tabsConfig: [
