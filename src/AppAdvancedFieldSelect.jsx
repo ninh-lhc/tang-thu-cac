@@ -54,7 +54,7 @@ export const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
   };
 
   return (
-    <div ref={rootRef} className="relative min-w-0 z-40">
+    <div ref={rootRef} className="relative z-[80] min-w-0 overflow-visible">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -68,7 +68,7 @@ export const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
         }}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className={`w-full border rounded-xl py-2 pl-3 pr-8 text-xs font-serif outline-none cursor-pointer transition-colors text-left truncate ${
+        className={`relative w-full border rounded-xl py-2 pl-3 pr-8 text-xs font-serif outline-none cursor-pointer transition-colors text-left truncate ${
           active
             ? 'bg-amber-900/30 border-amber-700/50 text-amber-100'
             : 'bg-slate-900 border-slate-800 text-slate-200 hover:border-slate-700'
@@ -83,7 +83,7 @@ export const AdvancedFieldSelect = React.memo(function AdvancedFieldSelect({
       {open && (
         <div
           role="listbox"
-          className="absolute z-[60] mt-1 w-full max-h-64 overflow-auto rounded-xl border border-slate-700 bg-slate-950 shadow-2xl custom-scrollbar animate-fade-in origin-top"
+          className="absolute z-[200] mt-1 w-full max-h-[min(16rem,55vh)] overflow-y-auto overscroll-y-contain py-1 rounded-xl border border-slate-700 bg-slate-950 shadow-2xl custom-scrollbar origin-top"
         >
           {options.map((opt, idx) => (
             <button

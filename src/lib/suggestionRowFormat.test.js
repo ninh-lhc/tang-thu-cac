@@ -5,6 +5,7 @@ import {
   serializeSuggestionRows,
   countSuggestionRows,
   suggestionRowsToValues,
+  moveSuggestionRowAt,
 } from './suggestionRowFormat.js';
 
 describe('suggestionRowFormat', () => {
@@ -50,5 +51,17 @@ describe('suggestionRowFormat', () => {
     expect(
       suggestionRowsToValues(['I|Đại Khu', 'Đại Khu', 'II|Trung Thiên Giới', '  |  '])
     ).toEqual(['Đại Khu', 'Trung Thiên Giới']);
+  });
+
+  it('moveSuggestionRowAt swaps row order without mutating input', () => {
+    const rows = [
+      { prefix: '', value: 'A' },
+      { prefix: '', value: 'B' },
+      { prefix: '', value: 'C' },
+    ];
+    expect(moveSuggestionRowAt(rows, 0, 1).map((r) => r.value)).toEqual(['B', 'A', 'C']);
+    expect(moveSuggestionRowAt(rows, 2, -1).map((r) => r.value)).toEqual(['A', 'C', 'B']);
+    expect(moveSuggestionRowAt(rows, 0, -1)).toEqual(rows);
+    expect(rows.map((r) => r.value)).toEqual(['A', 'B', 'C']);
   });
 });

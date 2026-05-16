@@ -1,7 +1,11 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { BookOpen, Link2, Save, Edit3, Eye, ScrollText, RefreshCw, AlertTriangle, Sparkles, Wand2, Lock } from 'lucide-react';
+import { BookOpen, Link2, Save, Edit3, Eye, ScrollText, RefreshCw, AlertTriangle, Sparkles, Wand2, Lock, Search, Filter } from 'lucide-react';
 import { MarkdownToolbar } from './MasterComponents.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
+import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
+import { filterEntityNotesMarkdown, sortMarkdownSectionsAfterFilter } from './lib/entityNotesTabFilter.js';
+import { isListCardEntity } from './lib/collectionListCardSync.js';
+import { AppListCardInfoSearch } from './AppListCardInfoSearch.jsx';
 import {
   safeString,
   callGeminiAPIText,
@@ -37,6 +41,9 @@ import {
   isEntityAutoSyncDisabled,
   isEntityAutoSyncLocked,
 } from './lib/autoSyncEntityPrefs.js';
+
+const NOTES_ADV_TOOLBAR_BTN =
+  'tt-kbd-focus h-9 rounded-xl text-[12px] font-semibold px-3 border flex items-center gap-1.5 transition-colors flex-shrink-0';
 
 const HIST_MAX = 120;
 
@@ -773,8 +780,11 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   entityMap,
   globalLinkRegex,
   onNavigate,
-  memoizedEntityInfo,
-  entityTemplateHint,
+  detailNotesMarkdown = '',
+  entityFilterFields = [],
+  notesTabFieldBuckets = [],
+  AdvancedFieldSelect: AdvancedFieldSelectCmp = null,
+  entityTemplateHint = '',
   onOpenAutoSyncGuide,
   onOpenEntityNotesGuide,
   detailProfileMode = 'original',
@@ -811,12 +821,91 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   }, [activeTabLon, activeTabNho, currentTabConfig]);
   const isCurrentTimelineMode = detailProfileMode === 'current';
   const [isAutoControlsExpanded, setIsAutoControlsExpanded] = useState(false);
+  const [showNotesAdvancedPanel, setShowNotesAdvancedPanel] = useState(false);
+  const [notesViewQuery, setNotesViewQuery] = useState('');
+  const [listCatalogQuery, setListCatalogQuery] = useState('');
+  const [notesAdvFieldId, setNotesAdvFieldId] = useState('none');
+  const [notesNotesSortMode, setNotesNotesSortMode] = useState('none');
+  const [notesViewFieldFilters, setNotesViewFieldFilters] = useState(() => ({}));
+  const notesAdvToggleRef = useRef(null);
+  const notesAdvPanelRef = useRef(null);
+
+  const notesFilterOptions = useMemo(
+    () => [
+      { value: 'none', label: 'Không lọc theo trường' },
+      ...(entityFilterFields || [])
+        .filter((f) => f && safeString(f.id).trim())
+        .map((f) => ({
+          value: f.id,
+          label: `Lọc: ${safeString(f.label || f.id)}`,
+        })),
+    ],
+    [entityFilterFields]
+  );
+
+  const valueBucket = useMemo(
+    () => (notesTabFieldBuckets || []).find((b) => b.id === notesAdvFieldId),
+    [notesTabFieldBuckets, notesAdvFieldId]
+  );
+
+  const filteredNotesRead = useMemo(() => {
+    const fr = filterEntityNotesMarkdown(detailNotesMarkdown, {
+      searchQuery: notesViewQuery,
+      fieldValueFilters: notesViewFieldFilters,
+    });
+    const text = sortMarkdownSectionsAfterFilter(fr.text, notesNotesSortMode);
+    return { ...fr, text };
+  }, [detailNotesMarkdown, notesViewFieldFilters, notesViewQuery, notesNotesSortMode]);
+
+  useEffect(() => {
+    setNotesViewQuery('');
+    setListCatalogQuery('');
+    setNotesViewFieldFilters({});
+    setNotesAdvFieldId('none');
+    setNotesNotesSortMode('none');
+    setShowNotesAdvancedPanel(false);
+  }, [detailProfileMode, selectedEntity?.id]);
+
+  const clearNotesAdvanced = useCallback(() => {
+    setNotesViewQuery('');
+    setListCatalogQuery('');
+    setNotesAdvFieldId('none');
+    setNotesNotesSortMode('none');
+    setNotesViewFieldFilters({});
+  }, []);
+
+  const hasFieldFilterApplied = Object.keys(notesViewFieldFilters).length > 0;
+  const hasTextSearch = isListCardEntity(selectedEntity)
+    ? safeString(listCatalogQuery).trim()
+    : safeString(notesViewQuery).trim();
+  const isNotesFilterActive = Boolean(
+    hasFieldFilterApplied || hasTextSearch || notesNotesSortMode !== 'none'
+  );
+
+  const appliedFieldEntry = hasFieldFilterApplied ? Object.entries(notesViewFieldFilters)[0] : null;
+  const appliedFieldLabel =
+    appliedFieldEntry &&
+    safeString(
+      entityFilterFields.find((f) => f?.id === appliedFieldEntry[0])?.label || appliedFieldEntry[0]
+    );
 
   useEffect(() => {
     if (isCurrentTimelineMode && isEntityEditing) {
       setIsEntityEditing(false);
     }
   }, [isCurrentTimelineMode, isEntityEditing, setIsEntityEditing]);
+
+  useEffect(() => {
+    if (!showNotesAdvancedPanel) return undefined;
+    const onMouseDown = (e) => {
+      const t = e.target;
+      if (notesAdvPanelRef.current?.contains(t)) return;
+      if (notesAdvToggleRef.current?.contains(t)) return;
+      setShowNotesAdvancedPanel(false);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [showNotesAdvancedPanel]);
 
   return (
     <div className="flex flex-col mt-4">
@@ -891,6 +980,34 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
               <ScrollText size={14} /> Hướng dẫn
             </button>
           )}
+          {!isEntityEditing && selectedEntity && (
+            <>
+              <button
+                ref={notesAdvToggleRef}
+                type="button"
+                onClick={() => setShowNotesAdvancedPanel((v) => !v)}
+                aria-expanded={showNotesAdvancedPanel}
+                aria-controls="notes-advanced-panel"
+                title="Tìm trong ghi chép và lọc theo trường (giống Nâng cao ở danh sách thẻ)"
+                className={`${NOTES_ADV_TOOLBAR_BTN} ${
+                  showNotesAdvancedPanel
+                    ? 'bg-amber-900/30 border-amber-700/50 text-amber-300'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Filter size={13} /> Nâng cao
+              </button>
+              {isNotesFilterActive && (
+                <button
+                  type="button"
+                  onClick={clearNotesAdvanced}
+                  className={`${NOTES_ADV_TOOLBAR_BTN} bg-slate-900 border-slate-700 text-slate-300 hover:text-slate-100`}
+                >
+                  Tắt lọc
+                </button>
+              )}
+            </>
+          )}
           {!isEntityEditing && (
             <button
               id="save-entity-btn"
@@ -912,6 +1029,133 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
           )}
         </div>
       </div>
+
+      {!isEntityEditing && selectedEntity && isNotesFilterActive && (
+        <div className="flex items-center gap-2 flex-wrap mb-3 text-[11px]">
+          {hasFieldFilterApplied && appliedFieldEntry && (
+            <span className="px-2.5 py-1 rounded-full border border-cyan-700/50 bg-cyan-950/30 text-cyan-200">
+              Lọc: {appliedFieldLabel} = &quot;{String(appliedFieldEntry[1]).trim()}&quot;
+            </span>
+          )}
+          {hasTextSearch && (
+            <span className="px-2.5 py-1 rounded-full border border-amber-700/50 bg-amber-950/30 text-amber-200">
+              Tìm: &quot;
+              {(isListCardEntity(selectedEntity) ? listCatalogQuery : notesViewQuery).trim()}&quot;
+            </span>
+          )}
+        </div>
+      )}
+
+      {showNotesAdvancedPanel && !isEntityEditing && selectedEntity && (
+        <div
+          ref={notesAdvPanelRef}
+          id="notes-advanced-panel"
+          className="mb-5 overflow-visible rounded-2xl border border-slate-800/90 bg-slate-950/90 p-3.5 shadow-xl space-y-2.5 animate-fade-fast"
+        >
+          <div className="relative">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"
+              aria-hidden
+            />
+            <input
+              type="search"
+              value={isListCardEntity(selectedEntity) ? listCatalogQuery : notesViewQuery}
+              onChange={(e) =>
+                isListCardEntity(selectedEntity)
+                  ? setListCatalogQuery(e.target.value)
+                  : setNotesViewQuery(e.target.value)
+              }
+              placeholder={
+                isListCardEntity(selectedEntity)
+                  ? 'Tên thẻ, chuỗi hiển thị, đường dẫn…'
+                  : 'Tìm trong ghi chép...'
+              }
+              autoComplete="off"
+              className="tt-kbd-focus h-9 w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 text-[12px] font-serif outline-none focus:border-amber-600/50 text-slate-200 placeholder:text-slate-500"
+              aria-label={
+                isListCardEntity(selectedEntity)
+                  ? 'Tìm trong danh mục thẻ'
+                  : 'Tìm trong nội dung ghi chép'
+              }
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-2.5 overflow-visible sm:grid-cols-2 lg:grid-cols-3">
+            {AdvancedFieldSelectCmp ? (
+              <AdvancedFieldSelectCmp
+                value={notesAdvFieldId}
+                onChange={(v) => {
+                  setNotesAdvFieldId(v);
+                  setNotesViewFieldFilters({});
+                }}
+                options={notesFilterOptions}
+                active={notesAdvFieldId !== 'none'}
+              />
+            ) : (
+              <select
+                value={notesAdvFieldId}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setNotesAdvFieldId(v);
+                  setNotesViewFieldFilters({});
+                }}
+                className={`tt-kbd-focus h-9 w-full rounded-xl border px-3 text-[12px] font-serif outline-none cursor-pointer ${
+                  notesAdvFieldId !== 'none'
+                    ? 'bg-amber-900/30 border-amber-700/50 text-amber-100'
+                    : 'bg-slate-900 border-slate-800 text-slate-200'
+                }`}
+              >
+                {notesFilterOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            <select
+              value={safeString(notesViewFieldFilters[notesAdvFieldId] || '')}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) setNotesViewFieldFilters({});
+                else setNotesViewFieldFilters({ [notesAdvFieldId]: v });
+              }}
+              disabled={
+                notesAdvFieldId === 'none' || !(valueBucket?.values && valueBucket.values.length > 0)
+              }
+              className="tt-kbd-focus h-9 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-[12px] font-serif outline-none focus:border-cyan-600/50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-200"
+              aria-label="Chọn giá trị lọc theo trường"
+            >
+              <option value="">
+                {notesAdvFieldId === 'none'
+                  ? 'Chọn trường trước…'
+                  : !(valueBucket?.values && valueBucket.values.length)
+                    ? 'Chưa có giá trị trên tab'
+                    : 'Chọn giá trị…'}
+              </option>
+              {(valueBucket?.values || []).map((val) => (
+                <option key={val} value={val}>
+                  {val.length > 80 ? `${val.slice(0, 77)}…` : val}
+                </option>
+              ))}
+            </select>
+            <select
+              value={notesNotesSortMode}
+              onChange={(e) => setNotesNotesSortMode(e.target.value)}
+              className="tt-kbd-focus h-9 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-[12px] font-serif outline-none focus:border-amber-600/50 text-slate-200"
+              aria-label="Sắp xếp sau khi lọc"
+            >
+              <option value="none">Thứ tự gốc</option>
+              <option value="name_asc">A-Z (mục / dòng)</option>
+              <option value="name_desc">Z-A (mục / dòng)</option>
+            </select>
+          </div>
+          <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
+            Lưu ý: <span className="text-slate-400">Tìm</span> và{' '}
+            <span className="text-slate-400">lọc theo trường</span> được áp dụng đồng thời; sắp xếp áp dụng
+            sau lọc.
+          </p>
+        </div>
+      )}
 
       {selectedEntity && autoSyncControls.length > 0 && typeof handleSetSelectedEntityAutoSyncState === 'function' && (
         <div className="mb-5 rounded-[32px] border border-cyan-800/40 bg-cyan-950/15 px-5 py-4">
@@ -1040,7 +1284,36 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
           />
         ) : (
           <div className="font-serif prose prose-invert max-w-none animate-fade-in min-h-[200px]">
-            {memoizedEntityInfo && <>{memoizedEntityInfo}</>}
+            {selectedEntity && isListCardEntity(selectedEntity) ? (
+              <AppListCardInfoSearch
+                info={detailNotesMarkdown}
+                fieldValueFilters={notesViewFieldFilters}
+                searchQuery={listCatalogQuery}
+                onSearchQueryChange={setListCatalogQuery}
+                hideSearchBar
+                sortMode={notesNotesSortMode}
+                dirHandle={currentContextDirHandle}
+                entityMap={entityMap}
+                linkRegex={globalLinkRegex}
+                onNavigate={onNavigate}
+                selfEntityId={selectedEntity.id}
+              />
+            ) : filteredNotesRead.emptyMatch ? (
+              <p className="text-sm text-slate-500 font-serif">
+                Không có mục nào trong ghi chép khớp bộ lọc hiện tại.
+              </p>
+            ) : (
+              <div className="font-serif max-w-none min-h-[200px]">
+                {renderEntityNotesMarkdown(
+                  filteredNotesRead.text,
+                  currentContextDirHandle,
+                  entityMap,
+                  globalLinkRegex,
+                  onNavigate,
+                  selectedEntity?.id
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -21,6 +21,7 @@ import {
   WIKI_ALIAS_FIELD,
 } from './MasterEngines.js';
 import { AppEntityTemplateFieldEditor } from './AppEntityTemplateFieldEditor.jsx';
+import { AppSuggestionListRowsEditor } from './AppSuggestionListRowsEditor.jsx';
 import { AppEntityQuickEntryConfig } from './AppEntityQuickEntryConfig.jsx';
 import {
   normalizeSuggestionRows,
@@ -2914,67 +2915,15 @@ export const ModalEntity = ({
                         Chưa có dòng nào — bấm «+ Dòng» để thêm.
                       </p>
                     )}
-                    {mapRealmListDraft.map((row, rowIdx) => (
-                      <div key={`realm-row-${rowIdx}`} className="flex items-center gap-1.5">
-                        <input
-                          type="text"
-                          value={safeString(row.prefix)}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setMapRealmListDraft((prev) => {
-                              const next = Array.isArray(prev) ? [...prev] : [];
-                              next[rowIdx] = { ...next[rowIdx], prefix: val };
-                              return next;
-                            });
-                          }}
-                          className="w-20 bg-slate-950 border border-emerald-800/45 rounded-md px-2 py-1 text-[10px] text-emerald-100 font-mono"
-                          placeholder="I / 1"
-                          aria-label={`Ký hiệu dòng ${rowIdx + 1}`}
-                        />
-                        <input
-                          type="text"
-                          value={safeString(row.value)}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setMapRealmListDraft((prev) => {
-                              const next = Array.isArray(prev) ? [...prev] : [];
-                              next[rowIdx] = { ...next[rowIdx], value: val };
-                              return next;
-                            });
-                          }}
-                          className="flex-1 bg-slate-950 border border-cyan-900/40 rounded-md px-2 py-1 text-[11px] text-slate-100 font-serif focus:border-cyan-500/70 outline-none"
-                          placeholder="Ví dụ: Đại Khu, Tiểu Thiên Giới…"
-                          aria-label={`Nội dung dòng ${rowIdx + 1}`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setMapRealmListDraft((prev) => {
-                              const next = Array.isArray(prev) ? [...prev] : [];
-                              next.splice(rowIdx, 1);
-                              return next;
-                            })
-                          }
-                          className="rounded-md border border-rose-800/50 bg-rose-950/20 px-2 py-1 text-[10px] font-bold text-rose-100"
-                          aria-label={`Xóa dòng ${rowIdx + 1}`}
-                        >
-                          X
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setMapRealmListDraft((prev) => {
-                          const next = Array.isArray(prev) ? [...prev] : [];
-                          next.push({ prefix: '', value: '' });
-                          return next;
-                        })
-                      }
-                      className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/50 px-2 py-1 text-[10px] font-bold text-slate-200"
-                    >
-                      <Plus size={10} /> Dòng
-                    </button>
+                    <AppSuggestionListRowsEditor
+                      idPrefix={`ttc-map-realm-list-${mapRealmListTargetLonId}-${mapRealmListTargetNhoId}`}
+                      rows={mapRealmListDraft}
+                      onChange={setMapRealmListDraft}
+                      showSaveButton={false}
+                      prefixPlaceholder="I / 1"
+                      valuePlaceholder="Ví dụ: Đại Khu, Tiểu Thiên Giới…"
+                      valueInputClassName="flex-1 bg-slate-950 border border-cyan-900/40 rounded-md px-2 py-1 text-[11px] text-slate-100 font-serif focus:border-cyan-500/70 outline-none"
+                    />
                   </div>
                   <div className="flex flex-wrap justify-end gap-2">
                     <button
@@ -3005,67 +2954,15 @@ export const ModalEntity = ({
                         Chưa có dòng nào — bấm «+ Dòng» để thêm.
                       </p>
                     )}
-                    {mapHierarchyListDraft.map((row, rowIdx) => (
-                      <div key={`hier-row-${rowIdx}`} className="flex items-center gap-1.5">
-                        <input
-                          type="text"
-                          value={safeString(row.prefix)}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setMapHierarchyListDraft((prev) => {
-                              const next = Array.isArray(prev) ? [...prev] : [];
-                              next[rowIdx] = { ...next[rowIdx], prefix: val };
-                              return next;
-                            });
-                          }}
-                          className="w-20 bg-slate-950 border border-emerald-800/45 rounded-md px-2 py-1 text-[10px] text-emerald-100 font-mono"
-                          placeholder="I / 1"
-                          aria-label={`Ký hiệu dòng ${rowIdx + 1}`}
-                        />
-                        <input
-                          type="text"
-                          value={safeString(row.value)}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setMapHierarchyListDraft((prev) => {
-                              const next = Array.isArray(prev) ? [...prev] : [];
-                              next[rowIdx] = { ...next[rowIdx], value: val };
-                              return next;
-                            });
-                          }}
-                          className="flex-1 bg-slate-950 border border-violet-900/40 rounded-md px-2 py-1 text-[11px] text-slate-100 font-serif focus:border-violet-500/70 outline-none"
-                          placeholder="Ví dụ: Đại lục, Tinh cầu…"
-                          aria-label={`Nội dung dòng ${rowIdx + 1}`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setMapHierarchyListDraft((prev) => {
-                              const next = Array.isArray(prev) ? [...prev] : [];
-                              next.splice(rowIdx, 1);
-                              return next;
-                            })
-                          }
-                          className="rounded-md border border-rose-800/50 bg-rose-950/20 px-2 py-1 text-[10px] font-bold text-rose-100"
-                          aria-label={`Xóa dòng ${rowIdx + 1}`}
-                        >
-                          X
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setMapHierarchyListDraft((prev) => {
-                          const next = Array.isArray(prev) ? [...prev] : [];
-                          next.push({ prefix: '', value: '' });
-                          return next;
-                        })
-                      }
-                      className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/50 px-2 py-1 text-[10px] font-bold text-slate-200"
-                    >
-                      <Plus size={10} /> Dòng
-                    </button>
+                    <AppSuggestionListRowsEditor
+                      idPrefix="ttc-map-hierarchy-shared-list"
+                      rows={mapHierarchyListDraft}
+                      onChange={setMapHierarchyListDraft}
+                      showSaveButton={false}
+                      prefixPlaceholder="I / 1"
+                      valuePlaceholder="Ví dụ: Đại lục, Tinh cầu…"
+                      valueInputClassName="flex-1 bg-slate-950 border border-violet-900/40 rounded-md px-2 py-1 text-[11px] text-slate-100 font-serif focus:border-violet-500/70 outline-none"
+                    />
                   </div>
                   <p className="text-[11px] text-slate-500 font-serif">
                     Mỗi dòng là một nhãn. Khi gán vào thẻ, nhãn sẽ hiện cạnh tên thẻ với màu tự phân biệt.

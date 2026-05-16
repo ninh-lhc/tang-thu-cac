@@ -24,7 +24,6 @@ import { AppEntityTimelinePanel } from './AppEntityTimelinePanel.jsx';
 import { AppEntityDescriptionPanel } from './AppEntityDescriptionPanel.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import { MarkdownToolbar } from './MasterComponents.jsx';
-import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
 import { buildTimelineCurrentProfileView, buildTimelineCurrentNotesText } from './appCollectionTimelineProfile.js';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
@@ -151,7 +150,7 @@ export function AppCollectionSection({
   setIsInsertImageModalOpen,
   handlePickLocalImage,
   debouncedMarkdownPreview,
-  memoizedEntityInfo,
+  entityNotesTabFilterBuckets,
   setLightboxSrc,
   selectedMilestoneId,
   setSelectedMilestoneId,
@@ -174,9 +173,7 @@ export function AppCollectionSection({
   memoizedStandardData,
   handleImageDrop,
 }) {
-  void AdvancedFieldSelect;
   void recentlyMergedFields;
-  void memoizedEntityInfo;
   /** Uncontrolled + ref: tránh React ghi đè DOM khi gõ Telex/IME (controlled value + sync làm vỡ dấu). */
   const collectionSearchInputRef = React.useRef(null);
   const searchDebounceTimerRef = React.useRef(0);
@@ -284,29 +281,6 @@ export function AppCollectionSection({
       info: detailNotesText,
     };
   }, [detailEntity, detailNotesText]);
-  const detailMemoizedEntityInfo = React.useMemo(() => {
-    if (!detailNotesEntity || collectionSubTab !== 'detail' || isEntityEditing) return null;
-    return (
-      <div className="font-serif max-w-none animate-fade-in min-h-[200px]">
-        {renderEntityNotesMarkdown(
-          safeString(detailNotesEntity.info),
-          currentContextDirHandle,
-          entityMap,
-          globalLinkRegex,
-          handleNavigate,
-          detailNotesEntity?.id
-        )}
-      </div>
-    );
-  }, [
-    collectionSubTab,
-    currentContextDirHandle,
-    detailNotesEntity,
-    entityMap,
-    globalLinkRegex,
-    handleNavigate,
-    isEntityEditing,
-  ]);
   const handleOpenCurrentTimelineEdit = React.useCallback(() => {
     const latestMilestone = timelineCurrentProfile.latestMilestone;
     if (!latestMilestone) return;
@@ -460,9 +434,9 @@ export function AppCollectionSection({
           {showEntityAdvanced && (
             <div
               id="entity-advanced-panel"
-              className="mt-3 rounded-2xl border border-slate-800/90 bg-slate-950/90 p-3.5 shadow-xl space-y-2.5 animate-fade-in"
+              className="mt-3 overflow-visible rounded-2xl border border-slate-800/90 bg-slate-950/90 p-3.5 shadow-xl space-y-2.5 animate-fade-fast"
             >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 gap-2.5 overflow-visible sm:grid-cols-2 lg:grid-cols-3">
                 <AdvancedFieldSelect
                   value={entityFilterField}
                   onChange={setEntityFilterField}
@@ -738,7 +712,10 @@ export function AppCollectionSection({
                   entityMap={entityMap}
                   globalLinkRegex={globalLinkRegex}
                   onNavigate={handleNavigate}
-                  memoizedEntityInfo={detailMemoizedEntityInfo}
+                  detailNotesMarkdown={detailNotesText}
+                  entityFilterFields={entityFilterFields}
+                  notesTabFieldBuckets={entityNotesTabFilterBuckets}
+                  AdvancedFieldSelect={AdvancedFieldSelect}
                   entityTemplateHint={currentTabConfig?.label || ''}
                   onOpenAutoSyncGuide={onOpenAutoSyncGuide}
                   onOpenEntityNotesGuide={onOpenEntityNotesGuide}

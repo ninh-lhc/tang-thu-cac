@@ -43,6 +43,16 @@ export function countSuggestionRows(rows = []) {
   ).length;
 }
 
+/** Đổi thứ tự một dòng trong mảng { prefix, value }; delta -1 = lên, +1 = xuống. */
+export function moveSuggestionRowAt(rows = [], fromIdx, delta) {
+  const list = Array.isArray(rows) ? [...rows] : [];
+  const toIdx = fromIdx + delta;
+  if (fromIdx < 0 || fromIdx >= list.length || toIdx < 0 || toIdx >= list.length) return list;
+  const [item] = list.splice(fromIdx, 1);
+  list.splice(toIdx, 0, item);
+  return list;
+}
+
 /**
  * Chuyển list lưu trữ (mỗi dòng dạng `prefix|value` hoặc `value`) → mảng value thuần
  * để dùng làm option cho datalist / UI chọn nhanh. Giữ thứ tự ban đầu (đã được người

@@ -26,7 +26,7 @@ describe('entityNoteTemplate', () => {
     expect(text).toContain('(37) ?');
     expect(text).toContain('[[');
     expect(text).toContain(']]');
-    expect(text).toContain('# AUTO');
+    expect(text).not.toContain('# AUTO');
   });
 
   it('falls back to generic line when no fields are provided', () => {

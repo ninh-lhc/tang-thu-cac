@@ -63,14 +63,13 @@ import {
 import { computeRelatedEntities } from './lib/computeRelatedEntities.js';
 import { findEntitiesByHintInNovel } from './appNhatKyVaGoiThe.js';
 import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
-import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
+import { buildEntityNotesTabFieldBuckets } from './lib/entityNotesTabFilter.js';
 import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
 import { resolveEntityPageForSelection } from './lib/entitySelectionPage.js';
 import {
   ensureCollectionListCardsForNovel,
   syncAllCollectionListCards,
-  isListCardEntity,
 } from './lib/collectionListCardSync.js';
 import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
 import {
@@ -133,7 +132,6 @@ import {
   runNovelAutoSyncPlan,
 } from './lib/autoSyncManager.js';
 import { AppMainPane } from './AppMainPane.jsx';
-import { AppListCardInfoSearch } from './AppListCardInfoSearch.jsx';
 import { AppModalLayer } from './AppModalLayer.jsx';
 import {
   configureGenreTabsTemplateStore,
@@ -3261,24 +3259,10 @@ export default function App() {
     }
   }, [activeNovelData, handleNavigate]);
 
-  const memoizedEntityInfo = useMemo(() => {
-      if (!selectedEntity || collectionSubTab !== 'detail' || isEntityEditing) return null;
-      if (isListCardEntity(selectedEntity)) {
-        return (
-          <AppListCardInfoSearch
-            info={selectedEntity.info}
-            dirHandle={currentContextDirHandle}
-            entityMap={entityMap}
-            linkRegex={globalLinkRegex}
-            onNavigate={(dest) => {
-              if (navFnRef.current) navFnRef.current(dest);
-            }}
-            selfEntityId={selectedEntity.id}
-          />
-        );
-      }
-      return <div className="font-serif max-w-none animate-fade-in min-h-[200px]">{renderEntityNotesMarkdown(safeString(selectedEntity.info), currentContextDirHandle, entityMap, globalLinkRegex, (dest) => { if(navFnRef.current) navFnRef.current(dest); }, selectedEntity?.id)}</div>;
-  }, [selectedEntity, collectionSubTab, isEntityEditing, currentContextDirHandle, entityMap, globalLinkRegex]);
+  const entityNotesTabFilterBuckets = useMemo(() => {
+    if (currentTabConfig?.viewType !== 'collection-track') return [];
+    return buildEntityNotesTabFieldBuckets(collectionEntitiesRaw, entityFilterFields);
+  }, [collectionEntitiesRaw, currentTabConfig?.viewType, entityFilterFields]);
 
   const memoizedStandardData = useMemo(() => {
       if (isEditingMode || currentTabConfig?.viewType === 'collection-track') return null;
@@ -3406,7 +3390,7 @@ export default function App() {
     setIsInsertImageModalOpen,
     handlePickLocalImage,
     debouncedMarkdownPreview,
-    memoizedEntityInfo,
+    entityNotesTabFilterBuckets,
     setLightboxSrc,
     selectedMilestoneId,
     setSelectedMilestoneId,

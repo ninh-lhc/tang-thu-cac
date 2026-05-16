@@ -6,7 +6,7 @@
  * Hỗ trợ 2 chế độ lưu: 'nho' (chỉ tab con đang chọn) và 'lon' (toàn bộ tab con trong cùng tab lớn,
  * dùng `propagateWithinLon` của handler).
  */
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Plus, ChevronDown, ChevronUp, Edit2 } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
 import { WIKI_ALIAS_FIELD } from './MasterEngines.js';
@@ -19,6 +19,7 @@ import {
 } from './lib/fieldValueSources.js';
 import { getGenreTabsTemplate } from './lib/genreTabsTemplateStore.js';
 import {
+  moveSuggestionRowAt,
   normalizeSuggestionRows,
   serializeSuggestionRows,
 } from './lib/suggestionRowFormat.js';
@@ -73,6 +74,10 @@ export function AppEntityTemplateFieldEditor({
   const [scope, setScope] = useState(SCOPE_LOCAL);
   const [draft, setDraft] = useState('');
   const [suggestionRowsByField, setSuggestionRowsByField] = useState({});
+  /** { fid, rowIdx } — focus ô nội dung sau khi bấm «+ Dòng». */
+  const [pendingSuggestionFocus, setPendingSuggestionFocus] = useState(null);
+  const pendingSuggestionFocusRef = useRef(pendingSuggestionFocus);
+  pendingSuggestionFocusRef.current = pendingSuggestionFocus;
   const pathKey = `${lonId}::${nhoId}`;
   const outlineDlId = useId().replace(/:/g, '');
   const outlineOid = outlineMeta && safeString(outlineMeta.oid).trim() ? safeString(outlineMeta.oid).trim() : '';
@@ -108,6 +113,19 @@ export function AppEntityTemplateFieldEditor({
     setSuggestionRowsByField(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suggestionListsSignature, pathKey]);
+
+  useEffect(() => {
+    const target = pendingSuggestionFocusRef.current;
+    if (!target?.fid || target.rowIdx == null) return;
+    const safeFid = String(target.fid).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const el = document.getElementById(
+      `ttc-entity-suggestion-${pathKey}-${safeFid}-value-${target.rowIdx}`
+    );
+    if (el) {
+      el.focus();
+      setPendingSuggestionFocus(null);
+    }
+  }, [pendingSuggestionFocus, pathKey, suggestionRowsByField]);
 
   const isForceTemplateScope = useMemo(
     () =>
@@ -442,8 +460,42 @@ export function AppEntityTemplateFieldEditor({
                     )}
                     <div>
                       <div className="space-y-1">
-                        {suggestionRows.map((row, rowIdx) => (
-                          <div key={`${fid}-row-${rowIdx}`} className="flex items-center gap-1.5">
+                        {suggestionRows.map((row, rowIdx) => {
+                          const suggestionValueInputId = `ttc-entity-suggestion-${pathKey}-${fid.replace(/[^a-zA-Z0-9_-]/g, '_')}-value-${rowIdx}`;
+                          return (
+                          <div key={`${fid}-row-${rowIdx}`} className="flex items-center gap-1">
+                            <div className="flex flex-col shrink-0 gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSuggestionRowsByField((prev) => {
+                                    const list = Array.isArray(prev[fid]) ? [...prev[fid]] : [];
+                                    return { ...prev, [fid]: moveSuggestionRowAt(list, rowIdx, -1) };
+                                  });
+                                }}
+                                disabled={rowIdx === 0}
+                                className="rounded border border-slate-700/80 bg-slate-900/60 p-0.5 text-slate-300 hover:bg-slate-800 disabled:opacity-25 disabled:pointer-events-none"
+                                title="Lên"
+                                aria-label={`Lên dòng ${rowIdx + 1}`}
+                              >
+                                <ChevronUp size={12} aria-hidden />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSuggestionRowsByField((prev) => {
+                                    const list = Array.isArray(prev[fid]) ? [...prev[fid]] : [];
+                                    return { ...prev, [fid]: moveSuggestionRowAt(list, rowIdx, 1) };
+                                  });
+                                }}
+                                disabled={rowIdx >= suggestionRows.length - 1}
+                                className="rounded border border-slate-700/80 bg-slate-900/60 p-0.5 text-slate-300 hover:bg-slate-800 disabled:opacity-25 disabled:pointer-events-none"
+                                title="Xuống"
+                                aria-label={`Xuống dòng ${rowIdx + 1}`}
+                              >
+                                <ChevronDown size={12} aria-hidden />
+                              </button>
+                            </div>
                             <input
                               type="text"
                               value={safeString(row.prefix)}
@@ -460,6 +512,7 @@ export function AppEntityTemplateFieldEditor({
                               aria-label={`Ký hiệu dòng gợi ý ${rowIdx + 1} của ${fid}`}
                             />
                             <input
+                              id={suggestionValueInputId}
                               type="text"
                               value={safeString(row.value)}
                               onChange={(e) => {
@@ -488,7 +541,8 @@ export function AppEntityTemplateFieldEditor({
                               X
                             </button>
                           </div>
-                        ))}
+                          );
+                        })}
                         <div className="flex items-center justify-between pt-1">
                           <button
                             type="button"
@@ -496,6 +550,7 @@ export function AppEntityTemplateFieldEditor({
                               setSuggestionRowsByField((prev) => {
                                 const list = Array.isArray(prev[fid]) ? [...prev[fid]] : [];
                                 list.push({ prefix: '', value: '' });
+                                setPendingSuggestionFocus({ fid, rowIdx: list.length - 1 });
                                 return { ...prev, [fid]: list };
                               });
                             }}
