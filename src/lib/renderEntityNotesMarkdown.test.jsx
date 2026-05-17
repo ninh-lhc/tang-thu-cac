@@ -213,8 +213,9 @@ describe('renderEntityNotesMarkdown', () => {
     const fieldLabel = container.querySelector('[data-entity-field-label="true"]');
     const wiki = container.querySelector('[data-entity-wiki-link="external"]');
     expect(fieldLabel?.className).toContain('text-cyan-300');
-    expect(wiki?.className).toContain('text-orange-300');
-    expect(wiki?.className).not.toContain('text-cyan-300');
+    const wikiLabel = wiki?.querySelector('span.font-bold');
+    expect(wikiLabel?.className).toContain('text-violet-300');
+    expect(wikiLabel?.className).not.toContain('text-emerald-300');
   });
 
   it('distinguishes self vs external wiki links on the same card', () => {
@@ -236,9 +237,10 @@ describe('renderEntityNotesMarkdown', () => {
 
     const selfLink = container.querySelector('[data-entity-wiki-link="self"]');
     const externalLink = container.querySelector('[data-entity-wiki-link="external"]');
-    expect(selfLink?.className).toContain('text-emerald-300');
-    expect(externalLink?.className).toContain('text-orange-300');
-    expect(selfLink?.className).not.toContain('text-violet-200');
+    expect(selfLink?.querySelector('span.font-bold')?.className).toContain('text-emerald-300');
+    expect(selfLink?.className).toContain('border-emerald-400');
+    expect(externalLink?.querySelector('span.font-bold')?.className).toContain('text-violet-300');
+    expect(externalLink?.className).toContain('border-violet-400');
   });
 
   it('uses hierarchy colors for minor headings and field labels', () => {

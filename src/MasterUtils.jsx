@@ -768,29 +768,35 @@ export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className, styl
   return <img src={src} alt={alt} className={imgClass} style={style} onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />;
 });
 
-const WIKI_CHIP_BASE =
-  'transition-colors font-semibold cursor-pointer inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md';
+const WIKI_CHIP_SHELL =
+  'transition-colors cursor-pointer inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md';
 
-/** Chip wiki trong preview ghi chép: tách «cùng thẻ» / «thẻ khác» / «chưa có hồ sơ». */
+/** Chip wiki trong preview ghi chép — chữ + icon in đậm, màu riêng (xanh cùng thẻ / tím khác thẻ). */
 function getEntityNotesWikiLinkChip(isSelfLink, pending = false) {
   if (pending) {
     return {
-      className: `${WIKI_CHIP_BASE} text-slate-300 bg-slate-800/75 hover:bg-emerald-950/50 hover:text-emerald-200 border border-dashed border-slate-500/55 hover:border-emerald-500/45`,
+      className: `${WIKI_CHIP_SHELL} bg-violet-950/40 hover:bg-violet-900/55 border border-dashed border-violet-500/45`,
+      textClass: 'font-bold text-violet-300',
+      iconClass: 'text-violet-400',
       'data-entity-wiki-link': 'pending',
       title: 'Chưa có hồ sơ — nhấp để tạo thẻ mới',
     };
   }
   if (isSelfLink) {
     return {
-      className: `${WIKI_CHIP_BASE} text-emerald-300 bg-emerald-950/65 hover:bg-emerald-900/70 hover:text-emerald-50 border border-emerald-400/55 ring-1 ring-emerald-500/20`,
+      className: `${WIKI_CHIP_SHELL} bg-emerald-950/65 hover:bg-emerald-900/75 border-2 border-emerald-400/65 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.12)]`,
+      textClass: 'font-bold text-emerald-300',
+      iconClass: 'text-emerald-400',
       'data-entity-wiki-link': 'self',
-      title: 'Liên kết trỏ lại chính thẻ đang xem',
+      title: 'Liên kết trỏ lại chính thẻ đang xem (xanh lục)',
     };
   }
   return {
-    className: `${WIKI_CHIP_BASE} text-orange-300 bg-orange-950/55 hover:bg-orange-900/65 hover:text-orange-50 border border-orange-400/50 ring-1 ring-orange-500/20`,
+    className: `${WIKI_CHIP_SHELL} bg-violet-800/45 hover:bg-violet-700/60 border-2 border-violet-400/70 shadow-[inset_0_0_0_1px_rgba(167,139,250,0.15)]`,
+    textClass: 'font-bold text-violet-300',
+    iconClass: 'text-violet-400',
     'data-entity-wiki-link': 'external',
-    title: 'Mở thẻ / tab khác',
+    title: 'Mở thẻ / tab khác (tím)',
   };
 }
 
@@ -1132,6 +1138,8 @@ export const processInline = (
                 className: getWikiLinkClassName(isSelfLink, 'inline'),
                 title: `Mở hồ sơ: ${innerText}`,
               };
+          const textClass = chip.textClass || '';
+          const iconClass = chip.iconClass || textClass;
           return (
             <span
               key={i}
@@ -1143,8 +1151,8 @@ export const processInline = (
               data-entity-wiki-link={chip['data-entity-wiki-link']}
               title={chip.title || `Mở hồ sơ: ${innerText}`}
             >
-              <Link2 size={12} />
-              {innerText}
+              <Link2 size={12} className={`shrink-0 ${iconClass}`} />
+              <span className={textClass || 'font-bold'}>{innerText}</span>
             </span>
           );
         }
@@ -1155,6 +1163,8 @@ export const processInline = (
                 'text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded-md hover:text-emerald-400 hover:bg-emerald-900/30 border border-dashed border-slate-600 hover:border-emerald-500/50 transition-all cursor-pointer inline-flex items-center gap-1',
               title: 'Thực thể chưa có hồ sơ. Nhấp để ngưng tụ (tạo mới)!',
             };
+        const pendingTextClass = pendingChip.textClass || 'font-bold text-violet-300';
+        const pendingIconClass = pendingChip.iconClass || pendingTextClass;
         return (
           <span
             key={i}
@@ -1166,8 +1176,8 @@ export const processInline = (
             data-entity-wiki-link={pendingChip['data-entity-wiki-link']}
             title={pendingChip.title}
           >
-            <Plus size={12} />
-            {innerText}
+            <Plus size={12} className={`shrink-0 ${pendingIconClass}`} />
+            <span className={pendingTextClass}>{innerText}</span>
           </span>
         );
       }
