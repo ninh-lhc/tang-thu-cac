@@ -18,7 +18,20 @@ const IMAGE_LINE_RE = /^!\[(.*?)\]\((.*?)\)$/;
 const QUOTE_LINE_RE = /^\s*>\s?(.*)$/;
 const CALLOUT_MARKER_RE = /^\[!([A-Z_-]+)\](?:\s+(.*))?$/i;
 const LEAD_BOLD_LABEL_RE = /^\*\*((?:(?!\*\*).)+?[:：])\*\*(?:\s+|$)([\s\S]*)$/u;
+/** Mẫu form: «Tên trường: giá trị» (không **), dùng trong preview ghi chép. */
+const PLAIN_FIELD_COLON_RE = /^((?:(?!\*\*).)+?[:：])\s*([\s\S]*)$/u;
 const AUTO_SYNC_FOOTER_RE = /^\(?\s*(?:Tự động cập nhật theo|Tu dong cap nhat theo)\b/i;
+
+/** Phân cấp màu cố định: tiêu đề lớn / tiêu đề nhỏ / tên trường (trước dấu :). */
+const ENTITY_NOTES_TYPO = {
+  majorTitle: 'text-violet-200',
+  majorBorder: 'border-violet-500/45',
+  minorTitle: 'text-amber-200/90',
+  fieldLabel: 'text-cyan-300/95',
+  listMarker: 'text-slate-500',
+  listRail: 'border-slate-700/40',
+  body: 'text-slate-200/95',
+};
 
 const CALLOUT_STYLES = {
   violet: {
@@ -143,49 +156,65 @@ const isBlockBoundary = (line) => {
   );
 };
 
+const ENTITY_NOTES_INLINE_OPTS = { entityNotesPreview: true };
+
+const withEntityNotesInlineOpts = (extra = {}) => ({
+  ...ENTITY_NOTES_INLINE_OPTS,
+  ...extra,
+});
+
 /**
  * Bullet / list: bật addressMeta (địa chỉ bản đồ) trừ khi có `[color=…]` — tách ngoặc theo () làm vỡ
  * khối màu khi phần in đậm có (Cấp …) bên trong `[color]…[/color]`.
  */
 const listInlineOptsForBody = (body) => {
   const s = safeString(body);
-  if (/\[color=/i.test(s)) return { addressMeta: false };
-  return { addressMeta: true };
+  if (/\[color=/i.test(s)) return withEntityNotesInlineOpts({ addressMeta: false });
+  return withEntityNotesInlineOpts({ addressMeta: true });
+};
+
+const renderEntityNotesFieldRow = (labelText, restText, context) => {
+  const { dirHandle, lookup, linkRegex, onNavigate, selfEntityId } = context;
+  const label = safeString(labelText).trim();
+  const rest = safeString(restText).trimStart();
+  return (
+    <span className="inline leading-[1.85]">
+      <strong data-entity-field-label="true" className={`font-bold ${ENTITY_NOTES_TYPO.fieldLabel}`}>
+        {label}
+      </strong>
+      {rest ? (
+        <>
+          {' '}
+          <span className={ENTITY_NOTES_TYPO.body}>
+            {processInline(rest, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ENTITY_NOTES_INLINE_OPTS)}
+          </span>
+        </>
+      ) : null}
+    </span>
+  );
 };
 
 const renderInlineBodyWithLeadLabel = (body, context) => {
   const normalized = safeString(body);
-  const match = normalized.match(LEAD_BOLD_LABEL_RE);
+  const boldMatch = normalized.match(LEAD_BOLD_LABEL_RE);
   const { dirHandle, lookup, linkRegex, onNavigate, selfEntityId } = context;
   const listOpts = listInlineOptsForBody(normalized);
 
-  if (!match) {
-    return processInline(normalized, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, listOpts);
+  if (boldMatch) {
+    return renderEntityNotesFieldRow(boldMatch[1], boldMatch[2], context);
   }
 
-  const labelText = safeString(match[1]).trim();
-  const restText = safeString(match[2]).trimStart();
+  const plainMatch = normalized.match(PLAIN_FIELD_COLON_RE);
+  if (plainMatch && !normalized.includes('**')) {
+    const labelPart = safeString(plainMatch[1]);
+    const colonAt = Math.max(labelPart.lastIndexOf(':'), labelPart.lastIndexOf('：'));
+    const beforeColon = colonAt >= 0 ? labelPart.slice(0, colonAt) : labelPart;
+    if (!beforeColon.includes('(') && !beforeColon.includes('（')) {
+      return renderEntityNotesFieldRow(plainMatch[1], plainMatch[2], context);
+    }
+  }
 
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div
-        data-entity-lead-label="true"
-        className="flex w-fit max-w-full items-center gap-3 text-[0.8rem] font-bold uppercase tracking-[0.22em] text-slate-400/90"
-      >
-        <span>{processInline(labelText, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}</span>
-        <span
-          aria-hidden="true"
-          data-entity-lead-label-rule="true"
-          className="h-px w-14 bg-slate-700/80"
-        />
-      </div>
-      {restText ? (
-        <div className="pl-0.5">
-          {processInline(restText, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, listInlineOptsForBody(restText))}
-        </div>
-      ) : null}
-    </div>
-  );
+  return processInline(normalized, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, listOpts);
 };
 
 function renderBlocksFromLines(lines, context, options = {}) {
@@ -257,9 +286,12 @@ function renderBlocksFromLines(lines, context, options = {}) {
         <h1
           key={`${baseKey}-h1-${lineIndex}`}
           {...jumpProps}
-          className={mergeClassName(jumpProps, 'mt-8 mb-5 border-b border-violet-500/20 pb-3 text-[2.15rem] font-heading font-bold text-slate-50')}
+          className={mergeClassName(
+            jumpProps,
+            `mt-8 mb-5 border-b border-violet-500/25 pb-3 text-[2.15rem] font-heading font-bold ${ENTITY_NOTES_TYPO.majorTitle}`,
+          )}
         >
-          {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+          {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ENTITY_NOTES_INLINE_OPTS)}
         </h1>
       );
       lineIndex += 1;
@@ -275,9 +307,12 @@ function renderBlocksFromLines(lines, context, options = {}) {
         <h2
           key={`${baseKey}-h2-${lineIndex}`}
           {...jumpProps}
-          className={mergeClassName(jumpProps, 'mt-8 mb-4 border-l-4 border-violet-500/35 pl-4 text-[1.7rem] font-heading font-bold text-violet-100')}
+          className={mergeClassName(
+            jumpProps,
+            `mt-8 mb-3 border-l-[3px] pl-3.5 text-[1.65rem] font-heading font-bold ${ENTITY_NOTES_TYPO.majorBorder} ${ENTITY_NOTES_TYPO.majorTitle}`,
+          )}
         >
-          {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+          {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ENTITY_NOTES_INLINE_OPTS)}
         </h2>
       );
       lineIndex += 1;
@@ -293,9 +328,12 @@ function renderBlocksFromLines(lines, context, options = {}) {
         <h3
           key={`${baseKey}-h3-${lineIndex}`}
           {...jumpProps}
-          className={mergeClassName(jumpProps, 'mt-6 mb-3 text-[1.15rem] font-bold uppercase tracking-[0.18em] text-amber-200/85')}
+          className={mergeClassName(
+            jumpProps,
+            `mt-6 mb-3 text-[1.12rem] font-bold ${ENTITY_NOTES_TYPO.minorTitle}`,
+          )}
         >
-          {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+          {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ENTITY_NOTES_INLINE_OPTS)}
         </h3>
       );
       lineIndex += 1;
@@ -323,7 +361,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
           {...jumpProps}
           className={mergeClassName(jumpProps, 'my-5')}
         >
-          {processInline(trimmed, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+          {processInline(trimmed, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ENTITY_NOTES_INLINE_OPTS)}
         </div>
       );
       lineIndex += 1;
@@ -341,13 +379,20 @@ function renderBlocksFromLines(lines, context, options = {}) {
         <div
           key={`${baseKey}-section-${lineIndex}`}
           {...jumpProps}
-          className={mergeClassName(jumpProps, 'mt-8 mb-4 flex items-start gap-3')}
+          className={mergeClassName(
+            jumpProps,
+            `mt-8 mb-3 flex items-start gap-3 border-l-[3px] pl-3.5 ${ENTITY_NOTES_TYPO.majorBorder}`,
+          )}
         >
-          <span className="pt-0.5 text-[1.55rem] leading-none font-heading font-black text-violet-400/95">
+          <span
+            className={`pt-0.5 text-[1.5rem] leading-none font-heading font-bold ${ENTITY_NOTES_TYPO.majorTitle}`}
+          >
             {orderNo}.
           </span>
-          <h3 className="text-[1.55rem] leading-tight font-heading font-bold text-violet-200">
-            {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+          <h3
+            className={`text-[1.55rem] leading-tight font-heading font-bold ${ENTITY_NOTES_TYPO.majorTitle}`}
+          >
+            {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ENTITY_NOTES_INLINE_OPTS)}
           </h3>
         </div>
       );
@@ -379,7 +424,15 @@ function renderBlocksFromLines(lines, context, options = {}) {
               'my-3 rounded-xl border border-slate-800/80 bg-slate-950/50 px-3 py-2 text-[11px] italic text-slate-500 font-serif'
             )}
           >
-            {processInline(singleQuoteText, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+            {processInline(
+              singleQuoteText,
+              dirHandle,
+              lookup,
+              linkRegex,
+              onNavigate,
+              selfEntityId,
+              ENTITY_NOTES_INLINE_OPTS,
+            )}
           </p>
         );
         continue;
@@ -436,7 +489,15 @@ function renderBlocksFromLines(lines, context, options = {}) {
             'my-5 rounded-2xl border border-amber-500/20 bg-amber-950/15 px-5 py-4 text-[1.05rem] italic text-slate-200/80 shadow-[inset_0_1px_0_rgba(251,191,36,0.06)]'
           )}
         >
-          {processInline(quoteLines.join(' '), dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+          {processInline(
+            quoteLines.join(' '),
+            dirHandle,
+            lookup,
+            linkRegex,
+            onNavigate,
+            selfEntityId,
+            ENTITY_NOTES_INLINE_OPTS,
+          )}
         </blockquote>
       );
       continue;
@@ -458,7 +519,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
           {...buildJumpProps(startIndex + 1)}
           className={mergeClassName(
             buildJumpProps(startIndex + 1),
-            'mb-5 list-none space-y-2 text-[1.08rem] leading-[1.85] text-slate-200'
+            `mb-5 list-none space-y-2 border-l-2 pl-3 text-[1.08rem] leading-[1.85] ${ENTITY_NOTES_TYPO.body} ${ENTITY_NOTES_TYPO.listRail}`,
           )}
         >
           {items.map((item, idx) => {
@@ -470,7 +531,11 @@ function renderBlocksFromLines(lines, context, options = {}) {
                 className="flex items-start gap-3"
                 style={{ paddingInlineStart: `${level * 1.15}rem` }}
               >
-                <span className="mt-[0.45rem] text-sm font-bold text-violet-300">{marker}</span>
+                <span
+                  className={`mt-[0.45rem] text-sm font-semibold ${ENTITY_NOTES_TYPO.listMarker}`}
+                >
+                  {marker}
+                </span>
                 <div className="flex-1 pl-0.5">
                   {renderInlineBodyWithLeadLabel(item.body, context)}
                 </div>
@@ -502,7 +567,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
           {...buildJumpProps(startIndex + 1)}
           className={mergeClassName(
             buildJumpProps(startIndex + 1),
-            'mb-5 list-none space-y-2 text-[1.08rem] leading-[1.85] text-slate-200'
+            `mb-5 list-none space-y-2 border-l-2 pl-3 text-[1.08rem] leading-[1.85] ${ENTITY_NOTES_TYPO.body} ${ENTITY_NOTES_TYPO.listRail}`,
           )}
         >
           {items.map((item, idx) => {
@@ -513,7 +578,9 @@ function renderBlocksFromLines(lines, context, options = {}) {
                 className="flex items-start gap-3"
                 style={{ paddingInlineStart: `${level * 1.15}rem` }}
               >
-                <span className="min-w-[1.75rem] pt-0.5 text-right font-semibold text-violet-300">
+                <span
+                  className={`min-w-[1.75rem] pt-0.5 text-right text-sm font-semibold ${ENTITY_NOTES_TYPO.listMarker}`}
+                >
                   {item.orderNo}.
                 </span>
                 <div className="flex-1 pl-0.5">
@@ -551,7 +618,15 @@ function renderBlocksFromLines(lines, context, options = {}) {
             : 'mb-4 font-serif text-[1.1rem] leading-[1.9] text-slate-200/92'
         )}
       >
-        {processInline(paragraphText, dirHandle, lookup, linkRegex, onNavigate, selfEntityId)}
+        {processInline(
+          paragraphText,
+          dirHandle,
+          lookup,
+          linkRegex,
+          onNavigate,
+          selfEntityId,
+          ENTITY_NOTES_INLINE_OPTS,
+        )}
       </p>
     );
   }

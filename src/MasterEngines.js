@@ -3,6 +3,8 @@
 // File: MasterEngines.js
 // ==========================================
 
+import { resolveAutoListOutlineFieldId } from './lib/outlineListOrder.js';
+
 export const APP_VERSION = "5.4.0 (Neo chương · Tra trong truyện · Thư viện ảnh)";
 export const apiKey = ""; // Được ghi đè bằng LocalStorage qua Giao diện
 
@@ -332,7 +334,9 @@ export const isStockTemplate = (template) => {
   return template.every(f => /^f_/.test(f.id));
 };
 
-/** Lấy fieldsTemplate cho tab — ưu tiên template đã lưu, fallback theo ID rồi label; luôn đảm bảo có f_alias (cuối). */
+/** Lấy fieldsTemplate cho tab — ưu tiên template đã lưu, fallback theo ID rồi label.
+ *  Mặc định thêm f_alias (cuối) và f_muc_luc_danh_sach; user có thể tắt qua
+ *  `wikiAliasInTemplate: false` hoặc `autoListOutlineFieldId: '__off__'`. */
 export const resolveFieldsTemplate = (tabConfig, parentTabId, parentLabel = '') => {
   const t = tabConfig?.fieldsTemplate;
   const target =
@@ -341,7 +345,11 @@ export const resolveFieldsTemplate = (tabConfig, parentTabId, parentLabel = '') 
     guessFieldsByLabel(tabConfig?.label || '') ||
     guessFieldsByLabel(parentLabel);
   const base = (!t || t.length === 0) ? (target || DEFAULT_ENTITY_FIELDS) : t;
-  const merged = mergeFieldsTemplate([WIKI_ALIAS_FIELD], base);
+  const merged =
+    tabConfig?.wikiAliasInTemplate === false
+      ? mergeFieldsTemplate([], base).filter((f) => f && f.id !== WIKI_ALIAS_FIELD.id)
+      : mergeFieldsTemplate([WIKI_ALIAS_FIELD], base);
+  if (resolveAutoListOutlineFieldId(tabConfig) === '') return merged;
   const hasOutline = merged.some((f) => f && f.id === OUTLINE_LIST_FIELD.id);
   if (hasOutline) return merged;
   const aliasIdx = merged.findIndex((f) => f && f.id === WIKI_ALIAS_FIELD.id);

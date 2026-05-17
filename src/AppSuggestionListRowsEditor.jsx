@@ -46,6 +46,12 @@ export function AppSuggestionListRowsEditor({
     setPendingFocusRowIdx(next.length - 1);
   };
 
+  const handleEnterAddRow = (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent?.isComposing) return;
+    e.preventDefault();
+    addRow();
+  };
+
   return (
     <div className="space-y-1">
       {list.map((row, rowIdx) => (
@@ -76,6 +82,7 @@ export function AppSuggestionListRowsEditor({
             type="text"
             value={safeString(row.prefix)}
             onChange={(e) => updateRow(rowIdx, { prefix: e.target.value })}
+            onKeyDown={handleEnterAddRow}
             className="w-20 bg-slate-950 border border-emerald-800/45 rounded-md px-2 py-1.5 text-xs text-emerald-100 font-mono"
             placeholder={prefixPlaceholder}
             aria-label={`Ký hiệu dòng ${rowIdx + 1}`}
@@ -85,6 +92,7 @@ export function AppSuggestionListRowsEditor({
             type="text"
             value={safeString(row.value)}
             onChange={(e) => updateRow(rowIdx, { value: e.target.value })}
+            onKeyDown={handleEnterAddRow}
             className={valueInputClassName}
             placeholder={valuePlaceholder}
             aria-label={`Nội dung dòng ${rowIdx + 1}`}

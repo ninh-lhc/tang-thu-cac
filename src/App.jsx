@@ -34,6 +34,8 @@ import {
   DEFAULT_FIELDS_MAP, DEFAULT_FIELDS_BY_PARENT,
   guessFieldsByLabel, isStockTemplate, mergeFieldsTemplate, lockFieldsTemplateIfFirstEntity,
   resolveFieldsTemplate,
+  WIKI_ALIAS_FIELD,
+  OUTLINE_LIST_FIELD,
 } from './MasterEngines.js';
 import {
   generateId, safeString, toDisplayTitleCase, getTerms, sortTabsAlphabetically,
@@ -141,6 +143,7 @@ import {
 import { resolveTabsConfigForGenreSelection } from './lib/resolveTabsConfigForGenreSelection.js';
 import {
   ensureWikiAliasInFieldsTemplate,
+  ensureWikiAliasInFieldsTemplateForTab,
   sanitizeFieldsTemplate,
   linesToSuggestionArray,
   normalizeFieldSuggestionLists,
@@ -2778,6 +2781,15 @@ export default function App() {
     });
   };
 
+  const materializeStoredTemplateField = (sub, fid, lonId, lonLabel) => {
+    const stored = Array.isArray(sub.fieldsTemplate) ? [...sub.fieldsTemplate] : [];
+    if (stored.some((f) => f && f.id === fid)) return stored;
+    const resolved = resolveFieldsTemplate(sub, lonId, lonLabel);
+    const hit = resolved.find((f) => f && f.id === fid);
+    if (!hit) return stored;
+    return [...stored.filter((f) => f && f.id !== fid), { ...hit }];
+  };
+
   const handleAddTabTemplateField = (lonId, nhoId, label, options = {}) => {
     const propagate = Boolean(options?.propagateWithinLon);
     const L = safeString(label).trim();
@@ -2792,10 +2804,11 @@ export default function App() {
       ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
       : [nho];
     targets.forEach((sub) => {
-      const fields = ensureWikiAliasInFieldsTemplate(sub.fieldsTemplate || []);
+      const fields = ensureWikiAliasInFieldsTemplateForTab(sub.fieldsTemplate || [], sub);
       if (fields.some((f) => f.id === newId)) return;
-      const idx = fields.findIndex((f) => f.id === 'f_alias');
-      const nextFields = idx === -1 ? [...fields, newField] : [...fields.slice(0, idx), newField, ...fields.slice(idx)];
+      const idx = fields.findIndex((f) => f.id === WIKI_ALIAS_FIELD.id);
+      const nextFields =
+        idx === -1 ? [...fields, newField] : [...fields.slice(0, idx), newField, ...fields.slice(idx)];
       sub.fieldsTemplate = nextFields;
     });
     setTabsConfig(current, {
@@ -2830,12 +2843,12 @@ export default function App() {
       : [nho];
     let changed = false;
     targets.forEach((sub) => {
-      const fieldsArr = ensureWikiAliasInFieldsTemplate(sub.fieldsTemplate || []);
+      const fieldsArr = ensureWikiAliasInFieldsTemplateForTab(sub.fieldsTemplate || [], sub);
       let next = fieldsArr;
       let touched = false;
       wanted.forEach(({ id, label }) => {
         if (next.some((f) => f.id === id)) return;
-        const aliasIdx = next.findIndex((f) => f.id === 'f_alias');
+        const aliasIdx = next.findIndex((f) => f.id === WIKI_ALIAS_FIELD.id);
         const newField = { id, label: label || id };
         next = aliasIdx === -1
           ? [...next, newField]
@@ -2859,17 +2872,20 @@ export default function App() {
   const handleRemoveTabTemplateField = (lonId, nhoId, fieldId, options = {}) => {
     const propagate = Boolean(options?.propagateWithinLon);
     const fid = safeString(fieldId).trim();
-    if (!fid || fid === 'f_alias') return;
+    if (!fid) return;
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
     if (!nho || nho.viewType !== 'collection-track') return;
+    const lonLabel = safeString(lon?.label || '');
     const targets = propagate
       ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
       : [nho];
     targets.forEach((sub) => {
+      if (fid === OUTLINE_LIST_FIELD.id) sub.autoListOutlineFieldId = '__off__';
+      if (fid === WIKI_ALIAS_FIELD.id) sub.wikiAliasInTemplate = false;
       const filtered = sanitizeFieldsTemplate((sub.fieldsTemplate || []).filter((f) => f.id !== fid));
-      sub.fieldsTemplate = ensureWikiAliasInFieldsTemplate(filtered);
+      sub.fieldsTemplate = ensureWikiAliasInFieldsTemplateForTab(filtered, sub);
       if (sub.fieldSuggestionLists?.[fid]) {
         const nextLists = { ...sub.fieldSuggestionLists };
         delete nextLists[fid];
@@ -2908,14 +2924,16 @@ export default function App() {
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
     if (!nho || nho.viewType !== 'collection-track') return;
     const L = safeString(nextLabel).trim();
+    const lonLabel = safeString(lon?.label || '');
     const targets = propagate
       ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
       : [nho];
     targets.forEach((sub) => {
-      const hasField = (sub.fieldsTemplate || []).some((f) => f.id === fid);
-      if (!hasField) return;
-      const nextFields = (sub.fieldsTemplate || []).map((f) => (f.id === fid ? { ...f, label: L || f.id } : f));
-      sub.fieldsTemplate = ensureWikiAliasInFieldsTemplate(nextFields);
+      const nextFields = materializeStoredTemplateField(sub, fid, lonId, lonLabel).map((f) =>
+        f.id === fid ? { ...f, label: L || f.id } : f
+      );
+      if (!nextFields.some((f) => f.id === fid)) return;
+      sub.fieldsTemplate = ensureWikiAliasInFieldsTemplateForTab(nextFields, sub);
     });
     setTabsConfig(current, {
       resyncAuto: true,
@@ -2931,26 +2949,27 @@ export default function App() {
   const handleSetTabTemplateFieldSortPrefix = (lonId, nhoId, fieldId, nextPrefix, options = {}) => {
     const propagate = Boolean(options?.propagateWithinLon);
     const fid = safeString(fieldId).trim();
-    if (!fid || fid === 'f_alias') return;
+    if (!fid) return;
     const prefix = safeString(nextPrefix).trim();
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
     if (!nho || nho.viewType !== 'collection-track') return;
+    const lonLabel = safeString(lon?.label || '');
     const targets = propagate
       ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
       : [nho];
     targets.forEach((sub) => {
-      const hasField = (sub.fieldsTemplate || []).some((f) => f.id === fid);
-      if (!hasField) return;
-      const nextFields = (sub.fieldsTemplate || []).map((f) => {
+      const base = materializeStoredTemplateField(sub, fid, lonId, lonLabel);
+      if (!base.some((f) => f.id === fid)) return;
+      const nextFields = base.map((f) => {
         if (f.id !== fid) return f;
         const next = { ...f };
         if (!prefix) delete next.sortPrefix;
         else next.sortPrefix = prefix;
         return next;
       });
-      sub.fieldsTemplate = ensureWikiAliasInFieldsTemplate(nextFields);
+      sub.fieldsTemplate = ensureWikiAliasInFieldsTemplateForTab(nextFields, sub);
     });
     setTabsConfig(current, {
       resyncAuto: true,
@@ -2967,16 +2986,21 @@ export default function App() {
     }
     const propagate = Boolean(options?.propagateWithinLon);
     const fid = safeString(fieldId).trim();
-    if (!fid || fid === 'f_alias') return;
+    if (!fid) return;
     const normalized = normalizeFieldSource(nextSource);
     const current = structuredClone(getTabsToUpdate());
     const lon = current.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
     if (!nho || nho.viewType !== 'collection-track') return;
+    const lonLabel = safeString(lon?.label || '');
     const targets = propagate
       ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
       : [nho];
     targets.forEach((sub) => {
+      sub.fieldsTemplate = ensureWikiAliasInFieldsTemplateForTab(
+        materializeStoredTemplateField(sub, fid, lonId, lonLabel),
+        sub
+      );
       const hasField = (sub.fieldsTemplate || []).some((f) => safeString(f?.id).trim() === fid);
       if (!hasField) return;
       const prev = sub.fieldSource && typeof sub.fieldSource === 'object' ? { ...sub.fieldSource } : {};

@@ -33,7 +33,7 @@ export function buildEntityNoteDetailSectionLines({ entityName = '', fieldsTempl
   lines.push('> Xóa dòng không cần, thêm dòng cần bổ sung.');
   lines.push('');
   if (canonicalName) {
-    lines.push(`- Danh xưng / Tên gọi: ${canonicalName}`);
+    lines.push(`- **Danh xưng / Tên gọi:** [[${canonicalName}]]`);
   }
 
   if (fields.length === 0) {
@@ -46,7 +46,7 @@ export function buildEntityNoteDetailSectionLines({ entityName = '', fieldsTempl
       const label = safeString(field?.label).trim();
       if (!label) return;
       const value = safeString(dynamicData?.[field.id]).trim();
-      lines.push(`- ${label}: ${value}`);
+      lines.push(value ? `- **${label}:** ${value}` : `- **${label}:**`);
     });
   }
 

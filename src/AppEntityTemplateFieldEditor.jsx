@@ -6,7 +6,7 @@
  * Hỗ trợ 2 chế độ lưu: 'nho' (chỉ tab con đang chọn) và 'lon' (toàn bộ tab con trong cùng tab lớn,
  * dùng `propagateWithinLon` của handler).
  */
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { Plus, ChevronDown, ChevronUp, Edit2 } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
 import { WIKI_ALIAS_FIELD } from './MasterEngines.js';
@@ -74,10 +74,6 @@ export function AppEntityTemplateFieldEditor({
   const [scope, setScope] = useState(SCOPE_LOCAL);
   const [draft, setDraft] = useState('');
   const [suggestionRowsByField, setSuggestionRowsByField] = useState({});
-  /** { fid, rowIdx } — focus ô nội dung sau khi bấm «+ Dòng». */
-  const [pendingSuggestionFocus, setPendingSuggestionFocus] = useState(null);
-  const pendingSuggestionFocusRef = useRef(pendingSuggestionFocus);
-  pendingSuggestionFocusRef.current = pendingSuggestionFocus;
   const pathKey = `${lonId}::${nhoId}`;
   const outlineDlId = useId().replace(/:/g, '');
   const outlineOid = outlineMeta && safeString(outlineMeta.oid).trim() ? safeString(outlineMeta.oid).trim() : '';
@@ -113,19 +109,6 @@ export function AppEntityTemplateFieldEditor({
     setSuggestionRowsByField(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suggestionListsSignature, pathKey]);
-
-  useEffect(() => {
-    const target = pendingSuggestionFocusRef.current;
-    if (!target?.fid || target.rowIdx == null) return;
-    const safeFid = String(target.fid).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const el = document.getElementById(
-      `ttc-entity-suggestion-${pathKey}-${safeFid}-value-${target.rowIdx}`
-    );
-    if (el) {
-      el.focus();
-      setPendingSuggestionFocus(null);
-    }
-  }, [pendingSuggestionFocus, pathKey, suggestionRowsByField]);
 
   const isForceTemplateScope = useMemo(
     () =>
@@ -197,7 +180,7 @@ export function AppEntityTemplateFieldEditor({
 
   const confirmRemove = (field) => {
     const fid = safeString(field?.id).trim();
-    if (!fid || fid === WIKI_ALIAS_FIELD.id) return;
+    if (!fid) return;
     const label = safeString(field?.label) || fid;
     const scopeText = propagate
       ? `toàn bộ tab con trong «${lonLabel}»`
@@ -322,12 +305,33 @@ export function AppEntityTemplateFieldEditor({
               {templateFields.map((field) => {
                 const fid = safeString(field?.id).trim();
                 if (!fid) return null;
-                const isWiki = fid === WIKI_ALIAS_FIELD.id;
+                const isBuiltinWiki = fid === WIKI_ALIAS_FIELD.id;
                 const isOutlineField = outlineOid && fid === outlineOid;
                 const storedList = Array.isArray(suggestionLists?.[fid]) ? suggestionLists[fid] : [];
                 const suggestionRows = Array.isArray(suggestionRowsByField[fid])
                   ? suggestionRowsByField[fid]
                   : normalizeSuggestionRows(storedList);
+                const suggestionIdSafe = fid.replace(/[^a-zA-Z0-9_-]/g, '_');
+                const appendSuggestionRow = () => {
+                  setSuggestionRowsByField((prev) => {
+                    const list = Array.isArray(prev[fid]) ? [...prev[fid]] : [];
+                    const next = [...list, { prefix: '', value: '' }];
+                    const newIdx = next.length - 1;
+                    queueMicrotask(() => {
+                      document
+                        .getElementById(
+                          `ttc-entity-suggestion-${pathKey}-${suggestionIdSafe}-value-${newIdx}`
+                        )
+                        ?.focus();
+                    });
+                    return { ...prev, [fid]: next };
+                  });
+                };
+                const onSuggestionRowKeyDown = (e) => {
+                  if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent?.isComposing) return;
+                  e.preventDefault();
+                  appendSuggestionRow();
+                };
                 const labelDomId = `ttc-entity-field-label-${pathKey}-${fid.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
                 const outlineVal = safeString(
                   entityDynamicData && typeof entityDynamicData === 'object' ? entityDynamicData[fid] : ''
@@ -432,22 +436,22 @@ export function AppEntityTemplateFieldEditor({
                           {fid}
                         </button>
                       </div>
-                      {!isWiki && (
-                        <button
-                          type="button"
-                          onClick={() => confirmRemove(field)}
-                          className="shrink-0 rounded-lg border border-rose-800/50 bg-rose-950/25 px-2.5 py-1.5 text-xs font-bold text-rose-100 hover:bg-rose-900/35"
-                          title={
-                            propagate
+                      <button
+                        type="button"
+                        onClick={() => confirmRemove(field)}
+                        className="shrink-0 rounded-lg border border-rose-800/50 bg-rose-950/25 px-2.5 py-1.5 text-xs font-bold text-rose-100 hover:bg-rose-900/35"
+                        title={
+                          isBuiltinWiki
+                            ? 'Xóa khỏi mẫu tab (ô biệt danh trên form tạo thẻ vẫn giữ)'
+                            : propagate
                               ? 'Xóa trường ở tất cả tab con trong tab lớn'
                               : 'Xóa trường chỉ ở tab con này'
-                          }
-                        >
-                          Xóa
-                        </button>
-                      )}
+                        }
+                      >
+                        Xóa
+                      </button>
                     </div>
-                    {!isWiki && typeof handleSetTabFieldSource === 'function' && (
+                    {typeof handleSetTabFieldSource === 'function' && (
                       <FieldSourceRow
                         lonId={lonId}
                         nhoId={nhoId}
@@ -510,6 +514,7 @@ export function AppEntityTemplateFieldEditor({
                               className="w-20 bg-slate-950 border border-emerald-800/45 rounded-md px-2 py-1.5 text-xs text-emerald-100 font-mono"
                               placeholder="I / 1 / 1.1"
                               aria-label={`Ký hiệu dòng gợi ý ${rowIdx + 1} của ${fid}`}
+                              onKeyDown={onSuggestionRowKeyDown}
                             />
                             <input
                               id={suggestionValueInputId}
@@ -526,6 +531,7 @@ export function AppEntityTemplateFieldEditor({
                               className="flex-1 bg-slate-950 border border-slate-800 rounded-md px-2.5 py-1.5 text-xs text-slate-200 font-mono"
                               placeholder="Nội dung gợi ý..."
                               aria-label={`Nội dung dòng gợi ý ${rowIdx + 1} của ${fid}`}
+                              onKeyDown={onSuggestionRowKeyDown}
                             />
                             <button
                               type="button"
@@ -546,14 +552,7 @@ export function AppEntityTemplateFieldEditor({
                         <div className="flex items-center justify-between pt-1">
                           <button
                             type="button"
-                            onClick={() => {
-                              setSuggestionRowsByField((prev) => {
-                                const list = Array.isArray(prev[fid]) ? [...prev[fid]] : [];
-                                list.push({ prefix: '', value: '' });
-                                setPendingSuggestionFocus({ fid, rowIdx: list.length - 1 });
-                                return { ...prev, [fid]: list };
-                              });
-                            }}
+                            onClick={appendSuggestionRow}
                             className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/50 px-2.5 py-1.5 text-xs font-bold text-slate-200"
                           >
                             <Plus size={10} /> Dòng

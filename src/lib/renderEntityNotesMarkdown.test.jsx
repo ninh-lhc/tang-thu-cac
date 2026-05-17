@@ -143,7 +143,24 @@ describe('renderEntityNotesMarkdown', () => {
     expect(container.querySelector('.border-dashed')).not.toBeNull();
   });
 
-  it('renders lead labels in bullet items differently from normal bold emphasis', () => {
+  it('renders plain «Tên trường: giá trị» bullets with field label styling', () => {
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(
+          '- Danh xung / Ten goi: Vo Gia',
+          null,
+          [],
+          null,
+          vi.fn(),
+        )}
+      </div>
+    );
+    const label = container.querySelector('[data-entity-field-label="true"]');
+    expect(label?.textContent).toContain('Danh xung / Ten goi:');
+    expect(label?.className).toContain('text-cyan-300');
+  });
+
+  it('renders lead labels inline in bullet items with bold label before colon', () => {
     const { container } = render(
       <div>
         {renderEntityNotesMarkdown(
@@ -156,18 +173,81 @@ describe('renderEntityNotesMarkdown', () => {
       </div>
     );
 
-    const leadLabel = container.querySelector('[data-entity-lead-label="true"]');
-    const strong = container.querySelector('strong');
+    const leadLabel = container.querySelector('[data-entity-field-label="true"]');
     const leadRule = container.querySelector('[data-entity-lead-label-rule="true"]');
+    const li = container.querySelector('li');
 
     expect(leadLabel).not.toBeNull();
     expect(leadLabel?.textContent).toContain('Su dung bi phap quan the:');
-    expect(leadLabel?.className).toContain('uppercase');
-    expect(leadLabel?.className).not.toContain('bg-slate-800/65');
-    expect(leadRule).not.toBeNull();
-    expect(strong).not.toBeNull();
-    expect(strong?.textContent).toContain('Ton Luc');
-    expect(strong?.className).toContain('font-black');
+    expect(leadLabel?.className).toContain('font-bold');
+    expect(leadLabel?.className).not.toContain('uppercase');
+    expect(leadRule).toBeNull();
+    expect(li?.textContent).toMatch(/Su dung bi phap quan the:.*Ton Luc/);
+  });
+
+  it('uses the same major heading color for every ## section', () => {
+    const md = ['## Muc A', '', '- a', '## Muc B', '', '- b'].join('\n');
+    const { container } = render(
+      <div>{renderEntityNotesMarkdown(md, null, [], null, vi.fn())}</div>,
+    );
+    const h2 = [...container.querySelectorAll('h2')];
+    expect(h2).toHaveLength(2);
+    expect(h2[0].className).toBe(h2[1].className);
+    expect(h2[0].className).toContain('text-violet-200');
+  });
+
+  it('styles wiki links differently from field labels in entity notes preview', () => {
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(
+          '- **Danh xung:** [[Vo Gia]]',
+          null,
+          [{ id: 'e1', name: 'Vo Gia', dest: { entityId: 'e1' } }],
+          null,
+          vi.fn(),
+          'other-id',
+        )}
+      </div>
+    );
+
+    const fieldLabel = container.querySelector('[data-entity-field-label="true"]');
+    const wiki = container.querySelector('[data-entity-wiki-link="external"]');
+    expect(fieldLabel?.className).toContain('text-cyan-300');
+    expect(wiki?.className).toContain('text-orange-300');
+    expect(wiki?.className).not.toContain('text-cyan-300');
+  });
+
+  it('distinguishes self vs external wiki links on the same card', () => {
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(
+          '- [[Ten The]] — [[The Khac]]',
+          null,
+          [
+            { id: 'self-1', name: 'Ten The', dest: { entityId: 'self-1' } },
+            { id: 'other-1', name: 'The Khac', dest: { entityId: 'other-1' } },
+          ],
+          null,
+          vi.fn(),
+          'self-1',
+        )}
+      </div>
+    );
+
+    const selfLink = container.querySelector('[data-entity-wiki-link="self"]');
+    const externalLink = container.querySelector('[data-entity-wiki-link="external"]');
+    expect(selfLink?.className).toContain('text-emerald-300');
+    expect(externalLink?.className).toContain('text-orange-300');
+    expect(selfLink?.className).not.toContain('text-violet-200');
+  });
+
+  it('uses hierarchy colors for minor headings and field labels', () => {
+    const md = ['## Muc', '', '### Tieu muc', '', '- **Nhan truong:** Gia tri'].join('\n');
+    const { container } = render(
+      <div>{renderEntityNotesMarkdown(md, null, [], null, vi.fn())}</div>,
+    );
+    expect(container.querySelector('h3')?.className).toContain('text-amber-200');
+    expect(container.querySelector('[data-entity-field-label="true"]')?.className).toContain('text-cyan-300');
   });
 
   it('keeps [color] blocks intact in ordered list lines when values contain parentheses (address meta)', () => {
@@ -293,7 +373,7 @@ describe('renderEntityNotesMarkdown', () => {
     const violet = container.querySelector('.text-violet-200\\/90');
     expect(sky).not.toBeNull();
     expect(violet).not.toBeNull();
-    const wikiSpans = container.querySelectorAll('.inline-flex.items-center');
+    const wikiSpans = container.querySelectorAll('[data-entity-wiki-link]');
     expect(wikiSpans.length).toBeGreaterThanOrEqual(2);
   });
 

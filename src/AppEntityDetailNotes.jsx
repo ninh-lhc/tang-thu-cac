@@ -33,6 +33,7 @@ import {
   subscribeEntityNotesPrefs,
 } from './lib/entityNotesPrefs.js';
 import { resolveEntityNotesTemplateProfile } from './lib/entityNotesSemantics.js';
+import { ENTITY_NOTES_AI_STRUCTURE_SYSTEM_PROMPT } from './lib/entityNotesAiStructurePrompt.js';
 import { getEffectiveAutoSyncRole, getAutoSyncRoleLabel } from './lib/tabAutoSyncRole.js';
 import {
   getAutoSyncEngineDescription,
@@ -327,21 +328,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         }],
       }],
       systemInstruction: {
-        parts: [{
-          text: `Bạn là trợ lý chỉ chuyên DÀN LẠI CẤU TRÚC ghi chép chi tiết.
-
-Mục tiêu:
-- Giữ nguyên ý nghĩa, thuật ngữ, tên riêng và dữ kiện đã có.
-- Không bịa thêm thông tin mới.
-- Không xoá ý quan trọng.
-- Chỉ sắp xếp lại thành markdown thuần dễ đọc hơn: tiêu đề, tiểu mục, bullet, số thứ tự, callout, đoạn mở đầu, tổng kết.
-- Giữ nguyên wiki link [[...]] và thẻ [color=...] nếu đã có.
-- Nếu nội dung đã ổn, vẫn trả lại văn bản nhưng chỉnh nhẹ khoảng trắng, xuống dòng, thứ bậc mục.
-
-Yêu cầu trả về:
-- Chỉ trả về một khối văn bản markdown hoàn chỉnh.
-- Không giải thích, không mở đầu, không dùng code fence.`,
-        }],
+        parts: [{ text: ENTITY_NOTES_AI_STRUCTURE_SYSTEM_PROMPT }],
       },
     };
 

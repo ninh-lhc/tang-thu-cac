@@ -768,7 +768,36 @@ export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className, styl
   return <img src={src} alt={alt} className={imgClass} style={style} onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />;
 });
 
+const WIKI_CHIP_BASE =
+  'transition-colors font-semibold cursor-pointer inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md';
+
+/** Chip wiki trong preview ghi chép: tách «cùng thẻ» / «thẻ khác» / «chưa có hồ sơ». */
+function getEntityNotesWikiLinkChip(isSelfLink, pending = false) {
+  if (pending) {
+    return {
+      className: `${WIKI_CHIP_BASE} text-slate-300 bg-slate-800/75 hover:bg-emerald-950/50 hover:text-emerald-200 border border-dashed border-slate-500/55 hover:border-emerald-500/45`,
+      'data-entity-wiki-link': 'pending',
+      title: 'Chưa có hồ sơ — nhấp để tạo thẻ mới',
+    };
+  }
+  if (isSelfLink) {
+    return {
+      className: `${WIKI_CHIP_BASE} text-emerald-300 bg-emerald-950/65 hover:bg-emerald-900/70 hover:text-emerald-50 border border-emerald-400/55 ring-1 ring-emerald-500/20`,
+      'data-entity-wiki-link': 'self',
+      title: 'Liên kết trỏ lại chính thẻ đang xem',
+    };
+  }
+  return {
+    className: `${WIKI_CHIP_BASE} text-orange-300 bg-orange-950/55 hover:bg-orange-900/65 hover:text-orange-50 border border-orange-400/50 ring-1 ring-orange-500/20`,
+    'data-entity-wiki-link': 'external',
+    title: 'Mở thẻ / tab khác',
+  };
+}
+
 const getWikiLinkClassName = (isSelfLink, variant = 'inline') => {
+  if (variant === 'entityNotes') {
+    return getEntityNotesWikiLinkChip(isSelfLink).className;
+  }
   const colorClasses = isSelfLink
     ? 'text-cyan-300 bg-cyan-900/25 hover:bg-cyan-600 hover:text-white hover:shadow-[0_0_15px_rgba(34,211,238,0.6)]'
     : 'text-amber-400 bg-amber-900/20 hover:bg-amber-600 hover:text-white hover:shadow-[0_0_15px_rgba(217,119,6,0.6)]';
@@ -777,6 +806,9 @@ const getWikiLinkClassName = (isSelfLink, variant = 'inline') => {
     : 'gap-1 px-1.5 py-0.5 rounded-md';
   return `transition-all font-bold cursor-pointer inline-flex items-center ${sizeClasses} ${colorClasses}`;
 };
+
+const resolveWikiTargetEntityId = (match) =>
+  safeString(match?.dest?.entityId || match?.entityId).trim() || null;
 
 export const processPlainTextWithLinks = (text, lookup, linkRegex, onNavigate, selfEntityId = null) => {
     if (!text || !lookup || lookup.totalItems === 0 || !linkRegex) return text;
@@ -1091,7 +1123,15 @@ export const processInline = (
         const innerText = safeString(part.slice(2, -2)).trim();
         const match = resolveEntityLookup(lookup, innerText, { selfEntityId });
         if (match) {
-          const isSelfLink = !!selfEntityId && match.dest?.entityId === selfEntityId;
+          const targetId = resolveWikiTargetEntityId(match);
+          const isSelfLink = !!selfEntityId && targetId === selfEntityId;
+          const notesPreview = !!inlineOptions?.entityNotesPreview;
+          const chip = notesPreview
+            ? getEntityNotesWikiLinkChip(isSelfLink)
+            : {
+                className: getWikiLinkClassName(isSelfLink, 'inline'),
+                title: `Mở hồ sơ: ${innerText}`,
+              };
           return (
             <span
               key={i}
@@ -1099,14 +1139,22 @@ export const processInline = (
                 e.stopPropagation();
                 onNavigate(match.dest);
               }}
-              className={getWikiLinkClassName(isSelfLink)}
-              title={`Mở hồ sơ: ${innerText}`}
+              className={chip.className}
+              data-entity-wiki-link={chip['data-entity-wiki-link']}
+              title={chip.title || `Mở hồ sơ: ${innerText}`}
             >
               <Link2 size={12} />
               {innerText}
             </span>
           );
         }
+        const pendingChip = inlineOptions?.entityNotesPreview
+          ? getEntityNotesWikiLinkChip(false, true)
+          : {
+              className:
+                'text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded-md hover:text-emerald-400 hover:bg-emerald-900/30 border border-dashed border-slate-600 hover:border-emerald-500/50 transition-all cursor-pointer inline-flex items-center gap-1',
+              title: 'Thực thể chưa có hồ sơ. Nhấp để ngưng tụ (tạo mới)!',
+            };
         return (
           <span
             key={i}
@@ -1114,8 +1162,9 @@ export const processInline = (
               e.stopPropagation();
               onNavigate({ type: 'QUICK_CREATE', name: innerText });
             }}
-            className="text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded-md hover:text-emerald-400 hover:bg-emerald-900/30 border border-dashed border-slate-600 hover:border-emerald-500/50 transition-all cursor-pointer inline-flex items-center gap-1"
-            title="Thực thể chưa có hồ sơ. Nhấp để ngưng tụ (tạo mới)!"
+            className={pendingChip.className}
+            data-entity-wiki-link={pendingChip['data-entity-wiki-link']}
+            title={pendingChip.title}
           >
             <Plus size={12} />
             {innerText}

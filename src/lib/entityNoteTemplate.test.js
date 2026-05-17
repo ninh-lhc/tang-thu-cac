@@ -20,9 +20,10 @@ describe('entityNoteTemplate', () => {
 
     expect(text).toContain('# ');
     expect(text).toContain('Luyen Khi');
-    expect(text).toContain('Canh gioi / Trang thai: De Nhat - Linh Canh Bat Bo');
-    expect(text).toContain('Danh hieu / Phan loai: Tu luyen');
-    expect(text).toContain('Biet danh / ten khac:');
+    expect(text).toContain('**Canh gioi / Trang thai:** De Nhat - Linh Canh Bat Bo');
+    expect(text).toContain('**Danh hieu / Phan loai:** Tu luyen');
+    expect(text).toContain('**Biet danh / ten khac:**');
+    expect(text).toContain('**Danh xưng / Tên gọi:** [[Luyen Khi]]');
     expect(text).toContain('(37) ?');
     expect(text).toContain('[[');
     expect(text).toContain(']]');
@@ -57,7 +58,7 @@ describe('entityNoteTemplate', () => {
     });
 
     expect(text).not.toContain('- Cấu tạo:');
-    expect(text).toContain('- Binh chủng chuyên dụng: Đại Tần Duệ Sĩ');
+    expect(text).toContain('**Binh chủng chuyên dụng:** Đại Tần Duệ Sĩ');
   });
 
   it('keeps f_status when its value differs from other fields', () => {
@@ -74,8 +75,8 @@ describe('entityNoteTemplate', () => {
       },
     });
 
-    expect(text).toContain('- Chuỗi hiển thị: Một · Hai');
-    expect(text).toContain('- Khác: Một');
+    expect(text).toContain('**Chuỗi hiển thị:** Một · Hai');
+    expect(text).toContain('**Khác:** Một');
   });
 
   it('mergeEntityNoteDetailSectionFromDynamicData refreshes bullets but keeps Ghi chú and below', () => {
@@ -104,9 +105,9 @@ describe('entityNoteTemplate', () => {
       dynamicData: { f_a: 'two', f_b: 'three' },
     });
 
-    expect(after).toContain('- Danh xưng / Tên gọi: New');
-    expect(after).toContain('- A: two');
-    expect(after).toContain('- B: three');
+    expect(after).toContain('**Danh xưng / Tên gọi:** [[New]]');
+    expect(after).toContain('**A:** two');
+    expect(after).toContain('**B:** three');
     expect(after).not.toContain('- A: one');
     expect(after).toContain('User prose stays.');
     expect(after).toContain('# AUTO');

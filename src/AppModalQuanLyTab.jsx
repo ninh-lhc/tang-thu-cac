@@ -1,7 +1,7 @@
 /**
  * Modal quan ly cau truc tab (Tran Phap Cai Tao).
  * State va handler duoc truyen tu App.jsx de giu mot nguon su that.
- * Day la noi cau hinh cay muc luc + AUTO tong quan; tung tab chi con nut tren hang (khong mo panel dai).
+ * Cau hinh cay muc luc; khoi AUTO mac dinh an (mo bang «Cai dat AUTO»). Tung tab suu tap: nut Tắt/Bật AUTO tren hang.
  */
 import React from 'react';
 import {
@@ -68,7 +68,7 @@ export function AppModalQuanLyTab({
   showToast: _showToast,
 }) {
   const trapRef = useFocusTrap(true);
-  const [showAutoOverview, setShowAutoOverview] = React.useState(false);
+  const [showAutoPanel, setShowAutoPanel] = React.useState(false);
   const safeSortedTabs = React.useMemo(
     () => (Array.isArray(sortedTabs) ? sortedTabs : []),
     [sortedTabs]
@@ -126,10 +126,6 @@ export function AppModalQuanLyTab({
     reader.readAsDataURL(file);
   }, []);
 
-  const toggleAutoOverview = React.useCallback(() => {
-    setShowAutoOverview((prev) => !prev);
-  }, []);
-
   const flushFocusedEditor = React.useCallback(() => {
     const activeEl = document.activeElement;
     const root = trapRef.current;
@@ -184,18 +180,65 @@ export function AppModalQuanLyTab({
         </div>
 
         <div id="tab-manager-scroll-container" className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-4 bg-slate-900/50">
+          {(typeof handleSaveCurrentTabsAsGenreTemplate === 'function' ||
+            (activeNovelData && typeof handleResetNovelSuggestionLists === 'function')) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {typeof handleSaveCurrentTabsAsGenreTemplate === 'function' && (
+                <button
+                  type="button"
+                  onClick={handleSaveCurrentTabsAsGenreTemplate}
+                  className="px-3 py-2 rounded-lg border border-emerald-700/40 bg-emerald-950/25 text-emerald-100 text-xs font-bold flex items-center gap-1.5 hover:bg-emerald-900/30"
+                >
+                  <Save size={14} aria-hidden /> Lưu cây thành mẫu thể loại
+                </button>
+              )}
+              {activeNovelData && typeof handleResetNovelSuggestionLists === 'function' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    flushFocusedEditor();
+                    setConfirmDialog?.({
+                      isOpen: true,
+                      title: 'Reset List Gợi Ý',
+                      message:
+                        'Xóa toàn bộ list gợi ý và nguồn gợi ý theo trường của truyện này? <br/><br/>Hành động này chỉ áp dụng cho truyện đang mở.',
+                      onConfirm: () => handleResetNovelSuggestionLists(),
+                    });
+                  }}
+                  className="px-3 py-2 rounded-lg border border-rose-700/40 bg-rose-950/25 text-rose-100 text-xs font-bold flex items-center gap-1.5 hover:bg-rose-900/30"
+                >
+                  <RefreshCw size={14} aria-hidden /> Reset list gợi ý
+                </button>
+              )}
+            </div>
+          )}
+
           {diagnostics && (
-            <div className="rounded-2xl border border-cyan-800/35 bg-cyan-950/15 p-4 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-cyan-300 font-bold">
-                    Thiết Lập AUTO
-                  </div>
-                  <p className="text-sm text-slate-100 font-semibold mt-1">
-                    Mặc định giữ cây thư mục gọn. Bảng AUTO chi tiết bên dưới; từng tab nhỏ chỉnh bằng nút trên hàng (không mở panel).
-                  </p>
-                  {novelGenres.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
+            <div className="rounded-xl border border-slate-800/80 bg-slate-950/35 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowAutoPanel((prev) => !prev)}
+                className="w-full flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-slate-900/50 transition-colors"
+                aria-expanded={showAutoPanel}
+              >
+                <span className="inline-flex items-center gap-2 text-xs font-bold text-slate-400">
+                  <Sparkles size={14} className="text-cyan-500/80 shrink-0" aria-hidden />
+                  Cài đặt AUTO
+                  {!showAutoPanel && diagnostics.summary.warningCount > 0 && (
+                    <span className="rounded-full border border-amber-700/35 bg-amber-950/25 px-2 py-0.5 text-[10px] font-semibold text-amber-200/95 normal-case">
+                      {diagnostics.summary.warningCount} cần xem
+                    </span>
+                  )}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500">
+                  {showAutoPanel ? 'Ẩn' : 'Mở'}
+                  {showAutoPanel ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
+                </span>
+              </button>
+
+              <div className={showAutoPanel ? 'border-t border-slate-800/80 p-4 space-y-4' : 'hidden'}>
+              {novelGenres.length > 0 && (
+                <div className="flex flex-wrap gap-2">
                       {novelGenres.slice(0, 3).map((genre) => (
                         <span
                           key={genre}
@@ -204,18 +247,9 @@ export function AppModalQuanLyTab({
                           Ưu tiên theo thể loại: {safeString(genre)}
                         </span>
                       ))}
-                    </div>
-                  )}
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={toggleAutoOverview}
-                    className="px-4 py-2.5 rounded-xl border border-slate-700/60 bg-slate-950/40 text-slate-100 text-sm font-bold flex items-center gap-2 hover:bg-slate-900/60"
-                  >
-                    {showAutoOverview ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                    {showAutoOverview ? 'Ẩn Bảng AUTO' : 'Mở Bảng AUTO'}
-                  </button>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
                   {typeof handleApplySuggestedAutoSyncSetup === 'function' && (
                     <button
                       type="button"
@@ -275,34 +309,15 @@ export function AppModalQuanLyTab({
                       </button>
                     </>
                   )}
-                  {typeof handleSaveCurrentTabsAsGenreTemplate === 'function' && (
+                  {activeNovelData && typeof handleResyncAutoTabs === 'function' && (
                     <button
                       type="button"
-                      onClick={handleSaveCurrentTabsAsGenreTemplate}
-                      className="px-4 py-2.5 rounded-xl border border-emerald-700/40 bg-emerald-950/25 text-emerald-100 text-sm font-bold flex items-center gap-2 hover:bg-emerald-900/30"
+                      onClick={handleResyncAutoTabs}
+                      className="px-3 py-2 rounded-lg border border-slate-700 bg-slate-900/60 text-slate-200 text-xs font-bold flex items-center gap-1.5 hover:bg-slate-800"
                     >
-                      <Save size={15} /> Lưu Cây Này Thành Mẫu
+                      <RefreshCw size={14} aria-hidden /> Quét lại AUTO
                     </button>
                   )}
-                  {activeNovelData && typeof handleResetNovelSuggestionLists === 'function' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        flushFocusedEditor();
-                        setConfirmDialog?.({
-                          isOpen: true,
-                          title: 'Reset List Gợi Ý',
-                          message:
-                            'Xóa toàn bộ list gợi ý và nguồn gợi ý theo trường của truyện này? <br/><br/>Hành động này chỉ áp dụng cho truyện đang mở.',
-                          onConfirm: () => handleResetNovelSuggestionLists(),
-                        });
-                      }}
-                      className="px-4 py-2.5 rounded-xl border border-rose-700/40 bg-rose-950/25 text-rose-100 text-sm font-bold flex items-center gap-2 hover:bg-rose-900/30"
-                    >
-                      <RefreshCw size={15} /> Reset List Gợi Ý
-                    </button>
-                  )}
-                </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -319,9 +334,8 @@ export function AppModalQuanLyTab({
                   Sẽ cập nhật: {diagnostics.preview.touchedEntityCount}
                 </span>
               </div>
-              {showAutoOverview && (
-                <>
-                  <div className="grid gap-3 md:grid-cols-4">
+
+              <div className="grid gap-3 md:grid-cols-4">
                     <div className="rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-3">
                       <div className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">Đã rõ mục nào</div>
                       <div className="mt-1 text-2xl font-bold text-emerald-300">{diagnostics.summary.readyCount}</div>
@@ -386,8 +400,7 @@ export function AppModalQuanLyTab({
                       </div>
                     </div>
                   )}
-                </>
-              )}
+              </div>
             </div>
           )}
 
@@ -846,15 +859,6 @@ export function AppModalQuanLyTab({
             <LayoutGrid size={12} /> Lưới = Chế độ Quản lý Thực Thể
           </span>
           <div className="flex items-center gap-3">
-            {activeNovelData && typeof handleResyncAutoTabs === 'function' && (
-              <button
-                type="button"
-                onClick={handleResyncAutoTabs}
-                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-xl font-bold shadow-lg flex items-center gap-2 border border-slate-700"
-              >
-                <RefreshCw size={15} /> Quét Lại AUTO
-              </button>
-            )}
             <button
               type="button"
               onClick={() => {

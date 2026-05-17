@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ensureWikiAliasInFieldsTemplate,
+  ensureWikiAliasInFieldsTemplateForTab,
   linesToSuggestionArray,
   dedupeCaseInsensitiveLines,
   normalizeFieldSuggestionLists,
@@ -19,6 +20,15 @@ describe('tabFieldSuggestions', () => {
   it('ensureWikiAliasInFieldsTemplate giữ f_alias', () => {
     const out = ensureWikiAliasInFieldsTemplate([{ id: 'f_status', label: 'X' }]);
     expect(out.some((f) => f.id === 'f_alias')).toBe(true);
+  });
+
+  it('ensureWikiAliasInFieldsTemplateForTab tôn trọng wikiAliasInTemplate: false', () => {
+    const out = ensureWikiAliasInFieldsTemplateForTab(
+      [{ id: 'f_status', label: 'X' }, { id: 'f_alias', label: 'Wiki' }],
+      { wikiAliasInTemplate: false }
+    );
+    expect(out.some((f) => f.id === 'f_alias')).toBe(false);
+    expect(out.some((f) => f.id === 'f_status')).toBe(true);
   });
 
   it('ensureWikiAliasInFieldsTemplate giữ listMergeOrder hợp lệ', () => {

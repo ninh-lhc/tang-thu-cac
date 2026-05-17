@@ -42,11 +42,25 @@ export function sanitizeFieldsTemplate(fields) {
     });
 }
 
+/** Tab đã tắt f_alias trong mẫu (user xóa khỏi «Trường thông tin»). */
+export function wikiAliasEnabledOnTab(tabConfig) {
+  return tabConfig?.wikiAliasInTemplate !== false;
+}
+
 /** Luôn giữ f_alias (wiki) ở cuối danh sách trường. */
 export function ensureWikiAliasInFieldsTemplate(fields) {
   const filtered = sanitizeFieldsTemplate(fields);
   if (filtered.some((f) => f.id === WIKI_ALIAS_FIELD.id)) return filtered;
   return [...filtered, { id: WIKI_ALIAS_FIELD.id, label: WIKI_ALIAS_FIELD.label }];
+}
+
+/** Ghi fieldsTemplate — tôn trọng `wikiAliasInTemplate: false` trên tab. */
+export function ensureWikiAliasInFieldsTemplateForTab(fields, tabConfig) {
+  const filtered = sanitizeFieldsTemplate(fields);
+  if (!wikiAliasEnabledOnTab(tabConfig)) {
+    return filtered.filter((f) => f.id !== WIKI_ALIAS_FIELD.id);
+  }
+  return ensureWikiAliasInFieldsTemplate(filtered);
 }
 
 export function normalizeFieldSuggestionLists(raw) {
