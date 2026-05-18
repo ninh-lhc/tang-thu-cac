@@ -744,6 +744,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               linkRegex={globalLinkRegex}
               onNavigate={onNavigate}
               selfEntityId={selfEntityId}
+              wikiLinkOptOuts={initialWikiLinkOptOuts}
               variant="entityNotes"
               containerRef={previewScrollRef}
               onScroll={handlePreviewScroll}
@@ -1318,7 +1319,8 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
                   entityMap,
                   globalLinkRegex,
                   onNavigate,
-                  selectedEntity?.id
+                  selectedEntity?.id,
+                  readWikiLinkOptOuts(selectedEntity)
                 )}
               </div>
             )}

@@ -63,4 +63,12 @@ describe('wikiLinkMatcher', () => {
       { text: ' rồi', isMatch: false },
     ]);
   });
+
+  it('skips matcher hits covered by wiki link opt-outs', () => {
+    const matcher = buildWikiLinkMatcher([{ name: 'Hồng Lâu' }, { name: 'Hồng Lâu Mộng' }]);
+    const optOuts = [{ anchor: 'Hồng Lâu', before: 'The gioi ', after: ' Mộng.' }];
+    expect(splitTextByWikiMatcher('The gioi Hồng Lâu Mộng.', matcher, optOuts)).toEqual([
+      { text: 'The gioi Hồng Lâu Mộng.', isMatch: false },
+    ]);
+  });
 });

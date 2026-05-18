@@ -3,6 +3,7 @@
  * Tránh tạo regex alternation khổng lồ khi số lượng thực thể tăng cao.
  */
 
+import { isWikiWrapOptedOut } from './wikiLinkOptOut.js';
 import { compareWikiNameSurfacePriority, matchesWikiNameSurface } from './wikiNameSurface.js';
 
 const normalizeName = (value) => String(value || '').trim().toLowerCase();
@@ -45,7 +46,7 @@ export const buildWikiLinkMatcher = (entityMap) => {
   return { buckets };
 };
 
-export const splitTextByWikiMatcher = (text, matcher) => {
+export const splitTextByWikiMatcher = (text, matcher, optOuts = []) => {
   if (!text || typeof text !== 'string') return [{ text: String(text ?? ''), isMatch: false }];
   if (!matcher?.buckets || matcher.buckets.size === 0) return [{ text, isMatch: false }];
 
@@ -63,7 +64,8 @@ export const splitTextByWikiMatcher = (text, matcher) => {
         if (
           sourceLower.startsWith(candidate.lower, i) &&
           isBoundary(text, i, end) &&
-          matchesWikiNameSurface(candidate.raw, text.slice(i, end))
+          matchesWikiNameSurface(candidate.raw, text.slice(i, end)) &&
+          !isWikiWrapOptedOut(text, i, end, candidate.raw, optOuts)
         ) {
           matchedName = candidate;
           break;

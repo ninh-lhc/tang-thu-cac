@@ -816,10 +816,18 @@ const getWikiLinkClassName = (isSelfLink, variant = 'inline') => {
 const resolveWikiTargetEntityId = (match) =>
   safeString(match?.dest?.entityId || match?.entityId).trim() || null;
 
-export const processPlainTextWithLinks = (text, lookup, linkRegex, onNavigate, selfEntityId = null) => {
+export const processPlainTextWithLinks = (
+  text,
+  lookup,
+  linkRegex,
+  onNavigate,
+  selfEntityId = null,
+  wikiLinkOptOuts = null,
+) => {
     if (!text || !lookup || lookup.totalItems === 0 || !linkRegex) return text;
     const usingRegex = linkRegex instanceof RegExp;
-    const parts = usingRegex ? text.split(linkRegex) : splitTextByWikiMatcher(text, linkRegex);
+    const optOuts = Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [];
+    const parts = usingRegex ? text.split(linkRegex) : splitTextByWikiMatcher(text, linkRegex, optOuts);
     if (parts.length === 1) return text;
 
     return parts.map((part, i) => {
@@ -1251,7 +1259,12 @@ export const processInline = (
         );
       }
     }
-    return <span key={i}>{processPlainTextWithLinks(safeString(part), lookup, linkRegex, onNavigate, selfEntityId)}</span>;
+    const optOuts = Array.isArray(inlineOptions?.wikiLinkOptOuts) ? inlineOptions.wikiLinkOptOuts : [];
+    return (
+      <span key={i}>
+        {processPlainTextWithLinks(safeString(part), lookup, linkRegex, onNavigate, selfEntityId, optOuts)}
+      </span>
+    );
   });
 };
 

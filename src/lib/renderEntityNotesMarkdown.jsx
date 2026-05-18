@@ -163,14 +163,20 @@ const withEntityNotesInlineOpts = (extra = {}) => ({
   ...extra,
 });
 
+const inlineOptsForContext = (context, extra = {}) =>
+  withEntityNotesInlineOpts({
+    wikiLinkOptOuts: Array.isArray(context?.wikiLinkOptOuts) ? context.wikiLinkOptOuts : [],
+    ...extra,
+  });
+
 /**
  * Bullet / list: bật addressMeta (địa chỉ bản đồ) trừ khi có `[color=…]` — tách ngoặc theo () làm vỡ
  * khối màu khi phần in đậm có (Cấp …) bên trong `[color]…[/color]`.
  */
-const listInlineOptsForBody = (body) => {
+const listInlineOptsForBody = (body, context) => {
   const s = safeString(body);
-  if (/\[color=/i.test(s)) return withEntityNotesInlineOpts({ addressMeta: false });
-  return withEntityNotesInlineOpts({ addressMeta: true });
+  if (/\[color=/i.test(s)) return inlineOptsForContext(context, { addressMeta: false });
+  return inlineOptsForContext(context, { addressMeta: true });
 };
 
 const renderEntityNotesFieldRow = (labelText, restText, context) => {
@@ -186,7 +192,7 @@ const renderEntityNotesFieldRow = (labelText, restText, context) => {
         <>
           {' '}
           <span className={ENTITY_NOTES_TYPO.body}>
-            {processInline(rest, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ENTITY_NOTES_INLINE_OPTS)}
+            {processInline(rest, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, inlineOptsForContext(context))}
           </span>
         </>
       ) : null}
@@ -198,7 +204,7 @@ const renderInlineBodyWithLeadLabel = (body, context) => {
   const normalized = safeString(body);
   const boldMatch = normalized.match(LEAD_BOLD_LABEL_RE);
   const { dirHandle, lookup, linkRegex, onNavigate, selfEntityId } = context;
-  const listOpts = listInlineOptsForBody(normalized);
+  const listOpts = listInlineOptsForBody(normalized, context);
 
   if (boldMatch) {
     return renderEntityNotesFieldRow(boldMatch[1], boldMatch[2], context);
@@ -291,7 +297,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
             `mt-8 mb-5 border-b border-violet-500/25 pb-3 text-[2.15rem] font-heading font-bold ${ENTITY_NOTES_TYPO.majorTitle}`,
           )}
         >
-          {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ENTITY_NOTES_INLINE_OPTS)}
+          {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, inlineOptsForContext(context))}
         </h1>
       );
       lineIndex += 1;
@@ -312,7 +318,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
             `mt-8 mb-3 border-l-[3px] pl-3.5 text-[1.65rem] font-heading font-bold ${ENTITY_NOTES_TYPO.majorBorder} ${ENTITY_NOTES_TYPO.majorTitle}`,
           )}
         >
-          {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ENTITY_NOTES_INLINE_OPTS)}
+          {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, inlineOptsForContext(context))}
         </h2>
       );
       lineIndex += 1;
@@ -333,7 +339,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
             `mt-6 mb-3 text-[1.12rem] font-bold ${ENTITY_NOTES_TYPO.minorTitle}`,
           )}
         >
-          {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ENTITY_NOTES_INLINE_OPTS)}
+          {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, inlineOptsForContext(context))}
         </h3>
       );
       lineIndex += 1;
@@ -361,7 +367,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
           {...jumpProps}
           className={mergeClassName(jumpProps, 'my-5')}
         >
-          {processInline(trimmed, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ENTITY_NOTES_INLINE_OPTS)}
+          {processInline(trimmed, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, inlineOptsForContext(context))}
         </div>
       );
       lineIndex += 1;
@@ -392,7 +398,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
           <h3
             className={`text-[1.55rem] leading-tight font-heading font-bold ${ENTITY_NOTES_TYPO.majorTitle}`}
           >
-            {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, ENTITY_NOTES_INLINE_OPTS)}
+            {processInline(title, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, inlineOptsForContext(context))}
           </h3>
         </div>
       );
@@ -431,7 +437,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
               linkRegex,
               onNavigate,
               selfEntityId,
-              ENTITY_NOTES_INLINE_OPTS,
+              inlineOptsForContext(context),
             )}
           </p>
         );
@@ -496,7 +502,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
             linkRegex,
             onNavigate,
             selfEntityId,
-            ENTITY_NOTES_INLINE_OPTS,
+            inlineOptsForContext(context),
           )}
         </blockquote>
       );
@@ -625,7 +631,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
           linkRegex,
           onNavigate,
           selfEntityId,
-          ENTITY_NOTES_INLINE_OPTS,
+          inlineOptsForContext(context),
         )}
       </p>
     );
@@ -656,9 +662,10 @@ export function buildEntityNotesPreviewModel(
   }
 
   const lookup = buildEntityNameLookup(entityMap);
+  const wikiLinkOptOuts = Array.isArray(options.wikiLinkOptOuts) ? options.wikiLinkOptOuts : [];
   return renderBlocksFromLines(
     text.split('\n'),
-    { dirHandle, lookup, linkRegex, onNavigate, selfEntityId },
+    { dirHandle, lookup, linkRegex, onNavigate, selfEntityId, wikiLinkOptOuts },
     { baseKey: 'entity-notes', collectToc: true, usedAnchors: new Set(), ...options }
   );
 }
@@ -670,4 +677,8 @@ export const renderEntityNotesMarkdown = (
   linkRegex,
   onNavigate,
   selfEntityId = null,
-) => buildEntityNotesPreviewModel(text, dirHandle, entityMap, linkRegex, onNavigate, selfEntityId).blocks;
+  wikiLinkOptOuts = null,
+) =>
+  buildEntityNotesPreviewModel(text, dirHandle, entityMap, linkRegex, onNavigate, selfEntityId, {
+    wikiLinkOptOuts: Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [],
+  }).blocks;

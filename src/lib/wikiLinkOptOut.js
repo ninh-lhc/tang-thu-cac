@@ -160,6 +160,36 @@ export function isWikiWrapOptedOut(text, start, end, _anchor, optOuts = []) {
   });
 }
 
+/**
+ * Người dùng để chữ thường nhưng auto-wrap/preview sẽ bọc — ghi nhớ luôn khi lưu.
+ */
+export function detectWikiLinkOptOutsFromPlainText(preparedText, entityMap, autoWrapWikiLinksByEntityMapWithCount) {
+  const prepared = safeString(preparedText);
+  if (!prepared || typeof autoWrapWikiLinksByEntityMapWithCount !== 'function') return [];
+
+  const wrapped = autoWrapWikiLinksByEntityMapWithCount(prepared, entityMap, { optOuts: [] }).text;
+  if (wrapped === prepared) return [];
+
+  const found = [];
+  const wikiRe = /\[\[([\s\S]*?)\]\]/g;
+  let match;
+  while ((match = wikiRe.exec(wrapped)) !== null) {
+    const anchor = safeString(match[1]).trim();
+    if (!anchor) continue;
+    const wikiStart = match.index;
+    const wikiEnd = wikiStart + match[0].length;
+    const before = wrapped.slice(Math.max(0, wikiStart - CONTEXT_LEN), wikiStart);
+    const after = wrapped.slice(wikiEnd, Math.min(wrapped.length, wikiEnd + CONTEXT_LEN));
+    if (findPlainAnchorWithContext(prepared, anchor, before, after) < 0) continue;
+    found.push({
+      anchor,
+      before: safeString(before).slice(-CONTEXT_LEN),
+      after: safeString(after).slice(0, CONTEXT_LEN),
+    });
+  }
+  return found;
+}
+
 export function applyWikiLinkOptOutsForSave({
   savedInfo = '',
   preparedText = '',
@@ -167,7 +197,10 @@ export function applyWikiLinkOptOutsForSave({
   entityMap = [],
   autoWrapWikiLinksByEntityMapWithCount,
 }) {
-  const detected = detectWikiLinkOptOuts(savedInfo, preparedText);
+  const detected = mergeWikiLinkOptOuts(
+    detectWikiLinkOptOuts(savedInfo, preparedText),
+    detectWikiLinkOptOutsFromPlainText(preparedText, entityMap, autoWrapWikiLinksByEntityMapWithCount)
+  );
   const merged = pruneWikiLinkOptOuts(
     preparedText,
     mergeWikiLinkOptOuts(wikiLinkOptOuts, detected)
