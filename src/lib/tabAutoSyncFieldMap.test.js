@@ -183,7 +183,9 @@ describe('tabAutoSyncFieldMap', () => {
 
     expect(changed).toBe(true);
     expect(novel.data['nhan-su']['dong-hanh'].entities[0].info).toContain('Quan hệ: Dao lu');
-    expect(novel.data['nhan-su']['hat-nhan'].entities[0].info).toContain('Dao lu');
+    expect(novel.data['nhan-su']['dong-hanh'].entities[0].info).toContain('[[Han Lap]]');
+    expect(novel.data['nhan-su']['hat-nhan'].entities[0].info).not.toContain('Nhân Vật Liên Quan (AUTO)');
+    expect(novel.data['nhan-su']['hat-nhan'].entities[0].info).not.toContain('Dao lu');
   });
 
   it('syncs map hierarchy blocks with custom title and parent-path fields', () => {

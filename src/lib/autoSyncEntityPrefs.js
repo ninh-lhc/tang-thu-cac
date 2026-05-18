@@ -36,7 +36,7 @@ const ENGINE_DESCRIPTIONS = Object.freeze({
   [AUTO_SYNC_ENGINE_MAP_HIERARCHY]: 'Dựng lại phân tầng map cha/con và danh sách map trực thuộc.',
   [AUTO_SYNC_ENGINE_RELATION_NOTES]: 'Đồng bộ block quan hệ giữa Thế lực/Bản đồ và các mục liên quan.',
   [AUTO_SYNC_ENGINE_CULTIVATION]: 'Ghép Hệ thống Tu luyện <-> Cảnh giới Tu Vi.',
-  [AUTO_SYNC_ENGINE_MAIN_CHARACTER]: 'Ghép Nhân vật chính <-> các tab nhân vật liên quan.',
+  [AUTO_SYNC_ENGINE_MAIN_CHARACTER]: 'Ghi block liên kết ngược lên thẻ nhân vật phụ (tab Đạo lữ, thân nhân…). Thẻ nhân vật chính dùng Mạng lưới nhân quả.',
   [AUTO_SYNC_ENGINE_OWNER_TIMELINE]: 'Tự tạo mốc timeline sở hữu từ dữ kiện Chủ nhân/Người sở hữu.',
   [AUTO_SYNC_ENGINE_COLLECTION_CARDS]: 'Làm mới các thẻ Danh sách (AUTO).',
 });
@@ -55,7 +55,7 @@ const ROLE_TO_ENGINES = Object.freeze({
   ],
   [AUTO_SYNC_ROLE_CULTIVATION_SYSTEM]: [AUTO_SYNC_ENGINE_CULTIVATION],
   [AUTO_SYNC_ROLE_CULTIVATION_REALM]: [AUTO_SYNC_ENGINE_CULTIVATION],
-  [AUTO_SYNC_ROLE_MAIN_CHARACTER]: [AUTO_SYNC_ENGINE_MAIN_CHARACTER],
+  [AUTO_SYNC_ROLE_MAIN_CHARACTER]: [],
   [AUTO_SYNC_ROLE_CHARACTER_RELATED]: [AUTO_SYNC_ENGINE_MAIN_CHARACTER],
 });
 

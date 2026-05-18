@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AUTO_SYNC_ENGINE_MAIN_CHARACTER,
+  isEntityAutoSyncDisabled,
+  setEntityAutoSyncState,
+} from './autoSyncEntityPrefs.js';
+import {
+  infoHasMainCharacterRelationAutoBlock,
   isMainCharacterRelationScope,
   syncAllMainCharacterRelationBlocks,
 } from './mainCharacterRelationSync.js';
-import { AUTO_SYNC_ENGINE_MAIN_CHARACTER } from './autoSyncEntityPrefs.js';
 import { AUTO_SYNC_ROLE_OFF } from './tabAutoSyncRole.js';
 
 function createNovel() {
@@ -51,7 +56,7 @@ function createNovel() {
 }
 
 describe('mainCharacterRelationSync', () => {
-  it('syncs main character with related tabs and preserves manual notes', () => {
+  it('syncs related character cards only and never writes AUTO list on main character', () => {
     const novel = createNovel();
 
     const ok = syncAllMainCharacterRelationBlocks(novel);
@@ -63,11 +68,8 @@ describe('mainCharacterRelationSync', () => {
     const huynhDe = novel.data['nhan-vat']['huynh-de'].entities[0];
 
     expect(main.info).toContain('Ghi chu tay nvc');
-    expect(main.info).toContain('Nhân Vật Liên Quan (AUTO)');
-    expect(main.info).toContain('[[Van Nhi]]');
-    expect(main.info).toContain('Dao lu');
-    expect(main.info).toContain('[[Lac Thien]]');
-    expect(main.info).toContain('[[Thach Dau]]');
+    expect(main.info).not.toContain('Nhân Vật Liên Quan (AUTO)');
+    expect(main.info).not.toContain('[[Van Nhi]]');
     expect(daoLu.info).toContain('Ghi chu tay dao lu');
     expect(daoLu.info).toContain('Nhân Vật Chính Liên Kết (AUTO)');
     expect(daoLu.info).toContain('[[Lac Nam]]');
@@ -76,7 +78,7 @@ describe('mainCharacterRelationSync', () => {
     expect(thanNhan.info).toContain('Quan hệ: Thân nhân');
     expect(huynhDe.info).toContain('[[Lac Nam]]');
     expect(huynhDe.info).toContain('Quan hệ: Huynh đệ');
-    expect((main.info.match(/\(AUTO\)/g) || []).length).toBe(1);
+    expect((main.info.match(/\(AUTO\)/g) || []).length).toBe(0);
     expect((daoLu.info.match(/\(AUTO\)/g) || []).length).toBe(1);
   });
 
@@ -106,7 +108,8 @@ describe('mainCharacterRelationSync', () => {
     const thanNhan = novel.data['nhan-vat']['than-nhan'].entities[0];
     const huynhDe = novel.data['nhan-vat']['huynh-de'].entities[0];
 
-    expect(main.info).toContain('[[Van Nhi]]');
+    expect(main.info).not.toContain('Nhân Vật Liên Quan (AUTO)');
+    expect(main.info).not.toContain('[[Van Nhi]]');
     expect(main.info).not.toContain('[[Lac Thien]]');
     expect(main.info).not.toContain('[[Thach Dau]]');
     expect(daoLu.info).toContain('[[Lac Nam]]');
@@ -158,13 +161,53 @@ describe('mainCharacterRelationSync', () => {
     expect(daoLuInfo).not.toContain('(AUTO)');
   });
 
-  it('keeps locked entity AUTO blocks frozen while still syncing other participants', () => {
+  it('skips Danh Sach list cards and only syncs real character entities', () => {
+    const novel = createNovel();
+    novel.data['nhan-vat']['dao-lu'].entities.unshift({
+      id: 'list-dl',
+      name: 'Danh Sách Đạo Lữ',
+      info: '',
+      dynamicData: {},
+    });
+    novel.data['nhan-vat']['than-nhan'].entities.unshift({
+      id: 'list-tn',
+      name: 'Danh Sách Thân Nhân',
+      info: '',
+      dynamicData: {},
+    });
+
+    expect(syncAllMainCharacterRelationBlocks(novel)).toBe(true);
+
+    const main = novel.data['nhan-vat']['nhan-vat-chinh'].entities[0];
+    const daoLu = novel.data['nhan-vat']['dao-lu'].entities.find((e) => e.id === 'dl-1');
+    expect(main.info).not.toContain('Nhân Vật Liên Quan (AUTO)');
+    expect(main.info).not.toContain('[[Danh Sách Đạo Lữ]]');
+    expect(daoLu.info).toContain('[[Lac Nam]]');
+    expect(daoLu.info).not.toContain('[[Danh Sách Đạo Lữ]]');
+  });
+
+  it('removes AUTO blocks from disabled entities during resync', () => {
     const novel = createNovel();
     expect(syncAllMainCharacterRelationBlocks(novel)).toBe(true);
 
     const main = novel.data['nhan-vat']['nhan-vat-chinh'].entities[0];
-    const lockedSnapshot = String(main.info || '');
-    main.autoSyncPrefs = { lockedEngines: [AUTO_SYNC_ENGINE_MAIN_CHARACTER] };
+    setEntityAutoSyncState(main, AUTO_SYNC_ENGINE_MAIN_CHARACTER, 'disabled', true);
+    expect(isEntityAutoSyncDisabled(main, AUTO_SYNC_ENGINE_MAIN_CHARACTER)).toBe(true);
+
+    const ok = syncAllMainCharacterRelationBlocks(novel);
+    expect(ok).toBe(true);
+    expect(infoHasMainCharacterRelationAutoBlock(main.info)).toBe(false);
+    expect(main.info).toContain('Ghi chu tay nvc');
+  });
+
+  it('keeps locked related-card AUTO blocks frozen while still syncing other participants', () => {
+    const novel = createNovel();
+    expect(syncAllMainCharacterRelationBlocks(novel)).toBe(true);
+
+    const main = novel.data['nhan-vat']['nhan-vat-chinh'].entities[0];
+    const daoLu = novel.data['nhan-vat']['dao-lu'].entities[0];
+    const lockedSnapshot = String(daoLu.info || '');
+    daoLu.autoSyncPrefs = { lockedEngines: [AUTO_SYNC_ENGINE_MAIN_CHARACTER] };
     novel.data['nhan-vat']['dao-lu'].entities.push({
       id: 'dl-2',
       name: 'Nguyet Nhi',
@@ -175,7 +218,20 @@ describe('mainCharacterRelationSync', () => {
     const ok = syncAllMainCharacterRelationBlocks(novel);
     expect(ok).toBe(true);
 
-    expect(String(main.info || '')).toBe(lockedSnapshot);
+    expect(main.info).not.toContain('Nhân Vật Liên Quan (AUTO)');
+    expect(String(daoLu.info || '')).toBe(lockedSnapshot);
     expect(String(novel.data['nhan-vat']['dao-lu'].entities[1].info || '')).toContain('[[Lac Nam]]');
+  });
+
+  it('strips legacy main-character AUTO list even when engine prefs were locked', () => {
+    const novel = createNovel();
+    const main = novel.data['nhan-vat']['nhan-vat-chinh'].entities[0];
+    main.info = `${main.info}\n\n## Nhân Vật Liên Quan (AUTO)\n- [[Danh Sách Đạo Lữ]]\n> (Khối tự động, không cần sửa tay)`;
+    main.autoSyncPrefs = { lockedEngines: [AUTO_SYNC_ENGINE_MAIN_CHARACTER] };
+
+    const ok = syncAllMainCharacterRelationBlocks(novel);
+    expect(ok).toBe(true);
+    expect(main.info).not.toContain('Nhân Vật Liên Quan (AUTO)');
+    expect(main.info).not.toContain('[[Danh Sách Đạo Lữ]]');
   });
 });

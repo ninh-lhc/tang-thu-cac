@@ -39,7 +39,7 @@ export const AUTO_SYNC_ROLE_OPTIONS = Object.freeze([
   { value: AUTO_SYNC_ROLE_MAP, label: 'Bản đồ', hint: 'Dùng cho cây Bản Đồ và liên kết vị trí' },
   { value: AUTO_SYNC_ROLE_CULTIVATION_SYSTEM, label: 'Hệ thống tu luyện', hint: 'Ghép với Cảnh giới tu vi' },
   { value: AUTO_SYNC_ROLE_CULTIVATION_REALM, label: 'Cảnh giới tu vi', hint: 'Ghép với Hệ thống tu luyện' },
-  { value: AUTO_SYNC_ROLE_MAIN_CHARACTER, label: 'Nhân vật chính', hint: 'Liên kết hai chiều với các tab nhân vật liên quan' },
+  { value: AUTO_SYNC_ROLE_MAIN_CHARACTER, label: 'Nhân vật chính', hint: 'Đồng bộ sang tab nhân vật phụ; hồ sơ chính dùng Mạng lưới nhân quả' },
   { value: AUTO_SYNC_ROLE_CHARACTER_RELATED, label: 'Nhân vật liên quan', hint: 'Đạo lữ, thân nhân, huynh đệ, nhân vật phụ...' },
 ]);
 
