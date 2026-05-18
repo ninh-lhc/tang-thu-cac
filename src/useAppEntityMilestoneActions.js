@@ -586,7 +586,7 @@ export function useAppEntityMilestoneActions({
   );
 
   const handleUpdateEntityInfo = useCallback(
-    (content) => {
+    (content, opts = {}) => {
       const ownerTimelineHintDetail =
         activeTabLon !== 'nhan-vat'
           ? parseOwnerTimelineHintDetailed({
@@ -607,6 +607,9 @@ export function useAppEntityMilestoneActions({
           ent.info = content;
           // Network "Mạng Lưới Nhân Quả" đọc [[...]] từ rawText, cần đồng bộ theo info.
           ent.rawText = content;
+          if (Array.isArray(opts.wikiLinkOptOuts)) {
+            ent.wikiLinkOptOuts = opts.wikiLinkOptOuts;
+          }
           if (ownerTimelineHint) {
             const ownerApplyResult = appendOwnerAcquisitionMilestoneDetailed(nov, ownerTimelineHint, {
               name: ent.name,

@@ -70,4 +70,11 @@ describe('autoWrapWikiLinksByEntityMap', () => {
     const map = [{ name: 'Do Kiep' }];
     expect(autoWrapWikiLinksByEntityMap(text, map)).toBe('Han da buoc vao [[Do Kiep]].');
   });
+
+  it('skips auto-wrap when opt-out matches anchor and context', () => {
+    const text = 'The gioi Hồng Lâu Mộng.';
+    const map = [{ name: 'Hồng Lâu' }, { name: 'Hồng Lâu Mộng' }];
+    const optOuts = [{ anchor: 'Hồng Lâu', before: 'The gioi ', after: ' Mộng.' }];
+    expect(autoWrapWikiLinksByEntityMap(text, map, { optOuts })).toBe(text);
+  });
 });

@@ -19,6 +19,7 @@ import {
 } from './MasterUtils.jsx';
 import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
 import { autoWrapWikiLinksByEntityMap, autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
+import { applyWikiLinkOptOutsForSave, readWikiLinkOptOuts } from './lib/wikiLinkOptOut.js';
 import { cleanupEntityNotesText } from './lib/entityNotesTextCleanup.js';
 import {
   applyEntityNotesDiagnosticFix,
@@ -52,6 +53,8 @@ const HIST_MAX = 120;
 const EntityNotesEditSession = memo(function EntityNotesEditSession({
   activeTabLon,
   initialInfo,
+  savedInfo,
+  wikiLinkOptOuts: initialWikiLinkOptOuts,
   geminiApiKeys,
   aiMode,
   isExtractingAI,
@@ -496,7 +499,9 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             if (!currentText.trim()) return;
             const cleanedEarly = normalizeNotesDraft(currentText);
             const workingText = cleanedEarly.text;
-            const localWrapEarly = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap);
+            const localWrapEarly = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap, {
+              optOuts: initialWikiLinkOptOuts,
+            });
             if (localWrapEarly.count > 0 && localWrapEarly.text !== workingText) {
               syncDraftAndPreview(localWrapEarly.text);
               showToast(`Da tu boc ${localWrapEarly.count} [[lien ket]] theo the co san. Bam lai AI neu muon goi y them cho kho.`);
@@ -508,7 +513,9 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             }
             const text = workingText;
             if (!text.trim()) return;
-            const localWrap = autoWrapWikiLinksByEntityMapWithCount(text, entityMap);
+            const localWrap = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, {
+              optOuts: initialWikiLinkOptOuts,
+            });
             const { wasTruncated } = truncateForAI(text);
             if (wasTruncated) showToast('Đoạn quá dài — chỉ gửi ~12.000 ký tự đầu cho AI.', 'warning');
             setIsExtractingAI(true);
@@ -591,8 +598,20 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             } else if (remainingWarnings.length > 0) {
               showToast(`Đã lưu nhưng vẫn còn ${remainingWarnings.length} cảnh báo định dạng.`, 'warning');
             }
-            const next = autoWrapWikiLinksByEntityMap(preparedText, entityMap);
-            handleUpdateEntityInfo(next);
+            const saveResult = applyWikiLinkOptOutsForSave({
+              savedInfo: safeString(savedInfo ?? initialInfo),
+              preparedText,
+              wikiLinkOptOuts: initialWikiLinkOptOuts,
+              entityMap,
+              autoWrapWikiLinksByEntityMapWithCount,
+            });
+            if (saveResult.detectedCount > 0) {
+              showToast(
+                `Đã ghi nhớ ${saveResult.detectedCount} chỗ bạn gỡ link — app sẽ không tự bọc lại cùng vị trí.`,
+                'success'
+              );
+            }
+            handleUpdateEntityInfo(saveResult.text, { wikiLinkOptOuts: saveResult.wikiLinkOptOuts });
             setIsSplitPreview(false);
             setIsEntityEditing(false);
           }}
@@ -1243,6 +1262,8 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             key={`${selectedEntity.id}:${detailProfileMode}`}
             activeTabLon={activeTabLon}
             initialInfo={selectedEntity.info}
+            savedInfo={selectedEntity.info}
+            wikiLinkOptOuts={readWikiLinkOptOuts(selectedEntity)}
             geminiApiKeys={geminiApiKeys}
             aiMode={aiMode}
             isExtractingAI={isExtractingAI}

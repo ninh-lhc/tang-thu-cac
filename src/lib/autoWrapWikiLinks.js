@@ -4,6 +4,7 @@
  * Longer names are matched first to avoid overlap.
  */
 import { buildEntityNameLookup, resolveEntityLookup } from './entityWikiLookup.js';
+import { isWikiWrapOptedOut } from './wikiLinkOptOut.js';
 import { compareWikiNameSurfacePriority } from './wikiNameSurface.js';
 
 const WORD_CHAR_RE = /[\p{L}\p{N}_]/u;
@@ -55,11 +56,12 @@ function normalizeNames(entityMap) {
   return out.sort(compareWikiNameSurfacePriority);
 }
 
-export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap) {
+export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap, options = {}) {
   if (typeof text !== 'string' || !text) return { text: String(text || ''), count: 0 };
   const names = normalizeNames(entityMap);
   if (names.length === 0) return { text, count: 0 };
   const lookup = buildEntityNameLookup(entityMap);
+  const optOuts = Array.isArray(options?.optOuts) ? options.optOuts : [];
 
   const protectedRanges = collectProtectedRanges(text);
   const sourceLower = text.toLowerCase();
@@ -80,6 +82,7 @@ export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap) {
       const end = i + candidate.raw.length;
       if (!isBoundary(text, i, end)) continue;
       if (!resolveEntityLookup(lookup, text.slice(i, end))) continue;
+      if (isWikiWrapOptedOut(text, i, end, candidate.raw, optOuts)) continue;
       picked = { start: i, end };
       break;
     }
@@ -105,7 +108,7 @@ export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap) {
   return { text: out, count: matches.length };
 }
 
-export function autoWrapWikiLinksByEntityMap(text, entityMap) {
-  const out = autoWrapWikiLinksByEntityMapWithCount(text, entityMap);
+export function autoWrapWikiLinksByEntityMap(text, entityMap, options = {}) {
+  const out = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, options);
   return typeof out === 'string' ? out : out.text;
 }
