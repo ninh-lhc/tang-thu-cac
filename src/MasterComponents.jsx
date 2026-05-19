@@ -119,6 +119,7 @@ import {
   fixAllEntityNotesDiagnostics,
 } from './lib/entityNotesDiagnostics.js';
 import { useEntityNotesFormatDiagnostics } from './lib/useEntityNotesFormatDiagnostics.js';
+import { focusEntityNotesTextarea } from './lib/entityNotesEditorSelection.js';
 import { ENTITY_NOTES_AI_STRUCTURE_SYSTEM_PROMPT } from './lib/entityNotesAiStructurePrompt.js';
 import { runNotesAiPipeline } from './lib/entityNotesAiPipeline.js';
 import { syncEntityNotesDuplicateWordFormatting } from './lib/entityNotesDuplicateWordFormatting.js';
@@ -3671,16 +3672,12 @@ export const ModalMilestone = ({
     );
   };
   const applyEditorMutation = (nextState) => {
-    const textarea = eventTextareaRef.current;
-    if (!textarea || !nextState) return;
-    textarea.value = nextState.newText;
-    textarea.focus();
-    textarea.setSelectionRange(nextState.selStart, nextState.selEnd);
-    recordAndSetEventDraft(nextState.newText);
-    setEventEditorCaret(nextState.selStart);
-    setToolbarState(
-      getEntityNotesToolbarState(nextState.newText, nextState.selStart, nextState.selEnd)
-    );
+    if (!nextState) return;
+    const { newText, selStart, selEnd } = nextState;
+    recordAndSetEventDraft(newText);
+    setEventEditorCaret(selStart);
+    setToolbarState(getEntityNotesToolbarState(newText, selStart, selEnd));
+    focusEntityNotesTextarea(eventTextareaRef.current, selStart, selEnd, newText.length);
   };
   const normalizeEventDraft = (sourceText, { announceIfChanged = false, announceIfSame = false } = {}) => {
     const cleaned = fixAllEntityNotesDiagnostics(sourceText);
@@ -3920,6 +3917,7 @@ export const ModalMilestone = ({
     applyEditorMutation({ newText: nextText, selStart: caret, selEnd: caret });
   };
   const handleEventEditorKeyDown = (event) => {
+    if (event.nativeEvent.isComposing || event.key === 'Process') return;
     const textarea = event.currentTarget;
     if (event.key === 'Tab') {
       const nextState = resolveEntityNotesTabIndent(

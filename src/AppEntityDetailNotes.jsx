@@ -37,6 +37,7 @@ import {
   fixAllEntityNotesDiagnostics,
 } from './lib/entityNotesDiagnostics.js';
 import { useEntityNotesFormatDiagnostics } from './lib/useEntityNotesFormatDiagnostics.js';
+import { focusEntityNotesTextarea } from './lib/entityNotesEditorSelection.js';
 import { syncEntityNotesDuplicateWordFormatting } from './lib/entityNotesDuplicateWordFormatting.js';
 import {
   getEntityNotesFontStack,
@@ -494,14 +495,16 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   );
   const applyEditorMutation = useCallback(
     (nextState) => {
-      const textarea = textareaRef.current || document.getElementById('entity-info-editor');
-      if (!textarea || !nextState) return;
-      textarea.value = nextState.newText;
-      textarea.focus();
-      textarea.setSelectionRange(nextState.selStart, nextState.selEnd);
-      syncDraftAndPreview(nextState.newText);
-      setToolbarState(
-        getEntityNotesToolbarState(nextState.newText, nextState.selStart, nextState.selEnd)
+      if (!nextState) return;
+      const { newText, selStart, selEnd } = nextState;
+      syncDraftAndPreview(newText);
+      setEditorCaret(selStart);
+      setToolbarState(getEntityNotesToolbarState(newText, selStart, selEnd));
+      focusEntityNotesTextarea(
+        textareaRef.current || document.getElementById('entity-info-editor'),
+        selStart,
+        selEnd,
+        newText.length
       );
     },
     [syncDraftAndPreview]
@@ -528,6 +531,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   );
   const handleEditorKeyDown = useCallback(
     (event) => {
+      if (event.nativeEvent.isComposing || event.key === 'Process') return;
       const textarea = event.currentTarget;
       if (event.key === 'Tab') {
         const nextState = resolveEntityNotesTabIndent(
