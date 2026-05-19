@@ -35,6 +35,8 @@ import {
   applyEntityNotesDiagnosticFix,
   collectEntityNotesDiagnostics,
   fixAllEntityNotesDiagnostics,
+  fixEntityNotesStructureOnly,
+  prepareEntityNotesForSave,
 } from './lib/entityNotesDiagnostics.js';
 import { useEntityNotesFormatDiagnostics } from './lib/useEntityNotesFormatDiagnostics.js';
 import { focusEntityNotesTextarea } from './lib/entityNotesEditorSelection.js';
@@ -389,7 +391,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         showToast('AI trả về bản quá ngắn nên mình chưa áp dụng để tránh mất ý.', 'warning');
         return;
       }
-      const finalText = fixAllEntityNotesDiagnostics(formatted);
+      const finalText = fixEntityNotesStructureOnly(formatted);
       if (finalText === notesEdit.text) {
         showToast('AI chưa đề xuất bố cục mới rõ ràng.');
         return;
@@ -615,7 +617,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
                 : []
             );
             const cleanedText = notesTypo.autoCleanOnSave
-              ? fixAllEntityNotesDiagnostics(rawDraft)
+              ? prepareEntityNotesForSave(rawDraft)
               : rawDraft;
             const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
             const preparedText = formatSync.text;

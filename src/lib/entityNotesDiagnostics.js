@@ -395,16 +395,41 @@ export function applyEntityNotesDiagnosticFix(text, diagnostic) {
   }
 }
 
-export function fixAllEntityNotesDiagnostics(text) {
+const MARKER_AUTO_FIX_KINDS = new Set([
+  'bold-unclosed',
+  'strike-unclosed',
+  'wiki-unclosed',
+  'color-unclosed',
+  'color-malformed',
+  'color-invalid-value',
+  'colon-star-typo',
+]);
+
+function runFixableDiagnosticsLoop(text, { includeMarkerFixes = true } = {}) {
   let next = cleanupEntityNotesText(text);
   for (let round = 0; round < 8; round += 1) {
-    const diagnostics = collectEntityNotesDiagnostics(next);
+    const diagnostics = collectEntityNotesDiagnostics(next).filter(
+      (item) => includeMarkerFixes || !MARKER_AUTO_FIX_KINDS.has(item.kind)
+    );
     const fixable = diagnostics.find((item) => item.fixable);
     if (!fixable) break;
     const patched = applyEntityNotesDiagnosticFix(next, fixable);
     if (patched === next) break;
     next = patched;
   }
-  next = renumberOrderedLists(next).replace(/\n{3,}/g, '\n\n');
-  return next;
+  return renumberOrderedLists(next).replace(/\n{3,}/g, '\n\n');
+}
+
+/** Làm sạch cấu trúc khi lưu / sau AI — không tự chèn `**`, `]]` (tránh hỏng chỉnh tay). */
+export function fixEntityNotesStructureOnly(text) {
+  return runFixableDiagnosticsLoop(text, { includeMarkerFixes: false });
+}
+
+/** Chuẩn bị trước khi lưu: mặc định chỉ sạch cấu trúc; không đụng marker trừ khi bật fixMarkers. */
+export function prepareEntityNotesForSave(text, { fixMarkers = false } = {}) {
+  return fixMarkers ? fixAllEntityNotesDiagnostics(text) : fixEntityNotesStructureOnly(text);
+}
+
+export function fixAllEntityNotesDiagnostics(text) {
+  return runFixableDiagnosticsLoop(text, { includeMarkerFixes: true });
 }

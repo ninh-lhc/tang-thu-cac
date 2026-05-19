@@ -3,6 +3,8 @@ import {
   applyEntityNotesDiagnosticFix,
   collectEntityNotesDiagnostics,
   fixAllEntityNotesDiagnostics,
+  fixEntityNotesStructureOnly,
+  prepareEntityNotesForSave,
 } from './entityNotesDiagnostics.js';
 
 describe('collectEntityNotesDiagnostics', () => {
@@ -66,5 +68,17 @@ describe('collectEntityNotesDiagnostics', () => {
     const input = '- **Mo dau\n## Khac\n[[wiki mo';
     const out = fixAllEntityNotesDiagnostics(input);
     expect(out).toBe('- **Mo dau**\n## Khac\n[[wiki mo]]');
+  });
+
+  it('prepareEntityNotesForSave keeps unclosed markers unless fixMarkers', () => {
+    const input = '- **Mo dau\n## Khac\n[[wiki mo';
+    expect(prepareEntityNotesForSave(input)).toBe(input);
+    expect(prepareEntityNotesForSave(input, { fixMarkers: true })).toBe(
+      '- **Mo dau**\n## Khac\n[[wiki mo]]'
+    );
+  });
+
+  it('fixEntityNotesStructureOnly still fixes callout roles', () => {
+    expect(fixEntityNotesStructureOnly('> [!UNKNOWN] Thu')).toContain('> [!NOTE]');
   });
 });

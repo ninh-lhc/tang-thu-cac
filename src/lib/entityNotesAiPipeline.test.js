@@ -27,7 +27,8 @@ describe('entityNotesAiPipeline', () => {
       geminiApiKeys: [],
     });
     expect(result.ok).toBe(true);
-    expect(result.text).toContain('**Mo dau**');
+    expect(result.text).toContain('**Mo dau');
+    expect(result.remainingWarningCount).toBeGreaterThan(0);
     expect(result.remainingWarningCount).toBe(collectEntityNotesDiagnostics(result.text).length);
   });
 });

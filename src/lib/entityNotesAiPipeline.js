@@ -12,7 +12,7 @@ import { autoWrapWikiLinksByEntityMapWithCount } from './autoWrapWikiLinks.js';
 import { ENTITY_NOTES_AI_STRUCTURE_SYSTEM_PROMPT } from './entityNotesAiStructurePrompt.js';
 import {
   collectEntityNotesDiagnostics,
-  fixAllEntityNotesDiagnostics,
+  fixEntityNotesStructureOnly,
 } from './entityNotesDiagnostics.js';
 
 function safeString(value) {
@@ -23,7 +23,7 @@ function safeString(value) {
 /** Bước 1: chuẩn hoá khoảng trắng / định dạng nhẹ. */
 export function runNotesCleanStep(sourceText) {
   const before = safeString(sourceText);
-  const text = fixAllEntityNotesDiagnostics(before);
+  const text = fixEntityNotesStructureOnly(before);
   return { text, changed: text !== before };
 }
 
@@ -111,7 +111,7 @@ export async function runNotesFormatStep(
   if (formatted.length < normalized.length * 0.45) {
     return { text: normalized, applied: false, reason: 'too_short' };
   }
-  const finalText = fixAllEntityNotesDiagnostics(formatted);
+  const finalText = fixEntityNotesStructureOnly(formatted);
   if (finalText === normalized) {
     return { text: normalized, applied: false, reason: 'unchanged' };
   }

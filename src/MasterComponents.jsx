@@ -117,6 +117,8 @@ import {
   applyEntityNotesDiagnosticFix,
   collectEntityNotesDiagnostics,
   fixAllEntityNotesDiagnostics,
+  fixEntityNotesStructureOnly,
+  prepareEntityNotesForSave,
 } from './lib/entityNotesDiagnostics.js';
 import { useEntityNotesFormatDiagnostics } from './lib/useEntityNotesFormatDiagnostics.js';
 import { focusEntityNotesTextarea } from './lib/entityNotesEditorSelection.js';
@@ -315,7 +317,7 @@ export const MarkdownToolbar = ({
               onMouseDown={preventToolbarFocusSteal}
               onClick={() => onNotesAutoCleanOnSave(!notesAutoCleanOnSave)}
               className={getChipClass(Boolean(notesAutoCleanOnSave), 'emerald')}
-              title="Bật để tự chuẩn hoá ghi chú trước khi lưu"
+              title="Bật để gộp dòng trống và sửa callout trước khi lưu — không tự thêm ** hay ]]"
             >
               {notesAutoCleanOnSave ? 'Tự sạch khi lưu' : 'Lưu nguyên văn'}
             </button>
@@ -3772,7 +3774,7 @@ export const ModalMilestone = ({
       const activeEl = document.activeElement;
       if (event?.defaultPrevented) return;
       if (trapEl && activeEl && !trapEl.contains(activeEl)) return;
-      const cleanedText = notesTypo.autoCleanOnSave ? fixAllEntityNotesDiagnostics(eventText) : eventText;
+      const cleanedText = notesTypo.autoCleanOnSave ? prepareEntityNotesForSave(eventText) : eventText;
       const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
       const preparedText = formatSync.text;
       const eventWrap = autoWrapWikiLinksByEntityMapWithCount(preparedText, entityMap);
@@ -4079,7 +4081,7 @@ export const ModalMilestone = ({
         toast('AI trả về bản quá ngắn nên mình chưa áp dụng để tránh mất ý.', 'warning');
         return;
       }
-      const finalText = fixAllEntityNotesDiagnostics(formatted);
+      const finalText = fixEntityNotesStructureOnly(formatted);
       if (finalText === eventText) {
         toast('AI chưa đề xuất bố cục mới rõ ràng.');
         return;
@@ -4166,7 +4168,7 @@ export const ModalMilestone = ({
     handlePickLocalImage?.(setAvatarCallback, editorId, 'milestone-event-inline-image');
 
   const handleSave = () => {
-    const cleanedText = notesTypo.autoCleanOnSave ? fixAllEntityNotesDiagnostics(eventText) : eventText;
+    const cleanedText = notesTypo.autoCleanOnSave ? prepareEntityNotesForSave(eventText) : eventText;
     const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
     const preparedText = formatSync.text;
     const remainingWarnings = collectEntityNotesDiagnostics(preparedText);
