@@ -5,20 +5,13 @@
  */
 import { buildEntityNameLookup, resolveEntityLookup } from './entityWikiLookup.js';
 import { isWikiWrapOptedOut } from './wikiLinkOptOut.js';
-import { compareWikiNameSurfacePriority } from './wikiNameSurface.js';
-
-const WORD_CHAR_RE = /[\p{L}\p{N}_]/u;
-
-function isWordChar(ch) {
-  if (!ch) return false;
-  return WORD_CHAR_RE.test(ch);
-}
-
-function isBoundary(text, start, end) {
-  const left = start > 0 ? text[start - 1] : '';
-  const right = end < text.length ? text[end] : '';
-  return !isWordChar(left) && !isWordChar(right);
-}
+import {
+  compareWikiNameSurfacePriority,
+  hasLongerRegisteredWikiNameAt,
+  isWikiNameWordBoundary,
+  isWikiSurfacePrefixOfLongerProperPhrase,
+  matchesWikiNameSurface,
+} from './wikiNameSurface.js';
 
 function collectProtectedRanges(text) {
   const ranges = [];
@@ -80,8 +73,11 @@ export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap, options =
     for (const candidate of candidates) {
       if (!sourceLower.startsWith(candidate.lower, i)) continue;
       const end = i + candidate.raw.length;
-      if (!isBoundary(text, i, end)) continue;
+      if (!isWikiNameWordBoundary(text, i, end)) continue;
+      if (!matchesWikiNameSurface(candidate.raw, text.slice(i, end))) continue;
       if (!resolveEntityLookup(lookup, text.slice(i, end))) continue;
+      if (hasLongerRegisteredWikiNameAt(text, i, candidate.raw, names)) continue;
+      if (isWikiSurfacePrefixOfLongerProperPhrase(text, i, end, candidate.raw)) continue;
       if (isWikiWrapOptedOut(text, i, end, candidate.raw, optOuts)) continue;
       picked = { start: i, end };
       break;

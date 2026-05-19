@@ -204,6 +204,8 @@ export const MarkdownToolbar = ({
   entityNotesTemplateProfile = null,
   notesAutoCleanOnSave = true,
   onNotesAutoCleanOnSave,
+  notesAutoWrapWikiOnSave = false,
+  onNotesAutoWrapWikiOnSave,
   onAiFormatStructure,
 }) => {
   const sync = onEditorContentChange;
@@ -314,6 +316,17 @@ export const MarkdownToolbar = ({
               title="Bật để tự chuẩn hoá ghi chú trước khi lưu"
             >
               {notesAutoCleanOnSave ? 'Tự sạch khi lưu' : 'Lưu nguyên văn'}
+            </button>
+          )}
+          {onNotesAutoWrapWikiOnSave && (
+            <button
+              type="button"
+              onMouseDown={preventToolbarFocusSteal}
+              onClick={() => onNotesAutoWrapWikiOnSave(!notesAutoWrapWikiOnSave)}
+              className={getChipClass(Boolean(notesAutoWrapWikiOnSave), 'cyan')}
+              title="Bật để tự bọc [[tên thẻ]] theo danh mục khi lưu (tắt = giữ đúng chữ bạn gõ)"
+            >
+              {notesAutoWrapWikiOnSave ? 'Tự bọc wiki' : 'Không bọc wiki'}
             </button>
           )}
           {onAiFormatStructure && (
@@ -590,7 +603,7 @@ export const MarkdownToolbar = ({
           onMouseDown={preventToolbarFocusSteal}
           onClick={() => handleToolbarClick('__WIKI_UNWRAP__', '', editorId, sync)}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-900/50 bg-cyan-950/40 text-cyan-400 shadow-inner transition-colors hover:bg-cyan-900/40 hover:text-cyan-300"
-          title="Gỡ Wiki Link: chọn [[...]] hoặc đặt con trỏ trong link để bỏ"
+          title="Gỡ Wiki Link: chọn [[...]] hoặc đặt con trỏ trong link — app ghi nhớ khi lưu, không tự bọc lại chỗ đó"
         >
           <X size={16} />
         </button>
@@ -4378,6 +4391,10 @@ export const ModalMilestone = ({
                     entityNotesTemplateProfile={templateProfile}
                     notesAutoCleanOnSave={notesTypo.autoCleanOnSave}
                     onNotesAutoCleanOnSave={(enabled) => setEntityNotesPrefs({ autoCleanOnSave: enabled })}
+                    notesAutoWrapWikiOnSave={notesTypo.autoWrapWikiOnSave}
+                    onNotesAutoWrapWikiOnSave={(enabled) =>
+                      setEntityNotesPrefs({ autoWrapWikiOnSave: enabled })
+                    }
                   />
                 </div>
 

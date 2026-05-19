@@ -84,6 +84,24 @@ describe('toolbar helpers', () => {
     expect(nextState?.selStart).toBe(0);
   });
 
+  it('removes an empty bullet line above a heading without merging the heading', () => {
+    const text = '- **Công dụng:** mô tả\n- \n## 4. Sức mạnh';
+    const headingStart = text.indexOf('##');
+    const nextState = resolveEntityNotesBackspace(text, headingStart, headingStart);
+
+    expect(nextState?.newText).toBe('- **Công dụng:** mô tả\n\n## 4. Sức mạnh');
+    expect(nextState?.selStart).toBe(nextState.newText.indexOf('##'));
+  });
+
+  it('removes an empty bullet marker when the caret is after the prefix', () => {
+    const text = '## Tiêu đề\n- \n- mục dưới';
+    const caret = text.indexOf('- \n') + 2;
+    const nextState = resolveEntityNotesBackspace(text, caret, caret);
+
+    expect(nextState?.newText).toBe('## Tiêu đề\n\n- mục dưới');
+    expect(nextState?.selStart).toBe('## Tiêu đề\n'.length);
+  });
+
   it('indents list lines with Tab behavior', () => {
     const nextState = resolveEntityNotesTabIndent('- Muc 1\n- Muc 2', 0, '- Muc 1\n- Muc 2'.length);
 

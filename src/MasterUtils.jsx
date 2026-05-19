@@ -11,6 +11,7 @@ import {
 import { FALLBACK_IMG } from './MasterEngines.js';
 import { splitTextByWikiMatcher } from './lib/wikiLinkMatcher.js';
 import { buildEntityNameLookup, resolveEntityLookup } from './lib/entityWikiLookup.js';
+import { buildWikiLinkOptOutFromUnwrap } from './lib/wikiLinkOptOut.js';
 
 export const generateId = (prefix) => `${prefix}-${Math.random().toString(36).substring(2, 11)}`;
 
@@ -775,11 +776,11 @@ const WIKI_CHIP_SHELL =
 function getEntityNotesWikiLinkChip(isSelfLink, pending = false) {
   if (pending) {
     return {
-      className: `${WIKI_CHIP_SHELL} bg-violet-950/40 hover:bg-violet-900/55 border border-dashed border-violet-500/45`,
-      textClass: 'font-bold text-violet-300',
-      iconClass: 'text-violet-400',
+      className: `${WIKI_CHIP_SHELL} bg-amber-950/45 hover:bg-amber-900/55 border border-dashed border-amber-500/55`,
+      textClass: 'font-bold text-amber-200',
+      iconClass: 'text-amber-300',
       'data-entity-wiki-link': 'pending',
-      title: 'Chưa có hồ sơ — nhấp để tạo thẻ mới',
+      title: 'Chưa có hồ sơ — nhấp để tạo thẻ mới (vàng, viền đứt)',
     };
   }
   if (isSelfLink) {
@@ -823,10 +824,12 @@ export const processPlainTextWithLinks = (
   onNavigate,
   selfEntityId = null,
   wikiLinkOptOuts = null,
+  inlineOptions = {},
 ) => {
     if (!text || !lookup || lookup.totalItems === 0 || !linkRegex) return text;
     const usingRegex = linkRegex instanceof RegExp;
     const optOuts = Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [];
+    const notesPreview = !!inlineOptions?.entityNotesPreview;
     const parts = usingRegex ? text.split(linkRegex) : splitTextByWikiMatcher(text, linkRegex, optOuts);
     if (parts.length === 1) return text;
 
@@ -837,6 +840,26 @@ export const processPlainTextWithLinks = (
         const match = resolveEntityLookup(lookup, rawText, { selfEntityId });
         if (match) {
             const isSelfLink = !!selfEntityId && match.dest?.entityId === selfEntityId;
+            if (notesPreview) {
+              const chip = getEntityNotesWikiLinkChip(isSelfLink);
+              const textClass = chip.textClass || '';
+              const iconClass = chip.iconClass || textClass;
+              return (
+                <span
+                  key={i}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigate(match.dest);
+                  }}
+                  className={chip.className}
+                  data-entity-wiki-link={chip['data-entity-wiki-link']}
+                  title={chip.title || `Mở hồ sơ: ${rawText}`}
+                >
+                  <Link2 size={12} className={`shrink-0 ${iconClass}`} />
+                  <span className={textClass || 'font-bold'}>{rawText}</span>
+                </span>
+              );
+            }
             return (
                <span key={i} onClick={(e) => { e.stopPropagation(); onNavigate(match.dest); }} className={getWikiLinkClassName(isSelfLink, 'plain')}>
                   <Link2 size={12}/>{rawText}
@@ -1171,7 +1194,7 @@ export const processInline = (
                 'text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded-md hover:text-emerald-400 hover:bg-emerald-900/30 border border-dashed border-slate-600 hover:border-emerald-500/50 transition-all cursor-pointer inline-flex items-center gap-1',
               title: 'Thực thể chưa có hồ sơ. Nhấp để ngưng tụ (tạo mới)!',
             };
-        const pendingTextClass = pendingChip.textClass || 'font-bold text-violet-300';
+        const pendingTextClass = pendingChip.textClass || 'font-bold text-amber-200';
         const pendingIconClass = pendingChip.iconClass || pendingTextClass;
         return (
           <span
@@ -1262,7 +1285,15 @@ export const processInline = (
     const optOuts = Array.isArray(inlineOptions?.wikiLinkOptOuts) ? inlineOptions.wikiLinkOptOuts : [];
     return (
       <span key={i}>
-        {processPlainTextWithLinks(safeString(part), lookup, linkRegex, onNavigate, selfEntityId, optOuts)}
+        {processPlainTextWithLinks(
+          safeString(part),
+          lookup,
+          linkRegex,
+          onNavigate,
+          selfEntityId,
+          optOuts,
+          inlineOptions
+        )}
       </span>
     );
   });
@@ -1485,10 +1516,47 @@ export const resolveEntityNotesLineBreak = (text, selStart, selEnd) => {
   return { newText, selStart: caret, selEnd: caret };
 };
 
+const removeEmptyListMarkerLine = (text, lineStart, lineEnd) => {
+  const line = text.slice(lineStart, lineEnd);
+  const match = resolveEntityNotesPrefixMatch(line);
+  if (!match) return null;
+  const indent = match[1] || '';
+  const prefix = match[2] || '';
+  const body = match[3] || '';
+  if (body.trim()) return null;
+  const markerEnd = lineStart + indent.length + prefix.length;
+  if (text.slice(lineStart, markerEnd) !== indent + prefix) return null;
+  if (text.slice(markerEnd, lineEnd).trim()) return null;
+  const newText = text.slice(0, lineStart) + indent + text.slice(lineEnd);
+  return {
+    newText,
+    selStart: lineStart + indent.length,
+    selEnd: lineStart + indent.length,
+    removedChars: lineEnd - lineStart,
+  };
+};
+
 export const resolveEntityNotesBackspace = (text, selStart, selEnd) => {
   if (selStart !== selEnd) return null;
-  const { lineStart, lineEnd, line } = getLineSliceBounds(text, selStart);
-  const match = resolveEntityNotesPrefixMatch(line);
+  const { lineStart, lineEnd } = getLineSliceBounds(text, selStart);
+
+  // At line start: remove previous empty list marker instead of merging this line upward.
+  if (selStart === lineStart && lineStart > 0) {
+    let prevLineEnd = lineStart;
+    if (text[prevLineEnd - 1] === '\n') prevLineEnd -= 1;
+    const prevLineStart = text.lastIndexOf('\n', Math.max(0, prevLineEnd - 1)) + 1;
+    const removedPrev = removeEmptyListMarkerLine(text, prevLineStart, prevLineEnd);
+    if (removedPrev) {
+      const shift = removedPrev.removedChars;
+      return {
+        newText: removedPrev.newText,
+        selStart: selStart - shift,
+        selEnd: selStart - shift,
+      };
+    }
+  }
+
+  const match = resolveEntityNotesPrefixMatch(text.slice(lineStart, lineEnd));
   if (!match) return null;
 
   const indent = match[1] || '';
@@ -1498,9 +1566,13 @@ export const resolveEntityNotesBackspace = (text, selStart, selEnd) => {
 
   if (body.trim() || selStart < prefixEnd || selStart > lineEnd) return null;
 
-  const newText = text.slice(0, lineStart) + indent + text.slice(lineEnd);
-  const caret = lineStart + indent.length;
-  return { newText, selStart: caret, selEnd: caret };
+  const removed = removeEmptyListMarkerLine(text, lineStart, lineEnd);
+  if (!removed) return null;
+  return {
+    newText: removed.newText,
+    selStart: removed.selStart,
+    selEnd: removed.selEnd,
+  };
 };
 
 export const resolveEntityNotesTabIndent = (text, selStart, selEnd, { outdent = false } = {}) => {
@@ -1623,7 +1695,7 @@ export const handleToolbarClick = (before, after = '', editorId, onAfterApply) =
   const end = textarea.selectionEnd;
   const text = textarea.value;
 
-  const apply = (newValue, selStart, selEnd) => {
+  const apply = (newValue, selStart, selEnd, meta) => {
     const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
     if (nativeSetter) {
       nativeSetter.call(textarea, newValue);
@@ -1633,7 +1705,7 @@ export const handleToolbarClick = (before, after = '', editorId, onAfterApply) =
     }
     textarea.focus();
     textarea.setSelectionRange(selStart, selEnd);
-    onAfterApply?.(textarea.value);
+    onAfterApply?.(textarea.value, meta);
   };
 
   if (before === '[[' && after === ']]') {
@@ -1642,8 +1714,9 @@ export const handleToolbarClick = (before, after = '', editorId, onAfterApply) =
     return;
   }
   if (before === '__WIKI_UNWRAP__') {
+    const wikiOptOut = buildWikiLinkOptOutFromUnwrap(text, start, end);
     const { newText, selStart, selEnd } = applyWikiLinkUnwrap(text, start, end);
-    apply(newText, selStart, selEnd);
+    apply(newText, selStart, selEnd, wikiOptOut ? { wikiOptOut } : undefined);
     return;
   }
 

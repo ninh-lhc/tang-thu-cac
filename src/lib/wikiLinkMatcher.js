@@ -4,20 +4,22 @@
  */
 
 import { isWikiWrapOptedOut } from './wikiLinkOptOut.js';
-import { compareWikiNameSurfacePriority, matchesWikiNameSurface } from './wikiNameSurface.js';
+import {
+  compareWikiNameSurfacePriority,
+  hasLongerRegisteredWikiNameAt,
+  isWikiNameWordBoundary,
+  isWikiSurfacePrefixOfLongerProperPhrase,
+  matchesWikiNameSurface,
+} from './wikiNameSurface.js';
 
 const normalizeName = (value) => String(value || '').trim().toLowerCase();
-const WORD_CHAR_RE = /[\p{L}\p{N}_]/u;
 
-function isWordChar(ch) {
-  if (!ch) return false;
-  return WORD_CHAR_RE.test(ch);
-}
-
-function isBoundary(text, start, end) {
-  const left = start > 0 ? text[start - 1] : '';
-  const right = end < text.length ? text[end] : '';
-  return !isWordChar(left) && !isWordChar(right);
+function collectAllNamesFromBuckets(buckets) {
+  const names = [];
+  for (const bucket of buckets.values()) {
+    for (const entry of bucket) names.push(entry.raw);
+  }
+  return names.sort((a, b) => compareWikiNameSurfacePriority(a, b));
 }
 
 export const buildWikiLinkMatcher = (entityMap) => {
@@ -43,7 +45,7 @@ export const buildWikiLinkMatcher = (entityMap) => {
     names.sort((a, b) => compareWikiNameSurfacePriority(a.raw, b.raw));
   }
 
-  return { buckets };
+  return { buckets, allNames: collectAllNamesFromBuckets(buckets) };
 };
 
 export const splitTextByWikiMatcher = (text, matcher, optOuts = []) => {
@@ -51,6 +53,7 @@ export const splitTextByWikiMatcher = (text, matcher, optOuts = []) => {
   if (!matcher?.buckets || matcher.buckets.size === 0) return [{ text, isMatch: false }];
 
   const sourceLower = text.toLowerCase();
+  const allNames = matcher.allNames || collectAllNamesFromBuckets(matcher.buckets);
   const parts = [];
   let cursor = 0;
   let i = 0;
@@ -63,8 +66,10 @@ export const splitTextByWikiMatcher = (text, matcher, optOuts = []) => {
         const end = i + candidate.raw.length;
         if (
           sourceLower.startsWith(candidate.lower, i) &&
-          isBoundary(text, i, end) &&
+          isWikiNameWordBoundary(text, i, end) &&
           matchesWikiNameSurface(candidate.raw, text.slice(i, end)) &&
+          !hasLongerRegisteredWikiNameAt(text, i, candidate.raw, allNames) &&
+          !isWikiSurfacePrefixOfLongerProperPhrase(text, i, end, candidate.raw) &&
           !isWikiWrapOptedOut(text, i, end, candidate.raw, optOuts)
         ) {
           matchedName = candidate;

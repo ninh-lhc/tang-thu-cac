@@ -12,11 +12,17 @@ export function normalizeWikiOptOutContext(value) {
   return safeString(value).replace(/\s+/g, ' ').trim();
 }
 
-function buildWikiLinkOptOutKey(optOut) {
+export function buildWikiLinkOptOutKey(optOut) {
   const anchor = normalizeWikiOptOutContext(optOut?.anchor);
   const before = normalizeWikiOptOutContext(optOut?.before);
   const after = normalizeWikiOptOutContext(optOut?.after);
   return `${before}\x1f${anchor}\x1f${after}`;
+}
+
+export function countNewWikiLinkOptOuts(previous = [], merged = []) {
+  const keys = new Set(readWikiLinkOptOuts({ wikiLinkOptOuts: previous }).map(buildWikiLinkOptOutKey));
+  return readWikiLinkOptOuts({ wikiLinkOptOuts: merged }).filter((item) => !keys.has(buildWikiLinkOptOutKey(item)))
+    .length;
 }
 
 export function readWikiLinkOptOuts(entity) {
@@ -31,9 +37,15 @@ export function readWikiLinkOptOuts(entity) {
     .filter((item) => item.anchor);
 }
 
-export function mergeWikiLinkOptOuts(existing = [], incoming = []) {
+export function mergeWikiLinkOptOuts(...lists) {
   const map = new Map();
-  [...readWikiLinkOptOuts({ wikiLinkOptOuts: existing }), ...incoming].forEach((item) => {
+  const flat = lists.flatMap((list) => {
+    if (!Array.isArray(list)) return [];
+    return list.every((item) => item && typeof item === 'object' && 'anchor' in item)
+      ? list
+      : readWikiLinkOptOuts({ wikiLinkOptOuts: list });
+  });
+  flat.forEach((item) => {
     if (!item?.anchor) return;
     map.set(buildWikiLinkOptOutKey(item), {
       anchor: item.anchor,
@@ -100,6 +112,76 @@ function findPlainAnchorWithContext(current, anchor, beforeCtx, afterCtx) {
   return -1;
 }
 
+/** Vùng [[...]] sắp được gỡ bằng toolbar (chọn cả link hoặc con trỏ trong link). */
+export function resolveWikiUnwrapRange(text, selStart, selEnd) {
+  const source = safeString(text);
+  const start = Math.max(0, Number(selStart) || 0);
+  const end = Math.max(start, Number(selEnd) || 0);
+
+  if (start < end) {
+    const picked = source.slice(start, end);
+    if (picked.startsWith('[[') && picked.endsWith(']]') && picked.length >= 4) {
+      return {
+        wikiStart: start,
+        wikiEnd: end,
+        anchor: safeString(picked.slice(2, -2)).trim(),
+      };
+    }
+    return null;
+  }
+
+  const pos = start;
+  const left = source.lastIndexOf('[[', pos);
+  const right = source.indexOf(']]', pos);
+  if (left === -1 || right === -1 || left >= right) return null;
+  if (left + 2 > pos || right < pos) return null;
+  return {
+    wikiStart: left,
+    wikiEnd: right + 2,
+    anchor: safeString(source.slice(left + 2, right)).trim(),
+  };
+}
+
+/** Opt-out ngay khi bấm «Gỡ Wiki Link» — không cần đợi lưu. */
+export function buildWikiLinkOptOutFromUnwrap(text, selStart, selEnd) {
+  const range = resolveWikiUnwrapRange(text, selStart, selEnd);
+  if (!range?.anchor) return null;
+  const { wikiStart, wikiEnd, anchor } = range;
+  return {
+    anchor,
+    before: sourceSliceContextBefore(text, wikiStart),
+    after: sourceSliceContextAfter(text, wikiEnd),
+  };
+}
+
+function sourceSliceContextBefore(text, index) {
+  return safeString(text).slice(Math.max(0, index - CONTEXT_LEN), index).slice(-CONTEXT_LEN);
+}
+
+function sourceSliceContextAfter(text, index) {
+  return safeString(text).slice(index, Math.min(text.length, index + CONTEXT_LEN)).slice(0, CONTEXT_LEN);
+}
+
+/**
+ * Opt-out đang hiệu lực khi soạn: đã lưu + gỡ so với baseline + (tuỳ chọn) chỗ auto-wrap sẽ chèn lại.
+ */
+export function resolveEffectiveWikiLinkOptOuts({
+  stored = [],
+  pending = [],
+  savedBaseline = '',
+  draftText = '',
+  entityMap = [],
+  autoWrapOnSave = false,
+  autoWrapWikiLinksByEntityMapWithCount = null,
+} = {}) {
+  const fromUnwrap = detectWikiLinkOptOuts(savedBaseline, draftText);
+  const fromPlain =
+    autoWrapOnSave && typeof autoWrapWikiLinksByEntityMapWithCount === 'function'
+      ? detectWikiLinkOptOutsFromPlainText(draftText, entityMap, autoWrapWikiLinksByEntityMapWithCount)
+      : [];
+  return mergeWikiLinkOptOuts(stored, pending, fromUnwrap, fromPlain);
+}
+
 /**
  * Phát hiện [[anchor]] ở bản đã lưu mà bản nháp hiện để plain text cùng ngữ cảnh.
  */
@@ -124,8 +206,8 @@ export function detectWikiLinkOptOuts(previousText, currentText) {
 
     found.push({
       anchor,
-      before: safeString(before).slice(-CONTEXT_LEN),
-      after: safeString(after).slice(0, CONTEXT_LEN),
+      before: sourceSliceContextBefore(previous, wikiStart),
+      after: sourceSliceContextAfter(previous, wikiEnd),
     });
   }
   return found;
@@ -183,8 +265,8 @@ export function detectWikiLinkOptOutsFromPlainText(preparedText, entityMap, auto
     if (findPlainAnchorWithContext(prepared, anchor, before, after) < 0) continue;
     found.push({
       anchor,
-      before: safeString(before).slice(-CONTEXT_LEN),
-      after: safeString(after).slice(0, CONTEXT_LEN),
+      before: sourceSliceContextBefore(wrapped, wikiStart),
+      after: sourceSliceContextAfter(wrapped, wikiEnd),
     });
   }
   return found;
@@ -196,19 +278,33 @@ export function applyWikiLinkOptOutsForSave({
   wikiLinkOptOuts = [],
   entityMap = [],
   autoWrapWikiLinksByEntityMapWithCount,
+  autoWrapOnSave = false,
+  preDetectedOptOuts = [],
 }) {
+  const storedBefore = readWikiLinkOptOuts({ wikiLinkOptOuts });
   const detected = mergeWikiLinkOptOuts(
+    preDetectedOptOuts,
     detectWikiLinkOptOuts(savedInfo, preparedText),
-    detectWikiLinkOptOutsFromPlainText(preparedText, entityMap, autoWrapWikiLinksByEntityMapWithCount)
+    autoWrapOnSave
+      ? detectWikiLinkOptOutsFromPlainText(preparedText, entityMap, autoWrapWikiLinksByEntityMapWithCount)
+      : []
   );
   const merged = pruneWikiLinkOptOuts(
     preparedText,
     mergeWikiLinkOptOuts(wikiLinkOptOuts, detected)
   );
+  const detectedCount = countNewWikiLinkOptOuts(storedBefore, merged);
+  if (!autoWrapOnSave || typeof autoWrapWikiLinksByEntityMapWithCount !== 'function') {
+    return {
+      text: preparedText,
+      wikiLinkOptOuts: merged,
+      detectedCount,
+    };
+  }
   const wrapped = autoWrapWikiLinksByEntityMapWithCount(preparedText, entityMap, { optOuts: merged });
   return {
     text: wrapped.text,
     wikiLinkOptOuts: merged,
-    detectedCount: detected.length,
+    detectedCount,
   };
 }

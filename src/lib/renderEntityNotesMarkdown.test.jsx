@@ -218,6 +218,36 @@ describe('renderEntityNotesMarkdown', () => {
     expect(wikiLabel?.className).not.toContain('text-emerald-300');
   });
 
+  it('uses the same wiki chip for quoted plain names and [[wiki]] syntax', () => {
+    const entityMap = [
+      { id: 'hlm', name: 'Hồng Lâu Mộng', dest: { entityId: 'hlm' } },
+      { id: 'hl', name: 'Hồng Lâu', dest: { entityId: 'hl' } },
+    ];
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(
+          [
+            '- **Đối tượng:** thế giới "Hồng Lâu Mộng".',
+            '- Phụ kiện [[Hồng Lâu Mộng]] và [[Hồng Lâu]].',
+          ].join('\n'),
+          null,
+          entityMap,
+          null,
+          vi.fn(),
+          'other-id',
+        )}
+      </div>
+    );
+
+    const chips = container.querySelectorAll('[data-entity-wiki-link="external"]');
+    expect(chips.length).toBeGreaterThanOrEqual(2);
+    const shell = chips[0]?.className || '';
+    chips.forEach((chip) => {
+      expect(chip.className).toContain('border-violet-400');
+      expect(chip.className).toBe(shell);
+    });
+  });
+
   it('distinguishes self vs external wiki links on the same card', () => {
     const { container } = render(
       <div>

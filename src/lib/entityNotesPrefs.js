@@ -6,6 +6,7 @@
 const FONT_KEY = 'tangthu_entity_notes_font_v1';
 const SIZE_KEY = 'tangthu_entity_notes_size_px_v1';
 const AUTO_CLEAN_ON_SAVE_KEY = 'tangthu_entity_notes_auto_clean_on_save_v1';
+const AUTO_WRAP_WIKI_ON_SAVE_KEY = 'tangthu_entity_notes_auto_wrap_wiki_on_save_v1';
 
 export const ENTITY_NOTES_FONT_OPTIONS = [
   { id: 'times', label: 'Times New Roman', stack: '"Times New Roman", Times, ui-serif, serif' },
@@ -29,7 +30,12 @@ export function clampEntityNotesSizePx(n) {
 let listeners = new Set();
 
 /** Mặc định cố định — dùng khi đọc localStorage lỗi; cùng reference khi không đổi prefs. */
-const DEFAULT_PREFS = Object.freeze({ fontKey: DEFAULT_FONT, sizePx: DEFAULT_SIZE, autoCleanOnSave: true });
+const DEFAULT_PREFS = Object.freeze({
+  fontKey: DEFAULT_FONT,
+  sizePx: DEFAULT_SIZE,
+  autoCleanOnSave: true,
+  autoWrapWikiOnSave: false,
+});
 
 let cachedPrefs = DEFAULT_PREFS;
 
@@ -39,7 +45,9 @@ function readPrefsFromStorage() {
   const sizePx = clampEntityNotesSizePx(parseInt(localStorage.getItem(SIZE_KEY), 10));
   const rawAutoClean = localStorage.getItem(AUTO_CLEAN_ON_SAVE_KEY);
   const autoCleanOnSave = rawAutoClean == null ? true : rawAutoClean !== '0';
-  return { fontKey, sizePx, autoCleanOnSave };
+  const rawAutoWrapWiki = localStorage.getItem(AUTO_WRAP_WIKI_ON_SAVE_KEY);
+  const autoWrapWikiOnSave = rawAutoWrapWiki === '1';
+  return { fontKey, sizePx, autoCleanOnSave, autoWrapWikiOnSave };
 }
 
 /**
@@ -56,7 +64,8 @@ export function getEntityNotesPrefs() {
   if (
     cachedPrefs.fontKey === next.fontKey &&
     cachedPrefs.sizePx === next.sizePx &&
-    cachedPrefs.autoCleanOnSave === next.autoCleanOnSave
+    cachedPrefs.autoCleanOnSave === next.autoCleanOnSave &&
+    cachedPrefs.autoWrapWikiOnSave === next.autoWrapWikiOnSave
   ) {
     return cachedPrefs;
   }
@@ -74,6 +83,9 @@ export function setEntityNotesPrefs(partial) {
     }
     if (partial.autoCleanOnSave != null) {
       localStorage.setItem(AUTO_CLEAN_ON_SAVE_KEY, partial.autoCleanOnSave ? '1' : '0');
+    }
+    if (partial.autoWrapWikiOnSave != null) {
+      localStorage.setItem(AUTO_WRAP_WIKI_ON_SAVE_KEY, partial.autoWrapWikiOnSave ? '1' : '0');
     }
   } catch {
     /* bỏ qua — vẫn báo subscriber để UI đồng bộ cache */

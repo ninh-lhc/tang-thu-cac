@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyWikiLinkOptOutsForSave,
+  buildWikiLinkOptOutFromUnwrap,
+  countNewWikiLinkOptOuts,
   detectWikiLinkOptOuts,
   detectWikiLinkOptOutsFromPlainText,
   isWikiWrapOptedOut,
   mergeWikiLinkOptOuts,
   pruneWikiLinkOptOuts,
+  resolveEffectiveWikiLinkOptOuts,
 } from './wikiLinkOptOut.js';
 import { autoWrapWikiLinksByEntityMapWithCount } from './autoWrapWikiLinks.js';
 
@@ -29,6 +32,7 @@ describe('wikiLinkOptOut', () => {
       wikiLinkOptOuts: [],
       entityMap: map,
       autoWrapWikiLinksByEntityMapWithCount,
+      autoWrapOnSave: true,
     });
     expect(text).toBe('The gioi Hồng Lâu Mộng.');
     expect(wikiLinkOptOuts.length).toBeGreaterThan(0);
@@ -71,6 +75,15 @@ describe('wikiLinkOptOut', () => {
     expect(merged).toHaveLength(1);
   });
 
+  it('mergeWikiLinkOptOuts accepts more than two lists', () => {
+    const merged = mergeWikiLinkOptOuts(
+      [{ anchor: 'A', before: '1', after: '2' }],
+      [{ anchor: 'B', before: '3', after: '4' }],
+      [{ anchor: 'C', before: '5', after: '6' }]
+    );
+    expect(merged).toHaveLength(3);
+  });
+
   it('detects opt-out when plain text would be auto-wrapped on save', () => {
     const prepared = 'The gioi Hồng Lâu Mộng.';
     const detected = detectWikiLinkOptOutsFromPlainText(
@@ -87,6 +100,39 @@ describe('wikiLinkOptOut', () => {
       autoWrapWikiLinksByEntityMapWithCount,
     });
     expect(text).toBe(prepared);
+  });
+
+  it('buildWikiLinkOptOutFromUnwrap captures context for toolbar unwrap', () => {
+    const text = 'The gioi [[Hồng Lâu]] Mộng.';
+    const wikiStart = text.indexOf('[[');
+    const wikiEnd = text.indexOf(']]') + 2;
+    const optOut = buildWikiLinkOptOutFromUnwrap(text, wikiStart, wikiEnd);
+    expect(optOut?.anchor).toBe('Hồng Lâu');
+    const wrapped = autoWrapWikiLinksByEntityMapWithCount('The gioi Hồng Lâu Mộng.', map, {
+      optOuts: [optOut],
+    });
+    expect(wrapped.text).toBe('The gioi Hồng Lâu Mộng.');
+  });
+
+  it('resolveEffectiveWikiLinkOptOuts merges stored, pending, and draft diff', () => {
+    const saved = 'The gioi [[Hồng Lâu]] Mộng la mot he.';
+    const draft = 'The gioi Hồng Lâu Mộng la mot he.';
+    const pending = [{ anchor: 'Kiến trúc', before: 'Vao ', after: ' roi' }];
+    const effective = resolveEffectiveWikiLinkOptOuts({
+      stored: [],
+      pending,
+      savedBaseline: saved,
+      draftText: draft,
+      entityMap: map,
+    });
+    expect(effective.some((o) => o.anchor === 'Hồng Lâu')).toBe(true);
+    expect(effective.some((o) => o.anchor === 'Kiến trúc')).toBe(true);
+  });
+
+  it('countNewWikiLinkOptOuts ignores duplicates already stored', () => {
+    const stored = [{ anchor: 'A', before: 'x', after: 'y' }];
+    const merged = mergeWikiLinkOptOuts(stored, [{ anchor: 'A', before: 'x', after: 'y' }, { anchor: 'B', before: '1', after: '2' }]);
+    expect(countNewWikiLinkOptOuts(stored, merged)).toBe(1);
   });
 
   it('isWikiWrapOptedOut blocks the full phrase when after-context extends the span', () => {

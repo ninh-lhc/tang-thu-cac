@@ -77,4 +77,18 @@ describe('autoWrapWikiLinksByEntityMap', () => {
     const optOuts = [{ anchor: 'Hồng Lâu', before: 'The gioi ', after: ' Mộng.' }];
     expect(autoWrapWikiLinksByEntityMap(text, map, { optOuts })).toBe(text);
   });
+
+  it('does not wrap a shorter name inside a longer proper phrase', () => {
+    const text = 'Thế giới Hồng Lâu Mộng.';
+    const map = [{ name: 'Hồng Lâu' }];
+    expect(autoWrapWikiLinksByEntityMap(text, map)).toBe(text);
+  });
+
+  it('wraps only the second mention when the same name repeats', () => {
+    const text = 'Cổ Minh Cổ Minh';
+    const map = [{ name: 'Cổ Minh' }];
+    expect(autoWrapWikiLinksByEntityMap(text, map)).toBe('Cổ Minh [[Cổ Minh]]');
+    const twice = autoWrapWikiLinksByEntityMap('Cổ Minh [[Cổ Minh]]', map);
+    expect(twice).toBe('Cổ Minh [[Cổ Minh]]');
+  });
 });

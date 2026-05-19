@@ -64,6 +64,31 @@ describe('wikiLinkMatcher', () => {
     ]);
   });
 
+  it('does not match a shorter entity inside a longer proper phrase', () => {
+    const matcher = buildWikiLinkMatcher([{ name: 'Hồng Lâu' }]);
+    expect(splitTextByWikiMatcher('The gioi Hồng Lâu Mộng.', matcher)).toEqual([
+      { text: 'The gioi Hồng Lâu Mộng.', isMatch: false },
+    ]);
+  });
+
+  it('matches the full longer name when both are registered', () => {
+    const matcher = buildWikiLinkMatcher([{ name: 'Hồng Lâu' }, { name: 'Hồng Lâu Mộng' }]);
+    expect(splitTextByWikiMatcher('The gioi Hồng Lâu Mộng.', matcher)).toEqual([
+      { text: 'The gioi ', isMatch: false },
+      { text: 'Hồng Lâu Mộng', isMatch: true },
+      { text: '.', isMatch: false },
+    ]);
+  });
+
+  it('still links the entity when the next word is not title-case', () => {
+    const matcher = buildWikiLinkMatcher([{ name: 'Hồng Lâu' }]);
+    expect(splitTextByWikiMatcher('Gặp Hồng Lâu đã đến', matcher)).toEqual([
+      { text: 'Gặp ', isMatch: false },
+      { text: 'Hồng Lâu', isMatch: true },
+      { text: ' đã đến', isMatch: false },
+    ]);
+  });
+
   it('skips matcher hits covered by wiki link opt-outs', () => {
     const matcher = buildWikiLinkMatcher([{ name: 'Hồng Lâu' }, { name: 'Hồng Lâu Mộng' }]);
     const optOuts = [{ anchor: 'Hồng Lâu', before: 'The gioi ', after: ' Mộng.' }];

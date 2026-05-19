@@ -6,6 +6,20 @@
 
 const UPPER_CHAR_RE = /\p{Lu}/u;
 const DIACRITIC_RE = /[\u0300-\u036f]/g;
+const WORD_CHAR_RE = /[\p{L}\p{N}_]/u;
+const NEXT_TOKEN_AFTER_NAME_RE = /^\s+([^\s,.;:!?)\]»\n]+)/u;
+const WIKI_LINK_IMMEDIATELY_AFTER_RE = /^\s*\[\[([^\]]+?)\]\]/u;
+
+function isWordChar(ch) {
+  if (!ch) return false;
+  return WORD_CHAR_RE.test(ch);
+}
+
+export function isWikiNameWordBoundary(text, start, end) {
+  const left = start > 0 ? text[start - 1] : '';
+  const right = end < text.length ? text[end] : '';
+  return !isWordChar(left) && !isWordChar(right);
+}
 
 function isUpperChar(ch) {
   if (!ch) return false;
@@ -71,6 +85,57 @@ export function matchesWikiNameWordStartSurface(candidate, source) {
     if (isUpperChar(candidateTokens[i][0]) !== isUpperChar(sourceTokens[i][0])) return false;
   }
   return true;
+}
+
+/** Từ/cụm ngay sau tên (kể cả [[đã bọc]] để auto-wrap idempotent). */
+export function peekWikiContinuationAfterName(text, end) {
+  const tail = String(text || '').slice(end);
+  const wiki = tail.match(WIKI_LINK_IMMEDIATELY_AFTER_RE);
+  if (wiki?.[1]) {
+    const inner = wiki[1].trim();
+    const firstWord = inner.split(/\s+/).filter(Boolean)[0] || inner;
+    return { token: firstWord, spanLength: wiki[0].length };
+  }
+  const plain = tail.match(NEXT_TOKEN_AFTER_NAME_RE);
+  if (!plain?.[1]) return null;
+  return { token: plain[1], spanLength: plain[0].length };
+}
+
+/**
+ * Không match tên thẻ ngắn khi văn bản là cụm danh từ riêng dài hơn (vd. thẻ «Hồng Lâu» trong «Hồng Lâu Mộng»).
+ * Chỉ áp khi từ ngay sau có chữ cái HOA đầu (gợi ý tiếp tục tên riêng), không chặn «Hồng Lâu đã…».
+ */
+export function isWikiSurfacePrefixOfLongerProperPhrase(text, start, end, entityName) {
+  const source = String(text || '');
+  const matched = source.slice(start, end);
+  const name = String(entityName || '').trim();
+  if (!name || matched.length !== name.length) return false;
+  if (matched.toLowerCase() !== name.toLowerCase()) return false;
+
+  const cont = peekWikiContinuationAfterName(source, end);
+  if (!cont?.token) return false;
+  if (!isUpperChar(cont.token[0])) return false;
+
+  const extended = source.slice(start, end + cont.spanLength).trim();
+  return extended.length > name.length;
+}
+
+/** Có tên thẻ đăng ký dài hơn khớp cùng vị trí bắt đầu. */
+export function hasLongerRegisteredWikiNameAt(text, start, matchedName, allNames) {
+  const source = String(text || '');
+  const base = String(matchedName || '').trim();
+  if (!base) return false;
+
+  for (const name of allNames || []) {
+    const candidate = String(name || '').trim();
+    if (!candidate || candidate.length <= base.length) continue;
+    const end = start + candidate.length;
+    if (source.slice(start, end).toLowerCase() !== candidate.toLowerCase()) continue;
+    if (!isWikiNameWordBoundary(source, start, end)) continue;
+    if (!matchesWikiNameSurface(candidate, source.slice(start, end))) continue;
+    return true;
+  }
+  return false;
 }
 
 export function containsWikiNameWordStartSurface(candidate, source) {

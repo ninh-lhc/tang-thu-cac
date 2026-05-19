@@ -186,7 +186,15 @@ const renderEntityNotesFieldRow = (labelText, restText, context) => {
   return (
     <span className="inline leading-[1.85]">
       <strong data-entity-field-label="true" className={`font-bold ${ENTITY_NOTES_TYPO.fieldLabel}`}>
-        {label}
+        {processInline(
+          label,
+          dirHandle,
+          lookup,
+          linkRegex,
+          onNavigate,
+          selfEntityId,
+          inlineOptsForContext(context, { entityNotesPreview: true })
+        )}
       </strong>
       {rest ? (
         <>

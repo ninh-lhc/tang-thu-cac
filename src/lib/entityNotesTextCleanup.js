@@ -8,8 +8,10 @@ const DIVIDER_RE = /^(?:-{3,}|\*{3,}|_{3,})$/;
 const HEADING_RE = /^(#{1,3})\s+(.*)$/;
 const BULLET_RE = /^(\s*[-*]\s+)(.*)$/;
 const ORDERED_RE = /^(\s*\d+\.\s+)(.*)$/;
-const QUOTE_RE = /^(\s*>\s+)(.*)$/;
+const QUOTE_RE = /^(\s*)(>\s+)(.*)$/;
 const IMAGE_RE = /^!\[(.*?)\]\((.*?)\)$/;
+/** Plain line after a list block should start a new paragraph, not merge into the last bullet. */
+const PLAIN_BREAKS_FROM_LIST_RE = /^(?:#{1,6}\s|>\s|!\[|«|\[\[)/;
 
 const normalizeRawWhitespace = (value) =>
   String(value || '')
@@ -62,17 +64,34 @@ const classifyLine = (rawLine) => {
   return { type: 'plain', value: cleanInlineSpacing(trimmed) };
 };
 
+/** Khoảng cách giữa khối: giữ đúng mức người dùng đã có, không ép \\n\\n. */
+function separatorForBlankRun(blankCount) {
+  if (blankCount <= 0) return '\n';
+  if (blankCount === 1) return '\n';
+  return '\n\n';
+}
+
 export function cleanupEntityNotesText(value) {
   const src = normalizeRawWhitespace(value);
   if (!src.trim()) return '';
 
   const segments = [];
+  const blanksBefore = [];
   let paragraphParts = [];
   let groupedLines = null;
+  let pendingBlanks = 0;
+
+  const pushSegment = (text) => {
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return;
+    blanksBefore.push(pendingBlanks);
+    segments.push(trimmed);
+    pendingBlanks = 0;
+  };
 
   const flushParagraph = () => {
     if (paragraphParts.length === 0) return;
-    segments.push(paragraphParts.join(' '));
+    pushSegment(paragraphParts.join(' '));
     paragraphParts = [];
   };
 
@@ -81,7 +100,7 @@ export function cleanupEntityNotesText(value) {
       groupedLines = null;
       return;
     }
-    segments.push(groupedLines.lines.join('\n'));
+    pushSegment(groupedLines.lines.join('\n'));
     groupedLines = null;
   };
 
@@ -92,12 +111,18 @@ export function cleanupEntityNotesText(value) {
     if (current.type === 'blank') {
       flushParagraph();
       flushGroupedLines();
+      pendingBlanks += 1;
       continue;
     }
 
     if (current.type === 'plain') {
       if (groupedLines && groupedLines.lines.length > 0) {
-        groupedLines.lines[groupedLines.lines.length - 1] += ` ${current.value}`;
+        if (PLAIN_BREAKS_FROM_LIST_RE.test(current.value)) {
+          flushGroupedLines();
+          paragraphParts.push(current.value);
+        } else {
+          groupedLines.lines[groupedLines.lines.length - 1] += ` ${current.value}`;
+        }
       } else {
         paragraphParts.push(current.value);
       }
@@ -116,11 +141,16 @@ export function cleanupEntityNotesText(value) {
     }
 
     flushGroupedLines();
-    segments.push(current.value);
+    pushSegment(current.value);
   }
 
   flushParagraph();
   flushGroupedLines();
 
-  return segments.join('\n\n').trim();
+  if (segments.length === 0) return '';
+  let out = segments[0];
+  for (let i = 1; i < segments.length; i += 1) {
+    out += separatorForBlankRun(blanksBefore[i] ?? 0) + segments[i];
+  }
+  return out.trim();
 }

@@ -22,7 +22,14 @@ import {
   resolveEntityNotesTabIndent,
 } from './MasterUtils.jsx';
 import { autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
-import { applyWikiLinkOptOutsForSave, readWikiLinkOptOuts } from './lib/wikiLinkOptOut.js';
+import {
+  applyWikiLinkOptOutsForSave,
+  detectWikiLinkOptOuts,
+  detectWikiLinkOptOutsFromPlainText,
+  mergeWikiLinkOptOuts,
+  readWikiLinkOptOuts,
+  resolveEffectiveWikiLinkOptOuts,
+} from './lib/wikiLinkOptOut.js';
 import { cleanupEntityNotesText } from './lib/entityNotesTextCleanup.js';
 import {
   applyEntityNotesDiagnosticFix,
@@ -93,6 +100,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   }));
   const [isFormattingStructure, setIsFormattingStructure] = useState(false);
   const [isAiPipelineRunning, setIsAiPipelineRunning] = useState(false);
+  const [pendingWikiLinkOptOuts, setPendingWikiLinkOptOuts] = useState([]);
   const notesTypo = useSyncExternalStore(subscribeEntityNotesPrefs, getEntityNotesPrefs, getEntityNotesPrefs);
   const textareaRef = useRef(null);
   const previewScrollRef = useRef(null);
@@ -106,6 +114,28 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         entityName: entityNotesSubject,
       }),
     [activeTabLon, entityNotesSubject, entityTemplateHint]
+  );
+
+  const effectiveWikiLinkOptOuts = useMemo(
+    () =>
+      resolveEffectiveWikiLinkOptOuts({
+        stored: initialWikiLinkOptOuts,
+        pending: pendingWikiLinkOptOuts,
+        savedBaseline: safeString(savedInfo ?? initialInfo),
+        draftText: notesEdit.text,
+        entityMap,
+        autoWrapOnSave: notesTypo.autoWrapWikiOnSave,
+        autoWrapWikiLinksByEntityMapWithCount,
+      }),
+    [
+      entityMap,
+      initialInfo,
+      initialWikiLinkOptOuts,
+      notesEdit.text,
+      notesTypo.autoWrapWikiOnSave,
+      pendingWikiLinkOptOuts,
+      savedInfo,
+    ]
   );
 
   useEffect(() => {
@@ -257,7 +287,10 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   }, [isSplitPreview, syncScrollRatio]);
 
   const onEditorContentChange = useCallback(
-    (v) => {
+    (v, meta) => {
+      if (meta?.wikiOptOut) {
+        setPendingWikiLinkOptOuts((prev) => mergeWikiLinkOptOuts(prev, [meta.wikiOptOut]));
+      }
       recordAndSetDraft(v);
     },
     [recordAndSetDraft]
@@ -391,7 +424,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         entityMap,
         geminiApiKeys,
         aiMode,
-        wikiLinkOptOuts: initialWikiLinkOptOuts,
+        wikiLinkOptOuts: effectiveWikiLinkOptOuts,
         subject: entityNotesSubject,
       });
       if (result.text !== currentText) {
@@ -424,7 +457,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     entityMap,
     entityNotesSubject,
     geminiApiKeys,
-    initialWikiLinkOptOuts,
+    effectiveWikiLinkOptOuts,
     notesEdit.text,
     setIsExtractingAI,
     setIsFormattingStructure,
@@ -549,9 +582,22 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           id="save-entity-btn"
           type="button"
           onClick={() => {
+            const rawDraft = notesEdit.text;
+            const savedBaseline = safeString(savedInfo ?? initialInfo);
+            const preDetectedOptOuts = mergeWikiLinkOptOuts(
+              pendingWikiLinkOptOuts,
+              detectWikiLinkOptOuts(savedBaseline, rawDraft),
+              notesTypo.autoWrapWikiOnSave
+                ? detectWikiLinkOptOutsFromPlainText(
+                    rawDraft,
+                    entityMap,
+                    autoWrapWikiLinksByEntityMapWithCount
+                  )
+                : []
+            );
             const cleanedText = notesTypo.autoCleanOnSave
-              ? fixAllEntityNotesDiagnostics(notesEdit.text)
-              : notesEdit.text;
+              ? fixAllEntityNotesDiagnostics(rawDraft)
+              : rawDraft;
             const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
             const preparedText = formatSync.text;
             const remainingWarnings = collectEntityNotesDiagnostics(preparedText);
@@ -568,11 +614,13 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               showToast(`Đã lưu nhưng vẫn còn ${remainingWarnings.length} cảnh báo định dạng.`, 'warning');
             }
             const saveResult = applyWikiLinkOptOutsForSave({
-              savedInfo: safeString(savedInfo ?? initialInfo),
+              savedInfo: savedBaseline,
               preparedText,
               wikiLinkOptOuts: initialWikiLinkOptOuts,
               entityMap,
               autoWrapWikiLinksByEntityMapWithCount,
+              autoWrapOnSave: notesTypo.autoWrapWikiOnSave,
+              preDetectedOptOuts,
             });
             if (saveResult.detectedCount > 0) {
               showToast(
@@ -614,6 +662,10 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             entityNotesTemplateProfile={templateProfile}
             notesAutoCleanOnSave={notesTypo.autoCleanOnSave}
             onNotesAutoCleanOnSave={(enabled) => setEntityNotesPrefs({ autoCleanOnSave: enabled })}
+            notesAutoWrapWikiOnSave={notesTypo.autoWrapWikiOnSave}
+            onNotesAutoWrapWikiOnSave={(enabled) =>
+              setEntityNotesPrefs({ autoWrapWikiOnSave: enabled })
+            }
           />
           <button
             type="button"
@@ -713,7 +765,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               linkRegex={globalLinkRegex}
               onNavigate={onNavigate}
               selfEntityId={selfEntityId}
-              wikiLinkOptOuts={initialWikiLinkOptOuts}
+              wikiLinkOptOuts={effectiveWikiLinkOptOuts}
               variant="entityNotes"
               containerRef={previewScrollRef}
               onScroll={handlePreviewScroll}
