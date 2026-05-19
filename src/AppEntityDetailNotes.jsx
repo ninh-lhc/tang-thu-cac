@@ -751,7 +751,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           </div>
         )}
         <div
-          className={`flex min-h-0 flex-1 gap-4 overflow-hidden min-h-[300px] ${ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS} ${isSplitPreview ? 'flex-row' : 'flex-col'}`}
+          className={`flex min-h-0 gap-4 overflow-hidden ${ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS} ${isSplitPreview ? 'flex-row' : 'flex-col'}`}
         >
           <EntityNotesHighlightedEditor
             ref={textareaRef}

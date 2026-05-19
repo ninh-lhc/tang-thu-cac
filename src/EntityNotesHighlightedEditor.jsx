@@ -3,18 +3,29 @@
  * Chữ trong textarea trong suốt; màu wiki hiện từ lớp <pre> phía dưới (cả khi đang gõ).
  * Cuộn trong textarea khi còn dòng; ở mép trên/dưới chuyển wheel sang khung cha.
  */
-import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef } from 'react';
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from 'react';
 import { buildEntityNotesEditorHighlightHtml } from './lib/entityNotesEditorWikiHighlight.js';
 
-/** Chiều cao tối đa vùng soạn (dùng chung detail notes + modal mốc). */
-export const ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS = 'max-h-[min(65vh,720px)]';
+/** Chiều cao vùng soạn cố định để textarea luôn có scrollport (dùng chung detail notes + modal mốc). */
+export const ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS =
+  'h-[min(50vh,520px)] min-h-[260px] shrink-0';
 
+// Không đặt overflow-* ở đây: pre cần overflow-hidden (clip highlight), textarea
+// cần overflow-auto để cuộn — nếu gộp chung, Tailwind sort khiến overflow-hidden
+// đè overflow-auto trên textarea ⇒ không cuộn được.
 const EDITOR_SURFACE_CLASS =
-  'm-0 overflow-hidden whitespace-pre-wrap break-words border-0 border-transparent p-0 font-normal leading-loose [overflow-wrap:anywhere]';
+  'm-0 whitespace-pre-wrap break-words border-0 border-transparent p-0 font-normal leading-loose [overflow-wrap:anywhere]';
 
 function findScrollableAncestor(el) {
   let node = el.parentElement;
-  while (node && node !== document.body) {
+  while (node && node !== document.body && node !== document.documentElement) {
     const { overflowY } = getComputedStyle(node);
     if (
       (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') &&
@@ -24,19 +35,26 @@ function findScrollableAncestor(el) {
     }
     node = node.parentElement;
   }
+  // Fallback: cuộn cả trang (HTML/body) — đảm bảo wheel không "ngậm" tại textarea
+  // khi không có khung cha overflow-auto nào đang tràn nội dung.
+  const root = document.scrollingElement || document.documentElement;
+  if (root && root.scrollHeight > root.clientHeight + 1) {
+    return root;
+  }
   return null;
 }
 
-/** Cuộn trong textarea khi còn nội dung; ở mép trên/dưới chuyển wheel sang khung cha (modal/trang). */
-function handleEditorWheelCapture(event) {
+/** Cuộn trong textarea khi còn dòng; ở mép (hoặc khi ô không cuộn được) chuyển wheel sang khung cha. */
+function handleEditorWheel(event) {
   const el = event.currentTarget;
-  const maxScroll = el.scrollHeight - el.clientHeight;
   const dy = event.deltaY;
-  if (maxScroll <= 1) return;
+  const maxScroll = el.scrollHeight - el.clientHeight;
 
-  const atTop = el.scrollTop <= 0;
-  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-  if ((dy < 0 && !atTop) || (dy > 0 && !atBottom)) return;
+  if (maxScroll > 1) {
+    const atTop = el.scrollTop <= 0;
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+    if ((dy < 0 && !atTop) || (dy > 0 && !atBottom)) return;
+  }
 
   const parent = findScrollableAncestor(el);
   if (!parent) return;
@@ -92,6 +110,13 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
     [onScroll, syncHighlightScroll]
   );
 
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return undefined;
+    ta.addEventListener('wheel', handleEditorWheel, { passive: false });
+    return () => ta.removeEventListener('wheel', handleEditorWheel);
+  }, []);
+
   const fontFamily = style.fontFamily;
   const fontSize = style.fontSize;
   const surfaceStyle = {
@@ -108,7 +133,7 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
       <pre
         ref={highlightRef}
         aria-hidden
-        className={`pointer-events-none absolute inset-0 block size-full ${EDITOR_SURFACE_CLASS} text-slate-200`}
+        className={`pointer-events-none absolute inset-0 block size-full overflow-hidden ${EDITOR_SURFACE_CLASS} text-slate-200`}
         style={surfaceStyle}
         dangerouslySetInnerHTML={{ __html: highlightHtml }}
       />
@@ -123,7 +148,6 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
         onSelect={onSelect}
         onPaste={onPaste}
         onScroll={handleScroll}
-        onWheel={handleEditorWheelCapture}
         onFocus={(event) => {
           syncHighlightScroll();
           onFocus?.(event);

@@ -4465,7 +4465,7 @@ export const ModalMilestone = ({
                 )}
 
                 <div
-                  className={`flex min-h-0 flex-1 gap-4 overflow-hidden min-h-[320px] ${ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS} ${isSplitPreview ? 'flex-row' : 'flex-col'}`}
+                  className={`flex min-h-0 gap-4 overflow-hidden ${ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS} ${isSplitPreview ? 'flex-row' : 'flex-col'}`}
                 >
                   <EntityNotesHighlightedEditor
                     id={EVENT_EDITOR_ID}
