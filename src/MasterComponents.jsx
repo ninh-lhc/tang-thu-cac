@@ -4225,7 +4225,7 @@ export const ModalMilestone = ({
           </p>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-6 md:px-8">
+        <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar px-6 py-6 md:px-8">
           <div className="space-y-6">
             <section className="rounded-[28px] border border-slate-800/80 bg-slate-900/60 p-5 shadow-[inset_0_1px_0_rgba(148,163,184,0.05)]">
               <div className="flex flex-col gap-4 md:flex-row md:items-start">

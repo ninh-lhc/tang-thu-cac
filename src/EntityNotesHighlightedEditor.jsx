@@ -1,6 +1,6 @@
 /**
  * Textarea ghi chép + lớp highlight [[wiki]] (đồng bộ scroll/font với textarea).
- * Scrollport cố định: cuộn trong khung, không kéo cuộn cả trang khi còn nội dung trong editor.
+ * Cuộn trong textarea khi còn dòng; ở mép trên/dưới chuyển wheel sang khung scroll cha (modal/trang).
  * Dùng: AppEntityDetailNotes, modal mốc timeline (MasterComponents).
  */
 import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef } from 'react';
@@ -9,18 +9,36 @@ import { buildEntityNotesEditorHighlightHtml } from './lib/entityNotesEditorWiki
 /** Chiều cao tối đa vùng soạn (dùng chung detail notes + modal mốc). */
 export const ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS = 'max-h-[min(65vh,720px)]';
 
+function findScrollableAncestor(el) {
+  let node = el.parentElement;
+  while (node && node !== document.body) {
+    const { overflowY } = getComputedStyle(node);
+    if (
+      (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') &&
+      node.scrollHeight > node.clientHeight + 1
+    ) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+/** Cuộn trong textarea khi còn nội dung; ở mép trên/dưới chuyển wheel sang khung cha (modal/trang). */
 function handleEditorWheelCapture(event) {
   const el = event.currentTarget;
   const maxScroll = el.scrollHeight - el.clientHeight;
-  if (maxScroll <= 1) return;
-  const { scrollTop } = el;
-  const atTop = scrollTop <= 0;
-  const atBottom = scrollTop + el.clientHeight >= el.scrollHeight - 1;
   const dy = event.deltaY;
-  if ((dy < 0 && !atTop) || (dy > 0 && !atBottom)) {
-    event.preventDefault();
-    event.stopPropagation();
-  }
+  if (maxScroll <= 1) return;
+
+  const atTop = el.scrollTop <= 0;
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+  if ((dy < 0 && !atTop) || (dy > 0 && !atBottom)) return;
+
+  const parent = findScrollableAncestor(el);
+  if (!parent) return;
+  event.preventDefault();
+  parent.scrollTop += dy;
 }
 
 export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighlightedEditor(
@@ -73,7 +91,7 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
   const fontSize = style.fontSize;
 
   return (
-    <div className={`relative flex h-full min-h-0 flex-col overflow-hidden overscroll-contain ${className}`}>
+    <div className={`relative flex h-full min-h-0 flex-col overflow-hidden ${className}`}>
       <pre
         ref={highlightRef}
         aria-hidden
@@ -95,7 +113,7 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
         onWheel={handleEditorWheelCapture}
         spellCheck={spellCheck}
         placeholder={placeholder}
-        className="relative z-10 m-0 block size-full min-h-0 flex-1 resize-none overflow-auto overscroll-contain bg-transparent p-0 leading-loose text-transparent caret-slate-100 outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/35 [overflow-wrap:anywhere]"
+        className="relative z-10 m-0 block size-full min-h-0 flex-1 resize-none overflow-auto bg-transparent p-0 leading-loose text-transparent caret-slate-100 outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/35 [overflow-wrap:anywhere]"
         style={{ fontFamily, fontSize, WebkitTextFillColor: 'transparent', overflowWrap: 'anywhere' }}
       />
     </div>
