@@ -51,6 +51,8 @@ import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
 import { autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
 import { MILESTONE_LABELS } from './lib/milestoneLabels.js';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
+import { EntityNotesHighlightedEditor } from './EntityNotesHighlightedEditor.jsx';
+import { EntityNotesAiToolsMenu } from './EntityNotesAiToolsMenu.jsx';
 import {
   OWNER_HINT_INPUT_FORMAT_TEXT,
   OWNER_HINT_PREFIX_GUIDE_TEXT,
@@ -3542,6 +3544,7 @@ export const ModalMilestone = ({
   const [isSplitPreview, setIsSplitPreview] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLinkingAi, setIsLinkingAi] = useState(false);
+  const [aiToolsMenuOpen, setAiToolsMenuOpen] = useState(false);
   const [isFormattingStructure, setIsFormattingStructure] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const eventTextareaRef = useRef(null);
@@ -4295,42 +4298,15 @@ export const ModalMilestone = ({
               </div>
 
               <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => normalizeEventDraft(eventText, { announceIfChanged: true, announceIfSame: true })}
-                  className="flex items-center gap-1.5 rounded-[40px] border border-slate-700 bg-slate-800/90 px-3 py-2.5 text-[11px] font-bold text-slate-200 transition-all hover:bg-slate-700"
-                  title="Làm sạch khoảng trắng, ký tự rác và các dòng bị ngắt không hợp lý"
-                >
-                  <RefreshCw size={13} /> Làm sạch
-                </button>
-                <button
-                  type="button"
-                  disabled={isLinkingAi}
-                  onClick={handleLinkWithAi}
-                  className="flex items-center gap-2 rounded-[40px] bg-indigo-700 px-4 py-2.5 text-xs font-bold text-white shadow-md transition-all hover:bg-indigo-600 disabled:opacity-50"
-                  title="AI chỉ thêm [[liên kết]], không đổi nội dung bạn đã nhập"
-                >
-                  {isLinkingAi ? (
-                    <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                  ) : (
-                    <Link2 size={14} />
-                  )}
-                  {isLinkingAi ? 'Đang xử lý...' : 'AI Tạo Link'}
-                </button>
-                <button
-                  type="button"
-                  disabled={isFormattingStructure}
-                  onClick={formatNotesStructureWithAI}
-                  className="flex items-center gap-2 rounded-[40px] bg-violet-700 px-4 py-2.5 text-xs font-bold text-white shadow-md transition-all hover:bg-violet-600 disabled:opacity-50"
-                  title="AI chỉ dàn lại bố cục: tiêu đề, mục, bullet, callout"
-                >
-                  {isFormattingStructure ? (
-                    <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                  ) : (
-                    <Sparkles size={14} />
-                  )}
-                  {isFormattingStructure ? 'Đang dàn khung...' : 'AI Dàn Khung'}
-                </button>
+                <EntityNotesAiToolsMenu
+                  open={aiToolsMenuOpen}
+                  onOpenChange={setAiToolsMenuOpen}
+                  onClean={() => normalizeEventDraft(eventText, { announceIfChanged: true, announceIfSame: true })}
+                  onAiCreateLink={handleLinkWithAi}
+                  onAiFormatStructure={formatNotesStructureWithAI}
+                  isLinking={isLinkingAi}
+                  isFormatting={isFormattingStructure}
+                />
                 <button
                   type="button"
                   onClick={() => setIsSplitPreview((prev) => !prev)}
@@ -4417,7 +4393,7 @@ export const ModalMilestone = ({
                 )}
 
                 <div className={`flex flex-1 gap-4 min-h-[320px] ${isSplitPreview ? 'flex-row' : 'flex-col'}`}>
-                  <textarea
+                  <EntityNotesHighlightedEditor
                     id={EVENT_EDITOR_ID}
                     ref={eventTextareaRef}
                     value={eventText}
@@ -4431,15 +4407,13 @@ export const ModalMilestone = ({
                         )
                       );
                     }}
-                    className={`resize-none bg-transparent text-slate-200 leading-loose outline-none custom-scrollbar ${
-                      isSplitPreview ? 'w-1/2 flex-shrink-0' : 'flex-1 min-h-[320px]'
-                    }`}
+                    className={isSplitPreview ? 'w-1/2 flex-shrink-0 min-h-[320px]' : 'flex-1 min-h-[320px]'}
                     style={{
                       fontFamily: getEntityNotesFontStack(notesTypo.fontKey),
                       fontSize: `${notesTypo.sizePx}px`,
                     }}
                     placeholder="Nhập diễn biến sự kiện... Dùng [[Tên]] để liên kết wiki, xuống dòng/bullet như khung ghi chép chi tiết."
-                    spellCheck
+                    entityMap={entityMap}
                     onKeyDown={handleEventEditorKeyDown}
                     onKeyUp={syncToolbarStateFromEditor}
                     onClick={syncToolbarStateFromEditor}

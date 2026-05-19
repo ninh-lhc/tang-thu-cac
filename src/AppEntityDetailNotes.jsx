@@ -1,7 +1,9 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { BookOpen, Link2, Save, Edit3, Eye, ScrollText, RefreshCw, AlertTriangle, Sparkles, Wand2, Lock, Search, Filter } from 'lucide-react';
+import { BookOpen, Save, Edit3, Eye, ScrollText, AlertTriangle, Lock, Search, Filter } from 'lucide-react';
 import { MarkdownToolbar } from './MasterComponents.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
+import { EntityNotesHighlightedEditor } from './EntityNotesHighlightedEditor.jsx';
+import { EntityNotesAiToolsMenu } from './EntityNotesAiToolsMenu.jsx';
 import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
 import { filterEntityNotesMarkdown, sortMarkdownSectionsAfterFilter } from './lib/entityNotesTabFilter.js';
 import { isListCardEntity } from './lib/collectionListCardSync.js';
@@ -88,6 +90,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     hIndex: 0,
   }));
   const [isFormattingStructure, setIsFormattingStructure] = useState(false);
+  const [aiToolsMenuOpen, setAiToolsMenuOpen] = useState(false);
   const notesTypo = useSyncExternalStore(subscribeEntityNotesPrefs, getEntityNotesPrefs, getEntityNotesPrefs);
   const textareaRef = useRef(null);
   const previewScrollRef = useRef(null);
@@ -372,6 +375,77 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     syncDraftAndPreview,
   ]);
 
+  const handleAiCreateLink = useCallback(async () => {
+    const currentText = notesEdit.text;
+    if (!currentText.trim()) return;
+    const cleanedEarly = normalizeNotesDraft(currentText);
+    const workingText = cleanedEarly.text;
+    const localWrapEarly = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap, {
+      optOuts: initialWikiLinkOptOuts,
+    });
+    if (localWrapEarly.count > 0 && localWrapEarly.text !== workingText) {
+      syncDraftAndPreview(localWrapEarly.text);
+      showToast(
+        `Da tu boc ${localWrapEarly.count} [[lien ket]] theo the co san. Bam lai AI neu muon goi y them cho kho.`
+      );
+      return;
+    }
+    if (geminiApiKeys.length === 0) {
+      showToast('Vui lòng thiết lập API Key để dùng AI.');
+      return;
+    }
+    const text = workingText;
+    if (!text.trim()) return;
+    const localWrap = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, {
+      optOuts: initialWikiLinkOptOuts,
+    });
+    const { wasTruncated } = truncateForAI(text);
+    if (wasTruncated) showToast('Đoạn quá dài — chỉ gửi ~12.000 ký tự đầu cho AI.', 'warning');
+    setIsExtractingAI(true);
+    try {
+      const res = await suggestWikiLinkSpotsWithAI(text, geminiApiKeys, aiMode);
+      const spots = Array.isArray(res?.linkSpots) ? res.linkSpots : [];
+      const aiNext = applyWikiLinkSpots(text, spots);
+      const next = aiNext !== text ? aiNext : localWrap.text;
+      if (next !== text) {
+        syncDraftAndPreview(next);
+        if (aiNext !== text) {
+          showToast('Đã thêm [[liên kết]] bằng AI — giữ nguyên chữ và định dạng bạn nhập.');
+        } else {
+          showToast('AI chưa định vị được spot rõ ràng — đã tự bọc link theo danh sách thẻ có sẵn.');
+        }
+      } else if (spots.length > 0) {
+        showToast('AI gợi ý link nhưng không khớp văn bản — thử lại hoặc chỉnh ngắn đoạn.', 'warning');
+      } else {
+        showToast('Không có chỗ mới cần bọc link (hoặc đã có [[...]]).');
+      }
+    } catch (e) {
+      const msg = mapGeminiErrorToUserMessage(e);
+      const rateLimited = /429|503|rate_limit|qua tai api/i.test(String(e?.message || ''));
+      if (rateLimited) {
+        if (localWrap.text !== text) {
+          syncDraftAndPreview(localWrap.text);
+          showToast('AI đang quá tải (429/503) — đã tự bọc link theo danh sách thẻ có sẵn.', 'warning');
+        } else {
+          showToast(msg, 'warning');
+        }
+      } else {
+        showToast(msg, 'error');
+      }
+    }
+    setIsExtractingAI(false);
+  }, [
+    aiMode,
+    entityMap,
+    geminiApiKeys,
+    initialWikiLinkOptOuts,
+    normalizeNotesDraft,
+    notesEdit.text,
+    setIsExtractingAI,
+    showToast,
+    syncDraftAndPreview,
+  ]);
+
   const undoDisabled = notesEdit.hIndex <= 0;
   const redoDisabled = notesEdit.hIndex >= notesEdit.history.length - 1;
   const handlePickScopedLocalImage = useCallback(
@@ -484,98 +558,15 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             <ScrollText size={13} /> Mở hướng dẫn
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => normalizeNotesDraft(notesEdit.text, { announceIfChanged: true, announceIfSame: true })}
-          className="px-3 py-2.5 rounded-[40px] text-[11px] font-bold transition-all shadow-md flex items-center gap-1.5 bg-slate-800/90 text-slate-200 hover:bg-slate-700 border border-slate-700"
-          title="Làm sạch khoảng trắng, ký tự rác và các dòng bị ngắt không hợp lý"
-        >
-          <RefreshCw size={13} /> Làm sạch
-        </button>
-        <button
-          disabled={isExtractingAI}
-          onClick={async () => {
-            const currentText = notesEdit.text;
-            if (!currentText.trim()) return;
-            const cleanedEarly = normalizeNotesDraft(currentText);
-            const workingText = cleanedEarly.text;
-            const localWrapEarly = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap, {
-              optOuts: initialWikiLinkOptOuts,
-            });
-            if (localWrapEarly.count > 0 && localWrapEarly.text !== workingText) {
-              syncDraftAndPreview(localWrapEarly.text);
-              showToast(`Da tu boc ${localWrapEarly.count} [[lien ket]] theo the co san. Bam lai AI neu muon goi y them cho kho.`);
-              return;
-            }
-            if (geminiApiKeys.length === 0) {
-              showToast('Vui lòng thiết lập API Key để dùng AI.');
-              return;
-            }
-            const text = workingText;
-            if (!text.trim()) return;
-            const localWrap = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, {
-              optOuts: initialWikiLinkOptOuts,
-            });
-            const { wasTruncated } = truncateForAI(text);
-            if (wasTruncated) showToast('Đoạn quá dài — chỉ gửi ~12.000 ký tự đầu cho AI.', 'warning');
-            setIsExtractingAI(true);
-            try {
-              const res = await suggestWikiLinkSpotsWithAI(text, geminiApiKeys, aiMode);
-              const spots = Array.isArray(res?.linkSpots) ? res.linkSpots : [];
-              const aiNext = applyWikiLinkSpots(text, spots);
-               const next = aiNext !== text ? aiNext : localWrap.text;
-               if (next !== text) {
-                 syncDraftAndPreview(next);
-                if (aiNext !== text) {
-                  showToast('Đã thêm [[liên kết]] bằng AI — giữ nguyên chữ và định dạng bạn nhập.');
-                } else {
-                  showToast('AI chưa định vị được spot rõ ràng — đã tự bọc link theo danh sách thẻ có sẵn.');
-                }
-              } else if (spots.length > 0) {
-                showToast('AI gợi ý link nhưng không khớp văn bản — thử lại hoặc chỉnh ngắn đoạn.', 'warning');
-              } else {
-                showToast('Không có chỗ mới cần bọc link (hoặc đã có [[...]]).');
-              }
-            } catch (e) {
-              const msg = mapGeminiErrorToUserMessage(e);
-              const rateLimited = /429|503|rate_limit|qua tai api/i.test(String(e?.message || ''));
-              if (rateLimited) {
-                if (localWrap.text !== text) {
-                  syncDraftAndPreview(localWrap.text);
-                  showToast('AI đang quá tải (429/503) — đã tự bọc link theo danh sách thẻ có sẵn.', 'warning');
-                } else {
-                  showToast(msg, 'warning');
-                }
-              } else {
-                showToast(msg, 'error');
-              }
-            }
-            setIsExtractingAI(false);
-          }}
-          className="px-4 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 bg-indigo-700 hover:bg-indigo-600 text-white disabled:opacity-50"
-          title="AI chỉ thêm [[liên kết]] — không đổi chữ hay định dạng bạn đã nhập"
-        >
-          {isExtractingAI ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <Link2 size={14} />
-          )}
-          {isExtractingAI ? 'Đang xử lý...' : 'AI Tạo Link'}
-        </button>
-        <button
-          type="button"
-          disabled={isFormattingStructure}
-          onClick={formatNotesStructureWithAI}
-          className="px-4 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 bg-violet-700 hover:bg-violet-600 text-white disabled:opacity-50"
-          title="AI chỉ dàn lại bố cục ghi chú: tiêu đề, mục, bullet, callout — không thêm nội dung mới"
-        >
-          {isFormattingStructure ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <Wand2 size={14} />
-          )}
-          {isFormattingStructure ? 'Đang dàn khung...' : 'AI Dàn khung'}
-        </button>
+        <EntityNotesAiToolsMenu
+          open={aiToolsMenuOpen}
+          onOpenChange={setAiToolsMenuOpen}
+          onClean={() => normalizeNotesDraft(notesEdit.text, { announceIfChanged: true, announceIfSame: true })}
+          onAiCreateLink={handleAiCreateLink}
+          onAiFormatStructure={formatNotesStructureWithAI}
+          isLinking={isExtractingAI}
+          isFormatting={isFormattingStructure}
+        />
         <button
           id="save-entity-btn"
           type="button"
@@ -645,7 +636,6 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             entityNotesTemplateProfile={templateProfile}
             notesAutoCleanOnSave={notesTypo.autoCleanOnSave}
             onNotesAutoCleanOnSave={(enabled) => setEntityNotesPrefs({ autoCleanOnSave: enabled })}
-            onAiFormatStructure={formatNotesStructureWithAI}
           />
           <button
             type="button"
@@ -710,7 +700,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           </div>
         )}
         <div className={`flex flex-1 gap-4 min-h-[300px] ${isSplitPreview ? 'flex-row' : 'flex-col'}`}>
-          <textarea
+          <EntityNotesHighlightedEditor
             ref={textareaRef}
             id="entity-info-editor"
             value={notesEdit.text}
@@ -720,15 +710,14 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
                 getEntityNotesToolbarState(e.target.value, e.target.selectionStart, e.target.selectionEnd)
               );
             }}
-            className={`bg-transparent text-slate-200 leading-loose outline-none resize-none custom-scrollbar ${
-              isSplitPreview ? 'w-1/2 flex-shrink-0' : 'flex-1 min-h-[300px]'
-            }`}
+            className={isSplitPreview ? 'w-1/2 flex-shrink-0 min-h-[300px]' : 'flex-1 min-h-[300px]'}
             style={{
               fontFamily: getEntityNotesFontStack(notesTypo.fontKey),
               fontSize: `${notesTypo.sizePx}px`,
             }}
             placeholder="Hạ bút khắc ấn..."
-            spellCheck
+            selfEntityId={selfEntityId}
+            entityMap={entityMap}
             onKeyDown={handleEditorKeyDown}
             onKeyUp={syncToolbarStateFromEditor}
             onClick={syncToolbarStateFromEditor}

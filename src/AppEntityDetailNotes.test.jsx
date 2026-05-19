@@ -66,7 +66,8 @@ describe('AppEntityDetailNotes', () => {
     const props = createProps();
     render(<AppEntityDetailNotes {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /AI Tạo Link/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Công cụ AI/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /AI Tạo Link/i }));
 
     expect(screen.getByRole('textbox').value).toBe('[[Linh Gioi Chau]] xuat hien giua troi.');
     expect(props.showToast).toHaveBeenCalledWith(
@@ -239,7 +240,8 @@ describe('AppEntityDetailNotes', () => {
     });
     render(<AppEntityDetailNotes {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Làm sạch/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Công cụ AI/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Làm sạch/i }));
 
     expect(screen.getByRole('textbox').value).toBe('## Muc lon\n\n1. Y dau bo sung them');
     expect(props.showToast).toHaveBeenCalledTimes(1);
