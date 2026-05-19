@@ -9,7 +9,9 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { History, Plus, Edit2, Trash2, Clock, Sparkles, ChevronLeft, ChevronRight, Pin } from 'lucide-react';
 import { readProfileBaselineMilestoneId } from './lib/promoteMilestoneToBaseline.js';
 import { DEFAULT_ENTITY_FIELDS, FALLBACK_IMG, resolveFieldsTemplate } from './MasterEngines.js';
-import { AsyncLocalImage, renderMarkdown, safeString, processInline, generateId } from './MasterUtils.jsx';
+import { AsyncLocalImage, safeString, processInline, generateId } from './MasterUtils.jsx';
+import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
+import { readWikiLinkOptOuts } from './lib/wikiLinkOptOut.js';
 import { MILESTONE_LABELS, parseMilestoneLabel, applyMilestoneLabel } from './lib/milestoneLabels.js';
 
 function isMeaningfulTimelineValue(value) {
@@ -555,8 +557,16 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                     <button onClick={() => handleDeleteMilestone(selectedMs.id)} className="p-2.5 bg-slate-950/50 hover:bg-rose-950 hover:text-rose-400 text-slate-500 rounded-xl transition-all border border-slate-800 hover:border-rose-900/50 shadow-sm" title="Xóa mốc thời gian này"><Trash2 size={18}/></button>
                   </div>
                 </div>
-                <div className="prose prose-invert max-w-none relative z-10 text-[17px] text-slate-200 font-serif leading-loose whitespace-pre-wrap">
-                  {renderMarkdown(selectedBody, currentContextDirHandle, entityMap, globalLinkRegex, onNavigate, selectedEntity?.id)}
+                <div className="relative z-10 font-serif max-w-none text-slate-200/95">
+                  {renderEntityNotesMarkdown(
+                    selectedBody,
+                    currentContextDirHandle,
+                    entityMap,
+                    globalLinkRegex,
+                    onNavigate,
+                    selectedEntity?.id,
+                    readWikiLinkOptOuts(selectedEntity)
+                  )}
                 </div>
               </div>
 
