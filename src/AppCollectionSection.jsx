@@ -157,6 +157,7 @@ export function AppCollectionSection({
   setEditingMilestoneData,
   setIsMilestoneModalOpen,
   handleMergeSnapshotToProfile,
+  handlePromoteMilestoneToBaseline,
   handleDeleteMilestone,
   handleReplaceMilestones,
   selectedDescriptionId,
@@ -287,6 +288,16 @@ export function AppCollectionSection({
     setEditingMilestoneData(latestMilestone);
     setIsMilestoneModalOpen(true);
   }, [setEditingMilestoneData, setIsMilestoneModalOpen, timelineCurrentProfile.latestMilestone]);
+  const onPromoteMilestoneToBaseline = React.useCallback(
+    (milestoneId) => {
+      if (typeof handlePromoteMilestoneToBaseline !== 'function') return;
+      handlePromoteMilestoneToBaseline(milestoneId, () => {
+        setDetailProfileMode('original');
+        setCollectionSubTab('detail');
+      });
+    },
+    [handlePromoteMilestoneToBaseline, setDetailProfileMode, setCollectionSubTab]
+  );
   React.useEffect(() => { setEntityFilterValueDraft(entityFilterValue || ''); }, [entityFilterValue]);
   React.useEffect(() => { setDetailProfileMode('original'); }, [selectedEntity?.id]);
   React.useEffect(() => {
@@ -753,6 +764,7 @@ export function AppCollectionSection({
               setEditingMilestoneData={setEditingMilestoneData}
               setIsMilestoneModalOpen={setIsMilestoneModalOpen}
               handleMergeSnapshotToProfile={handleMergeSnapshotToProfile}
+              handlePromoteMilestoneToBaseline={onPromoteMilestoneToBaseline}
               handleDeleteMilestone={handleDeleteMilestone}
               handleReplaceMilestones={handleReplaceMilestones}
               getFieldValue={getFieldValue}

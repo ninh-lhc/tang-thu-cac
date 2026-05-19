@@ -142,7 +142,6 @@ import {
 } from './lib/genreTabsTemplateStore.js';
 import { resolveTabsConfigForGenreSelection } from './lib/resolveTabsConfigForGenreSelection.js';
 import {
-  ensureWikiAliasInFieldsTemplate,
   ensureWikiAliasInFieldsTemplateForTab,
   sanitizeFieldsTemplate,
   linesToSuggestionArray,
@@ -1764,6 +1763,7 @@ export default function App() {
     handleDeleteDescription,
     handleDeleteEntity,
     handleMergeSnapshotToProfile,
+    handlePromoteMilestoneToBaseline,
   } = useAppEntityMilestoneActions({
     activeNovelData,
     activeNovelDataRef,
@@ -2877,7 +2877,6 @@ export default function App() {
     const lon = current.find((tab) => tab.id === lonId);
     const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
     if (!nho || nho.viewType !== 'collection-track') return;
-    const lonLabel = safeString(lon?.label || '');
     const targets = propagate
       ? (lon?.subTabs || []).filter((sub) => sub.viewType === 'collection-track')
       : [nho];
@@ -3421,6 +3420,7 @@ export default function App() {
     setEditingMilestoneData,
     setIsMilestoneModalOpen,
     handleMergeSnapshotToProfile,
+    handlePromoteMilestoneToBaseline,
     handleDeleteMilestone,
     handleReplaceMilestones,
     selectedDescriptionId,

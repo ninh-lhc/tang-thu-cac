@@ -257,7 +257,10 @@ describe('AppEntityDetailNotes', () => {
 
     fireEvent.click(document.getElementById('save-entity-btn'));
 
-    expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith('## Muc lon\n\n1. Y dau bo sung them');
+    expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+      '## Muc lon\n\n1. Y dau bo sung them',
+      expect.objectContaining({ wikiLinkOptOuts: [] })
+    );
     expect(props.showToast).toHaveBeenCalledTimes(1);
     expect(String(props.showToast.mock.calls[0][0]).toLowerCase()).toContain('lưu');
   });
@@ -275,7 +278,8 @@ describe('AppEntityDetailNotes', () => {
     fireEvent.click(document.getElementById('save-entity-btn'));
 
     expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
-      '## 2. Ban chat suc manh (**Ton Luc**)\n\n**Ton Luc** nam o **Ton Luc**.'
+      '## 2. Ban chat suc manh (**Ton Luc**)\n\n**Ton Luc** nam o **Ton Luc**.',
+      expect.objectContaining({ wikiLinkOptOuts: [] })
     );
     expect(props.showToast).toHaveBeenCalledTimes(1);
     expect(String(props.showToast.mock.calls[0][0])).toContain('2');

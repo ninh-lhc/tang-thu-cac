@@ -6,7 +6,8 @@
  */
 import React, { memo, useState, useRef, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { History, Plus, Edit2, Trash2, Clock, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
+import { History, Plus, Edit2, Trash2, Clock, Sparkles, ChevronLeft, ChevronRight, Pin } from 'lucide-react';
+import { readProfileBaselineMilestoneId } from './lib/promoteMilestoneToBaseline.js';
 import { DEFAULT_ENTITY_FIELDS, FALLBACK_IMG, resolveFieldsTemplate } from './MasterEngines.js';
 import { AsyncLocalImage, renderMarkdown, safeString, processInline, generateId } from './MasterUtils.jsx';
 import { MILESTONE_LABELS, parseMilestoneLabel, applyMilestoneLabel } from './lib/milestoneLabels.js';
@@ -77,6 +78,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
   setIsMilestoneModalOpen,
   handleDeleteMilestone,
   handleReplaceMilestones,
+  handlePromoteMilestoneToBaseline,
   getFieldValue,
   setLightboxSrc,
 }) {
@@ -446,6 +448,8 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
           const selectedTitle = getMilestoneTitle(selectedMs);
           const selectedBody = getMilestoneBody(selectedMs, selectedParsed);
           const selectedIsAuto = isAutoOwnerMilestone(selectedMs);
+          const isBaselineMilestone =
+            readProfileBaselineMilestoneId(selectedEntity) === safeString(selectedMs.id);
           const fields =
             currentTabConfig && activeTabLon
               ? resolveFieldsTemplate(currentTabConfig, activeTabLon, currentTabConfig._parentLabel || '')
@@ -518,6 +522,13 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                         </span>
                       </div>
                     )}
+                    {isBaselineMilestone && (
+                      <div className="mb-2">
+                        <span className="text-[11px] px-2 py-1 rounded-full border border-violet-700/50 bg-violet-950/35 text-violet-200 uppercase tracking-wide font-bold">
+                          Nguồn Ban đầu hiện tại
+                        </span>
+                      </div>
+                    )}
                     <div className="text-[11px] font-bold uppercase tracking-[0.24em] text-amber-600/75">
                       Chương {safeString(selectedMs.chapter)}
                     </div>
@@ -525,7 +536,21 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                       {selectedTitle || `Giai đoạn chương ${safeString(selectedMs.chapter)}`}
                     </h3>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2 justify-end">
+                    {typeof handlePromoteMilestoneToBaseline === 'function' && (
+                      <button
+                        type="button"
+                        onClick={() => handlePromoteMilestoneToBaseline(selectedMs.id)}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-violet-700/50 bg-violet-950/35 px-3 py-2 text-[11px] font-bold text-violet-100 hover:bg-violet-900/40 transition-colors"
+                        title={
+                          isBaselineMilestone
+                            ? 'Đồng bộ lại Ghi chép Ban đầu từ mốc này (mốc timeline không đổi)'
+                            : 'Ghi đè Ghi chép Ban đầu bằng mốc này; mốc timeline giữ nguyên'
+                        }
+                      >
+                        <Pin size={15} /> {isBaselineMilestone ? 'Cập nhật Ban đầu' : 'Đặt làm Ban đầu'}
+                      </button>
+                    )}
                     <button onClick={() => { setEditingMilestoneData(selectedMs); setIsMilestoneModalOpen(true); }} className="p-2.5 bg-slate-950/50 hover:bg-slate-800 hover:text-amber-400 text-slate-500 rounded-xl transition-all border border-slate-800 hover:border-amber-900/50 shadow-sm" title="Sửa lại nội dung"><Edit2 size={18}/></button>
                     <button onClick={() => handleDeleteMilestone(selectedMs.id)} className="p-2.5 bg-slate-950/50 hover:bg-rose-950 hover:text-rose-400 text-slate-500 rounded-xl transition-all border border-slate-800 hover:border-rose-900/50 shadow-sm" title="Xóa mốc thời gian này"><Trash2 size={18}/></button>
                   </div>

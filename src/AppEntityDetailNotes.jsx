@@ -18,7 +18,7 @@ import {
   resolveEntityNotesTabIndent,
 } from './MasterUtils.jsx';
 import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
-import { autoWrapWikiLinksByEntityMap, autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
+import { autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
 import { applyWikiLinkOptOutsForSave, readWikiLinkOptOuts } from './lib/wikiLinkOptOut.js';
 import { cleanupEntityNotesText } from './lib/entityNotesTextCleanup.js';
 import {
@@ -865,12 +865,14 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   }, [detailNotesMarkdown, notesViewFieldFilters, notesViewQuery, notesNotesSortMode]);
 
   useEffect(() => {
-    setNotesViewQuery('');
-    setListCatalogQuery('');
-    setNotesViewFieldFilters({});
-    setNotesAdvFieldId('none');
-    setNotesNotesSortMode('none');
-    setShowNotesAdvancedPanel(false);
+    queueMicrotask(() => {
+      setNotesViewQuery('');
+      setListCatalogQuery('');
+      setNotesViewFieldFilters({});
+      setNotesAdvFieldId('none');
+      setNotesNotesSortMode('none');
+      setShowNotesAdvancedPanel(false);
+    });
   }, [detailProfileMode, selectedEntity?.id]);
 
   const clearNotesAdvanced = useCallback(() => {

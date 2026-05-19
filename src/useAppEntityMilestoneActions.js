@@ -46,6 +46,11 @@ import {
 } from './lib/theLucBanDoSync.js';
 import { buildEntityNoteTemplate, mergeEntityNoteDetailSectionFromDynamicData } from './lib/entityNoteTemplateVi.js';
 import { getEffectiveAutoSyncRole } from './lib/tabAutoSyncRole.js';
+import {
+  hasBaselineArchiveAtChapterZero,
+  promoteMilestoneToBaseline,
+  readProfileBaselineMilestoneId,
+} from './lib/promoteMilestoneToBaseline.js';
 
 export function useAppEntityMilestoneActions({
   activeNovelData,
@@ -1116,6 +1121,201 @@ export function useAppEntityMilestoneActions({
     ]
   );
 
+  const runSnapshotProfileSideEffects = useCallback(
+    (nov, ent, snapshot, mergedKeys) => {
+      const keys = mergedKeys || new Set();
+      if (snapshot?.dynamicData) {
+        Object.entries(snapshot.dynamicData).forEach(([key, val]) => {
+          if (val && val.toString().trim()) keys.add(key);
+        });
+      }
+      if (snapshot?.avatar) keys.add('avatar');
+      if (hasCurrentAutoFieldChange(keys, ['status'], ['f_status'])) {
+        ent.status = getStatusLineForCurrentTab(ent);
+      }
+      let relationAutoResynced = false;
+      let mainCharacterRelationResynced = false;
+      let cultivationRelationAutoResynced = false;
+      let forceMapAutoApplied = false;
+      let forceMapAutoWarning = '';
+      let mapHierarchyAutoApplied = false;
+      if (
+        isAutoRelationScopeLonId(
+          activeTabLon,
+          currentTabConfig?._parentLabel || '',
+          currentTabConfig,
+          activeTabNho || 'default'
+        ) &&
+        hasCurrentAutoFieldChange(keys, ['status'], ['f_status'])
+      ) {
+        relationAutoResynced = syncAllAutoRelationNotesForNovel(nov) || relationAutoResynced;
+      }
+      if (
+        isCultivationRelationScope({ activeTabLon, activeTabNho, currentTabConfig }) &&
+        hasCurrentAutoFieldChange(keys, ['status', 'alias'], ['f_status', 'f_alias'])
+      ) {
+        cultivationRelationAutoResynced =
+          syncAllCultivationRelationBlocks(nov) || cultivationRelationAutoResynced;
+      }
+      if (
+        isForceCollectionScope({
+          activeTabLon,
+          activeTabNho,
+          currentTabConfig,
+          parentLabel: currentTabConfig?._parentLabel || '',
+        }) &&
+        hasCurrentAutoFieldChange(keys, ['status', 'location'], ['f_status', 'f_dia_ban', 'f_vi_tri'])
+      ) {
+        const forceSyncResult = syncTheLucMapAutoBlocksDetailed(nov, {
+          sourceLonId: activeTabLon,
+          sourceNhoId: activeTabNho || 'default',
+          entityId: selectedEntityId,
+        });
+        forceMapAutoApplied = forceSyncResult.changed || forceMapAutoApplied;
+        forceMapAutoWarning = summarizeTheLucMapSyncWarnings(forceSyncResult.warnings) || forceMapAutoWarning;
+      }
+      if (
+        isMainCharacterRelationScope({
+          activeTabLon,
+          activeTabNho,
+          currentTabConfig,
+          parentLabel: currentTabConfig?._parentLabel || '',
+        }) &&
+        hasCurrentAutoFieldChange(keys, ['relation'], ['f_quan_he'])
+      ) {
+        mainCharacterRelationResynced =
+          syncAllMainCharacterRelationBlocks(nov) || mainCharacterRelationResynced;
+      }
+      if (
+        isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig }) &&
+        hasCurrentAutoFieldChange(keys, ['title', 'status', 'parent_path'], ['f_title', 'f_status', 'f_vi_tri'])
+      ) {
+        mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
+      }
+      syncAllCollectionListCards(nov);
+      return {
+        mergedKeys: keys,
+        relationAutoResynced,
+        mainCharacterRelationResynced,
+        cultivationRelationAutoResynced,
+        forceMapAutoApplied,
+        forceMapAutoWarning,
+        mapHierarchyAutoApplied,
+      };
+    },
+    [
+      activeTabLon,
+      activeTabNho,
+      currentTabConfig,
+      selectedEntityId,
+      getStatusLineForCurrentTab,
+      hasCurrentAutoFieldChange,
+    ]
+  );
+
+  const handlePromoteMilestoneToBaseline = useCallback(
+    (milestoneId, onDone) => {
+      const targetId = safeString(milestoneId).trim();
+      if (!targetId || !selectedEntityId) return;
+      const targetMs = (selectedEntity?.milestones || []).find((ms) => safeString(ms?.id) === targetId);
+      if (!targetMs) {
+        showToast('Không tìm thấy mốc timeline.', 'warning');
+        return;
+      }
+      const chapterLabel = safeString(targetMs.chapter).trim() || '?';
+      const titleLabel = safeString(targetMs.title).trim() || `Chương ${chapterLabel}`;
+      const isRefreshBaseline = readProfileBaselineMilestoneId(selectedEntity) === targetId;
+      const firstArchiveNote =
+        !hasBaselineArchiveAtChapterZero(selectedEntity?.milestones) &&
+        safeString(selectedEntity?.info).trim()
+          ? ' Lần đầu: ghi chép Ban đầu hiện tại sẽ lưu thêm mốc <b>chương 0</b> trên Timeline.'
+          : '';
+      setConfirmDialog({
+        isOpen: true,
+        title: isRefreshBaseline ? 'Cập nhật Ghi chép Ban đầu từ mốc' : 'Đặt mốc làm Ghi chép Ban đầu',
+        message:
+          (isRefreshBaseline
+            ? `Đồng bộ lại tab <b>Hồ sơ → Ban đầu</b> từ mốc <b>${titleLabel}</b> (ch. ${chapterLabel}). `
+            : `Nội dung mốc <b>${titleLabel}</b> (ch. ${chapterLabel}) sẽ <b>ghi đè</b> Ghi chép Ban đầu; ` +
+              `mốc timeline <b>giữ nguyên</b>. Form/ảnh từ snapshot mốc được áp dụng.`) +
+          firstArchiveNote +
+          ` Sau đó mở tab <b>Hồ sơ → Ban đầu</b>.`,
+        onConfirm: () => {
+          const prev = activeNovelData ? structuredClone(activeNovelData) : null;
+          let promoteResult = { changed: false };
+          let sideEffects = null;
+          updateActiveNovelData((nov) => {
+            const tabData = nov.data[activeTabLon]?.[activeTabNho || 'default'];
+            const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
+            if (!ent) return;
+            promoteResult = promoteMilestoneToBaseline(ent, targetId, { generateId });
+            if (!promoteResult.changed) return;
+            sideEffects = runSnapshotProfileSideEffects(nov, ent, targetMs.snapshot, new Set());
+          });
+          if (!promoteResult.changed) {
+            const reason = promoteResult.reason || 'unknown';
+            if (reason === 'empty_milestone_body') {
+              showToast('Mốc chưa có nội dung sự kiện — hãy ghi chép trong mốc trước.', 'warning');
+            } else {
+              showToast('Không đặt được mốc làm Ban đầu.', 'warning');
+            }
+            return;
+          }
+          if (sideEffects?.mergedKeys) {
+            setRecentlyMergedFields(sideEffects.mergedKeys);
+            setTimeout(() => setRecentlyMergedFields(new Set()), 15000);
+          }
+          setCollectionSubTab('detail');
+          showToast(
+            promoteResult.createdCh0Archive
+              ? `Đã đặt mốc ch. ${promoteResult.promotedChapter ?? chapterLabel} làm Ghi chép Ban đầu. Bản nền cũ đã lưu mốc chương 0.`
+              : `Đã đặt mốc ch. ${promoteResult.promotedChapter ?? chapterLabel} làm Ghi chép Ban đầu (mốc timeline không đổi).`,
+            'success',
+            prev
+              ? {
+                  undoLabel: 'Hoàn tác',
+                  onUndo: () => {
+                    setRecentlyMergedFields(new Set());
+                    setActiveNovelData(structuredClone(prev));
+                    void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
+                  },
+                }
+              : undefined
+          );
+          if (sideEffects?.mapHierarchyAutoApplied) {
+            showToast('Đã đồng bộ cây Bản đồ (AUTO).', 'success');
+          }
+          if (sideEffects?.relationAutoResynced) {
+            showToast('Đã đồng bộ lại liên kết AUTO trên các thẻ liên quan.', 'success');
+          }
+          if (sideEffects?.mainCharacterRelationResynced) {
+            showToast('Đã đồng bộ quan hệ Nhân Vật Chính ↔ các tab nhân vật liên quan (AUTO).', 'success');
+          }
+          if (sideEffects?.cultivationRelationAutoResynced) {
+            showToast('Đã đồng bộ lại liên kết Hệ Thống Tu Luyện ↔ Cảnh Giới Tu Vi (AUTO).', 'success');
+          }
+          if (typeof onDone === 'function') onDone();
+        },
+      });
+    },
+    [
+      selectedEntity,
+      selectedEntityId,
+      activeNovelData,
+      setConfirmDialog,
+      showToast,
+      updateActiveNovelData,
+      activeTabLon,
+      activeTabNho,
+      runSnapshotProfileSideEffects,
+      setRecentlyMergedFields,
+      setCollectionSubTab,
+      setActiveNovelData,
+      syncNovelRef,
+      dirHandleRef,
+    ]
+  );
+
   const handleMergeSnapshotToProfile = useCallback(
     (snapshot) => {
       if (!snapshot?.dynamicData && !snapshot?.avatar) {
@@ -1130,20 +1330,8 @@ export function useAppEntityMilestoneActions({
         onConfirm: () => {
           const prev = activeNovelData ? structuredClone(activeNovelData) : null;
           // Tính mergedKeys trước khi updateActiveNovelData để tránh stale closure.
-          let relationAutoResynced = false;
-          let mainCharacterRelationResynced = false;
-          let cultivationRelationAutoResynced = false;
-          let forceMapAutoApplied = false;
-          let forceMapAutoWarning = '';
-          let mapHierarchyAutoApplied = false;
           const mergedKeys = new Set();
-          if (snapshot.dynamicData) {
-            Object.entries(snapshot.dynamicData).forEach(([key, val]) => {
-              if (val && val.toString().trim()) mergedKeys.add(key);
-            });
-          }
-          if (snapshot.avatar) mergedKeys.add('avatar');
-
+          let sideEffects = null;
           updateActiveNovelData((nov) => {
             const tabData = nov.data[activeTabLon]?.[activeTabNho || 'default'];
             const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
@@ -1155,71 +1343,10 @@ export function useAppEntityMilestoneActions({
               });
             }
             if (snapshot.avatar) ent.avatar = snapshot.avatar;
-            if (hasCurrentAutoFieldChange(mergedKeys, ['status'], ['f_status'])) {
-              ent.status = getStatusLineForCurrentTab(ent);
-            }
-            if (
-              isAutoRelationScopeLonId(
-                activeTabLon,
-                currentTabConfig?._parentLabel || '',
-                currentTabConfig,
-                activeTabNho || 'default'
-              ) &&
-              hasCurrentAutoFieldChange(mergedKeys, ['status'], ['f_status'])
-            ) {
-              relationAutoResynced = syncAllAutoRelationNotesForNovel(nov) || relationAutoResynced;
-            }
-            if (
-              isCultivationRelationScope({
-                activeTabLon,
-                activeTabNho,
-                currentTabConfig,
-              }) &&
-              hasCurrentAutoFieldChange(mergedKeys, ['status', 'alias'], ['f_status', 'f_alias'])
-            ) {
-              cultivationRelationAutoResynced =
-                syncAllCultivationRelationBlocks(nov) || cultivationRelationAutoResynced;
-            }
-            if (
-              isForceCollectionScope({
-                activeTabLon,
-                activeTabNho,
-                currentTabConfig,
-                parentLabel: currentTabConfig?._parentLabel || '',
-              }) &&
-              hasCurrentAutoFieldChange(mergedKeys, ['status', 'location'], ['f_status', 'f_dia_ban', 'f_vi_tri'])
-            ) {
-              const forceSyncResult = syncTheLucMapAutoBlocksDetailed(nov, {
-                sourceLonId: activeTabLon,
-                sourceNhoId: activeTabNho || 'default',
-                entityId: selectedEntityId,
-              });
-              forceMapAutoApplied = forceSyncResult.changed || forceMapAutoApplied;
-              forceMapAutoWarning =
-                summarizeTheLucMapSyncWarnings(forceSyncResult.warnings) || forceMapAutoWarning;
-            }
-            if (
-              isMainCharacterRelationScope({
-                activeTabLon,
-                activeTabNho,
-                currentTabConfig,
-                parentLabel: currentTabConfig?._parentLabel || '',
-              }) &&
-              hasCurrentAutoFieldChange(mergedKeys, ['relation'], ['f_quan_he'])
-            ) {
-              mainCharacterRelationResynced =
-                syncAllMainCharacterRelationBlocks(nov) || mainCharacterRelationResynced;
-            }
-            if (
-              isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig }) &&
-              hasCurrentAutoFieldChange(mergedKeys, ['title', 'status', 'parent_path'], ['f_title', 'f_status', 'f_vi_tri'])
-            ) {
-              mapHierarchyAutoApplied = syncAllMapHierarchyAutoBlocks(nov) || mapHierarchyAutoApplied;
-            }
-            syncAllCollectionListCards(nov);
+            sideEffects = runSnapshotProfileSideEffects(nov, ent, snapshot, mergedKeys);
           });
 
-          setRecentlyMergedFields(mergedKeys);
+          setRecentlyMergedFields(sideEffects?.mergedKeys || mergedKeys);
           setCollectionSubTab('detail');
           setTimeout(() => setRecentlyMergedFields(new Set()), 15000);
           showToast('Đã áp dụng snapshot vào Hồ Sơ.', 'success', {
@@ -1231,16 +1358,16 @@ export function useAppEntityMilestoneActions({
                 }
               : undefined,
           });
-          if (mapHierarchyAutoApplied) {
+          if (sideEffects?.mapHierarchyAutoApplied) {
             showToast('Đã đồng bộ cây Bản đồ (AUTO).', 'success');
           }
-          if (relationAutoResynced) {
+          if (sideEffects?.relationAutoResynced) {
             showToast('Đã đồng bộ lại liên kết AUTO trên các thẻ liên quan.', 'success');
           }
-          if (mainCharacterRelationResynced) {
+          if (sideEffects?.mainCharacterRelationResynced) {
             showToast('Đã đồng bộ quan hệ Nhân Vật Chính ↔ các tab nhân vật liên quan (AUTO).', 'success');
           }
-          if (cultivationRelationAutoResynced) {
+          if (sideEffects?.cultivationRelationAutoResynced) {
             showToast('Đã đồng bộ lại liên kết Hệ Thống Tu Luyện ↔ Cảnh Giới Tu Vi (AUTO).', 'success');
           }
         },
@@ -1253,10 +1380,8 @@ export function useAppEntityMilestoneActions({
       updateActiveNovelData,
       activeTabLon,
       activeTabNho,
-      currentTabConfig,
       selectedEntityId,
-      getStatusLineForCurrentTab,
-      hasCurrentAutoFieldChange,
+      runSnapshotProfileSideEffects,
       setRecentlyMergedFields,
       setCollectionSubTab,
       setActiveNovelData,
@@ -1280,5 +1405,6 @@ export function useAppEntityMilestoneActions({
     handleDeleteDescription,
     handleDeleteEntity,
     handleMergeSnapshotToProfile,
+    handlePromoteMilestoneToBaseline,
   };
 }

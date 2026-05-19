@@ -25,7 +25,7 @@ export function AppSuggestionListRowsEditor({
     if (pendingFocusRowIdx == null) return;
     const el = document.getElementById(`${idPrefix}-value-${pendingFocusRowIdx}`);
     el?.focus();
-    setPendingFocusRowIdx(null);
+    queueMicrotask(() => setPendingFocusRowIdx(null));
   }, [pendingFocusRowIdx, idPrefix, list.length]);
 
   const updateRow = (rowIdx, patch) => {
