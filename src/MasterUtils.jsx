@@ -12,6 +12,7 @@ import { FALLBACK_IMG } from './MasterEngines.js';
 import { splitTextByWikiMatcher } from './lib/wikiLinkMatcher.js';
 import { buildEntityNameLookup, resolveEntityLookup } from './lib/entityWikiLookup.js';
 import { buildWikiLinkOptOutFromUnwrap } from './lib/wikiLinkOptOut.js';
+import { isCaretInsideWikiLink } from './lib/entityNotesWikiCaret.js';
 
 export const generateId = (prefix) => `${prefix}-${Math.random().toString(36).substring(2, 11)}`;
 
@@ -1538,6 +1539,7 @@ const removeEmptyListMarkerLine = (text, lineStart, lineEnd) => {
 
 export const resolveEntityNotesBackspace = (text, selStart, selEnd) => {
   if (selStart !== selEnd) return null;
+  if (isCaretInsideWikiLink(text, selStart)) return null;
   const { lineStart, lineEnd } = getLineSliceBounds(text, selStart);
 
   // At line start: remove previous empty list marker instead of merging this line upward.

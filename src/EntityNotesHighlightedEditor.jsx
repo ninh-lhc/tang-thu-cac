@@ -3,7 +3,7 @@
  * Cuộn trong textarea khi còn dòng; ở mép trên/dưới chuyển wheel sang khung scroll cha (modal/trang).
  * Dùng: AppEntityDetailNotes, modal mốc timeline (MasterComponents).
  */
-import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef } from 'react';
+import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { buildEntityNotesEditorHighlightHtml } from './lib/entityNotesEditorWikiHighlight.js';
 
 /** Chiều cao tối đa vùng soạn (dùng chung detail notes + modal mốc). */
@@ -51,6 +51,8 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
     onSelect,
     onPaste,
     onScroll,
+    onFocus,
+    onBlur,
     id,
     className = '',
     style = {},
@@ -63,6 +65,7 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
 ) {
   const textareaRef = useRef(null);
   const highlightRef = useRef(null);
+  const [isFocused, setIsFocused] = useState(false);
 
   useImperativeHandle(ref, () => textareaRef.current, []);
 
@@ -95,7 +98,9 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
       <pre
         ref={highlightRef}
         aria-hidden
-        className="pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words border border-transparent p-0 font-normal text-slate-200 leading-loose [overflow-wrap:anywhere]"
+        className={`pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words border border-transparent p-0 font-normal text-slate-200 leading-loose transition-opacity duration-75 [overflow-wrap:anywhere] ${
+          isFocused ? 'opacity-0' : 'opacity-100'
+        }`}
         style={{ fontFamily, fontSize, overflowWrap: 'anywhere' }}
         dangerouslySetInnerHTML={{ __html: highlightHtml }}
       />
@@ -111,10 +116,25 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
         onPaste={onPaste}
         onScroll={handleScroll}
         onWheel={handleEditorWheelCapture}
+        onFocus={(event) => {
+          setIsFocused(true);
+          onFocus?.(event);
+        }}
+        onBlur={(event) => {
+          setIsFocused(false);
+          onBlur?.(event);
+        }}
         spellCheck={spellCheck}
         placeholder={placeholder}
-        className="relative z-10 m-0 block size-full min-h-0 flex-1 resize-none overflow-auto bg-transparent p-0 leading-loose text-transparent caret-slate-100 outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/35 [overflow-wrap:anywhere]"
-        style={{ fontFamily, fontSize, WebkitTextFillColor: 'transparent', overflowWrap: 'anywhere' }}
+        className={`relative z-10 m-0 block size-full min-h-0 flex-1 resize-none overflow-auto bg-transparent p-0 leading-loose caret-slate-100 outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/35 [overflow-wrap:anywhere] ${
+          isFocused ? 'text-slate-200' : 'text-transparent'
+        }`}
+        style={{
+          fontFamily,
+          fontSize,
+          overflowWrap: 'anywhere',
+          ...(isFocused ? {} : { WebkitTextFillColor: 'transparent' }),
+        }}
       />
     </div>
   );
