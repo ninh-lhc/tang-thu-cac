@@ -118,6 +118,7 @@ import {
   collectEntityNotesDiagnostics,
   fixAllEntityNotesDiagnostics,
 } from './lib/entityNotesDiagnostics.js';
+import { useEntityNotesFormatDiagnostics } from './lib/useEntityNotesFormatDiagnostics.js';
 import { ENTITY_NOTES_AI_STRUCTURE_SYSTEM_PROMPT } from './lib/entityNotesAiStructurePrompt.js';
 import { runNotesAiPipeline } from './lib/entityNotesAiPipeline.js';
 import { syncEntityNotesDuplicateWordFormatting } from './lib/entityNotesDuplicateWordFormatting.js';
@@ -3558,6 +3559,7 @@ export const ModalMilestone = ({
   const [snapshotData, setSnapshotData] = useState({ avatar: '', dynamicData: {} });
   const [eventEdit, setEventEdit] = useState(() => ({ text: '', history: [''], hIndex: 0 }));
   const [toolbarState, setToolbarState] = useState(() => getEntityNotesToolbarState('', 0, 0));
+  const [eventEditorCaret, setEventEditorCaret] = useState(0);
   const [isSplitPreview, setIsSplitPreview] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLinkingAi, setIsLinkingAi] = useState(false);
@@ -3663,6 +3665,7 @@ export const ModalMilestone = ({
   const syncToolbarStateFromEditor = () => {
     const textarea = eventTextareaRef.current;
     if (!textarea) return;
+    setEventEditorCaret(textarea.selectionStart);
     setToolbarState(
       getEntityNotesToolbarState(textarea.value, textarea.selectionStart, textarea.selectionEnd)
     );
@@ -3674,6 +3677,7 @@ export const ModalMilestone = ({
     textarea.focus();
     textarea.setSelectionRange(nextState.selStart, nextState.selEnd);
     recordAndSetEventDraft(nextState.newText);
+    setEventEditorCaret(nextState.selStart);
     setToolbarState(
       getEntityNotesToolbarState(nextState.newText, nextState.selStart, nextState.selEnd)
     );
@@ -3814,7 +3818,7 @@ export const ModalMilestone = ({
     prepareSnapshotPayload,
   ]);
 
-  const formatDiagnostics = useMemo(() => collectEntityNotesDiagnostics(eventText), [eventText]);
+  const formatDiagnostics = useEntityNotesFormatDiagnostics(eventText, eventEditorCaret);
   const fixableDiagnostics = useMemo(
     () => formatDiagnostics.filter((item) => item.fixable),
     [formatDiagnostics]
@@ -4107,6 +4111,14 @@ export const ModalMilestone = ({
       });
       if (result.text !== eventText) {
         recordAndSetEventDraft(result.text);
+        const caret = result.text.length;
+        setEventEditorCaret(caret);
+        requestAnimationFrame(() => {
+          const ta = eventTextareaRef.current;
+          if (!ta) return;
+          ta.focus();
+          ta.setSelectionRange(caret, caret);
+        });
       }
       if (!result.ok) {
         if (result.reason === 'empty') {
@@ -4121,9 +4133,16 @@ export const ModalMilestone = ({
         if (result.linkSkippedAi || result.formatSkippedAi) {
           msg += ' (Thiếu API Key — bước AI bị bỏ qua.)';
         }
-        toast(msg, 'success');
+        if (result.remainingWarningCount > 0) {
+          msg += ` Còn ${result.remainingWarningCount} cảnh báo định dạng — kiểm tra thanh vàng khi sửa.`;
+        }
+        toast(msg, result.remainingWarningCount > 0 ? 'warning' : 'success');
       } else {
-        toast('Nội dung đã ổn, không cần chỉnh thêm.', 'success');
+        const hint =
+          result.remainingWarningCount > 0
+            ? ` Còn ${result.remainingWarningCount} cảnh báo định dạng.`
+            : '';
+        toast(`Nội dung đã ổn, không cần chỉnh thêm.${hint}`, result.remainingWarningCount > 0 ? 'warning' : 'success');
       }
     } finally {
       setIsAiPipelineRunning(false);
@@ -4454,6 +4473,7 @@ export const ModalMilestone = ({
                     value={eventText}
                     onChange={(event) => {
                       recordAndSetEventDraft(event.target.value);
+                      setEventEditorCaret(event.target.selectionStart);
                       setToolbarState(
                         getEntityNotesToolbarState(
                           event.target.value,

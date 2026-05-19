@@ -57,8 +57,11 @@ const classifyLine = (rawLine) => {
 
   const quoteMatch = normalizedLine.match(QUOTE_RE);
   if (quoteMatch) {
-    const prefix = `${quoteMatch[1].replace(/\s+$/g, '')} `;
-    return { type: 'quote', value: `${prefix}${cleanInlineSpacing(quoteMatch[2])}`.trimEnd() };
+    const indent = quoteMatch[1].replace(/\s+$/g, '');
+    return {
+      type: 'quote',
+      value: `${indent}${quoteMatch[2] || '> '}${cleanInlineSpacing(quoteMatch[3] || '')}`.trimEnd(),
+    };
   }
 
   return { type: 'plain', value: cleanInlineSpacing(trimmed) };

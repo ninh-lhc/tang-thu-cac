@@ -25,4 +25,8 @@ describe('cleanupEntityNotesText', () => {
       '- **Công dụng:** mô tả\n## 4. Sức mạnh\n«[[Vạn Mệnh]]»'
     );
   });
+
+  it('keeps quote/callout body after the > prefix', () => {
+    expect(cleanupEntityNotesText('> [!NOTE] Ghi chu quan trong')).toBe('> [!NOTE] Ghi chu quan trong');
+  });
 });

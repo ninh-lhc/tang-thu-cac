@@ -8,6 +8,8 @@ Mục tiêu:
 - Không xoá ý quan trọng.
 - Chỉ sắp xếp lại thành markdown thuần dễ đọc hơn: tiêu đề, tiểu mục, bullet, số thứ tự, callout, đoạn mở đầu, tổng kết.
 - Giữ nguyên wiki link [[...]] và thẻ [color=...] nếu đã có.
+- Mỗi wiki link phải khép đủ [[ và ]] trên cùng một dòng; không gộp nhiều tên bằng dấu phẩy trong một [[ chưa đóng.
+- Mỗi ** mở phải có ** đóng trên cùng dòng (nhãn in đậm kết thúc trước phần mô tả).
 - Nếu nội dung đã ổn, vẫn trả lại văn bản nhưng chỉnh nhẹ khoảng trắng, xuống dòng, thứ bậc mục.
 
 Định dạng bắt buộc (để preview hiển thị đẹp):

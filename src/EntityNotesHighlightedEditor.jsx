@@ -37,7 +37,7 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
     className = '',
     style = {},
     placeholder,
-    spellCheck = true,
+    spellCheck = false,
     selfEntityId = null,
     entityMap = null,
   },
@@ -77,8 +77,8 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
       <pre
         ref={highlightRef}
         aria-hidden
-        className="pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words border border-transparent p-0 text-slate-200 leading-loose"
-        style={{ fontFamily, fontSize }}
+        className="pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words border border-transparent p-0 font-normal text-slate-200 leading-loose [overflow-wrap:anywhere]"
+        style={{ fontFamily, fontSize, overflowWrap: 'anywhere' }}
         dangerouslySetInnerHTML={{ __html: highlightHtml }}
       />
       <textarea
@@ -95,8 +95,8 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
         onWheel={handleEditorWheelCapture}
         spellCheck={spellCheck}
         placeholder={placeholder}
-        className="relative z-10 m-0 block size-full min-h-0 flex-1 resize-none overflow-auto overscroll-contain bg-transparent p-0 leading-loose text-transparent caret-slate-100 outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/35"
-        style={{ fontFamily, fontSize, WebkitTextFillColor: 'transparent' }}
+        className="relative z-10 m-0 block size-full min-h-0 flex-1 resize-none overflow-auto overscroll-contain bg-transparent p-0 leading-loose text-transparent caret-slate-100 outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/35 [overflow-wrap:anywhere]"
+        style={{ fontFamily, fontSize, WebkitTextFillColor: 'transparent', overflowWrap: 'anywhere' }}
       />
     </div>
   );

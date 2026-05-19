@@ -36,6 +36,7 @@ import {
   collectEntityNotesDiagnostics,
   fixAllEntityNotesDiagnostics,
 } from './lib/entityNotesDiagnostics.js';
+import { useEntityNotesFormatDiagnostics } from './lib/useEntityNotesFormatDiagnostics.js';
 import { syncEntityNotesDuplicateWordFormatting } from './lib/entityNotesDuplicateWordFormatting.js';
 import {
   getEntityNotesFontStack,
@@ -106,6 +107,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   const previewScrollRef = useRef(null);
   const scrollSyncLockRef = useRef(false);
   const [toolbarState, setToolbarState] = useState(() => getEntityNotesToolbarState(s0, 0, 0));
+  const [editorCaret, setEditorCaret] = useState(0);
   const templateProfile = useMemo(
     () =>
       resolveEntityNotesTemplateProfile({
@@ -202,6 +204,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   const syncToolbarStateFromEditor = useCallback(() => {
     const textarea = textareaRef.current || document.getElementById('entity-info-editor');
     if (!textarea) return;
+    setEditorCaret(textarea.selectionStart);
     setToolbarState(
       getEntityNotesToolbarState(textarea.value, textarea.selectionStart, textarea.selectionEnd)
     );
@@ -321,10 +324,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     },
     [showToast, syncDraftAndPreview]
   );
-  const formatDiagnostics = useMemo(
-    () => collectEntityNotesDiagnostics(notesEdit.text),
-    [notesEdit.text]
-  );
+  const formatDiagnostics = useEntityNotesFormatDiagnostics(notesEdit.text, editorCaret);
   const fixableDiagnostics = useMemo(
     () => formatDiagnostics.filter((item) => item.fixable),
     [formatDiagnostics]
@@ -429,6 +429,14 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
       });
       if (result.text !== currentText) {
         syncDraftAndPreview(result.text);
+        const caret = result.text.length;
+        setEditorCaret(caret);
+        requestAnimationFrame(() => {
+          const ta = textareaRef.current || document.getElementById('entity-info-editor');
+          if (!ta) return;
+          ta.focus();
+          ta.setSelectionRange(caret, caret);
+        });
       }
       if (!result.ok) {
         if (result.reason === 'empty') {
@@ -443,9 +451,16 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         if (result.linkSkippedAi || result.formatSkippedAi) {
           msg += ' (Thiếu API Key — bước AI bị bỏ qua.)';
         }
-        showToast(msg, 'success');
+        if (result.remainingWarningCount > 0) {
+          msg += ` Còn ${result.remainingWarningCount} cảnh báo định dạng — kiểm tra thanh vàng khi sửa.`;
+        }
+        showToast(msg, result.remainingWarningCount > 0 ? 'warning' : 'success');
       } else {
-        showToast('Nội dung đã ổn, không cần chỉnh thêm.', 'success');
+        const hint =
+          result.remainingWarningCount > 0
+            ? ` Còn ${result.remainingWarningCount} cảnh báo định dạng.`
+            : '';
+        showToast(`Nội dung đã ổn, không cần chỉnh thêm.${hint}`, result.remainingWarningCount > 0 ? 'warning' : 'success');
       }
     } finally {
       setIsAiPipelineRunning(false);
@@ -738,6 +753,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             value={notesEdit.text}
             onChange={(e) => {
               recordAndSetDraft(e.target.value);
+              setEditorCaret(e.target.selectionStart);
               setToolbarState(
                 getEntityNotesToolbarState(e.target.value, e.target.selectionStart, e.target.selectionEnd)
               );

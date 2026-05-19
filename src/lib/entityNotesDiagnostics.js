@@ -56,6 +56,39 @@ function replaceRange(text, start, end, nextChunk) {
   return text.slice(0, start) + nextChunk + text.slice(end);
 }
 
+/** Che wiki link đã khép để đếm `**` / `~~` không bị nhiễu bởi nội dung trong `[[...]]`. */
+function maskBalancedWikiLinks(text) {
+  return String(text || '').replace(/\[\[[\s\S]*?\]\]/g, (match) => ' '.repeat(match.length));
+}
+
+function getLineRange(src, index) {
+  const safe = Math.max(0, Math.min(Number(index) || 0, src.length));
+  const start = src.lastIndexOf('\n', Math.max(0, safe - 1)) + 1;
+  const nextBreak = src.indexOf('\n', safe);
+  const end = nextBreak === -1 ? src.length : nextBreak;
+  return { start, end };
+}
+
+function isIndexOnCaretLine(src, index, caretIndex) {
+  if (!Number.isFinite(caretIndex)) return false;
+  const line = getLineRange(src, caretIndex);
+  return index >= line.start && index < line.end;
+}
+
+/** Đang gõ trên cùng dòng, sau marker mở — chưa cần báo lỗi khép. */
+function shouldSuppressUnclosedOnCaretLine(src, markerStart, markerLength, caretIndex) {
+  if (!Number.isFinite(caretIndex)) return false;
+  const start = Math.max(0, Number(markerStart) || 0);
+  if (!isIndexOnCaretLine(src, start, caretIndex)) return false;
+  return caretIndex >= start + Math.max(1, Number(markerLength) || 1);
+}
+
+function findUnbalancedPairMarkers(src, marker) {
+  const masked = maskBalancedWikiLinks(src);
+  const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return [...masked.matchAll(new RegExp(`(?<!\\\\)${escaped}`, 'g'))];
+}
+
 function renumberOrderedLists(text) {
   const lines = String(text || '').split('\n');
   const nextExpectedByIndent = new Map();
@@ -79,47 +112,108 @@ function renumberOrderedLists(text) {
   return lines.join('\n');
 }
 
+/** Khép marker trên từng dòng — tránh chèn `**` / `~~` ở cuối cả văn bản (hay gặp sau AI dàn khung). */
 function fixUnbalancedPair(text, marker) {
-  const src = String(text || '');
-  const count = countMatches(src, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'));
-  if (count % 2 === 0) return src;
-  return `${src}${marker}`;
+  const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(?<!\\\\)${escaped}`, 'g');
+  return String(text || '')
+    .split('\n')
+    .map((line) => {
+      const masked = maskBalancedWikiLinks(line);
+      const matches = [...masked.matchAll(re)];
+      if (matches.length % 2 === 0) return line;
+      return line + marker;
+    })
+    .join('\n');
 }
 
-export function collectEntityNotesDiagnostics(text) {
+function fixWikiBalancePerLine(text) {
+  return String(text || '')
+    .split('\n')
+    .map((line) => {
+      const openCount = countMatches(line, /\[\[/g);
+      const closeCount = countMatches(line, /\]\]/g);
+      if (openCount > closeCount) {
+        return line + ']]'.repeat(openCount - closeCount);
+      }
+      if (closeCount > openCount) {
+        let next = line;
+        let remaining = closeCount - openCount;
+        while (remaining > 0) {
+          const lastClose = next.lastIndexOf(']]');
+          if (lastClose === -1) break;
+          next = replaceRange(next, lastClose, lastClose + 2, '');
+          remaining -= 1;
+        }
+        return next;
+      }
+      return line;
+    })
+    .join('\n');
+}
+
+export function collectEntityNotesDiagnostics(text, options = {}) {
   const src = String(text || '');
+  const { caretIndex = null, suppressTransientWhileTyping = false } = options || {};
   const warnings = [];
 
-  const boldMatches = [...src.matchAll(/(?<!\\)\*\*/g)];
-  if (boldMatches.length % 2 !== 0) {
-    const last = boldMatches.at(-1);
+  const colonStarMatch = src.match(/\):\*(?!\*)/);
+  if (colonStarMatch) {
     warnings.push(
       makeDiagnostic(src, {
-        id: 'bold-unclosed',
-        kind: 'bold-unclosed',
-        label: 'Có cặp `**` chưa khép.',
-        start: last?.index ?? src.length,
-        end: (last?.index ?? src.length) + 2,
+        id: 'colon-star-typo',
+        kind: 'colon-star-typo',
+        label: 'Thiếu `**` sau dấu hai chấm (`):*` → `):**`).',
+        start: colonStarMatch.index ?? 0,
+        end: (colonStarMatch.index ?? 0) + colonStarMatch[0].length,
         fixable: true,
-        fixLabel: 'Khép `**`',
+        fixLabel: 'Thêm `**`',
       })
     );
   }
 
-  const strikeMatches = [...src.matchAll(/(?<!\\)~~/g)];
+  const boldMatches = findUnbalancedPairMarkers(src, '**');
+  if (boldMatches.length % 2 !== 0) {
+    const last = boldMatches.at(-1);
+    const markerStart = last?.index ?? src.length;
+    const suppress =
+      suppressTransientWhileTyping &&
+      shouldSuppressUnclosedOnCaretLine(src, markerStart, 2, caretIndex);
+    if (!suppress) {
+      warnings.push(
+        makeDiagnostic(src, {
+          id: 'bold-unclosed',
+          kind: 'bold-unclosed',
+          label: 'Có cặp `**` chưa khép.',
+          start: markerStart,
+          end: markerStart + 2,
+          fixable: true,
+          fixLabel: 'Khép `**`',
+        })
+      );
+    }
+  }
+
+  const strikeMatches = findUnbalancedPairMarkers(src, '~~');
   if (strikeMatches.length % 2 !== 0) {
     const last = strikeMatches.at(-1);
-    warnings.push(
-      makeDiagnostic(src, {
-        id: 'strike-unclosed',
-        kind: 'strike-unclosed',
-        label: 'Có cặp `~~` chưa khép.',
-        start: last?.index ?? src.length,
-        end: (last?.index ?? src.length) + 2,
-        fixable: true,
-        fixLabel: 'Khép `~~`',
-      })
-    );
+    const markerStart = last?.index ?? src.length;
+    const suppress =
+      suppressTransientWhileTyping &&
+      shouldSuppressUnclosedOnCaretLine(src, markerStart, 2, caretIndex);
+    if (!suppress) {
+      warnings.push(
+        makeDiagnostic(src, {
+          id: 'strike-unclosed',
+          kind: 'strike-unclosed',
+          label: 'Có cặp `~~` chưa khép.',
+          start: markerStart,
+          end: markerStart + 2,
+          fixable: true,
+          fixLabel: 'Khép `~~`',
+        })
+      );
+    }
   }
 
   const wikiOpenCount = countMatches(src, /\[\[/g);
@@ -127,17 +221,24 @@ export function collectEntityNotesDiagnostics(text) {
   if (wikiOpenCount !== wikiCloseCount) {
     const lastOpen = src.lastIndexOf('[[');
     const lastClose = src.lastIndexOf(']]');
-    warnings.push(
-      makeDiagnostic(src, {
-        id: 'wiki-unclosed',
-        kind: 'wiki-unclosed',
-        label: 'Có wiki link `[[...]]` chưa khép đủ.',
-        start: wikiOpenCount > wikiCloseCount ? Math.max(0, lastOpen) : Math.max(0, lastClose),
-        end: wikiOpenCount > wikiCloseCount ? Math.max(0, lastOpen) + 2 : Math.max(0, lastClose) + 2,
-        fixable: true,
-        fixLabel: 'Khép wiki',
-      })
-    );
+    const moreOpens = wikiOpenCount > wikiCloseCount;
+    const markerStart = moreOpens ? Math.max(0, lastOpen) : Math.max(0, lastClose);
+    const suppress =
+      suppressTransientWhileTyping &&
+      shouldSuppressUnclosedOnCaretLine(src, markerStart, 2, caretIndex);
+    if (!suppress) {
+      warnings.push(
+        makeDiagnostic(src, {
+          id: 'wiki-unclosed',
+          kind: 'wiki-unclosed',
+          label: 'Có wiki link `[[...]]` chưa khép đủ.',
+          start: markerStart,
+          end: markerStart + 2,
+          fixable: true,
+          fixLabel: 'Khép wiki',
+        })
+      );
+    }
   }
 
   const colorOpenTags = [...src.matchAll(INLINE_COLOR_OPEN_RE)];
@@ -265,29 +366,14 @@ export function applyEntityNotesDiagnosticFix(text, diagnostic) {
   if (!diagnostic?.kind) return src;
 
   switch (diagnostic.kind) {
+    case 'colon-star-typo':
+      return src.replace(/\):\*(?!\*)/g, '):** ');
     case 'bold-unclosed':
       return fixUnbalancedPair(src, '**');
     case 'strike-unclosed':
       return fixUnbalancedPair(src, '~~');
-    case 'wiki-unclosed': {
-      const openCount = countMatches(src, /\[\[/g);
-      const closeCount = countMatches(src, /\]\]/g);
-      if (openCount > closeCount) {
-        return `${src}${']]'.repeat(openCount - closeCount)}`;
-      }
-      if (closeCount > openCount) {
-        let next = src;
-        let remaining = closeCount - openCount;
-        while (remaining > 0) {
-          const lastClose = next.lastIndexOf(']]');
-          if (lastClose === -1) break;
-          next = replaceRange(next, lastClose, lastClose + 2, '');
-          remaining -= 1;
-        }
-        return next;
-      }
-      return src;
-    }
+    case 'wiki-unclosed':
+      return fixWikiBalancePerLine(src);
     case 'color-unclosed':
       return `${src}[/color]`;
     case 'color-malformed':
