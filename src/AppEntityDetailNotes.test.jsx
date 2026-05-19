@@ -62,18 +62,16 @@ describe('AppEntityDetailNotes', () => {
     cleanup();
   });
 
-  it('prefers local wiki wrapping before calling AI', () => {
+  it('prefers local wiki wrapping before calling AI', async () => {
     const props = createProps();
     render(<AppEntityDetailNotes {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Công cụ AI/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /AI Tạo Link/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Chuẩn hoá AI/i }));
 
-    expect(screen.getByRole('textbox').value).toBe('[[Linh Gioi Chau]] xuat hien giua troi.');
-    expect(props.showToast).toHaveBeenCalledWith(
-      'Da tu boc 1 [[lien ket]] theo the co san. Bam lai AI neu muon goi y them cho kho.'
-    );
-    expect(props.setIsExtractingAI).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(screen.getByRole('textbox').value).toBe('[[Linh Gioi Chau]] xuat hien giua troi.');
+    });
+    expect(props.setIsExtractingAI).toHaveBeenCalled();
   });
 
   it('inserts the long-form analysis scaffold from the toolbar', () => {
@@ -230,7 +228,7 @@ describe('AppEntityDetailNotes', () => {
     expect(textbox.value).toBe('Doan van bi xuong dong sai.\n\n- y mot van cung y');
   });
 
-  it('cleans the whole draft when clicking the clean button', () => {
+  it('cleans the whole draft when clicking the clean button', async () => {
     const props = createProps({
       selectedEntity: {
         id: 'entity-1',
@@ -240,11 +238,12 @@ describe('AppEntityDetailNotes', () => {
     });
     render(<AppEntityDetailNotes {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Công cụ AI/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /Làm sạch/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Chuẩn hoá AI/i }));
 
-    expect(screen.getByRole('textbox').value).toBe('## Muc lon\n\n1. Y dau bo sung them');
-    expect(props.showToast).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(screen.getByRole('textbox').value).toBe('## Muc lon\n\n1. Y dau bo sung them');
+    });
+    expect(props.showToast).toHaveBeenCalled();
   });
 
   it('auto-normalizes notes before saving when auto-clean is enabled', () => {

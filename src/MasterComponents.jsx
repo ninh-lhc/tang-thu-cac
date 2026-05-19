@@ -51,7 +51,10 @@ import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
 import { autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
 import { MILESTONE_LABELS } from './lib/milestoneLabels.js';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
-import { EntityNotesHighlightedEditor } from './EntityNotesHighlightedEditor.jsx';
+import {
+  EntityNotesHighlightedEditor,
+  ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS,
+} from './EntityNotesHighlightedEditor.jsx';
 import { EntityNotesAiToolsMenu } from './EntityNotesAiToolsMenu.jsx';
 import {
   OWNER_HINT_INPUT_FORMAT_TEXT,
@@ -116,6 +119,7 @@ import {
   fixAllEntityNotesDiagnostics,
 } from './lib/entityNotesDiagnostics.js';
 import { ENTITY_NOTES_AI_STRUCTURE_SYSTEM_PROMPT } from './lib/entityNotesAiStructurePrompt.js';
+import { runNotesAiPipeline } from './lib/entityNotesAiPipeline.js';
 import { syncEntityNotesDuplicateWordFormatting } from './lib/entityNotesDuplicateWordFormatting.js';
 
 const preventToolbarFocusSteal = (e) => e.preventDefault();
@@ -3544,7 +3548,7 @@ export const ModalMilestone = ({
   const [isSplitPreview, setIsSplitPreview] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLinkingAi, setIsLinkingAi] = useState(false);
-  const [aiToolsMenuOpen, setAiToolsMenuOpen] = useState(false);
+  const [isAiPipelineRunning, setIsAiPipelineRunning] = useState(false);
   const [isFormattingStructure, setIsFormattingStructure] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const eventTextareaRef = useRef(null);
@@ -4073,6 +4077,47 @@ export const ModalMilestone = ({
       setIsFormattingStructure(false);
     }
   };
+  const handleRunAllEventAiTools = async () => {
+    if (!eventText.trim()) {
+      toast('Chưa có nội dung để chuẩn hoá.', 'warning');
+      return;
+    }
+    setIsAiPipelineRunning(true);
+    setIsLinkingAi(true);
+    setIsFormattingStructure(true);
+    try {
+      const result = await runNotesAiPipeline(eventText, {
+        entityMap,
+        geminiApiKeys: geminiKeys,
+        aiMode: geminiMode,
+        subject: milestoneSubject,
+      });
+      if (result.text !== eventText) {
+        recordAndSetEventDraft(result.text);
+      }
+      if (!result.ok) {
+        if (result.reason === 'empty') {
+          toast('Chưa có nội dung để chuẩn hoá.', 'warning');
+        } else {
+          toast(result.error || 'Lỗi khi chạy chuẩn hoá AI.', 'error');
+        }
+        return;
+      }
+      if (result.steps.length > 0) {
+        let msg = `Đã chạy: ${result.steps.join(' → ')}.`;
+        if (result.linkSkippedAi || result.formatSkippedAi) {
+          msg += ' (Thiếu API Key — bước AI bị bỏ qua.)';
+        }
+        toast(msg, 'success');
+      } else {
+        toast('Nội dung đã ổn, không cần chỉnh thêm.', 'success');
+      }
+    } finally {
+      setIsAiPipelineRunning(false);
+      setIsLinkingAi(false);
+      setIsFormattingStructure(false);
+    }
+  };
   const handleInsertImageByUrl = () => {
     const rawUrl = window.prompt('Dán URL ảnh muốn chèn vào ghi chép sự kiện:', '');
     const imageUrl = safeString(rawUrl).trim();
@@ -4298,15 +4343,7 @@ export const ModalMilestone = ({
               </div>
 
               <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
-                <EntityNotesAiToolsMenu
-                  open={aiToolsMenuOpen}
-                  onOpenChange={setAiToolsMenuOpen}
-                  onClean={() => normalizeEventDraft(eventText, { announceIfChanged: true, announceIfSame: true })}
-                  onAiCreateLink={handleLinkWithAi}
-                  onAiFormatStructure={formatNotesStructureWithAI}
-                  isLinking={isLinkingAi}
-                  isFormatting={isFormattingStructure}
-                />
+                <EntityNotesAiToolsMenu onRunAll={handleRunAllEventAiTools} isRunning={isAiPipelineRunning} />
                 <button
                   type="button"
                   onClick={() => setIsSplitPreview((prev) => !prev)}
@@ -4320,7 +4357,7 @@ export const ModalMilestone = ({
                 </button>
               </div>
 
-              <div className="flex min-h-[420px] flex-col">
+              <div className="flex min-h-0 min-h-[420px] flex-col overflow-hidden">
                 <div className="flex items-start justify-between gap-2 flex-wrap">
                   <MarkdownToolbar
                     editorId={EVENT_EDITOR_ID}
@@ -4341,7 +4378,6 @@ export const ModalMilestone = ({
                     entityNotesTemplateProfile={templateProfile}
                     notesAutoCleanOnSave={notesTypo.autoCleanOnSave}
                     onNotesAutoCleanOnSave={(enabled) => setEntityNotesPrefs({ autoCleanOnSave: enabled })}
-                    onAiFormatStructure={formatNotesStructureWithAI}
                   />
                 </div>
 
@@ -4392,7 +4428,9 @@ export const ModalMilestone = ({
                   </div>
                 )}
 
-                <div className={`flex flex-1 gap-4 min-h-[320px] ${isSplitPreview ? 'flex-row' : 'flex-col'}`}>
+                <div
+                  className={`flex min-h-0 flex-1 gap-4 overflow-hidden min-h-[320px] ${ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS} ${isSplitPreview ? 'flex-row' : 'flex-col'}`}
+                >
                   <EntityNotesHighlightedEditor
                     id={EVENT_EDITOR_ID}
                     ref={eventTextareaRef}
@@ -4407,7 +4445,7 @@ export const ModalMilestone = ({
                         )
                       );
                     }}
-                    className={isSplitPreview ? 'w-1/2 flex-shrink-0 min-h-[320px]' : 'flex-1 min-h-[320px]'}
+                    className={isSplitPreview ? 'h-full min-h-0 w-1/2 flex-shrink-0' : 'h-full min-h-0 flex-1'}
                     style={{
                       fontFamily: getEntityNotesFontStack(notesTypo.fontKey),
                       fontSize: `${notesTypo.sizePx}px`,
@@ -4434,7 +4472,7 @@ export const ModalMilestone = ({
                       onScroll={handlePreviewScroll}
                       onJumpToAnchor={(item) => jumpToEditorLine(item.line)}
                       onJumpToLine={jumpToEditorLine}
-                      className="w-1/2 min-h-[320px] overflow-y-auto border-l border-slate-700 pl-4 font-serif custom-scrollbar"
+                      className="h-full min-h-0 w-1/2 overflow-y-auto overscroll-contain border-l border-slate-700 pl-4 font-serif custom-scrollbar"
                     />
                   )}
                 </div>

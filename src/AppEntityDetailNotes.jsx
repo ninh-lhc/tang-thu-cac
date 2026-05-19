@@ -2,7 +2,10 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState, useSync
 import { BookOpen, Save, Edit3, Eye, ScrollText, AlertTriangle, Lock, Search, Filter } from 'lucide-react';
 import { MarkdownToolbar } from './MasterComponents.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
-import { EntityNotesHighlightedEditor } from './EntityNotesHighlightedEditor.jsx';
+import {
+  EntityNotesHighlightedEditor,
+  ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS,
+} from './EntityNotesHighlightedEditor.jsx';
 import { EntityNotesAiToolsMenu } from './EntityNotesAiToolsMenu.jsx';
 import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
 import { filterEntityNotesMarkdown, sortMarkdownSectionsAfterFilter } from './lib/entityNotesTabFilter.js';
@@ -14,12 +17,10 @@ import {
   getEntityNotesToolbarState,
   mapGeminiErrorToUserMessage,
   truncateForAI,
-  suggestWikiLinkSpotsWithAI,
   resolveEntityNotesLineBreak,
   resolveEntityNotesBackspace,
   resolveEntityNotesTabIndent,
 } from './MasterUtils.jsx';
-import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
 import { autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
 import { applyWikiLinkOptOutsForSave, readWikiLinkOptOuts } from './lib/wikiLinkOptOut.js';
 import { cleanupEntityNotesText } from './lib/entityNotesTextCleanup.js';
@@ -37,6 +38,7 @@ import {
 } from './lib/entityNotesPrefs.js';
 import { resolveEntityNotesTemplateProfile } from './lib/entityNotesSemantics.js';
 import { ENTITY_NOTES_AI_STRUCTURE_SYSTEM_PROMPT } from './lib/entityNotesAiStructurePrompt.js';
+import { runNotesAiPipeline } from './lib/entityNotesAiPipeline.js';
 import { getEffectiveAutoSyncRole, getAutoSyncRoleLabel } from './lib/tabAutoSyncRole.js';
 import {
   getAutoSyncEngineDescription,
@@ -90,7 +92,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     hIndex: 0,
   }));
   const [isFormattingStructure, setIsFormattingStructure] = useState(false);
-  const [aiToolsMenuOpen, setAiToolsMenuOpen] = useState(false);
+  const [isAiPipelineRunning, setIsAiPipelineRunning] = useState(false);
   const notesTypo = useSyncExternalStore(subscribeEntityNotesPrefs, getEntityNotesPrefs, getEntityNotesPrefs);
   const textareaRef = useRef(null);
   const previewScrollRef = useRef(null);
@@ -375,73 +377,57 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     syncDraftAndPreview,
   ]);
 
-  const handleAiCreateLink = useCallback(async () => {
+  const handleRunAllAiTools = useCallback(async () => {
     const currentText = notesEdit.text;
-    if (!currentText.trim()) return;
-    const cleanedEarly = normalizeNotesDraft(currentText);
-    const workingText = cleanedEarly.text;
-    const localWrapEarly = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap, {
-      optOuts: initialWikiLinkOptOuts,
-    });
-    if (localWrapEarly.count > 0 && localWrapEarly.text !== workingText) {
-      syncDraftAndPreview(localWrapEarly.text);
-      showToast(
-        `Da tu boc ${localWrapEarly.count} [[lien ket]] theo the co san. Bam lai AI neu muon goi y them cho kho.`
-      );
+    if (!currentText.trim()) {
+      showToast('Chưa có nội dung để chuẩn hoá.', 'warning');
       return;
     }
-    if (geminiApiKeys.length === 0) {
-      showToast('Vui lòng thiết lập API Key để dùng AI.');
-      return;
-    }
-    const text = workingText;
-    if (!text.trim()) return;
-    const localWrap = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, {
-      optOuts: initialWikiLinkOptOuts,
-    });
-    const { wasTruncated } = truncateForAI(text);
-    if (wasTruncated) showToast('Đoạn quá dài — chỉ gửi ~12.000 ký tự đầu cho AI.', 'warning');
+    setIsAiPipelineRunning(true);
     setIsExtractingAI(true);
+    setIsFormattingStructure(true);
     try {
-      const res = await suggestWikiLinkSpotsWithAI(text, geminiApiKeys, aiMode);
-      const spots = Array.isArray(res?.linkSpots) ? res.linkSpots : [];
-      const aiNext = applyWikiLinkSpots(text, spots);
-      const next = aiNext !== text ? aiNext : localWrap.text;
-      if (next !== text) {
-        syncDraftAndPreview(next);
-        if (aiNext !== text) {
-          showToast('Đã thêm [[liên kết]] bằng AI — giữ nguyên chữ và định dạng bạn nhập.');
-        } else {
-          showToast('AI chưa định vị được spot rõ ràng — đã tự bọc link theo danh sách thẻ có sẵn.');
-        }
-      } else if (spots.length > 0) {
-        showToast('AI gợi ý link nhưng không khớp văn bản — thử lại hoặc chỉnh ngắn đoạn.', 'warning');
-      } else {
-        showToast('Không có chỗ mới cần bọc link (hoặc đã có [[...]]).');
+      const result = await runNotesAiPipeline(currentText, {
+        entityMap,
+        geminiApiKeys,
+        aiMode,
+        wikiLinkOptOuts: initialWikiLinkOptOuts,
+        subject: entityNotesSubject,
+      });
+      if (result.text !== currentText) {
+        syncDraftAndPreview(result.text);
       }
-    } catch (e) {
-      const msg = mapGeminiErrorToUserMessage(e);
-      const rateLimited = /429|503|rate_limit|qua tai api/i.test(String(e?.message || ''));
-      if (rateLimited) {
-        if (localWrap.text !== text) {
-          syncDraftAndPreview(localWrap.text);
-          showToast('AI đang quá tải (429/503) — đã tự bọc link theo danh sách thẻ có sẵn.', 'warning');
+      if (!result.ok) {
+        if (result.reason === 'empty') {
+          showToast('Chưa có nội dung để chuẩn hoá.', 'warning');
         } else {
-          showToast(msg, 'warning');
+          showToast(result.error || 'Lỗi khi chạy chuẩn hoá AI.', 'error');
         }
-      } else {
-        showToast(msg, 'error');
+        return;
       }
+      if (result.steps.length > 0) {
+        let msg = `Đã chạy: ${result.steps.join(' → ')}.`;
+        if (result.linkSkippedAi || result.formatSkippedAi) {
+          msg += ' (Thiếu API Key — bước AI bị bỏ qua.)';
+        }
+        showToast(msg, 'success');
+      } else {
+        showToast('Nội dung đã ổn, không cần chỉnh thêm.', 'success');
+      }
+    } finally {
+      setIsAiPipelineRunning(false);
+      setIsExtractingAI(false);
+      setIsFormattingStructure(false);
     }
-    setIsExtractingAI(false);
   }, [
     aiMode,
     entityMap,
+    entityNotesSubject,
     geminiApiKeys,
     initialWikiLinkOptOuts,
-    normalizeNotesDraft,
     notesEdit.text,
     setIsExtractingAI,
+    setIsFormattingStructure,
     showToast,
     syncDraftAndPreview,
   ]);
@@ -558,15 +544,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             <ScrollText size={13} /> Mở hướng dẫn
           </button>
         )}
-        <EntityNotesAiToolsMenu
-          open={aiToolsMenuOpen}
-          onOpenChange={setAiToolsMenuOpen}
-          onClean={() => normalizeNotesDraft(notesEdit.text, { announceIfChanged: true, announceIfSame: true })}
-          onAiCreateLink={handleAiCreateLink}
-          onAiFormatStructure={formatNotesStructureWithAI}
-          isLinking={isExtractingAI}
-          isFormatting={isFormattingStructure}
-        />
+        <EntityNotesAiToolsMenu onRunAll={handleRunAllAiTools} isRunning={isAiPipelineRunning} />
         <button
           id="save-entity-btn"
           type="button"
@@ -612,7 +590,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         </button>
       </div>
 
-      <div className="flex flex-col flex-1 animate-fade-in min-h-[400px]">
+      <div className="flex min-h-0 flex-1 flex-col animate-fade-in overflow-hidden min-h-[400px]">
         <div className="flex items-start justify-between gap-2 mb-1 flex-wrap">
           <MarkdownToolbar
             editorId="entity-info-editor"
@@ -699,7 +677,9 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             </div>
           </div>
         )}
-        <div className={`flex flex-1 gap-4 min-h-[300px] ${isSplitPreview ? 'flex-row' : 'flex-col'}`}>
+        <div
+          className={`flex min-h-0 flex-1 gap-4 overflow-hidden min-h-[300px] ${ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS} ${isSplitPreview ? 'flex-row' : 'flex-col'}`}
+        >
           <EntityNotesHighlightedEditor
             ref={textareaRef}
             id="entity-info-editor"
@@ -710,7 +690,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
                 getEntityNotesToolbarState(e.target.value, e.target.selectionStart, e.target.selectionEnd)
               );
             }}
-            className={isSplitPreview ? 'w-1/2 flex-shrink-0 min-h-[300px]' : 'flex-1 min-h-[300px]'}
+            className={isSplitPreview ? 'h-full min-h-0 w-1/2 flex-shrink-0' : 'h-full min-h-0 flex-1'}
             style={{
               fontFamily: getEntityNotesFontStack(notesTypo.fontKey),
               fontSize: `${notesTypo.sizePx}px`,
@@ -739,7 +719,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               onScroll={handlePreviewScroll}
               onJumpToAnchor={(item) => jumpToEditorLine(item.line)}
               onJumpToLine={jumpToEditorLine}
-              className="w-1/2 overflow-y-auto custom-scrollbar border-l border-slate-700 pl-4 font-serif min-h-[300px]"
+              className="h-full min-h-0 w-1/2 overflow-y-auto overscroll-contain custom-scrollbar border-l border-slate-700 pl-4 font-serif"
             />
           )}
         </div>
