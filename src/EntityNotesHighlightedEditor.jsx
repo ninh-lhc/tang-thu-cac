@@ -1,13 +1,16 @@
 /**
  * Textarea ghi chép + lớp highlight [[wiki]] (đồng bộ scroll/font với textarea).
- * Cuộn trong textarea khi còn dòng; ở mép trên/dưới chuyển wheel sang khung scroll cha (modal/trang).
- * Dùng: AppEntityDetailNotes, modal mốc timeline (MasterComponents).
+ * Chữ trong textarea trong suốt; màu wiki hiện từ lớp <pre> phía dưới (cả khi đang gõ).
+ * Cuộn trong textarea khi còn dòng; ở mép trên/dưới chuyển wheel sang khung cha.
  */
-import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef } from 'react';
 import { buildEntityNotesEditorHighlightHtml } from './lib/entityNotesEditorWikiHighlight.js';
 
 /** Chiều cao tối đa vùng soạn (dùng chung detail notes + modal mốc). */
 export const ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS = 'max-h-[min(65vh,720px)]';
+
+const EDITOR_SURFACE_CLASS =
+  'm-0 overflow-hidden whitespace-pre-wrap break-words border-0 border-transparent p-0 font-normal leading-loose [overflow-wrap:anywhere]';
 
 function findScrollableAncestor(el) {
   let node = el.parentElement;
@@ -65,7 +68,6 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
 ) {
   const textareaRef = useRef(null);
   const highlightRef = useRef(null);
-  const [isFocused, setIsFocused] = useState(false);
 
   useImperativeHandle(ref, () => textareaRef.current, []);
 
@@ -92,16 +94,22 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
 
   const fontFamily = style.fontFamily;
   const fontSize = style.fontSize;
+  const surfaceStyle = {
+    fontFamily,
+    fontSize,
+    overflowWrap: 'anywhere',
+    lineHeight: 1.625,
+    letterSpacing: 'normal',
+    wordSpacing: 'normal',
+  };
 
   return (
     <div className={`relative flex h-full min-h-0 flex-col overflow-hidden ${className}`}>
       <pre
         ref={highlightRef}
         aria-hidden
-        className={`pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words border border-transparent p-0 font-normal text-slate-200 leading-loose transition-opacity duration-75 [overflow-wrap:anywhere] ${
-          isFocused ? 'opacity-0' : 'opacity-100'
-        }`}
-        style={{ fontFamily, fontSize, overflowWrap: 'anywhere' }}
+        className={`pointer-events-none absolute inset-0 block size-full ${EDITOR_SURFACE_CLASS} text-slate-200`}
+        style={surfaceStyle}
         dangerouslySetInnerHTML={{ __html: highlightHtml }}
       />
       <textarea
@@ -117,23 +125,17 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
         onScroll={handleScroll}
         onWheel={handleEditorWheelCapture}
         onFocus={(event) => {
-          setIsFocused(true);
+          syncHighlightScroll();
           onFocus?.(event);
         }}
-        onBlur={(event) => {
-          setIsFocused(false);
-          onBlur?.(event);
-        }}
+        onBlur={onBlur}
         spellCheck={spellCheck}
         placeholder={placeholder}
-        className={`relative z-10 m-0 block size-full min-h-0 flex-1 resize-none overflow-auto bg-transparent p-0 leading-loose caret-slate-100 outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/35 [overflow-wrap:anywhere] ${
-          isFocused ? 'text-slate-200' : 'text-transparent'
-        }`}
+        className={`relative z-10 block size-full min-h-0 flex-1 resize-none overflow-auto bg-transparent text-transparent caret-slate-100 outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/25 ${EDITOR_SURFACE_CLASS}`}
         style={{
-          fontFamily,
-          fontSize,
-          overflowWrap: 'anywhere',
-          ...(isFocused ? {} : { WebkitTextFillColor: 'transparent' }),
+          ...surfaceStyle,
+          WebkitTextFillColor: 'transparent',
+          caretColor: 'rgb(226 232 240)',
         }}
       />
     </div>
