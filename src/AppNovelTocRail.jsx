@@ -53,7 +53,7 @@ export function AppNovelTocRail({
                     : 'text-slate-500 hover:text-slate-300'
                 }`}
               >
-                <span className="flex items-center gap-2 truncate">
+                <span className="flex items-center gap-2">
                   {renderTabIconNode(
                     sub.iconImage,
                     sub.viewType === 'collection-track' ? (
@@ -61,7 +61,7 @@ export function AppNovelTocRail({
                     ) : null,
                     'w-3 h-3'
                   )}
-                  <span className="truncate">{safeString(sub.label)}</span>
+                  <span className="whitespace-nowrap">{safeString(sub.label)}</span>
                 </span>
                 {hasTabCon && (
                   <ChevronDown
@@ -83,7 +83,7 @@ export function AppNovelTocRail({
                         if (navigationLocked) return;
                         handleSelectTabCon(con.id);
                       }}
-                      className={`w-full text-left py-1.5 px-3 text-xs rounded-md font-serif truncate transition-colors ${
+                      className={`w-full text-left py-1.5 px-3 text-xs rounded-md font-serif whitespace-nowrap transition-colors ${
                         activeTabCon === con.id
                           ? 'bg-amber-900/30 text-amber-400'
                           : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
@@ -111,7 +111,7 @@ export function AppNovelTocRail({
             if (navigationLocked) return;
             handleSelectTabLon(tab.id);
           }}
-          className={`w-full flex items-center rounded-lg transition-colors overflow-hidden whitespace-nowrap ${
+          className={`w-full flex items-center rounded-lg transition-colors whitespace-nowrap ${
             menu2Expanded ? 'p-3 justify-start' : 'p-2 justify-center'
           } ${
             isActive && !activeTabNho
@@ -123,8 +123,8 @@ export function AppNovelTocRail({
             {renderTabIconNode(tab.iconImage, getIconComponent(tab.iconName))}
           </div>
           <span
-            className={`font-serif text-sm transition-[opacity,max-width,margin-left] duration-200 ${
-              menu2Expanded ? 'ml-3 opacity-100 max-w-[999px]' : 'ml-0 opacity-0 max-w-0 overflow-hidden'
+            className={`font-serif text-sm transition-[opacity,margin-left] duration-200 ${
+              menu2Expanded ? 'ml-3 opacity-100' : 'ml-0 opacity-0 w-0 overflow-hidden'
             }`}
           >
             {safeString(tab.label)}
@@ -138,12 +138,12 @@ export function AppNovelTocRail({
   return (
     <div
       className={`bg-slate-900 border-r border-slate-800 transition-[width] duration-200 ease-out flex flex-col z-20 flex-shrink-0 h-full ${
-        menu2Expanded ? 'w-64' : 'w-12'
+        menu2Expanded ? 'w-max min-w-48' : 'w-12'
       }`}
       onMouseEnter={handleMenu2MouseEnter}
       onMouseLeave={handleMenu2MouseLeave}
     >
-      <div className="p-4 border-b border-slate-800 h-16 flex items-center justify-between overflow-hidden whitespace-nowrap">
+      <div className="p-4 border-b border-slate-800 min-h-16 flex items-center justify-between gap-2 shrink-0">
         <button
           type="button"
           onClick={() => setMenu2Expanded((prev) => !prev)}
@@ -185,8 +185,8 @@ export function AppNovelTocRail({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
-        <div className="py-3 flex flex-col">
+      <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar">
+        <div className="py-3 flex flex-col w-max min-w-full">
           {sortedTabs.map((tab) => (
             <div key={tab.id} className={`${menu2Expanded ? 'px-3' : 'px-1'} mb-1`}>
               {renderTabButton(tab)}
