@@ -12,6 +12,16 @@ function extractNovelGenres(novel) {
   return [];
 }
 
+/** Thứ tự hiển thị sidebar thư viện: A→Z theo tiêu đề (tiếng Việt). */
+export function compareLibraryNovelTitles(a, b) {
+  const byTitle = safeString(a?.title).localeCompare(safeString(b?.title), 'vi', {
+    sensitivity: 'base',
+    numeric: true,
+  });
+  if (byTitle !== 0) return byTitle;
+  return safeString(a?.id).localeCompare(safeString(b?.id), 'vi');
+}
+
 export function buildLibrarySearchIndex(novelsMetadata) {
   return (novelsMetadata || []).map((novel) => {
     const titleText = normalizeSearchText(novel?.title);
@@ -57,5 +67,6 @@ export function filterNovelsForLibrary(
       return matchSearch && matchGenre;
     })
     .map((row) => byId.get(row.id))
-    .filter(Boolean);
+    .filter(Boolean)
+    .sort(compareLibraryNovelTitles);
 }

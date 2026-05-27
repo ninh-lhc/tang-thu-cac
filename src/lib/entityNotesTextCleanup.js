@@ -70,7 +70,8 @@ const classifyLine = (rawLine) => {
 /** Khoảng cách giữa khối: giữ đúng mức người dùng đã có, không ép \\n\\n. */
 function separatorForBlankRun(blankCount) {
   if (blankCount <= 0) return '\n';
-  if (blankCount === 1) return '\n';
+  // Một dòng trống tương ứng với chuỗi `\n\n` giữa 2 block.
+  // Giữ đúng mức người dùng đã có để không "nuốt" dòng trống quan trọng.
   return '\n\n';
 }
 

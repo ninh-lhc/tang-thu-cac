@@ -335,19 +335,41 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
 
   const applySingleDiagnosticFix = useCallback((diagnostic) => {
     if (!diagnostic?.fixable) return;
-    const patched = applyEntityNotesDiagnosticFix(notesEdit.text, diagnostic);
-    if (patched !== notesEdit.text) {
-      syncDraftAndPreview(patched);
-      showToast(`Đã sửa: ${diagnostic.label}`);
+    const original = notesEdit.text;
+    const patched = applyEntityNotesDiagnosticFix(original, diagnostic);
+    if (patched === original) return;
+
+    const remaining = collectEntityNotesDiagnostics(patched);
+    const stillHasThisWarning =
+      remaining.some((item) => item.id === diagnostic.id) ||
+      remaining.some((item) => item.kind === diagnostic.kind && item.line === diagnostic.line);
+
+    // Nếu fix tự động không làm hết cảnh báo tương ứng, thì giữ nguyên phần bạn đã chỉnh tay.
+    if (stillHasThisWarning) {
+      showToast('Không sửa tự động được — giữ nguyên bản bạn đã chỉnh tay.', 'warning');
+      return;
     }
+
+    syncDraftAndPreview(patched);
+    showToast(`Đã sửa: ${diagnostic.label}`);
   }, [notesEdit.text, showToast, syncDraftAndPreview]);
 
   const fixAllDiagnostics = useCallback(() => {
-    const patched = fixAllEntityNotesDiagnostics(notesEdit.text);
-    if (patched === notesEdit.text) {
+    const original = notesEdit.text;
+    const patched = fixAllEntityNotesDiagnostics(original);
+    if (patched === original) {
       showToast('Không còn lỗi nhẹ nào để sửa thêm.');
       return;
     }
+
+    const beforeCount = collectEntityNotesDiagnostics(original).length;
+    const afterCount = collectEntityNotesDiagnostics(patched).length;
+    // Bảo vệ: nếu fixAll làm cảnh báo không giảm, không ghi đè chỉnh tay.
+    if (afterCount >= beforeCount) {
+      showToast('Không thể tự động sửa hết — giữ nguyên bản bạn đã chỉnh tay.', 'warning');
+      return;
+    }
+
     syncDraftAndPreview(patched);
     showToast('Đã sửa các lỗi định dạng nhẹ và chuẩn hoá lại ghi chú.');
   }, [notesEdit.text, showToast, syncDraftAndPreview]);

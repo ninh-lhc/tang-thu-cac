@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildLibrarySearchIndex, filterNovelsForLibrary } from './filterNovelsForLibrary.js';
+import {
+  buildLibrarySearchIndex,
+  compareLibraryNovelTitles,
+  filterNovelsForLibrary,
+} from './filterNovelsForLibrary.js';
 
 const novels = [
   {
@@ -19,6 +23,23 @@ const novels = [
 ];
 
 describe('filterNovelsForLibrary', () => {
+  it('sorts results by Vietnamese title regardless of source order', () => {
+    const shuffled = [
+      { id: 'n3', title: 'Võng Du Bắt Đầu', author: 'A', genres: [] },
+      { id: 'n1', title: 'Ta Mỗi Ngày Tùy Cơ', author: 'B', genres: [] },
+      { id: 'n2', title: 'Toàn Dân Lĩnh Chủ', author: 'C', genres: [] },
+    ];
+
+    expect(filterNovelsForLibrary(shuffled, '', [], 'all').map((item) => item.id)).toEqual([
+      'n1',
+      'n2',
+      'n3',
+    ]);
+    expect(
+      [...shuffled].sort(compareLibraryNovelTitles).map((item) => item.id)
+    ).toEqual(['n1', 'n2', 'n3']);
+  });
+
   it('matches Vietnamese text with or without accents across fields', () => {
     const index = buildLibrarySearchIndex(novels);
 
