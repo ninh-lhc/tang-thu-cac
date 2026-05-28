@@ -84,20 +84,42 @@ describe('wikiLinkOptOut', () => {
     expect(merged).toHaveLength(3);
   });
 
-  it('detects opt-out when plain text would be auto-wrapped on save', () => {
-    const prepared = 'The gioi Hồng Lâu Mộng.';
+  it('does not opt-out same-surface plain mentions left unwrapped beside existing wiki links', () => {
+    const prepared = '[[Diệp Thiên Dật]] gap Diệp Thiên Dật.';
+    const diepMap = [{ name: 'Diệp Thiên Dật' }];
     const detected = detectWikiLinkOptOutsFromPlainText(
       prepared,
-      map,
+      diepMap,
       autoWrapWikiLinksByEntityMapWithCount
     );
-    expect(detected.length).toBeGreaterThan(0);
+    expect(detected).toHaveLength(0);
     const { text } = applyWikiLinkOptOutsForSave({
       savedInfo: prepared,
       preparedText: prepared,
       wikiLinkOptOuts: [],
-      entityMap: map,
+      entityMap: diepMap,
       autoWrapWikiLinksByEntityMapWithCount,
+      autoWrapOnSave: true,
+    });
+    expect(text).toBe('[[Diệp Thiên Dật]] gap [[Diệp Thiên Dật]].');
+  });
+
+  it('detects opt-out when plain surface differs from the card title (lowercase mention)', () => {
+    const prepared = 'The gioi hong lau mong.';
+    const titleMap = [{ name: 'Hồng Lâu Mộng' }];
+    const detected = detectWikiLinkOptOutsFromPlainText(
+      prepared,
+      titleMap,
+      autoWrapWikiLinksByEntityMapWithCount
+    );
+    expect(detected).toHaveLength(0);
+    const { text } = applyWikiLinkOptOutsForSave({
+      savedInfo: prepared,
+      preparedText: prepared,
+      wikiLinkOptOuts: [],
+      entityMap: titleMap,
+      autoWrapWikiLinksByEntityMapWithCount,
+      autoWrapOnSave: true,
     });
     expect(text).toBe(prepared);
   });

@@ -84,11 +84,41 @@ describe('autoWrapWikiLinksByEntityMap', () => {
     expect(autoWrapWikiLinksByEntityMap(text, map)).toBe(text);
   });
 
-  it('wraps only the second mention when the same name repeats', () => {
+  it('wraps every mention when the same short name repeats', () => {
     const text = 'Cổ Minh Cổ Minh';
     const map = [{ name: 'Cổ Minh' }];
-    expect(autoWrapWikiLinksByEntityMap(text, map)).toBe('Cổ Minh [[Cổ Minh]]');
-    const twice = autoWrapWikiLinksByEntityMap('Cổ Minh [[Cổ Minh]]', map);
-    expect(twice).toBe('Cổ Minh [[Cổ Minh]]');
+    expect(autoWrapWikiLinksByEntityMap(text, map)).toBe('[[Cổ Minh]] [[Cổ Minh]]');
+    const twice = autoWrapWikiLinksByEntityMap('[[Cổ Minh]] [[Cổ Minh]]', map);
+    expect(twice).toBe('[[Cổ Minh]] [[Cổ Minh]]');
+  });
+
+  it('still wraps long three-word names even when followed by uppercase next token', () => {
+    const text = 'Diệp Thiên Dật Khẳng định đạo tâm bất diệt.';
+    const map = [{ name: 'Diệp Thiên Dật' }];
+    expect(autoWrapWikiLinksByEntityMap(text, map)).toBe('[[Diệp Thiên Dật]] Khẳng định đạo tâm bất diệt.');
+  });
+
+  it('does not skip wrapping when name variants could be ambiguous in lookup', () => {
+    const text = 'Diệp Thiên Dật phải tiếp nhận thân phận này.';
+    const map = [{ name: 'Diệp Thiên Dật' }, { name: 'Diệp Thiên dật' }];
+    expect(autoWrapWikiLinksByEntityMap(text, map)).toBe('[[Diệp Thiên Dật]] phải tiếp nhận thân phận này.');
+  });
+
+  it('wraps all mentions in a long protagonist paragraph', () => {
+    const text = [
+      'Nam chinh la Diệp Thiên Dật (hay thuong goi la Diệp Thiên), mot thanh nien tu Trái Đất.',
+      'Chu nhan ban dau cua co the ma Diệp Thiên Dật xuyen vao la mot thieu gia.',
+      'Sau khi xuyen qua, Diệp Thiên Dật phai tiep nhan than phan nay.',
+      'Diệp Thiên Dật la he thong thay doi ngau nhien moi tuan.',
+    ].join('\n');
+    const map = [{ name: 'Diệp Thiên Dật', entityName: 'Diệp Thiên Dật', dest: { entityId: 'mc-1' } }];
+    const out = autoWrapWikiLinksByEntityMap(text, map);
+    expect(out.match(/\[\[Diệp Thiên Dật\]\]/g)?.length).toBe(5);
+  });
+
+  it('wraps flexible whitespace and relaxed casing for long names', () => {
+    const text = 'gap  diệp   thiên   dật  trong doan.';
+    const map = [{ name: 'Diệp Thiên Dật' }];
+    expect(autoWrapWikiLinksByEntityMap(text, map)).toContain('[[Diệp Thiên Dật]]');
   });
 });

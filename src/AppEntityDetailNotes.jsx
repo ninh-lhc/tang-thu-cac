@@ -676,12 +676,13 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             if (latestNotesPrefs.autoCleanOnSave) savePipelineSteps.push('clean');
             if (latestNotesPrefs.autoWrapWikiOnSave) savePipelineSteps.push('link');
             if (latestNotesPrefs.autoAnalysisOnSave) savePipelineSteps.push('format');
+            const hasDraftChanges = rawDraft !== savedBaseline;
 
             let pipelineText = rawDraft;
-            if (savePipelineSteps.length > 0) {
+            if (savePipelineSteps.length > 0 && hasDraftChanges) {
               setIsAiPipelineRunning(true);
               setAiPipelineStep(null);
-              if (savePipelineSteps.includes('link') || savePipelineSteps.includes('format')) {
+              if (savePipelineSteps.includes('format')) {
                 setIsExtractingAI(true);
               }
               if (savePipelineSteps.includes('format')) {
@@ -694,6 +695,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
                 aiMode,
                 wikiLinkOptOuts: effectiveWikiLinkOptOuts,
                 subject: entityNotesSubject,
+                skipAi: true,
                 onProgress: ({ step, phase, text }) => {
                   if (phase === 'start') {
                     setAiPipelineStep(step);
@@ -714,7 +716,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               }
               setIsAiPipelineRunning(false);
               setAiPipelineStep(null);
-              setIsExtractingAI(false);
+              if (savePipelineSteps.includes('format')) setIsExtractingAI(false);
               setIsFormattingStructure(false);
             }
 

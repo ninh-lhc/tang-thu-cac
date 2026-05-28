@@ -105,16 +105,36 @@ export function peekWikiContinuationAfterName(text, end) {
  * Không match tên thẻ ngắn khi văn bản là cụm danh từ riêng dài hơn (vd. thẻ «Hồng Lâu» trong «Hồng Lâu Mộng»).
  * Chỉ áp khi từ ngay sau có chữ cái HOA đầu (gợi ý tiếp tục tên riêng), không chặn «Hồng Lâu đã…».
  */
-export function isWikiSurfacePrefixOfLongerProperPhrase(text, start, end, entityName) {
+export function isWikiSurfacePrefixOfLongerProperPhrase(text, start, end, entityName, allNames = []) {
   const source = String(text || '');
   const matched = source.slice(start, end);
   const name = String(entityName || '').trim();
   if (!name || matched.length !== name.length) return false;
   if (matched.toLowerCase() !== name.toLowerCase()) return false;
+  // Chỉ chặn với tên ngắn (1-2 từ) để giảm bỏ sót với tên nhân vật dài.
+  // Ví dụ: "Diệp Thiên Dật Khẳng định..." vẫn nên bọc [[Diệp Thiên Dật]].
+  if (name.split(/\s+/).filter(Boolean).length >= 3) return false;
 
   const cont = peekWikiContinuationAfterName(source, end);
   if (!cont?.token) return false;
+
+  const matchedNorm = normalizeWikiNameSurface(matched);
+  const contNorm = normalizeWikiNameSurface(cont.token);
+  // "Cổ Minh Cổ Minh" — không chặn lần lặp cùng tên.
+  if (contNorm && contNorm === matchedNorm) return false;
+
   if (!isUpperChar(cont.token[0])) return false;
+
+  const afterName = source.slice(end).replace(/^\s+/, '');
+  if (afterName.toLowerCase().startsWith(name.toLowerCase())) return false;
+
+  const extendedPlain = normalizeWikiNameSurface(source.slice(start, end + cont.spanLength));
+  for (const registered of allNames || []) {
+    const reg = String(registered || '').trim();
+    if (!reg || reg.length <= name.length) continue;
+    if (!reg.toLowerCase().startsWith(name.toLowerCase())) continue;
+    if (normalizeWikiNameSurface(reg) === extendedPlain) return true;
+  }
 
   const extended = source.slice(start, end + cont.spanLength).trim();
   return extended.length > name.length;

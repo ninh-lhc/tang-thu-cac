@@ -1,6 +1,8 @@
 /**
  * Ghi nhớ chỗ người dùng đã gỡ [[wiki]] — auto-wrap khi lưu sẽ không bọc lại cùng ngữ cảnh.
  */
+import { matchesWikiNameSurface } from './wikiNameSurface.js';
+
 const CONTEXT_LEN = 40;
 
 function safeString(value) {
@@ -262,7 +264,12 @@ export function detectWikiLinkOptOutsFromPlainText(preparedText, entityMap, auto
     const wikiEnd = wikiStart + match[0].length;
     const before = wrapped.slice(Math.max(0, wikiStart - CONTEXT_LEN), wikiStart);
     const after = wrapped.slice(wikiEnd, Math.min(wrapped.length, wikiEnd + CONTEXT_LEN));
-    if (findPlainAnchorWithContext(prepared, anchor, before, after) < 0) continue;
+    const plainIndex = findPlainAnchorWithContext(prepared, anchor, before, after);
+    if (plainIndex < 0) continue;
+    const plainSlice = prepared.slice(plainIndex, plainIndex + anchor.length);
+    // Chỉ opt-out khi bề mặt chữ plain khác thẻ (vd. chữ thường) — không chặn lần nhắc
+    // cùng tên chưa kịp bọc khi đoạn văn đã có chỗ [[...]] khác.
+    if (matchesWikiNameSurface(anchor, plainSlice)) continue;
     found.push({
       anchor,
       before: sourceSliceContextBefore(wrapped, wikiStart),

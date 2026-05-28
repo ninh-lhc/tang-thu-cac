@@ -3,15 +3,43 @@
  * Only wraps text outside existing [[...]] ranges.
  * Longer names are matched first to avoid overlap.
  */
-import { buildEntityNameLookup, resolveEntityLookup } from './entityWikiLookup.js';
 import { isWikiWrapOptedOut } from './wikiLinkOptOut.js';
 import {
   compareWikiNameSurfacePriority,
-  hasLongerRegisteredWikiNameAt,
   isWikiNameWordBoundary,
   isWikiSurfacePrefixOfLongerProperPhrase,
   matchesWikiNameSurface,
+  normalizeWikiNameSurface,
 } from './wikiNameSurface.js';
+
+function safeString(value) {
+  if (value == null || value === 'null' || value === 'undefined') return '';
+  return String(value);
+}
+
+function collapseSpaces(value) {
+  return safeString(value).replace(/\s+/g, ' ').trim();
+}
+
+function normalizeForMatch(value) {
+  return normalizeWikiNameSurface(collapseSpaces(value));
+}
+
+function tokenizeName(value) {
+  return normalizeForMatch(value).split(' ').filter(Boolean);
+}
+
+function tokenizeNameLiteral(value) {
+  return collapseSpaces(value).split(/\s+/).filter(Boolean);
+}
+
+function isUpperChar(ch) {
+  return /\p{Lu}/u.test(ch || '');
+}
+
+function escapeRegExp(value) {
+  return safeString(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 function collectProtectedRanges(text) {
   const ranges = [];
@@ -36,29 +64,228 @@ function rangeContaining(ranges, pos) {
   return null;
 }
 
-function normalizeNames(entityMap) {
-  const seen = new Set();
-  const out = [];
-  for (const item of entityMap || []) {
-    const name = String(item?.name || '').trim();
-    if (!name || name.length < 2) continue;
-    if (seen.has(name)) continue;
-    seen.add(name);
-    out.push(name);
+function rangesOverlap(a, b) {
+  return a.start < b.end && b.start < a.end;
+}
+
+/** Khớp cụm tên cho phép khoảng trắng linh hoạt giữa các từ. */
+function findFlexibleNameSpan(text, start, matchText) {
+  const source = safeString(text);
+  const needle = collapseSpaces(matchText);
+  if (!needle) return null;
+
+  const tokens = tokenizeNameLiteral(needle);
+  if (tokens.length === 0) return null;
+
+  let cursor = start;
+  while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+  const spanStart = cursor;
+
+  for (let t = 0; t < tokens.length; t += 1) {
+    while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+    const token = tokens[t];
+    const slice = source.slice(cursor);
+    const re = new RegExp(`^${escapeRegExp(token)}`, 'iu');
+    const hit = re.exec(slice);
+    if (!hit) return null;
+    cursor += hit[0].length;
   }
-  return out.sort(compareWikiNameSurfacePriority);
+
+  const spanEnd = cursor;
+  if (!isWikiNameWordBoundary(source, spanStart, spanEnd)) return null;
+  return { start: spanStart, end: spanEnd };
+}
+
+function countUpperTokensInLiteral(value) {
+  return tokenizeNameLiteral(value).filter((token) => isUpperChar(token[0])).length;
+}
+
+/**
+ * Tên 3+ từ: cho phép khớp không phân biệt hoa thường từng token.
+ * Tên 1–2 từ: giữ rule surface chặt để tránh bọc cụm thường ngữ.
+ */
+function matchesWrapCandidate(candidateText, sourceSlice, variantsByLower) {
+  const candidate = collapseSpaces(candidateText);
+  const source = collapseSpaces(sourceSlice);
+  if (!candidate || !source) return false;
+  if (matchesWikiNameSurface(candidate, source)) return true;
+
+  const candTokens = tokenizeName(candidate);
+  const srcTokens = tokenizeName(source);
+  if (candTokens.length !== srcTokens.length || candTokens.length === 0) return false;
+
+  for (let i = 0; i < candTokens.length; i += 1) {
+    if (candTokens[i].toLowerCase() !== srcTokens[i].toLowerCase()) return false;
+  }
+
+  const candUpper = countUpperTokensInLiteral(candidate);
+  const srcUpper = countUpperTokensInLiteral(source);
+
+  if (candTokens.length >= 3 && candUpper >= 2) {
+    return true;
+  }
+
+  const lower = candidate.toLowerCase();
+  const variants = variantsByLower.get(lower) || [];
+  if (variants.length === 1 && candTokens.length >= 2) {
+    if (candUpper === 0) return true;
+    if (srcUpper === 0) return false;
+    return matchesWikiNameSurface(candidate, source);
+  }
+
+  return false;
+}
+
+function buildWrapCandidates(entityMap) {
+  const byLower = new Map();
+  const byEntityId = new Map();
+
+  const register = (rawName, meta = {}) => {
+    const name = collapseSpaces(rawName);
+    if (!name || name.length < 2) return;
+    const lower = name.toLowerCase();
+    const entityId = meta?.dest?.entityId || meta?.entityId || '';
+    const canonical =
+      collapseSpaces(meta?.entityName) ||
+      collapseSpaces(meta?.name) ||
+      name;
+
+    if (!byLower.has(lower)) byLower.set(lower, []);
+    const bucket = byLower.get(lower);
+    const wrapAs = collapseSpaces(meta?.entityName) || collapseSpaces(meta?.name) || name;
+    if (!bucket.some((item) => item.matchText === name && item.wrapAs === wrapAs && item.entityId === entityId)) {
+      bucket.push({
+        matchText: name,
+        wrapAs,
+        lower,
+        entityId,
+        tokenCount: tokenizeName(name).length,
+      });
+    }
+
+    if (entityId) {
+      const entityBucket = byEntityId.get(entityId) || {
+        entityId,
+        canonical: canonical || name,
+        names: new Set(),
+      };
+      entityBucket.names.add(name);
+      if (!entityBucket.canonical || name.length > entityBucket.canonical.length) {
+        entityBucket.canonical = canonical || name;
+      }
+      byEntityId.set(entityId, entityBucket);
+    }
+  };
+
+  for (const item of entityMap || []) {
+    register(item?.name, item);
+    if (item?.entityName && item.entityName !== item?.name) {
+      register(item.entityName, item);
+    }
+  }
+
+  const reservedLower = new Set(byLower.keys());
+
+  for (const entity of byEntityId.values()) {
+    const names = [...entity.names].sort((a, b) => b.length - a.length);
+    const primary = names[0] || entity.canonical;
+    const primaryTokens = tokenizeNameLiteral(primary);
+    if (primaryTokens.length < 3) continue;
+
+    for (let take = 2; take < primaryTokens.length; take += 1) {
+      const prefix = primaryTokens.slice(0, take).join(' ');
+      const prefixLower = prefix.toLowerCase();
+      if (prefix.length < 4) continue;
+      if (reservedLower.has(prefixLower)) continue;
+      reservedLower.add(prefixLower);
+      register(prefix, {
+        name: prefix,
+        entityName: entity.canonical,
+        entityId: entity.entityId,
+        dest: { entityId: entity.entityId },
+      });
+    }
+  }
+
+  const candidates = [];
+  for (const variants of byLower.values()) {
+    for (const variant of variants) {
+      const entityMeta = variant.entityId ? byEntityId.get(variant.entityId) : null;
+      candidates.push({
+        ...variant,
+        wrapAs: entityMeta?.canonical || variant.wrapAs,
+      });
+    }
+  }
+
+  candidates.sort((a, b) => {
+    const lenDiff = b.matchText.length - a.matchText.length;
+    if (lenDiff !== 0) return lenDiff;
+    const tokenDiff = b.tokenCount - a.tokenCount;
+    if (tokenDiff !== 0) return tokenDiff;
+    return compareWikiNameSurfacePriority(b.matchText, a.matchText);
+  });
+
+  const allMatchTexts = candidates.map((item) => item.matchText);
+  return { candidates, variantsByLower: byLower, allMatchTexts };
+}
+
+function pickMatchAt(text, start, candidates, variantsByLower, allMatchTexts, optOuts) {
+  for (const candidate of candidates) {
+    const span = findFlexibleNameSpan(text, start, candidate.matchText);
+    if (!span) continue;
+
+    const sourceSlice = text.slice(span.start, span.end);
+    if (!matchesWrapCandidate(candidate.matchText, sourceSlice, variantsByLower)) continue;
+
+    if (
+      hasLongerRegisteredWikiNameAtFlexible(text, span.start, candidate.matchText, allMatchTexts, variantsByLower)
+    ) {
+      continue;
+    }
+
+    if (isWikiSurfacePrefixOfLongerProperPhrase(text, span.start, span.end, candidate.matchText, allMatchTexts)) {
+      continue;
+    }
+
+    if (isWikiWrapOptedOut(text, span.start, span.end, candidate.matchText, optOuts)) continue;
+
+    const surfaceMatch = matchesWikiNameSurface(candidate.matchText, sourceSlice);
+    return {
+      start: span.start,
+      end: span.end,
+      wrapAs: candidate.wrapAs,
+      matchedText: sourceSlice,
+      useCanonicalLabel: !surfaceMatch && candidate.tokenCount >= 3,
+    };
+  }
+  return null;
+}
+
+function hasLongerRegisteredWikiNameAtFlexible(text, start, matchedName, allNames, variantsByLower) {
+  const source = safeString(text);
+  const base = collapseSpaces(matchedName);
+  if (!base) return false;
+
+  for (const name of allNames || []) {
+    const candidate = collapseSpaces(name);
+    if (!candidate || candidate.length <= base.length) continue;
+    const span = findFlexibleNameSpan(source, start, candidate);
+    if (!span || span.start !== start) continue;
+    const slice = source.slice(span.start, span.end);
+    if (!matchesWrapCandidate(candidate, slice, variantsByLower)) continue;
+    return true;
+  }
+  return false;
 }
 
 export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap, options = {}) {
   if (typeof text !== 'string' || !text) return { text: String(text || ''), count: 0 };
-  const names = normalizeNames(entityMap);
-  if (names.length === 0) return { text, count: 0 };
-  const lookup = buildEntityNameLookup(entityMap);
+  const { candidates, variantsByLower, allMatchTexts } = buildWrapCandidates(entityMap);
+  if (candidates.length === 0) return { text, count: 0 };
   const optOuts = Array.isArray(options?.optOuts) ? options.optOuts : [];
 
   const protectedRanges = collectProtectedRanges(text);
-  const sourceLower = text.toLowerCase();
-  const candidates = names.map((name) => ({ raw: name, lower: name.toLowerCase() }));
   const matches = [];
 
   let i = 0;
@@ -69,39 +296,50 @@ export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap, options =
       continue;
     }
 
-    let picked = null;
-    for (const candidate of candidates) {
-      if (!sourceLower.startsWith(candidate.lower, i)) continue;
-      const end = i + candidate.raw.length;
-      if (!isWikiNameWordBoundary(text, i, end)) continue;
-      if (!matchesWikiNameSurface(candidate.raw, text.slice(i, end))) continue;
-      if (!resolveEntityLookup(lookup, text.slice(i, end))) continue;
-      if (hasLongerRegisteredWikiNameAt(text, i, candidate.raw, names)) continue;
-      if (isWikiSurfacePrefixOfLongerProperPhrase(text, i, end, candidate.raw)) continue;
-      if (isWikiWrapOptedOut(text, i, end, candidate.raw, optOuts)) continue;
-      picked = { start: i, end };
-      break;
-    }
-
+    const picked = pickMatchAt(text, i, candidates, variantsByLower, allMatchTexts, optOuts);
     if (!picked) {
       i += 1;
       continue;
     }
-    matches.push(picked);
-    i = picked.end;
+
+    const overlap = matches.some((range) => rangesOverlap(range, picked));
+    if (!overlap) {
+      matches.push(picked);
+      i = Math.max(i + 1, picked.end);
+    } else {
+      i += 1;
+    }
   }
 
   if (matches.length === 0) return { text, count: 0 };
 
+  matches.sort((a, b) => a.start - b.start || b.end - a.end - (a.end - a.start));
+  const merged = [];
+  for (const match of matches) {
+    const last = merged[merged.length - 1];
+    if (!last || !rangesOverlap(last, match)) {
+      merged.push(match);
+      continue;
+    }
+    if (match.end - match.start > last.end - last.start) {
+      merged[merged.length - 1] = match;
+    }
+  }
+
   let out = '';
   let cursor = 0;
-  for (const range of matches) {
+  for (const range of merged) {
     out += text.slice(cursor, range.start);
-    out += `[[${text.slice(range.start, range.end)}]]`;
+    const matched = collapseSpaces(range.matchedText);
+    const canonical = collapseSpaces(range.wrapAs);
+    let label = matched || canonical;
+    if (range.useCanonicalLabel && canonical) label = canonical;
+    else if (canonical && matched && matched.length < canonical.length) label = canonical;
+    out += `[[${label}]]`;
     cursor = range.end;
   }
   out += text.slice(cursor);
-  return { text: out, count: matches.length };
+  return { text: out, count: merged.length };
 }
 
 export function autoWrapWikiLinksByEntityMap(text, entityMap, options = {}) {

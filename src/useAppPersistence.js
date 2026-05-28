@@ -72,6 +72,14 @@ function describeNovelSyncFailure(err) {
   return msg ? ` ${msg}` : '';
 }
 
+function isFsPermissionWriteError(err) {
+  if (!err) return false;
+  const name = String(err?.name || '');
+  if (name === 'NotAllowedError' || name === 'SecurityError') return true;
+  const msgLower = String(err?.message || '').toLowerCase();
+  return msgLower.includes('modifications are not allowed') || msgLower.includes('createwritable');
+}
+
 /**
  * Handle thư mục khôi phục từ IndexedDB thường queryPermission = "prompt" — createWritable() sẽ lỗi
  * cho đến khi requestPermission({ mode: 'readwrite' }) được gọi (ưu tiên trong cùng cử chỉ user).
@@ -404,6 +412,18 @@ export function useAppPersistence({
         return { ok: true, mode: 'directory' };
       } catch (e1) {
         console.warn('[TTC] syncNovel tryAtomic failed:', e1);
+        if (isFsPermissionWriteError(e1)) {
+          const retryPerm = await ensureDirectoryWritePermission(rootDir);
+          if (!retryPerm.ok) {
+            setTimeout(() => {
+              showToast(
+                `Lưu «${novelData.title || novelData.id || ''}» bị từ chối quyền ghi. Mở Thư viện → **Lưu Trữ / Kết nối thư mục** và chấp nhận quyền chỉnh sửa, rồi lưu lại.`,
+                'warning'
+              );
+            }, 0);
+            return { ok: false, mode: 'directory', reason: 'permission_denied_after_retry', error: e1 };
+          }
+        }
         try {
           await tryDirect();
           lastNovelManifestJsonByIdRef.current.set(novelToWrite.id, jsonStr);
@@ -411,6 +431,15 @@ export function useAppPersistence({
           return { ok: true, mode: 'directory', recoveredFrom: 'tryDirect' };
         } catch (e2) {
           console.error('[TTC] syncNovel tryDirect failed:', e2);
+          if (isFsPermissionWriteError(e2)) {
+            setTimeout(() => {
+              showToast(
+                `Trình duyệt từ chối ghi «${novelData.title || novelData.id || ''}». Hãy kết nối lại thư mục truyện và cấp quyền chỉnh sửa (read/write).`,
+                'warning'
+              );
+            }, 0);
+            return { ok: false, mode: 'directory', reason: 'permission_denied_write', error: e2 };
+          }
           setTimeout(() => {
             showToast(
               `Lỗi đồng bộ truyện ${novelData.title || novelData.id || ''}!${describeNovelSyncFailure(e2)}`,

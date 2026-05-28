@@ -42,6 +42,34 @@ function safeString(value) {
   return String(value);
 }
 
+function normalizeWikiAnchor(value) {
+  return safeString(value).trim().toLowerCase();
+}
+
+function collectWikiAnchorSet(text) {
+  const out = new Set();
+  const re = /\[\[([\s\S]*?)\]\]/g;
+  const source = safeString(text);
+  let match;
+  while ((match = re.exec(source)) !== null) {
+    const key = normalizeWikiAnchor(match[1]);
+    if (key) out.add(key);
+  }
+  return out;
+}
+
+function stripWikiWrappersNotInSet(text, allowedAnchors) {
+  const source = safeString(text);
+  if (!(allowedAnchors instanceof Set) || allowedAnchors.size === 0) {
+    return source.replace(/\[\[([\s\S]*?)\]\]/g, (_full, inner) => safeString(inner).trim());
+  }
+  return source.replace(/\[\[([\s\S]*?)\]\]/g, (full, inner) => {
+    const key = normalizeWikiAnchor(inner);
+    if (!key) return full;
+    return allowedAnchors.has(key) ? full : safeString(inner).trim();
+  });
+}
+
 /** Bước 1: chuẩn hoá khoảng trắng / định dạng nhẹ (local, không gọi AI). */
 export function runNotesCleanStep(sourceText) {
   const before = safeString(sourceText);
@@ -57,16 +85,35 @@ export function getNotesAiPipelineStepLabel(step) {
 /** Bước 2: bọc [[link]] (local rồi AI nếu có key). */
 export async function runNotesLinkStep(
   sourceText,
-  { entityMap, geminiApiKeys, aiMode = 'standard', wikiLinkOptOuts = null } = {}
+  {
+    entityMap,
+    geminiApiKeys,
+    aiMode = 'standard',
+    wikiLinkOptOuts = null,
+    skipAi = false,
+  } = {}
 ) {
   let text = safeString(sourceText);
   let localCount = 0;
-  const localWrap = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, {
-    optOuts: Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [],
-  });
-  if (localWrap.text !== text) {
+  // Chạy local-wrap nhiều lượt cho đến khi ổn định để giảm bỏ sót ở pass đầu.
+  for (let pass = 0; pass < 8; pass += 1) {
+    const localWrap = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, {
+      optOuts: Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [],
+    });
+    if (localWrap.text === text || localWrap.count <= 0) break;
     text = localWrap.text;
-    localCount = localWrap.count;
+    localCount += localWrap.count;
+  }
+
+  if (skipAi) {
+    return {
+      text,
+      changed: text !== sourceText,
+      localCount,
+      aiApplied: false,
+      skippedAi: true,
+      reason: 'skip_ai',
+    };
   }
 
   const keys = Array.isArray(geminiApiKeys) ? geminiApiKeys : [];
@@ -104,7 +151,7 @@ export async function runNotesLinkStep(
 /** Bước 3: AI dàn khung markdown. */
 export async function runNotesFormatStep(
   sourceText,
-  { geminiApiKeys, aiMode = 'standard', subject = 'đối tượng' } = {}
+  { geminiApiKeys, aiMode = 'standard', subject = 'đối tượng', keepExistingWikiOnly = true } = {}
 ) {
   const normalized = safeString(sourceText);
   if (!normalized.trim()) {
@@ -138,7 +185,10 @@ export async function runNotesFormatStep(
   if (formatted.length < normalized.length * 0.45) {
     return { text: normalized, applied: false, reason: 'too_short' };
   }
-  const finalText = fixEntityNotesStructureOnly(formatted);
+  const finalStructured = fixEntityNotesStructureOnly(formatted);
+  const finalText = keepExistingWikiOnly
+    ? stripWikiWrappersNotInSet(finalStructured, collectWikiAnchorSet(normalized))
+    : finalStructured;
   if (finalText === normalized) {
     return { text: normalized, applied: false, reason: 'unchanged' };
   }
