@@ -66,24 +66,12 @@ describe('AppEntityDetailNotes', () => {
     const props = createProps();
     render(<AppEntityDetailNotes {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Chuẩn hoá AI/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Bọc link wiki/i }));
 
     await vi.waitFor(() => {
       expect(screen.getByRole('textbox').value).toBe('[[Linh Gioi Chau]] xuat hien giua troi.');
     });
     expect(props.setIsExtractingAI).toHaveBeenCalled();
-  });
-
-  it('inserts the long-form analysis scaffold from the toolbar', () => {
-    const props = createProps();
-    render(<AppEntityDetailNotes {...props} />);
-
-    fireEvent.click(screen.getByRole('button', { name: /Khung phân tích/i }));
-
-    expect(screen.getByRole('textbox').value).toContain('[[Linh Gioi Chau]]');
-    expect(screen.getByRole('textbox').value).toContain('**1.');
-    expect(screen.getByRole('textbox').value).toContain('**2.');
-    expect(screen.getByRole('textbox').value).toContain('**3.');
   });
 
   it('wraps selected text with the chosen color markup', () => {
@@ -238,12 +226,14 @@ describe('AppEntityDetailNotes', () => {
     });
     render(<AppEntityDetailNotes {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Chuẩn hoá AI/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Tự làm sạch/i }));
 
     await vi.waitFor(() => {
       expect(screen.getByRole('textbox').value).toBe('## Muc lon\n\n1. Y dau bo sung them');
     });
-    expect(props.showToast).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(props.showToast).toHaveBeenCalled();
+    });
   });
 
   it('auto-normalizes notes before saving when auto-clean is enabled', () => {
@@ -258,12 +248,14 @@ describe('AppEntityDetailNotes', () => {
 
     fireEvent.click(document.getElementById('save-entity-btn'));
 
-    expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
-      '## Muc lon\n\n1. Y dau bo sung them',
-      expect.objectContaining({ wikiLinkOptOuts: [] })
-    );
-    expect(props.showToast).toHaveBeenCalledTimes(1);
-    expect(String(props.showToast.mock.calls[0][0]).toLowerCase()).toContain('lưu');
+    return vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        '## Muc lon\n\n1. Y dau bo sung them',
+        expect.objectContaining({ wikiLinkOptOuts: [] })
+      );
+      expect(props.showToast).toHaveBeenCalled();
+      expect(String(props.showToast.mock.calls.at(-1)?.[0] || '').toLowerCase()).toContain('lưu');
+    });
   });
 
   it('propagates manual phrase formatting to matching phrases before saving', () => {
@@ -278,13 +270,15 @@ describe('AppEntityDetailNotes', () => {
 
     fireEvent.click(document.getElementById('save-entity-btn'));
 
-    expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
-      '## 2. Ban chat suc manh (**Ton Luc**)\n\n**Ton Luc** nam o **Ton Luc**.',
-      expect.objectContaining({ wikiLinkOptOuts: [] })
-    );
-    expect(props.showToast).toHaveBeenCalledTimes(1);
-    expect(String(props.showToast.mock.calls[0][0])).toContain('2');
-    expect(String(props.showToast.mock.calls[0][0]).toLowerCase()).toContain('trùng');
+    return vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        '## 2. Ban chat suc manh (**Ton Luc**)\n\n**Ton Luc** nam o **Ton Luc**.',
+        expect.objectContaining({ wikiLinkOptOuts: [] })
+      );
+      const toastMsg = String(props.showToast.mock.calls.at(-1)?.[0] || '');
+      expect(toastMsg).toContain('2');
+      expect(toastMsg.toLowerCase()).toContain('trùng');
+    });
   });
 
   it('lets diagnostics jump from preview toc back to the editor line', () => {

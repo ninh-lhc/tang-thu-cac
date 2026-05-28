@@ -14,17 +14,44 @@ import {
   collectEntityNotesDiagnostics,
   fixEntityNotesStructureOnly,
 } from './entityNotesDiagnostics.js';
+import { cleanupEntityNotesText } from './entityNotesTextCleanup.js';
+
+export const NOTES_AI_PIPELINE_STEPS = ['clean', 'link', 'format'];
+
+const STEP_LABELS = {
+  clean: 'làm sạch',
+  link: 'bọc [[link]]',
+  format: 'dàn khung AI',
+};
+
+function yieldToMain() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      setTimeout(resolve, 0);
+    });
+  });
+}
+
+function normalizeSteps(steps) {
+  const requested = Array.isArray(steps) ? steps : NOTES_AI_PIPELINE_STEPS;
+  return NOTES_AI_PIPELINE_STEPS.filter((step) => requested.includes(step));
+}
 
 function safeString(value) {
   if (value == null || value === 'null' || value === 'undefined') return '';
   return String(value);
 }
 
-/** Bước 1: chuẩn hoá khoảng trắng / định dạng nhẹ. */
+/** Bước 1: chuẩn hoá khoảng trắng / định dạng nhẹ (local, không gọi AI). */
 export function runNotesCleanStep(sourceText) {
   const before = safeString(sourceText);
-  const text = fixEntityNotesStructureOnly(before);
+  let text = cleanupEntityNotesText(before);
+  text = fixEntityNotesStructureOnly(text);
   return { text, changed: text !== before };
+}
+
+export function getNotesAiPipelineStepLabel(step) {
+  return STEP_LABELS[step] || safeString(step);
 }
 
 /** Bước 2: bọc [[link]] (local rồi AI nếu có key). */
@@ -122,45 +149,78 @@ export async function runNotesFormatStep(
  * Chạy cả 3 bước; trả text cuối và tóm tắt cho toast.
  */
 export async function runNotesAiPipeline(sourceText, options = {}) {
-  const steps = [];
+  const {
+    steps: requestedSteps = NOTES_AI_PIPELINE_STEPS,
+    onProgress = null,
+  } = options;
+  const stepsRun = [];
+  const stepIds = normalizeSteps(requestedSteps);
   let text = safeString(sourceText);
   if (!text.trim()) {
-    return { text, steps, ok: false, reason: 'empty' };
+    return { text, steps: stepsRun, ok: false, reason: 'empty' };
   }
 
-  const clean = runNotesCleanStep(text);
-  text = clean.text;
-  if (clean.changed) steps.push('làm sạch');
+  let linkSkippedAi = false;
+  let formatSkippedAi = false;
+
+  const notify = async (step, phase) => {
+    if (typeof onProgress === 'function') {
+      onProgress({ step, phase, text });
+    }
+    if (phase === 'done') {
+      await yieldToMain();
+    }
+  };
 
   try {
-    const link = await runNotesLinkStep(text, options);
-    text = link.text;
-    if (link.changed) {
-      if (link.aiApplied) steps.push('AI link');
-      else if (link.localCount > 0) steps.push('link');
+    if (stepIds.includes('clean')) {
+      await notify('clean', 'start');
+      const clean = runNotesCleanStep(text);
+      text = clean.text;
+      if (clean.changed) stepsRun.push('làm sạch');
+      await notify('clean', 'done');
     }
 
-    const format = await runNotesFormatStep(text, options);
-    text = format.text;
-    if (format.applied) steps.push('dàn khung');
+    if (stepIds.includes('link')) {
+      await notify('link', 'start');
+      const link = await runNotesLinkStep(text, options);
+      text = link.text;
+      linkSkippedAi = Boolean(link.skippedAi);
+      if (link.changed) {
+        if (link.aiApplied) stepsRun.push('AI link');
+        else if (link.localCount > 0) stepsRun.push('link');
+      }
+      await notify('link', 'done');
+    }
+
+    if (stepIds.includes('format')) {
+      await notify('format', 'start');
+      const format = await runNotesFormatStep(text, options);
+      text = format.text;
+      formatSkippedAi = Boolean(format.skippedAi);
+      if (format.applied) stepsRun.push('dàn khung');
+      await notify('format', 'done');
+    }
 
     const remainingWarnings = collectEntityNotesDiagnostics(text);
 
     return {
       text,
-      steps,
+      steps: stepsRun,
       ok: true,
-      linkSkippedAi: Boolean(link.skippedAi),
-      formatSkippedAi: Boolean(format.skippedAi),
+      linkSkippedAi,
+      formatSkippedAi,
       remainingWarningCount: remainingWarnings.length,
+      ranSteps: stepIds,
     };
   } catch (error) {
     return {
       text,
-      steps,
+      steps: stepsRun,
       ok: false,
       error: mapGeminiErrorToUserMessage(error),
       rawError: error,
+      ranSteps: stepIds,
     };
   }
 }

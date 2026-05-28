@@ -7,6 +7,7 @@ const FONT_KEY = 'tangthu_entity_notes_font_v1';
 const SIZE_KEY = 'tangthu_entity_notes_size_px_v1';
 const AUTO_CLEAN_ON_SAVE_KEY = 'tangthu_entity_notes_auto_clean_on_save_v1';
 const AUTO_WRAP_WIKI_ON_SAVE_KEY = 'tangthu_entity_notes_auto_wrap_wiki_on_save_v1';
+const AUTO_ANALYSIS_ON_SAVE_KEY = 'tangthu_entity_notes_auto_analysis_on_save_v1';
 
 export const ENTITY_NOTES_FONT_OPTIONS = [
   { id: 'times', label: 'Times New Roman', stack: '"Times New Roman", Times, ui-serif, serif' },
@@ -35,6 +36,7 @@ const DEFAULT_PREFS = Object.freeze({
   sizePx: DEFAULT_SIZE,
   autoCleanOnSave: true,
   autoWrapWikiOnSave: false,
+  autoAnalysisOnSave: false,
 });
 
 let cachedPrefs = DEFAULT_PREFS;
@@ -47,7 +49,9 @@ function readPrefsFromStorage() {
   const autoCleanOnSave = rawAutoClean == null ? true : rawAutoClean !== '0';
   const rawAutoWrapWiki = localStorage.getItem(AUTO_WRAP_WIKI_ON_SAVE_KEY);
   const autoWrapWikiOnSave = rawAutoWrapWiki === '1';
-  return { fontKey, sizePx, autoCleanOnSave, autoWrapWikiOnSave };
+  const rawAutoAnalysis = localStorage.getItem(AUTO_ANALYSIS_ON_SAVE_KEY);
+  const autoAnalysisOnSave = rawAutoAnalysis === '1';
+  return { fontKey, sizePx, autoCleanOnSave, autoWrapWikiOnSave, autoAnalysisOnSave };
 }
 
 /**
@@ -65,7 +69,8 @@ export function getEntityNotesPrefs() {
     cachedPrefs.fontKey === next.fontKey &&
     cachedPrefs.sizePx === next.sizePx &&
     cachedPrefs.autoCleanOnSave === next.autoCleanOnSave &&
-    cachedPrefs.autoWrapWikiOnSave === next.autoWrapWikiOnSave
+    cachedPrefs.autoWrapWikiOnSave === next.autoWrapWikiOnSave &&
+    cachedPrefs.autoAnalysisOnSave === next.autoAnalysisOnSave
   ) {
     return cachedPrefs;
   }
@@ -86,6 +91,9 @@ export function setEntityNotesPrefs(partial) {
     }
     if (partial.autoWrapWikiOnSave != null) {
       localStorage.setItem(AUTO_WRAP_WIKI_ON_SAVE_KEY, partial.autoWrapWikiOnSave ? '1' : '0');
+    }
+    if (partial.autoAnalysisOnSave != null) {
+      localStorage.setItem(AUTO_ANALYSIS_ON_SAVE_KEY, partial.autoAnalysisOnSave ? '1' : '0');
     }
   } catch {
     /* bỏ qua — vẫn báo subscriber để UI đồng bộ cache */

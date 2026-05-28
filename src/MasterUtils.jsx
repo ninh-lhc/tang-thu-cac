@@ -1577,6 +1577,43 @@ export const resolveEntityNotesBackspace = (text, selStart, selEnd) => {
   };
 };
 
+function resolvePreviousGraphemeStart(text, caret) {
+  const source = safeString(text);
+  const end = Math.max(0, Math.min(Number(caret) || 0, source.length));
+  if (end <= 0) return 0;
+  if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
+    const segmenter = new Intl.Segmenter('vi', { granularity: 'grapheme' });
+    let previous = 0;
+    for (const part of segmenter.segment(source)) {
+      const idx = Number(part?.index) || 0;
+      if (idx >= end) break;
+      previous = idx;
+    }
+    return previous;
+  }
+  const units = Array.from(source.slice(0, end));
+  if (units.length === 0) return 0;
+  return end - units.at(-1).length;
+}
+
+/**
+ * Backspace an toàn trong [[wiki]]: xóa đúng 1 grapheme trước caret
+ * để tránh trình duyệt "ăn" lệch ký tự khi văn bản đang tô highlight lớp dưới.
+ */
+export const resolveEntityNotesWikiBackspace = (text, selStart, selEnd) => {
+  if (selStart !== selEnd) return null;
+  const caret = Math.max(0, Number(selStart) || 0);
+  if (caret <= 0) return null;
+  if (!isCaretInsideWikiLink(text, caret)) return null;
+  const start = resolvePreviousGraphemeStart(text, caret);
+  if (start >= caret) return null;
+  return {
+    newText: safeString(text).slice(0, start) + safeString(text).slice(caret),
+    selStart: start,
+    selEnd: start,
+  };
+};
+
 export const resolveEntityNotesTabIndent = (text, selStart, selEnd, { outdent = false } = {}) => {
   const source = safeString(text);
   const segmentStart = source.lastIndexOf('\n', Math.max(0, selStart - 1)) + 1;

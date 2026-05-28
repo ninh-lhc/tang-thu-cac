@@ -42,6 +42,7 @@ import {
   getEntityNotesToolbarState,
   resolveEntityNotesBackspace,
   resolveEntityNotesLineBreak,
+  resolveEntityNotesWikiBackspace,
   resolveEntityNotesTabIndent,
   suggestWikiLinkSpotsWithAI,
   truncateForAI,
@@ -162,33 +163,6 @@ const ENTITY_NOTES_TOOL_GROUPS = [
 const DEFAULT_ENTITY_NOTES_COLOR = '#c084fc';
 const ENTITY_NOTES_COLOR_PLACEHOLDER = '\u0111o\u1ea1n c\u1ea7n t\u00f4 m\u00e0u';
 
-const stripBracketedSubject = (rawSubject) =>
-  safeString(rawSubject).trim().replace(/^\[\[/, '').replace(/\]\]$/, '');
-
-const buildEntityNotesAnalysisTemplate = (subject) => {
-  const safeSubject = stripBracketedSubject(subject) || '\u0111\u1ed1i t\u01b0\u1ee3ng';
-  return [
-    `D\u01b0\u1edbi \u0111\u00e2y l\u00e0 chi ti\u1ebft tr\u00edch xu\u1ea5t v\u1ec1 [[${safeSubject}]]:`,
-    '',
-    `**1. Kh\u00e1i qu\u00e1t v\u00e0 \u0111\u1ecbnh v\u1ecb**`,
-    '',
-    `- **\u0110\u1ecbnh ngh\u0129a / ph\u1ea1m vi:** `,
-    `- **V\u1ecb tr\u00ed trong b\u1ed1i c\u1ea3nh l\u1edbn:** `,
-    '',
-    `**2. C\u1ea5u tr\u00fac v\u00e0 ph\u00e2n t\u1ea7ng**`,
-    '',
-    `- **C\u00e1c t\u1ea7ng / nh\u00e1nh ch\u00ednh:** `,
-    `- **\u0110i\u1ec3m kh\u00e1c bi\u1ec7t then ch\u1ed1t:** `,
-    '',
-    `**3. T\u00e1c \u0111\u1ed9ng v\u00e0 li\u00ean h\u1ec7**`,
-    '',
-    `- **\u1ea2nh h\u01b0\u1edfng n\u1ed5i b\u1eadt:** `,
-    `- **Li\u00ean h\u1ec7 \u0111\u00e1ng ch\u00fa \u00fd:** `,
-    '',
-    `> T\u1ed5ng k\u1ebft ng\u1eafn: `,
-  ].join('\n');
-};
-
 export const MarkdownToolbar = ({
   editorId,
   onInsertImage,
@@ -203,14 +177,14 @@ export const MarkdownToolbar = ({
   notesFontSizePx,
   onNotesFontKey,
   onNotesFontSizePx,
-  entityNotesSubject = '',
   entityNotesToolbarState = {},
   entityNotesTemplateProfile = null,
   notesAutoCleanOnSave = true,
   onNotesAutoCleanOnSave,
   notesAutoWrapWikiOnSave = false,
   onNotesAutoWrapWikiOnSave,
-  onAiFormatStructure,
+  notesAutoAnalysisOnSave = false,
+  onNotesAutoAnalysisOnSave,
 }) => {
   const sync = onEditorContentChange;
   const tb = (before, after) => () => handleToolbarClick(before, after, editorId, sync);
@@ -219,15 +193,6 @@ export const MarkdownToolbar = ({
   const [customTextColor, setCustomTextColor] = useState(DEFAULT_ENTITY_NOTES_COLOR);
   const [entityNotesPanel, setEntityNotesPanel] = useState('compose');
   const applyColor = () => handleToolbarApplyColor(customTextColor, editorId, sync, ENTITY_NOTES_COLOR_PLACEHOLDER);
-  const insertEntityNotesTemplate = () => {
-    const textarea = document.getElementById(editorId);
-    const selectedText =
-      textarea && textarea.selectionStart !== textarea.selectionEnd
-        ? textarea.value.substring(textarea.selectionStart, textarea.selectionEnd)
-        : '';
-    const templateText = buildEntityNotesAnalysisTemplate(selectedText || entityNotesSubject);
-    handleToolbarInsertText(templateText, editorId, sync);
-  };
   const insertSemanticTemplate = (templateText) => () =>
     handleToolbarInsertText(`${templateText}\n\n`, editorId, sync);
   const insertLabelValue = (lineText) => () =>
@@ -266,51 +231,6 @@ export const MarkdownToolbar = ({
     if (entityNotesPanel === 'compose') {
       return (
         <>
-          {onNotesFontKey && onNotesFontSizePx != null && (
-            <>
-              <label className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-[11px] text-slate-300">
-                <span className="font-bold uppercase tracking-wider text-slate-500">Font</span>
-                <select
-                  value={notesFontKey}
-                  onChange={(e) => onNotesFontKey(e.target.value)}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  className="max-w-[190px] bg-transparent text-slate-100 outline-none"
-                  style={{ fontFamily: ENTITY_NOTES_FONT_OPTIONS.find((o) => o.id === notesFontKey)?.stack }}
-                >
-                  {ENTITY_NOTES_FONT_OPTIONS.map((o) => (
-                    <option key={o.id} value={o.id} style={{ fontFamily: o.stack }}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-[11px] text-slate-300">
-                <span className="font-bold uppercase tracking-wider text-slate-500">Cỡ</span>
-                <select
-                  value={String(notesFontSizePx)}
-                  onChange={(e) => onNotesFontSizePx(Number(e.target.value))}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  className="w-14 bg-transparent text-center font-mono text-slate-100 outline-none"
-                >
-                  {ENTITY_NOTES_FONT_SIZE_OPTIONS.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </>
-          )}
-          <button
-            type="button"
-            onMouseDown={preventToolbarFocusSteal}
-            onClick={insertEntityNotesTemplate}
-            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-violet-800/50 bg-violet-950/35 px-3 py-1.5 text-[11px] font-semibold text-violet-200 transition-colors hover:border-violet-600/60 hover:bg-violet-900/35"
-            title={ENTITY_NOTES_LABELS.templateTitle}
-          >
-            <Sparkles size={13} />
-            {ENTITY_NOTES_LABELS.templateButton}
-          </button>
           {onNotesAutoCleanOnSave && (
             <button
               type="button"
@@ -333,16 +253,16 @@ export const MarkdownToolbar = ({
               {notesAutoWrapWikiOnSave ? 'Tự bọc wiki' : 'Không bọc wiki'}
             </button>
           )}
-          {onAiFormatStructure && (
+          {onNotesAutoAnalysisOnSave && (
             <button
               type="button"
               onMouseDown={preventToolbarFocusSteal}
-              onClick={onAiFormatStructure}
-              className={getChipClass(false, 'amber')}
-              title="AI chỉ dàn lại bố cục: tiêu đề, mục, bullet, callout"
+              onClick={() => onNotesAutoAnalysisOnSave(!notesAutoAnalysisOnSave)}
+              className={getChipClass(Boolean(notesAutoAnalysisOnSave), 'amber')}
+              title="Bật để AI dàn lại khung phân tích khi bấm lưu"
             >
               <Sparkles size={13} />
-              AI dàn khung
+              {notesAutoAnalysisOnSave ? 'Khung phân tích' : 'Không dàn khung'}
             </button>
           )}
         </>
@@ -730,6 +650,42 @@ export const MarkdownToolbar = ({
                 </button>
               );
             })}
+            {onNotesFontKey && onNotesFontSizePx != null && (
+              <>
+                <div className="mx-1 h-6 w-px shrink-0 bg-slate-800" />
+                <label className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 text-[11px] text-slate-300">
+                  <span className="font-bold uppercase tracking-wider text-slate-500">Font</span>
+                  <select
+                    value={notesFontKey}
+                    onChange={(e) => onNotesFontKey(e.target.value)}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="max-w-[180px] bg-transparent text-slate-100 outline-none"
+                    style={{ fontFamily: ENTITY_NOTES_FONT_OPTIONS.find((o) => o.id === notesFontKey)?.stack }}
+                  >
+                    {ENTITY_NOTES_FONT_OPTIONS.map((o) => (
+                      <option key={o.id} value={o.id} style={{ fontFamily: o.stack }}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 text-[11px] text-slate-300">
+                  <span className="font-bold uppercase tracking-wider text-slate-500">Cỡ</span>
+                  <select
+                    value={String(notesFontSizePx)}
+                    onChange={(e) => onNotesFontSizePx(Number(e.target.value))}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="w-14 bg-transparent text-center font-mono text-slate-100 outline-none"
+                  >
+                    {ENTITY_NOTES_FONT_SIZE_OPTIONS.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
           </div>
           <div className="mt-2 rounded-2xl border border-slate-800 bg-slate-950/55 px-3 py-2">
             <div className="overflow-x-auto custom-scrollbar">
@@ -3567,6 +3523,7 @@ export const ModalMilestone = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLinkingAi, setIsLinkingAi] = useState(false);
   const [isAiPipelineRunning, setIsAiPipelineRunning] = useState(false);
+  const [eventAiPipelineStep, setEventAiPipelineStep] = useState(null);
   const [isFormattingStructure, setIsFormattingStructure] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const eventTextareaRef = useRef(null);
@@ -3947,6 +3904,16 @@ export const ModalMilestone = ({
       return;
     }
     if (event.key === 'Backspace') {
+      const wikiBackspace = resolveEntityNotesWikiBackspace(
+        textarea.value,
+        textarea.selectionStart,
+        textarea.selectionEnd
+      );
+      if (wikiBackspace) {
+        event.preventDefault();
+        applyEditorMutation(wikiBackspace);
+        return;
+      }
       const nextState = resolveEntityNotesBackspace(
         textarea.value,
         textarea.selectionStart,
@@ -4094,20 +4061,33 @@ export const ModalMilestone = ({
       setIsFormattingStructure(false);
     }
   };
-  const handleRunAllEventAiTools = async () => {
+  const handleRunEventAiPipeline = async (pipelineSteps) => {
     if (!eventText.trim()) {
       toast('Chưa có nội dung để chuẩn hoá.', 'warning');
       return;
     }
+    const wantsAi = pipelineSteps.includes('link') || pipelineSteps.includes('format');
     setIsAiPipelineRunning(true);
-    setIsLinkingAi(true);
-    setIsFormattingStructure(true);
+    setEventAiPipelineStep(null);
+    if (wantsAi) {
+      setIsLinkingAi(true);
+      setIsFormattingStructure(pipelineSteps.includes('format'));
+    }
     try {
       const result = await runNotesAiPipeline(eventText, {
+        steps: pipelineSteps,
         entityMap,
         geminiApiKeys: geminiKeys,
         aiMode: geminiMode,
         subject: milestoneSubject,
+        onProgress: ({ step, phase, text }) => {
+          if (phase === 'start') {
+            setEventAiPipelineStep(step);
+            return;
+          }
+          setEventAiPipelineStep(null);
+          recordAndSetEventDraft(text);
+        },
       });
       if (result.text !== eventText) {
         recordAndSetEventDraft(result.text);
@@ -4124,7 +4104,7 @@ export const ModalMilestone = ({
         if (result.reason === 'empty') {
           toast('Chưa có nội dung để chuẩn hoá.', 'warning');
         } else {
-          toast(result.error || 'Lỗi khi chạy chuẩn hoá AI.', 'error');
+          toast(result.error || 'Lỗi khi chạy chuẩn hoá.', 'error');
         }
         return;
       }
@@ -4146,6 +4126,7 @@ export const ModalMilestone = ({
       }
     } finally {
       setIsAiPipelineRunning(false);
+      setEventAiPipelineStep(null);
       setIsLinkingAi(false);
       setIsFormattingStructure(false);
     }
@@ -4375,7 +4356,11 @@ export const ModalMilestone = ({
               </div>
 
               <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
-                <EntityNotesAiToolsMenu onRunAll={handleRunAllEventAiTools} isRunning={isAiPipelineRunning} />
+                <EntityNotesAiToolsMenu
+                  onRunPipeline={handleRunEventAiPipeline}
+                  isRunning={isAiPipelineRunning}
+                  runningStep={eventAiPipelineStep}
+                />
                 <button
                   type="button"
                   onClick={() => setIsSplitPreview((prev) => !prev)}
@@ -4413,6 +4398,10 @@ export const ModalMilestone = ({
                     notesAutoWrapWikiOnSave={notesTypo.autoWrapWikiOnSave}
                     onNotesAutoWrapWikiOnSave={(enabled) =>
                       setEntityNotesPrefs({ autoWrapWikiOnSave: enabled })
+                    }
+                    notesAutoAnalysisOnSave={notesTypo.autoAnalysisOnSave}
+                    onNotesAutoAnalysisOnSave={(enabled) =>
+                      setEntityNotesPrefs({ autoAnalysisOnSave: enabled })
                     }
                   />
                 </div>

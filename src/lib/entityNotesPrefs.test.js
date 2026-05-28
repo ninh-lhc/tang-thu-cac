@@ -33,11 +33,18 @@ describe('entityNotesPrefs', () => {
     expect(a.fontKey).toBe('times');
     expect(a.sizePx).toBe(16);
     expect(a.autoCleanOnSave).toBe(true);
-    setEntityNotesPrefs({ fontKey: 'verdana', sizePx: 12, autoCleanOnSave: false });
+    expect(a.autoAnalysisOnSave).toBe(false);
+    setEntityNotesPrefs({
+      fontKey: 'verdana',
+      sizePx: 12,
+      autoCleanOnSave: false,
+      autoAnalysisOnSave: true,
+    });
     const b = getEntityNotesPrefs();
     expect(b.fontKey).toBe('verdana');
     expect(b.sizePx).toBe(12);
     expect(b.autoCleanOnSave).toBe(false);
+    expect(b.autoAnalysisOnSave).toBe(true);
   });
 
   it('getEntityNotesPrefs returns same snapshot reference when prefs unchanged (useSyncExternalStore)', () => {

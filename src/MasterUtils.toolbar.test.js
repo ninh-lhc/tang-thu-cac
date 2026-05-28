@@ -6,6 +6,7 @@ import {
   resolveEntityNotesBackspace,
   resolveEntityNotesLineBreak,
   resolveEntityNotesTabIndent,
+  resolveEntityNotesWikiBackspace,
 } from './MasterUtils.jsx';
 
 function mountEditor(value, selectionStart = value.length, selectionEnd = selectionStart) {
@@ -82,6 +83,15 @@ describe('toolbar helpers', () => {
 
     expect(nextState?.newText).toBe('');
     expect(nextState?.selStart).toBe(0);
+  });
+
+  it('backspaces one grapheme safely when caret is inside [[wiki]]', () => {
+    const text = 'A [[DiệtThiên]] B';
+    const caret = text.indexOf(']]');
+    const nextState = resolveEntityNotesWikiBackspace(text, caret, caret);
+
+    expect(nextState?.newText).toBe('A [[DiệtThiê]] B');
+    expect(nextState?.selStart).toBe(caret - 1);
   });
 
   it('removes an empty bullet line above a heading without merging the heading', () => {

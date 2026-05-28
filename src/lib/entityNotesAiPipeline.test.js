@@ -9,6 +9,18 @@ describe('entityNotesAiPipeline', () => {
     expect(text).toContain('## Muc');
   });
 
+  it('clean-only pipeline skips link and format', async () => {
+    const result = await runNotesAiPipeline('##   Muc \n\n1.  Y', {
+      steps: ['clean'],
+      entityMap: [],
+      geminiApiKeys: [],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.ranSteps).toEqual(['clean']);
+    expect(result.steps).toContain('làm sạch');
+    expect(result.formatSkippedAi).toBe(false);
+  });
+
   it('pipeline wraps wiki without API then skips AI steps', async () => {
     const result = await runNotesAiPipeline('Linh Gioi Chau xuat hien giua troi.', {
       entityMap: [{ id: 'e1', name: 'Linh Gioi Chau' }],
