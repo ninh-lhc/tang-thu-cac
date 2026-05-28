@@ -26,7 +26,6 @@ import { autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.j
 import {
   applyWikiLinkOptOutsForSave,
   detectWikiLinkOptOuts,
-  detectWikiLinkOptOutsFromPlainText,
   mergeWikiLinkOptOuts,
   readWikiLinkOptOuts,
   resolveEffectiveWikiLinkOptOuts,
@@ -130,19 +129,8 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         pending: pendingWikiLinkOptOuts,
         savedBaseline: safeString(savedInfo ?? initialInfo),
         draftText: notesEdit.text,
-        entityMap,
-        autoWrapOnSave: notesTypo.autoWrapWikiOnSave,
-        autoWrapWikiLinksByEntityMapWithCount,
       }),
-    [
-      entityMap,
-      initialInfo,
-      initialWikiLinkOptOuts,
-      notesEdit.text,
-      notesTypo.autoWrapWikiOnSave,
-      pendingWikiLinkOptOuts,
-      savedInfo,
-    ]
+    [initialInfo, initialWikiLinkOptOuts, notesEdit.text, pendingWikiLinkOptOuts, savedInfo]
   );
 
   useEffect(() => {
@@ -663,14 +651,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             const savedBaseline = safeString(savedInfo ?? initialInfo);
             const preDetectedOptOuts = mergeWikiLinkOptOuts(
               pendingWikiLinkOptOuts,
-              detectWikiLinkOptOuts(savedBaseline, rawDraft),
-              latestNotesPrefs.autoWrapWikiOnSave
-                ? detectWikiLinkOptOutsFromPlainText(
-                    rawDraft,
-                    entityMap,
-                    autoWrapWikiLinksByEntityMapWithCount
-                  )
-                : []
+              detectWikiLinkOptOuts(savedBaseline, rawDraft)
             );
             const savePipelineSteps = [];
             if (latestNotesPrefs.autoCleanOnSave) savePipelineSteps.push('clean');

@@ -96,7 +96,8 @@ export async function runNotesLinkStep(
   let text = safeString(sourceText);
   let localCount = 0;
   // Chạy local-wrap nhiều lượt cho đến khi ổn định để giảm bỏ sót ở pass đầu.
-  for (let pass = 0; pass < 8; pass += 1) {
+  const maxWrapPasses = 4;
+  for (let pass = 0; pass < maxWrapPasses; pass += 1) {
     const localWrap = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, {
       optOuts: Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [],
     });

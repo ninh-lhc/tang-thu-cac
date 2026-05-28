@@ -145,7 +145,6 @@ describe('wikiLinkOptOut', () => {
       pending,
       savedBaseline: saved,
       draftText: draft,
-      entityMap: map,
     });
     expect(effective.some((o) => o.anchor === 'Hồng Lâu')).toBe(true);
     expect(effective.some((o) => o.anchor === 'Kiến trúc')).toBe(true);

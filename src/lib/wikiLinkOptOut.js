@@ -165,23 +165,17 @@ function sourceSliceContextAfter(text, index) {
 }
 
 /**
- * Opt-out đang hiệu lực khi soạn: đã lưu + gỡ so với baseline + (tuỳ chọn) chỗ auto-wrap sẽ chèn lại.
+ * Opt-out khi soạn: đã lưu + gỡ toolbar + chỗ user bỏ [[...]] so với baseline.
+ * Không gọi auto-wrap ở đây (quá nặng trên mỗi keystroke); plain-text opt-out chỉ khi lưu.
  */
 export function resolveEffectiveWikiLinkOptOuts({
   stored = [],
   pending = [],
   savedBaseline = '',
   draftText = '',
-  entityMap = [],
-  autoWrapOnSave = false,
-  autoWrapWikiLinksByEntityMapWithCount = null,
 } = {}) {
   const fromUnwrap = detectWikiLinkOptOuts(savedBaseline, draftText);
-  const fromPlain =
-    autoWrapOnSave && typeof autoWrapWikiLinksByEntityMapWithCount === 'function'
-      ? detectWikiLinkOptOutsFromPlainText(draftText, entityMap, autoWrapWikiLinksByEntityMapWithCount)
-      : [];
-  return mergeWikiLinkOptOuts(stored, pending, fromUnwrap, fromPlain);
+  return mergeWikiLinkOptOuts(stored, pending, fromUnwrap);
 }
 
 /**
