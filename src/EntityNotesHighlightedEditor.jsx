@@ -1,6 +1,12 @@
 /**
- * Textarea ghi chép + lớp highlight [[wiki]] (đồng bộ scroll/font với textarea).
- * Chữ trong textarea trong suốt; màu wiki hiện từ lớp <pre> phía dưới (cả khi đang gõ).
+ * Textarea ghi chép + lớp highlight [[wiki]] tô màu (đồng bộ scroll/font với textarea).
+ * Chữ trong textarea trong suốt; màu wiki hiện từ lớp <pre> phía dưới (cả khi đang gõ)
+ * để khi soạn thô vẫn phân biệt được từ có wiki link với chữ thường.
+ *
+ * Quan trọng — chống lệch caret/hiển thị: textarea (overflow) có thanh cuộn 5px chiếm
+ * chiều rộng, còn <pre> thì không, nên trước đây hai lớp xuống dòng lệch nhau. Khắc phục:
+ * textarea LUÔN chừa đúng 5px thanh cuộn (overflow-y: scroll) và <pre> chừa đúng 5px
+ * padding-right ⇒ bề rộng wrap khớp tuyệt đối, chữ màu luôn nằm đúng vị trí chữ thật.
  * Cuộn trong textarea khi còn dòng; ở mép trên/dưới chuyển wheel sang khung cha.
  */
 import React, {
@@ -17,11 +23,11 @@ import { buildEntityNotesEditorHighlightHtml } from './lib/entityNotesEditorWiki
 export const ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS =
   'h-[min(50vh,520px)] min-h-[260px] shrink-0';
 
-// Không đặt overflow-* ở đây: pre cần overflow-hidden (clip highlight), textarea
-// cần overflow-auto để cuộn — nếu gộp chung, Tailwind sort khiến overflow-hidden
-// đè overflow-auto trên textarea ⇒ không cuộn được.
 const EDITOR_SURFACE_CLASS =
   'm-0 whitespace-pre-wrap break-words border-0 border-transparent p-0 font-normal leading-loose [overflow-wrap:anywhere]';
+
+// Bề rộng thanh cuộn tuỳ biến (.custom-scrollbar::-webkit-scrollbar { width: 5px }).
+const SCROLLBAR_GUTTER_PX = 5;
 
 function findScrollableAncestor(el) {
   let node = el.parentElement;
@@ -74,6 +80,8 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
     onScroll,
     onFocus,
     onBlur,
+    onCompositionStart,
+    onCompositionEnd,
     id,
     className = '',
     style = {},
@@ -117,15 +125,20 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
     return () => ta.removeEventListener('wheel', handleEditorWheel);
   }, []);
 
-  const fontFamily = style.fontFamily;
-  const fontSize = style.fontSize;
+  // Đồng bộ vị trí cuộn của lớp màu sau mỗi lần nội dung đổi (gõ/xoá/undo).
+  useEffect(() => {
+    syncHighlightScroll();
+  }, [value, syncHighlightScroll]);
+
+  // Mọi thuộc tính ảnh hưởng layout chữ phải GIỐNG HỆT giữa <pre> và <textarea>.
   const surfaceStyle = {
-    fontFamily,
-    fontSize,
+    fontFamily: style.fontFamily,
+    fontSize: style.fontSize,
     overflowWrap: 'anywhere',
     lineHeight: 1.625,
     letterSpacing: 'normal',
     wordSpacing: 'normal',
+    tabSize: 4,
   };
 
   return (
@@ -134,7 +147,7 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
         ref={highlightRef}
         aria-hidden
         className={`pointer-events-none absolute inset-0 block size-full overflow-hidden ${EDITOR_SURFACE_CLASS} text-slate-200`}
-        style={surfaceStyle}
+        style={{ ...surfaceStyle, paddingRight: `${SCROLLBAR_GUTTER_PX}px` }}
         dangerouslySetInnerHTML={{ __html: highlightHtml }}
       />
       <textarea
@@ -153,9 +166,11 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
           onFocus?.(event);
         }}
         onBlur={onBlur}
+        onCompositionStart={onCompositionStart}
+        onCompositionEnd={onCompositionEnd}
         spellCheck={spellCheck}
         placeholder={placeholder}
-        className={`relative z-10 block size-full min-h-0 flex-1 resize-none overflow-auto bg-transparent text-transparent caret-slate-100 outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/25 ${EDITOR_SURFACE_CLASS}`}
+        className={`relative z-10 block size-full min-h-0 flex-1 resize-none overflow-y-scroll overflow-x-hidden bg-transparent text-transparent caret-slate-100 outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/25 ${EDITOR_SURFACE_CLASS}`}
         style={{
           ...surfaceStyle,
           WebkitTextFillColor: 'transparent',

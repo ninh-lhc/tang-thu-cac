@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { BookOpen, Save, Edit3, Eye, ScrollText, AlertTriangle, Lock, Search, Filter } from 'lucide-react';
+import { BookOpen, Save, Edit3, Eye, ScrollText, Lock, Search, Filter } from 'lucide-react';
 import { MarkdownToolbar } from './MasterComponents.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import {
@@ -13,12 +13,8 @@ import { isListCardEntity } from './lib/collectionListCardSync.js';
 import { AppListCardInfoSearch } from './AppListCardInfoSearch.jsx';
 import {
   safeString,
-  callGeminiAPIText,
   getEntityNotesToolbarState,
-  mapGeminiErrorToUserMessage,
-  truncateForAI,
   resolveEntityNotesLineBreak,
-  resolveEntityNotesWikiBackspace,
   resolveEntityNotesBackspace,
   resolveEntityNotesTabIndent,
 } from './MasterUtils.jsx';
@@ -31,14 +27,7 @@ import {
   resolveEffectiveWikiLinkOptOuts,
 } from './lib/wikiLinkOptOut.js';
 import { cleanupEntityNotesText } from './lib/entityNotesTextCleanup.js';
-import {
-  applyEntityNotesDiagnosticFix,
-  collectEntityNotesDiagnostics,
-  fixAllEntityNotesDiagnostics,
-  fixEntityNotesStructureOnly,
-  prepareEntityNotesForSave,
-} from './lib/entityNotesDiagnostics.js';
-import { useEntityNotesFormatDiagnostics } from './lib/useEntityNotesFormatDiagnostics.js';
+import { prepareEntityNotesForSave } from './lib/entityNotesDiagnostics.js';
 import { focusEntityNotesTextarea } from './lib/entityNotesEditorSelection.js';
 import { syncEntityNotesDuplicateWordFormatting } from './lib/entityNotesDuplicateWordFormatting.js';
 import {
@@ -48,7 +37,6 @@ import {
   subscribeEntityNotesPrefs,
 } from './lib/entityNotesPrefs.js';
 import { resolveEntityNotesTemplateProfile } from './lib/entityNotesSemantics.js';
-import { ENTITY_NOTES_AI_STRUCTURE_SYSTEM_PROMPT } from './lib/entityNotesAiStructurePrompt.js';
 import { runNotesAiPipeline } from './lib/entityNotesAiPipeline.js';
 import { getEffectiveAutoSyncRole, getAutoSyncRoleLabel } from './lib/tabAutoSyncRole.js';
 import {
@@ -102,7 +90,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     history: [s0],
     hIndex: 0,
   }));
-  const [isFormattingStructure, setIsFormattingStructure] = useState(false);
+  const [, setIsFormattingStructure] = useState(false);
   const [isAiPipelineRunning, setIsAiPipelineRunning] = useState(false);
   const [aiPipelineStep, setAiPipelineStep] = useState(null);
   const [pendingWikiLinkOptOuts, setPendingWikiLinkOptOuts] = useState([]);
@@ -110,8 +98,11 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   const textareaRef = useRef(null);
   const previewScrollRef = useRef(null);
   const scrollSyncLockRef = useRef(false);
+  // Đang ghép chữ IME (tiếng Việt): chặn mọi setState đồng bộ toolbar/caret để React
+  // không re-render và ghi đè value cũ giữa lúc compose ⇒ tránh rớt/lặp ký tự.
+  const isComposingRef = useRef(false);
   const [toolbarState, setToolbarState] = useState(() => getEntityNotesToolbarState(s0, 0, 0));
-  const [editorCaret, setEditorCaret] = useState(0);
+  const [, setEditorCaret] = useState(0);
   const templateProfile = useMemo(
     () =>
       resolveEntityNotesTemplateProfile({
@@ -195,6 +186,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   }, []);
 
   const syncToolbarStateFromEditor = useCallback(() => {
+    if (isComposingRef.current) return;
     const textarea = textareaRef.current || document.getElementById('entity-info-editor');
     if (!textarea) return;
     setEditorCaret(textarea.selectionStart);
@@ -202,6 +194,15 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
       getEntityNotesToolbarState(textarea.value, textarea.selectionStart, textarea.selectionEnd)
     );
   }, []);
+
+  const handleCompositionStart = useCallback(() => {
+    isComposingRef.current = true;
+  }, []);
+
+  const handleCompositionEnd = useCallback(() => {
+    isComposingRef.current = false;
+    syncToolbarStateFromEditor();
+  }, [syncToolbarStateFromEditor]);
 
   useEffect(() => {
     syncToolbarStateFromEditor();
@@ -301,130 +302,6 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     },
     [isSplitPreview, recordAndSetDraft, setDebouncedMarkdownPreview, setLivePreviewText]
   );
-  const normalizeNotesDraft = useCallback(
-    (sourceText, { announceIfChanged = false, announceIfSame = false } = {}) => {
-      const cleaned = fixAllEntityNotesDiagnostics(sourceText);
-      const changed = cleaned !== sourceText;
-      if (changed) {
-        syncDraftAndPreview(cleaned);
-        if (announceIfChanged) {
-          showToast('Đã làm sạch khoảng trắng và xuống dòng trước khi xử lý.');
-        }
-      } else if (announceIfSame) {
-        showToast('Nội dung đã gọn sẵn, không cần làm sạch thêm.');
-      }
-      return { text: changed ? cleaned : sourceText, changed };
-    },
-    [showToast, syncDraftAndPreview]
-  );
-  const formatDiagnostics = useEntityNotesFormatDiagnostics(notesEdit.text, editorCaret);
-  const fixableDiagnostics = useMemo(
-    () => formatDiagnostics.filter((item) => item.fixable),
-    [formatDiagnostics]
-  );
-
-  const applySingleDiagnosticFix = useCallback((diagnostic) => {
-    if (!diagnostic?.fixable) return;
-    const original = notesEdit.text;
-    const patched = applyEntityNotesDiagnosticFix(original, diagnostic);
-    if (patched === original) return;
-
-    const remaining = collectEntityNotesDiagnostics(patched);
-    const stillHasThisWarning =
-      remaining.some((item) => item.id === diagnostic.id) ||
-      remaining.some((item) => item.kind === diagnostic.kind && item.line === diagnostic.line);
-
-    // Nếu fix tự động không làm hết cảnh báo tương ứng, thì giữ nguyên phần bạn đã chỉnh tay.
-    if (stillHasThisWarning) {
-      showToast('Không sửa tự động được — giữ nguyên bản bạn đã chỉnh tay.', 'warning');
-      return;
-    }
-
-    syncDraftAndPreview(patched);
-    showToast(`Đã sửa: ${diagnostic.label}`);
-  }, [notesEdit.text, showToast, syncDraftAndPreview]);
-
-  const fixAllDiagnostics = useCallback(() => {
-    const original = notesEdit.text;
-    const patched = fixAllEntityNotesDiagnostics(original);
-    if (patched === original) {
-      showToast('Không còn lỗi nhẹ nào để sửa thêm.');
-      return;
-    }
-
-    const beforeCount = collectEntityNotesDiagnostics(original).length;
-    const afterCount = collectEntityNotesDiagnostics(patched).length;
-    // Bảo vệ: nếu fixAll làm cảnh báo không giảm, không ghi đè chỉnh tay.
-    if (afterCount >= beforeCount) {
-      showToast('Không thể tự động sửa hết — giữ nguyên bản bạn đã chỉnh tay.', 'warning');
-      return;
-    }
-
-    syncDraftAndPreview(patched);
-    showToast('Đã sửa các lỗi định dạng nhẹ và chuẩn hoá lại ghi chú.');
-  }, [notesEdit.text, showToast, syncDraftAndPreview]);
-
-  const formatNotesStructureWithAI = useCallback(async () => {
-    const currentText = notesEdit.text;
-    if (!currentText.trim()) {
-      showToast('Chưa có nội dung để AI dàn khung.');
-      return;
-    }
-    if (geminiApiKeys.length === 0) {
-      showToast('Vui lòng thiết lập API Key để dùng AI dàn khung.');
-      return;
-    }
-    const normalized = normalizeNotesDraft(currentText).text;
-    const { text: truncated } = truncateForAI(normalized, aiMode === 'quick' ? 7000 : undefined);
-    const subject = safeString(entityNotesSubject).trim() || 'đối tượng';
-    const payload = {
-      contents: [{
-        parts: [{
-          text: `Chủ thể ghi chú: ${subject}\n\nVăn bản gốc:\n${truncated}`,
-        }],
-      }],
-      systemInstruction: {
-        parts: [{ text: ENTITY_NOTES_AI_STRUCTURE_SYSTEM_PROMPT }],
-      },
-    };
-
-    setIsFormattingStructure(true);
-    try {
-      const raw = await callGeminiAPIText(payload, geminiApiKeys, { timeoutMs: 45000 });
-      const formatted = safeString(raw)
-        .replace(/^```(?:markdown|md)?\s*/i, '')
-        .replace(/\s*```$/, '')
-        .trim();
-      if (!formatted) {
-        showToast('AI chưa trả về bản dàn khung hợp lệ.', 'warning');
-        return;
-      }
-      if (formatted.length < normalized.length * 0.45) {
-        showToast('AI trả về bản quá ngắn nên mình chưa áp dụng để tránh mất ý.', 'warning');
-        return;
-      }
-      const finalText = fixEntityNotesStructureOnly(formatted);
-      if (finalText === notesEdit.text) {
-        showToast('AI chưa đề xuất bố cục mới rõ ràng.');
-        return;
-      }
-      syncDraftAndPreview(finalText);
-      showToast('AI đã dàn lại bố cục ghi chú, giữ theo hướng chỉ chỉnh cấu trúc.');
-    } catch (error) {
-      showToast(mapGeminiErrorToUserMessage(error), 'warning');
-    } finally {
-      setIsFormattingStructure(false);
-    }
-  }, [
-    aiMode,
-    entityNotesSubject,
-    geminiApiKeys,
-    normalizeNotesDraft,
-    notesEdit.text,
-    showToast,
-    syncDraftAndPreview,
-  ]);
-
   const handleRunAiPipeline = useCallback(
     async (pipelineSteps) => {
       const currentText = notesEdit.text;
@@ -480,16 +357,9 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           if (result.linkSkippedAi || result.formatSkippedAi) {
             msg += ' (Thiếu API Key — bước AI bị bỏ qua.)';
           }
-          if (result.remainingWarningCount > 0) {
-            msg += ` Còn ${result.remainingWarningCount} cảnh báo định dạng — kiểm tra thanh vàng khi sửa.`;
-          }
-          showToast(msg, result.remainingWarningCount > 0 ? 'warning' : 'success');
+          showToast(msg, 'success');
         } else {
-          const hint =
-            result.remainingWarningCount > 0
-              ? ` Còn ${result.remainingWarningCount} cảnh báo định dạng.`
-              : '';
-          showToast(`Nội dung đã ổn, không cần chỉnh thêm.${hint}`, result.remainingWarningCount > 0 ? 'warning' : 'success');
+          showToast('Nội dung đã ổn, không cần chỉnh thêm.', 'success');
         }
       } finally {
         setIsAiPipelineRunning(false);
@@ -590,16 +460,8 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         return;
       }
       if (event.key === 'Backspace') {
-        const wikiBackspace = resolveEntityNotesWikiBackspace(
-          textarea.value,
-          textarea.selectionStart,
-          textarea.selectionEnd
-        );
-        if (wikiBackspace) {
-          event.preventDefault();
-          applyEditorMutation(wikiBackspace);
-          return;
-        }
+        // Backspace dùng hành vi gốc của trình duyệt để không bao giờ xoá lệch ký tự
+        // hay làm hỏng cú pháp [[wiki]]; chỉ can thiệp khi gỡ marker danh sách rỗng.
         const nextState = resolveEntityNotesBackspace(
           textarea.value,
           textarea.selectionStart,
@@ -706,7 +568,6 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               : pipelineText;
             const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
             const preparedText = formatSync.text;
-            const remainingWarnings = collectEntityNotesDiagnostics(preparedText);
             if (preparedText !== notesEdit.text) {
               syncDraftAndPreview(preparedText);
               if (cleanedText !== notesEdit.text && formatSync.propagatedCount > 0) {
@@ -716,8 +577,6 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               } else {
                 showToast('Đã tự chuẩn hoá ghi chú trước khi lưu.');
               }
-            } else if (remainingWarnings.length > 0) {
-              showToast(`Đã lưu nhưng vẫn còn ${remainingWarnings.length} cảnh báo định dạng.`, 'warning');
             }
             const saveResult = applyWikiLinkOptOutsForSave({
               savedInfo: savedBaseline,
@@ -783,52 +642,6 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             <Eye size={12} /> Preview
           </button>
         </div>
-        {formatDiagnostics.length > 0 && (
-          <div className="mb-3 rounded-2xl border border-amber-700/40 bg-amber-950/20 px-4 py-3 text-[12px] text-amber-100">
-            <div className="mb-2 flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-2 font-semibold text-amber-300">
-                <AlertTriangle size={14} />
-                Cảnh báo định dạng
-              </div>
-              {fixableDiagnostics.length > 0 && (
-                <button
-                  type="button"
-                  onClick={fixAllDiagnostics}
-                  className="rounded-full border border-amber-700/40 bg-slate-950/60 px-3 py-1 text-[11px] font-semibold text-amber-100 hover:bg-slate-900"
-                >
-                  Sửa hết lỗi nhẹ
-                </button>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {formatDiagnostics.map((warning) => (
-                <div
-                  key={warning.id}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-amber-700/40 bg-slate-950/50 pl-2.5 pr-1 py-1 text-[11px] text-amber-100"
-                >
-                  <button
-                    type="button"
-                    onClick={() => focusEditorRange(warning.start, warning.end)}
-                    className="text-left hover:text-white"
-                    title={`Nhảy tới dòng ${warning.line}`}
-                  >
-                    {warning.label}
-                  </button>
-                  {warning.fixable && (
-                    <button
-                      type="button"
-                      onClick={() => applySingleDiagnosticFix(warning)}
-                      className="rounded-full border border-amber-700/30 bg-amber-950/30 px-2 py-0.5 text-[10px] font-semibold text-amber-100 hover:bg-amber-900/30"
-                      title={warning.fixLabel || 'Sửa nhanh'}
-                    >
-                      {warning.fixLabel || 'Sửa'}
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
         <div
           className={`flex min-h-0 gap-4 overflow-hidden ${ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS} ${isSplitPreview ? 'flex-row' : 'flex-col'}`}
         >
@@ -857,6 +670,8 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             onSelect={syncToolbarStateFromEditor}
             onPaste={handleEditorPaste}
             onScroll={handleEditorScroll}
+            onCompositionStart={handleCompositionStart}
+            onCompositionEnd={handleCompositionEnd}
           />
           {isSplitPreview && (
             <MarkdownPreviewPane

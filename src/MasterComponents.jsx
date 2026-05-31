@@ -12,7 +12,7 @@ import {
   FolderOpen, Cloud, Upload, HardDrive, Clock, Shield, Download, UploadCloud,
   Image as ImageIcon, History, LayoutGrid, Link2, ScrollText, User,
   Undo2, Redo2, Underline, Strikethrough, Highlighter, ListOrdered, Quote,
-  TrendingUp, BarChart2, BookMarked, Users, Layers, Activity, Eye, AlertTriangle,
+  TrendingUp, BarChart2, BookMarked, Users, Layers, Activity, Eye,
   GitBranch, ZoomIn, ZoomOut, Maximize2, RefreshCw, SlidersHorizontal, Atom, Edit2, Command, Type,
 } from 'lucide-react';
 import {
@@ -42,7 +42,6 @@ import {
   getEntityNotesToolbarState,
   resolveEntityNotesBackspace,
   resolveEntityNotesLineBreak,
-  resolveEntityNotesWikiBackspace,
   resolveEntityNotesTabIndent,
   suggestWikiLinkSpotsWithAI,
   truncateForAI,
@@ -115,13 +114,10 @@ import {
 } from './lib/entityNotesSemantics.js';
 import { cleanupEntityNotesText } from './lib/entityNotesTextCleanup.js';
 import {
-  applyEntityNotesDiagnosticFix,
-  collectEntityNotesDiagnostics,
   fixAllEntityNotesDiagnostics,
   fixEntityNotesStructureOnly,
   prepareEntityNotesForSave,
 } from './lib/entityNotesDiagnostics.js';
-import { useEntityNotesFormatDiagnostics } from './lib/useEntityNotesFormatDiagnostics.js';
 import { focusEntityNotesTextarea } from './lib/entityNotesEditorSelection.js';
 import { ENTITY_NOTES_AI_STRUCTURE_SYSTEM_PROMPT } from './lib/entityNotesAiStructurePrompt.js';
 import { runNotesAiPipeline } from './lib/entityNotesAiPipeline.js';
@@ -3518,7 +3514,7 @@ export const ModalMilestone = ({
   const [snapshotData, setSnapshotData] = useState({ avatar: '', dynamicData: {} });
   const [eventEdit, setEventEdit] = useState(() => ({ text: '', history: [''], hIndex: 0 }));
   const [toolbarState, setToolbarState] = useState(() => getEntityNotesToolbarState('', 0, 0));
-  const [eventEditorCaret, setEventEditorCaret] = useState(0);
+  const [, setEventEditorCaret] = useState(0);
   const [isSplitPreview, setIsSplitPreview] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLinkingAi, setIsLinkingAi] = useState(false);
@@ -3527,6 +3523,9 @@ export const ModalMilestone = ({
   const [isFormattingStructure, setIsFormattingStructure] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const eventTextareaRef = useRef(null);
+  // Đang ghép chữ IME (tiếng Việt): chặn setState đồng bộ toolbar/caret để tránh
+  // React re-render ghi đè value cũ giữa lúc compose ⇒ tránh rớt/lặp ký tự.
+  const isComposingRef = useRef(false);
   const previewScrollRef = useRef(null);
   const scrollSyncLockRef = useRef(false);
   const trapRefMs = useFocusTrap(isOpen);
@@ -3623,12 +3622,20 @@ export const ModalMilestone = ({
     });
   };
   const syncToolbarStateFromEditor = () => {
+    if (isComposingRef.current) return;
     const textarea = eventTextareaRef.current;
     if (!textarea) return;
     setEventEditorCaret(textarea.selectionStart);
     setToolbarState(
       getEntityNotesToolbarState(textarea.value, textarea.selectionStart, textarea.selectionEnd)
     );
+  };
+  const handleCompositionStart = () => {
+    isComposingRef.current = true;
+  };
+  const handleCompositionEnd = () => {
+    isComposingRef.current = false;
+    syncToolbarStateFromEditor();
   };
   const applyEditorMutation = (nextState) => {
     if (!nextState) return;
@@ -3774,11 +3781,6 @@ export const ModalMilestone = ({
     prepareSnapshotPayload,
   ]);
 
-  const formatDiagnostics = useEntityNotesFormatDiagnostics(eventText, eventEditorCaret);
-  const fixableDiagnostics = useMemo(
-    () => formatDiagnostics.filter((item) => item.fixable),
-    [formatDiagnostics]
-  );
   const undoDisabled = eventEdit.hIndex <= 0;
   const redoDisabled = eventEdit.hIndex >= eventEdit.history.length - 1;
   const resolveLineStartFromLineNumber = (lineNumber) => {
@@ -3841,23 +3843,6 @@ export const ModalMilestone = ({
       scrollSyncLockRef.current = false;
     });
   };
-  const applySingleDiagnosticFix = (diagnostic) => {
-    if (!diagnostic?.fixable) return;
-    const patched = applyEntityNotesDiagnosticFix(eventText, diagnostic);
-    if (patched !== eventText) {
-      recordAndSetEventDraft(patched);
-      toast(`Đã sửa: ${diagnostic.label}`);
-    }
-  };
-  const fixAllDiagnostics = () => {
-    const patched = fixAllEntityNotesDiagnostics(eventText);
-    if (patched === eventText) {
-      toast('Không còn lỗi nhẹ nào để sửa thêm.');
-      return;
-    }
-    recordAndSetEventDraft(patched);
-    toast('Đã sửa các lỗi định dạng nhẹ và chuẩn hoá lại ghi chú.');
-  };
   const handleEditorPaste = (event) => {
     const clipboardText = event.clipboardData?.getData?.('text/plain') || '';
     if (!clipboardText || event.clipboardData?.files?.length) return;
@@ -3904,16 +3889,8 @@ export const ModalMilestone = ({
       return;
     }
     if (event.key === 'Backspace') {
-      const wikiBackspace = resolveEntityNotesWikiBackspace(
-        textarea.value,
-        textarea.selectionStart,
-        textarea.selectionEnd
-      );
-      if (wikiBackspace) {
-        event.preventDefault();
-        applyEditorMutation(wikiBackspace);
-        return;
-      }
+      // Backspace dùng hành vi gốc của trình duyệt để không bao giờ xoá lệch ký tự
+      // hay làm hỏng cú pháp [[wiki]]; chỉ can thiệp khi gỡ marker danh sách rỗng.
       const nextState = resolveEntityNotesBackspace(
         textarea.value,
         textarea.selectionStart,
@@ -4152,7 +4129,6 @@ export const ModalMilestone = ({
     const cleanedText = notesTypo.autoCleanOnSave ? prepareEntityNotesForSave(eventText) : eventText;
     const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
     const preparedText = formatSync.text;
-    const remainingWarnings = collectEntityNotesDiagnostics(preparedText);
     const eventWrap = autoWrapWikiLinksByEntityMapWithCount(preparedText, entityMap);
     const preparedSnapshot = prepareSnapshotPayload();
     const nextSnapshot = preparedSnapshot.snapshot;
@@ -4166,8 +4142,6 @@ export const ModalMilestone = ({
       } else {
         toast('Đã tự chuẩn hoá ghi chú trước khi lưu.');
       }
-    } else if (remainingWarnings.length > 0) {
-      toast(`Đã lưu nhưng vẫn còn ${remainingWarnings.length} cảnh báo định dạng nhẹ.`, 'warning');
     }
     if (wrappedCount > 0 && autoLinkToastEnabled) {
       toast(`Đã tự bọc ${wrappedCount} [[liên kết]] theo thẻ có sẵn.`);
@@ -4406,53 +4380,6 @@ export const ModalMilestone = ({
                   />
                 </div>
 
-                {formatDiagnostics.length > 0 && (
-                  <div className="mb-3 rounded-2xl border border-amber-700/40 bg-amber-950/20 px-4 py-3 text-[12px] text-amber-100">
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 font-semibold text-amber-300">
-                        <AlertTriangle size={14} />
-                        Cảnh báo định dạng
-                      </div>
-                      {fixableDiagnostics.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={fixAllDiagnostics}
-                          className="rounded-full border border-amber-700/40 bg-slate-950/60 px-3 py-1 text-[11px] font-semibold text-amber-100 hover:bg-slate-900"
-                        >
-                          Sửa hết lỗi nhẹ
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {formatDiagnostics.map((warning) => (
-                        <div
-                          key={warning.id}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-amber-700/40 bg-slate-950/50 pl-2.5 pr-1 py-1 text-[11px] text-amber-100"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => focusEditorRange(warning.start, warning.end)}
-                            className="text-left hover:text-white"
-                            title={`Nhảy tới dòng ${warning.line}`}
-                          >
-                            {warning.label}
-                          </button>
-                          {warning.fixable && (
-                            <button
-                              type="button"
-                              onClick={() => applySingleDiagnosticFix(warning)}
-                              className="rounded-full border border-amber-700/30 bg-amber-950/30 px-2 py-0.5 text-[10px] font-semibold text-amber-100 hover:bg-amber-900/30"
-                              title={warning.fixLabel || 'Sửa nhanh'}
-                            >
-                              {warning.fixLabel || 'Sửa'}
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 <div
                   className={`flex min-h-0 gap-4 overflow-hidden ${ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS} ${isSplitPreview ? 'flex-row' : 'flex-col'}`}
                 >
@@ -4484,6 +4411,8 @@ export const ModalMilestone = ({
                     onSelect={syncToolbarStateFromEditor}
                     onPaste={handleEditorPaste}
                     onScroll={handleEditorScroll}
+                    onCompositionStart={handleCompositionStart}
+                    onCompositionEnd={handleCompositionEnd}
                   />
                   {isSplitPreview && (
                     <MarkdownPreviewPane
