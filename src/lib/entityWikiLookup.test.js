@@ -161,6 +161,31 @@ describe('entityWikiLookup', () => {
     expect(resolveEntityLookup(lookup, 'Do Kiep')?.dest?.entityId).toBe('realm-do-kiep');
   });
 
+  it('resolves an entity own alias surfaces back to itself even when a duplicate lowercase card exists', () => {
+    const lookup = buildEntityNameLookup([
+      { name: 'Bạch Ngân', dest: { entityId: 'bach-ngan-chinh' } },
+      { name: 'Bạch ngân', dest: { entityId: 'bach-ngan-chinh' } },
+      { name: 'bạch ngân', dest: { entityId: 'bach-ngan-chinh' } },
+      { name: 'bạch ngân', dest: { entityId: 'tien-te-bach-ngan' } },
+    ]);
+
+    const opts = { selfEntityId: 'bach-ngan-chinh' };
+    expect(resolveEntityLookup(lookup, 'Bạch Ngân', opts)?.dest?.entityId).toBe('bach-ngan-chinh');
+    expect(resolveEntityLookup(lookup, 'Bạch ngân', opts)?.dest?.entityId).toBe('bach-ngan-chinh');
+    expect(resolveEntityLookup(lookup, 'bạch ngân', opts)?.dest?.entityId).toBe('bach-ngan-chinh');
+  });
+
+  it('resolves an entity own lowercase alias to itself when there is no duplicate', () => {
+    const lookup = buildEntityNameLookup([
+      { name: 'Bạch Ngân', dest: { entityId: 'bach-ngan-chinh' } },
+      { name: 'bạch ngân', dest: { entityId: 'bach-ngan-chinh' } },
+    ]);
+
+    expect(
+      resolveEntityLookup(lookup, 'bạch ngân', { selfEntityId: 'bach-ngan-chinh' })?.dest?.entityId
+    ).toBe('bach-ngan-chinh');
+  });
+
   it('drops orphan data buckets not present in tabsConfig (no ghost wiki names)', () => {
     const novel = {
       tabsConfig: [

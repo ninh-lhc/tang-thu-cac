@@ -1,5 +1,5 @@
 import React from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { AppEntityDetailNotes } from './AppEntityDetailNotes.jsx';
 
@@ -58,6 +58,10 @@ function createProps(overrides = {}) {
 }
 
 describe('AppEntityDetailNotes', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   afterEach(() => {
     cleanup();
   });
@@ -233,6 +237,27 @@ describe('AppEntityDetailNotes', () => {
     });
     await vi.waitFor(() => {
       expect(props.showToast).toHaveBeenCalled();
+    });
+  });
+
+  it('auto-wraps matching entity names into wiki links when saving', () => {
+    const props = createProps({
+      entityMap: [{ name: 'Linh Gioi Chau', dest: { entityId: 'entity-1' } }],
+      selectedEntity: {
+        id: 'entity-1',
+        name: 'Linh Gioi Chau',
+        info: 'Linh Gioi Chau xuat hien giua troi.',
+      },
+    });
+    render(<AppEntityDetailNotes {...props} />);
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+
+    return vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        '[[Linh Gioi Chau]] xuat hien giua troi.',
+        expect.objectContaining({ wikiLinkOptOuts: [] })
+      );
     });
   });
 

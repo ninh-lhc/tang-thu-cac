@@ -35,7 +35,7 @@ const DEFAULT_PREFS = Object.freeze({
   fontKey: DEFAULT_FONT,
   sizePx: DEFAULT_SIZE,
   autoCleanOnSave: true,
-  autoWrapWikiOnSave: false,
+  autoWrapWikiOnSave: true,
   autoAnalysisOnSave: false,
 });
 
@@ -48,7 +48,7 @@ function readPrefsFromStorage() {
   const rawAutoClean = localStorage.getItem(AUTO_CLEAN_ON_SAVE_KEY);
   const autoCleanOnSave = rawAutoClean == null ? true : rawAutoClean !== '0';
   const rawAutoWrapWiki = localStorage.getItem(AUTO_WRAP_WIKI_ON_SAVE_KEY);
-  const autoWrapWikiOnSave = rawAutoWrapWiki === '1';
+  const autoWrapWikiOnSave = rawAutoWrapWiki == null ? true : rawAutoWrapWiki !== '0';
   const rawAutoAnalysis = localStorage.getItem(AUTO_ANALYSIS_ON_SAVE_KEY);
   const autoAnalysisOnSave = rawAutoAnalysis === '1';
   return { fontKey, sizePx, autoCleanOnSave, autoWrapWikiOnSave, autoAnalysisOnSave };

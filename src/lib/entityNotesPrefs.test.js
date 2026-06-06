@@ -33,17 +33,20 @@ describe('entityNotesPrefs', () => {
     expect(a.fontKey).toBe('times');
     expect(a.sizePx).toBe(16);
     expect(a.autoCleanOnSave).toBe(true);
+    expect(a.autoWrapWikiOnSave).toBe(true);
     expect(a.autoAnalysisOnSave).toBe(false);
     setEntityNotesPrefs({
       fontKey: 'verdana',
       sizePx: 12,
       autoCleanOnSave: false,
+      autoWrapWikiOnSave: false,
       autoAnalysisOnSave: true,
     });
     const b = getEntityNotesPrefs();
     expect(b.fontKey).toBe('verdana');
     expect(b.sizePx).toBe(12);
     expect(b.autoCleanOnSave).toBe(false);
+    expect(b.autoWrapWikiOnSave).toBe(false);
     expect(b.autoAnalysisOnSave).toBe(true);
   });
 
