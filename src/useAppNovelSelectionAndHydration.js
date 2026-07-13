@@ -97,7 +97,9 @@ export function useAppNovelSelectionAndHydration({
           const data = loaded.novel;
           cleanupAutoRelationLegacyInfoForNovel(data);
           const recoveredFromBackup = Boolean(data.__recoveredFromBackup);
+          const recoveredFromShadow = Boolean(data.__recoveredFromShadow);
           if (recoveredFromBackup) delete data.__recoveredFromBackup;
+          if (recoveredFromShadow) delete data.__recoveredFromShadow;
           setActiveNovelDirHandle(loaded.novelDir ?? null);
           let repairedEmptyTabsConfig = false;
           if (!Array.isArray(data.tabsConfig) || data.tabsConfig.length === 0) {
@@ -147,7 +149,7 @@ export function useAppNovelSelectionAndHydration({
               );
             }
           }
-          if (migrated !== data || recoveredFromBackup || repairedEmptyTabsConfig) {
+          if (migrated !== data || recoveredFromBackup || recoveredFromShadow || repairedEmptyTabsConfig) {
             void syncNovel(migrated, dirHandle);
           }
           if (tabAt?.lonId) {
@@ -254,7 +256,9 @@ export function useAppNovelSelectionAndHydration({
         if (fullData && !fullData.__partialData) {
           cleanupAutoRelationLegacyInfoForNovel(fullData);
           const recoveredFromBackup = Boolean(fullData.__recoveredFromBackup);
+          const recoveredFromShadow = Boolean(fullData.__recoveredFromShadow);
           if (recoveredFromBackup) delete fullData.__recoveredFromBackup;
+          if (recoveredFromShadow) delete fullData.__recoveredFromShadow;
           const missingTabsConfig = !Array.isArray(fullData.tabsConfig) || fullData.tabsConfig.length === 0;
           if (missingTabsConfig) fullData.tabsConfig = structuredClone(globalTabsConfig);
           const autoSyncResult = runNovelAutoSyncPlan(
@@ -272,7 +276,7 @@ export function useAppNovelSelectionAndHydration({
           novelStatsByIdRef.current = nextStats;
           setNovelStatsById(nextStats);
           void syncIndex(novelsMetadataRef.current, globalTabsConfigRef.current, dirHandle, nextStats);
-          if (missingTabsConfig || recoveredFromBackup) {
+          if (missingTabsConfig || recoveredFromBackup || recoveredFromShadow) {
             void syncNovel(fullData, dirHandle);
           }
           if (autoSyncResult.forceWarning) {

@@ -1,5 +1,6 @@
 /**
  * Bố cục lưu truyện trên ổ đĩa: manifest (file .json gốc) + shard theo tab nhỏ data/<lon>/<nho>.json.
+ * Shard ghi đè in-place (tránh tmp+rename gây churn OneDrive).
  * localStorage vẫn một blob — chỉ thư mục truyện (File System Access) dùng sharded.
  * Ai gọi: useAppPersistence.js, useAppNovelCrud (xóa thư mục đúng id). Test: novelDiskLayout.test.js
  */
@@ -262,32 +263,18 @@ export async function readRawNovelPackageFromDir(novelDirHandle, manifestBaseNam
   }
 }
 
-/** Ghi một file .json trong data/<lon>/ với tmp + move khi có. */
-async function writeShardAtomic(lonDirHandle, nhoSeg, jsonStr) {
+/** Ghi một file .json trong data/<lon>/ — ghi đè in-place (ít churn hơn tmp+rename với OneDrive). */
+async function writeShardFile(lonDirHandle, nhoSeg, jsonStr) {
   const mainFile = `${nhoSeg}.json`;
-  const tmpFile = `${nhoSeg}.json.tmp`;
-  const tw = await lonDirHandle.getFileHandle(tmpFile, { create: true });
-  const w = await tw.createWritable();
+  const out = await lonDirHandle.getFileHandle(mainFile, { create: true });
+  const w = await out.createWritable();
   await w.write(jsonStr);
   await w.close();
+  // Dọn .tmp cũ từ lần ghi atomic trước (best-effort).
   try {
-    await lonDirHandle.removeEntry(mainFile);
+    await lonDirHandle.removeEntry(`${nhoSeg}.json.tmp`);
   } catch {
-    /* lần đầu */
-  }
-  const tmpAgain = await lonDirHandle.getFileHandle(tmpFile);
-  if (typeof tmpAgain.move === 'function') {
-    await tmpAgain.move(mainFile);
-  } else {
-    const out = await lonDirHandle.getFileHandle(mainFile, { create: true });
-    const wo = await out.createWritable();
-    await wo.write(jsonStr);
-    await wo.close();
-    try {
-      await lonDirHandle.removeEntry(tmpFile);
-    } catch {
-      /* ignore */
-    }
+    /* ignore */
   }
 }
 
@@ -307,7 +294,7 @@ export async function writeShardTree(novelDirHandle, novelData) {
     const lonSeg = encodePathSegment(lonId);
     const nhoSeg = encodePathSegment(nhoId);
     const lonDir = await dataDir.getDirectoryHandle(lonSeg, { create: true });
-    await writeShardAtomic(lonDir, nhoSeg, jsonStr);
+    await writeShardFile(lonDir, nhoSeg, jsonStr);
     shardState.hashes.set(rel, jsonStr);
   }
 

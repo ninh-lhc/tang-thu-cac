@@ -8,6 +8,7 @@
 import { useCallback, useState } from 'react';
 import { ensureCollectionListCardsForNovel } from './lib/collectionListCardSync.js';
 import { removeNovelStorageFromRoot } from './lib/novelDiskLayout.js';
+import { clearNovelShadow } from './lib/novelShadowStore.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 import { resolveTabsConfigForGenreSelection } from './lib/resolveTabsConfigForGenreSelection.js';
 import { safeString, toDisplayTitleCase } from './MasterUtils.jsx';
@@ -170,7 +171,7 @@ export function useAppNovelCrud({
       }
 
       await syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
-      await syncNovel(newFullData, dirHandle);
+      await syncNovel(newFullData, dirHandle, { immediate: true, forceBackup: true });
       showToast('Khai sinh thu tich moi thanh cong!');
       return;
     }
@@ -231,8 +232,15 @@ export function useAppNovelCrud({
     novelsMetadataRef.current = newMetaList;
 
     try {
+      localStorage.removeItem(`tangthu_novel_${id}`);
+    } catch {
+      /* ignore */
+    }
+    void clearNovelShadow(id);
+
+    try {
       if (dirHandle === 'LOCAL_STORAGE') {
-        localStorage.removeItem(`tangthu_novel_${id}`);
+        /* local keys cleared above */
       } else if (dirHandle && meta) {
         await awaitNovelDiskIdle?.();
         await new Promise((r) => setTimeout(r, 50));

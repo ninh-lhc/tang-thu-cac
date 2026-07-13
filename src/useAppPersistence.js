@@ -1,6 +1,8 @@
 /**
  * Đồng bộ index.json / localStorage + ghi file truyện (.json).
- * Tách khỏi App.jsx — refs do App giữ để handler khác dùng chung.
+ * Shadow IndexedDB giữ bản nháp khi ghi thư mục (OneDrive) lỗi — khôi phục sau F5.
+ * Debounce ~1s + retry khóa file; ghi in-place; backup.json throttle 60s.
+ * Toast «Cho phép ghi lại» gọi requestPermission rồi flush immediate.
  */
 import { useCallback, useEffect, useRef } from 'react';
 import { migrateNovel } from './dataMigration.js';
@@ -21,6 +23,19 @@ import {
   readRawNovelPackageFromDir,
   writeShardTree,
 } from './lib/novelDiskLayout.js';
+import {
+  clearNovelShadow,
+  loadNovelShadow,
+  resolveNovelWithShadow,
+  saveNovelShadow,
+} from './lib/novelShadowStore.js';
+import {
+  NOVEL_BACKUP_MIN_INTERVAL_MS,
+  NOVEL_DISK_DEBOUNCE_MS,
+  isHardFsPermissionError,
+  isTransientFsWriteError,
+  withFsWriteRetry,
+} from './lib/novelDiskWritePolicy.js';
 
 /** migrateNovel luôn xóa storageLayout; khi novel đang lưu dạng shard trên đĩa thì phải gắn lại để lazy-load + sync an toàn. */
 function restoreShardedLayoutIfNeeded(parsedBeforeMigrate, migrated) {
@@ -74,6 +89,7 @@ function describeNovelSyncFailure(err) {
 
 function isFsPermissionWriteError(err) {
   if (!err) return false;
+  if (isHardFsPermissionError(err)) return true;
   const name = String(err?.name || '');
   if (name === 'NotAllowedError' || name === 'SecurityError') return true;
   const msgLower = String(err?.message || '').toLowerCase();
@@ -136,6 +152,7 @@ export function useAppPersistence({
   novelsMetadataRef,
   globalTabsConfigRef,
   dirHandleRef,
+  activeNovelDataRef,
   setNovelStatsById,
   showToast,
 }) {
@@ -144,14 +161,96 @@ export function useAppPersistence({
   const recoveredNovelToastIdsRef = useRef(new Set());
   /** Tránh nhiều lần ghi truyện ra đĩa song song (xóa liên tiếp → lỗi khóa file / createWritable). */
   const novelDiskWriteChainRef = useRef(Promise.resolve());
+  /** Debounce/coalesce theo id truyện trước khi ghi đĩa. */
+  const pendingNovelDiskByIdRef = useRef(new Map());
   /** Cache JSON cuối cùng để bỏ qua ghi index khi nội dung không đổi. */
   const lastIndexJsonByDirRef = useRef(new WeakMap());
   /** Cache JSON manifest cuối cùng theo id truyện để bỏ qua ghi đĩa khi không đổi. */
   const lastNovelManifestJsonByIdRef = useRef(new Map());
+  /** Throttle .backup.json theo id truyện (giảm churn OneDrive). */
+  const lastNovelBackupAtByIdRef = useRef(new Map());
+  /** Tránh spam toast cấp quyền / đang chờ sync. */
+  const permissionToastCooldownRef = useRef(0);
+  const lockWaitToastCooldownRef = useRef(0);
+
+  const regrantDirectoryWriteAndFlush = useCallback(async () => {
+    const dir = dirHandleRef.current;
+    if (!dir || dir === 'LOCAL_STORAGE') {
+      showToast('Chưa kết nối thư mục lưu trữ.', 'warning');
+      return;
+    }
+    const perm = await ensureDirectoryWritePermission(dir);
+    if (!perm.ok) {
+      showToast(
+        'Vẫn chưa có quyền ghi. Bấm lại «Cho phép ghi lại» hoặc mở Thư viện → Lưu Trữ và kết nối lại thư mục.',
+        'warning',
+        {
+          undoLabel: 'Cho phép ghi lại',
+          durationMs: 25000,
+          onUndo: () => {
+            void regrantDirectoryWriteAndFlush();
+          },
+        }
+      );
+      return;
+    }
+    const novel =
+      activeNovelDataRef?.current && typeof activeNovelDataRef.current === 'object'
+        ? activeNovelDataRef.current
+        : null;
+    if (!novel?.id) {
+      showToast('Đã có quyền ghi. Mở lại truyện hoặc lưu một lần để đồng bộ lên thư mục.', 'success');
+      return;
+    }
+    const syncFn = syncNovelRef.current;
+    if (typeof syncFn !== 'function') return;
+    const result = await syncFn(novel, dir, { immediate: true });
+    if (result?.ok) {
+      showToast(`Đã ghi lại «${novel.title || novel.id}» lên thư mục.`, 'success');
+      return;
+    }
+    showToast(
+      `Vẫn chưa ghi được «${novel.title || novel.id}». Bản nháp vẫn giữ trong trình duyệt — thử lại sau vài giây (OneDrive có thể đang khóa file).`,
+      'warning',
+      {
+        undoLabel: 'Cho phép ghi lại',
+        durationMs: 25000,
+        onUndo: () => {
+          void regrantDirectoryWriteAndFlush();
+        },
+      }
+    );
+  }, [activeNovelDataRef, dirHandleRef, showToast]);
+
+  const showDirectoryWritePermissionToast = useCallback(
+    (novelData, detailMsg) => {
+      const now = Date.now();
+      if (now - permissionToastCooldownRef.current < 4000) return;
+      permissionToastCooldownRef.current = now;
+      const title = novelData?.title || novelData?.id || '';
+      showToast(
+        detailMsg ||
+          `Trình duyệt từ chối ghi «${title}». Bản nháp đã giữ trong trình duyệt — bấm nút để cấp quyền và lưu lại (không cần F5).`,
+        'warning',
+        {
+          undoLabel: 'Cho phép ghi lại',
+          durationMs: 25000,
+          onUndo: () => {
+            void regrantDirectoryWriteAndFlush();
+          },
+        }
+      );
+    },
+    [regrantDirectoryWriteAndFlush, showToast]
+  );
 
   useEffect(
     () => () => {
       if (persistIndexStatsTimerRef.current) clearTimeout(persistIndexStatsTimerRef.current);
+      for (const entry of pendingNovelDiskByIdRef.current.values()) {
+        if (entry?.timer) clearTimeout(entry.timer);
+      }
+      pendingNovelDiskByIdRef.current.clear();
     },
     []
   );
@@ -249,7 +348,7 @@ export function useAppPersistence({
   );
 
   const syncNovel = useCallback(
-    (novelData, rootDir) => {
+    (novelData, rootDir, options = {}) => {
       if (!rootDir || rootDir === 'LOCAL_STORAGE') {
         const writeRes = writeLocalJsonWithBackup(
           novelStorageKey(novelData.id),
@@ -265,198 +364,274 @@ export function useAppPersistence({
         return Promise.resolve({ ok: Boolean(writeRes.ok), mode: 'local', error: writeRes.error || null });
       }
 
-      const runFolderSync = async () => {
-      const perm = await ensureDirectoryWritePermission(rootDir);
-      if (!perm.ok) {
-        console.warn('[TTC] syncNovel: chưa có quyền readwrite trên thư mục gốc', perm);
-        setTimeout(() => {
-          showToast(
-            `Không ghi được «${novelData.title || novelData.id || ''}»: cần quyền chỉnh sửa thư mục. Mở Thư viện → **Lưu Trữ / Kết nối thư mục** và chấp nhận quyền ghi, rồi xóa hoặc lưu lại.`,
-            'warning'
-          );
-        }, 0);
-        return { ok: false, mode: 'directory', reason: 'permission_denied' };
-      }
+      const immediate = Boolean(options?.immediate || options?.flush);
+      const forceBackup = Boolean(options?.forceBackup);
 
-      const folderName = novelData.folderName || novelData.title.replace(/[\\/:*?"<>|]/g, '').trim() || novelData.id;
-      let novelToWrite = novelData;
-      // Đang giữ data partial (lazy-shard): BẮT BUỘC merge từ đĩa trước khi ghi — nếu không writeShardTree sẽ xóa mọi shard không nằm trong memory.
-      // (migrateNovel từng xóa storageLayout nên không được phụ thuộc vào storageLayout tại đây.)
-      if (novelData?.__partialData) {
-        try {
-          const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
-          const diskData = await loadShardsFromNovelDir(novelDir);
-          const merged = {
-            ...novelData,
-            data: { ...(diskData || {}) },
-          };
-          Object.entries(novelData.data || {}).forEach(([lonId, lonData]) => {
-            if (!merged.data[lonId]) merged.data[lonId] = {};
-            Object.entries(lonData || {}).forEach(([nhoId, nhoData]) => {
-              merged.data[lonId][nhoId] = nhoData;
-            });
-          });
-          delete merged.__partialData;
-          novelToWrite = merged;
-        } catch (e) {
-          console.warn('[TTC] Không merge shard trước khi lưu (tránh ghi đè/xóa shard):', e);
+      // Checkpoint ngay — debounce chỉ trì hoãn ghi đĩa, không trì hoãn shadow.
+      void saveNovelShadow(novelData);
+
+      const runFolderSync = async (payloadNovel, writeOpts = {}) => {
+        const forceBackupWrite = Boolean(writeOpts.forceBackup);
+        await saveNovelShadow(payloadNovel);
+
+        const perm = await ensureDirectoryWritePermission(rootDir);
+        if (!perm.ok) {
+          console.warn('[TTC] syncNovel: chưa có quyền readwrite trên thư mục gốc', perm);
           setTimeout(() => {
-            showToast('Lỗi đọc dữ liệu trên đĩa — đã hủy lưu để tránh mất nội dung tab khác.', 'error');
+            showDirectoryWritePermissionToast(
+              payloadNovel,
+              `Không ghi được «${payloadNovel.title || payloadNovel.id || ''}»: cần quyền chỉnh sửa thư mục. Bản nháp đã giữ trong trình duyệt — bấm «Cho phép ghi lại» (không cần F5).`
+            );
           }, 0);
-          return { ok: false, mode: 'directory', reason: 'partial_merge_failed', error: e };
+          return { ok: false, mode: 'directory', reason: 'permission_denied' };
         }
-      }
-      // Chống wipe toàn bộ shard: object trong memory không có tab nào nhưng thư mục data/ vẫn có file
-      // (lỗi load / F5 trước khi hydrate — tránh writeShardTree xóa hết file).
-      const memKeys = listShardKeysFromData(novelToWrite.data || {});
-      if (memKeys.length === 0) {
-        try {
-          const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
-          const diskPkg = await readRawNovelPackageFromDir(novelDir, folderName);
-          const diskData = diskPkg?.data || {};
-          const diskKeys = listShardKeysFromData(diskData);
-          if (diskKeys.length > 0) {
-            console.warn('[TTC] syncNovel: memory.data rỗng nhưng đĩa còn dữ liệu — gộp từ đĩa để tránh mất dữ liệu.');
-            novelToWrite = { ...novelToWrite, data: { ...(diskData || {}) } };
-            if (diskPkg?.storageLayout === NOVEL_STORAGE_SHARDED) {
-              novelToWrite.storageLayout = NOVEL_STORAGE_SHARDED;
-            }
-          }
-        } catch (e) {
-          console.warn('[TTC] syncNovel: không đọc được dữ liệu đĩa khi kiểm tra memory rỗng:', e);
-        }
-      }
-      let jsonStr;
-      try {
-        const manifest = buildDiskManifest(novelToWrite);
-        jsonStr = JSON.stringify(manifest, null, 2);
-      } catch (e) {
-        console.error('[TTC] syncNovel: không tạo được manifest JSON', e);
-        setTimeout(() => {
-          showToast(
-            `Lỗi chuẩn bị lưu truyện ${novelData.title || novelData.id || ''}.${describeNovelSyncFailure(e)}`,
-            'error'
-          );
-        }, 0);
-        return { ok: false, mode: 'directory', reason: 'manifest_build_failed', error: e };
-      }
-      const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
-      const shardPlan = buildShardWritePlan(novelToWrite.data || {}, getShardState(novelDir).hashes);
-      const mainFile = `${folderName}.json`;
-      const tmpFile = `${folderName}.json.tmp`;
-      let cachedBackupJson = null;
-      const getBackupJson = () => {
-        if (cachedBackupJson != null) return cachedBackupJson;
-        cachedBackupJson = JSON.stringify(novelToWrite, null, 2);
-        return cachedBackupJson;
-      };
-      const writeNovelBackup = async (dir) => {
-        try {
-          const bf = await dir.getFileHandle(`${folderName}.backup.json`, { create: true });
-          const bw = await bf.createWritable();
-          await bw.write(getBackupJson());
-          await bw.close();
-        } catch {
-          /* backup is best-effort */
-        }
-      };
-      const tryAtomic = async () => {
-        await writeShardTree(novelDir, novelToWrite);
-        const tw = await novelDir.getFileHandle(tmpFile, { create: true });
-        const w = await tw.createWritable();
-        await w.write(jsonStr);
-        await w.close();
-        try {
-          await novelDir.removeEntry(mainFile);
-        } catch {
-          /* first save */
-        }
-        const tmpAgain = await novelDir.getFileHandle(tmpFile);
-        if (typeof tmpAgain.move === 'function') {
-          await tmpAgain.move(mainFile);
-        } else {
-          const out = await novelDir.getFileHandle(mainFile, { create: true });
-          const wo = await out.createWritable();
-          await wo.write(jsonStr);
-          await wo.close();
+
+        const folderName =
+          payloadNovel.folderName ||
+          payloadNovel.title.replace(/[\\/:*?"<>|]/g, '').trim() ||
+          payloadNovel.id;
+        let novelToWrite = payloadNovel;
+        if (payloadNovel?.__partialData) {
           try {
-            await novelDir.removeEntry(tmpFile);
-          } catch { /* ignore */ }
+            const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
+            const diskData = await loadShardsFromNovelDir(novelDir);
+            const merged = {
+              ...payloadNovel,
+              data: { ...(diskData || {}) },
+            };
+            Object.entries(payloadNovel.data || {}).forEach(([lonId, lonData]) => {
+              if (!merged.data[lonId]) merged.data[lonId] = {};
+              Object.entries(lonData || {}).forEach(([nhoId, nhoData]) => {
+                merged.data[lonId][nhoId] = nhoData;
+              });
+            });
+            delete merged.__partialData;
+            novelToWrite = merged;
+          } catch (e) {
+            console.warn('[TTC] Không merge shard trước khi lưu (tránh ghi đè/xóa shard):', e);
+            setTimeout(() => {
+              showToast(
+                'Lỗi đọc dữ liệu trên đĩa — đã hủy lưu để tránh mất nội dung tab khác. Bản nháp vẫn giữ trong trình duyệt.',
+                'error'
+              );
+            }, 0);
+            return { ok: false, mode: 'directory', reason: 'partial_merge_failed', error: e };
+          }
         }
-        await novelDir.getDirectoryHandle('images', { create: true });
-        await writeNovelBackup(novelDir);
-      };
-      const tryDirect = async () => {
-        await writeShardTree(novelDir, novelToWrite);
-        const f = await novelDir.getFileHandle(mainFile, { create: true });
-        const w = await f.createWritable();
-        await w.write(jsonStr);
-        await w.close();
-        await novelDir.getDirectoryHandle('images', { create: true });
-        await writeNovelBackup(novelDir);
-      };
-      try {
+        const memKeys = listShardKeysFromData(novelToWrite.data || {});
+        if (memKeys.length === 0) {
+          try {
+            const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
+            const diskPkg = await readRawNovelPackageFromDir(novelDir, folderName);
+            const diskData = diskPkg?.data || {};
+            const diskKeys = listShardKeysFromData(diskData);
+            if (diskKeys.length > 0) {
+              console.warn(
+                '[TTC] syncNovel: memory.data rỗng nhưng đĩa còn dữ liệu — gộp từ đĩa để tránh mất dữ liệu.'
+              );
+              novelToWrite = { ...novelToWrite, data: { ...(diskData || {}) } };
+              if (diskPkg?.storageLayout === NOVEL_STORAGE_SHARDED) {
+                novelToWrite.storageLayout = NOVEL_STORAGE_SHARDED;
+              }
+            }
+          } catch (e) {
+            console.warn('[TTC] syncNovel: không đọc được dữ liệu đĩa khi kiểm tra memory rỗng:', e);
+          }
+        }
+
+        await saveNovelShadow(novelToWrite);
+
+        let jsonStr;
+        try {
+          const manifest = buildDiskManifest(novelToWrite);
+          jsonStr = JSON.stringify(manifest, null, 2);
+        } catch (e) {
+          console.error('[TTC] syncNovel: không tạo được manifest JSON', e);
+          setTimeout(() => {
+            showToast(
+              `Lỗi chuẩn bị lưu truyện ${payloadNovel.title || payloadNovel.id || ''}.${describeNovelSyncFailure(e)}`,
+              'error'
+            );
+          }, 0);
+          return { ok: false, mode: 'directory', reason: 'manifest_build_failed', error: e };
+        }
+        const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
+        const shardPlan = buildShardWritePlan(novelToWrite.data || {}, getShardState(novelDir).hashes);
+        const mainFile = `${folderName}.json`;
+        let cachedBackupJson = null;
+        const getBackupJson = () => {
+          if (cachedBackupJson != null) return cachedBackupJson;
+          cachedBackupJson = JSON.stringify(novelToWrite, null, 2);
+          return cachedBackupJson;
+        };
+        const maybeWriteNovelBackup = async (dir) => {
+          const novelId = String(novelToWrite.id || '');
+          const lastAt = lastNovelBackupAtByIdRef.current.get(novelId) || 0;
+          if (!forceBackupWrite && Date.now() - lastAt < NOVEL_BACKUP_MIN_INTERVAL_MS) {
+            return;
+          }
+          try {
+            const bf = await dir.getFileHandle(`${folderName}.backup.json`, { create: true });
+            const bw = await bf.createWritable();
+            await bw.write(getBackupJson());
+            await bw.close();
+            if (novelId) lastNovelBackupAtByIdRef.current.set(novelId, Date.now());
+          } catch {
+            /* backup is best-effort */
+          }
+        };
+        const markDiskSynced = async () => {
+          lastNovelManifestJsonByIdRef.current.set(novelToWrite.id, jsonStr);
+          bumpNovelStatsAfterWrite(novelToWrite);
+          await clearNovelShadow(novelToWrite.id);
+        };
+        // Ưu tiên ghi đè in-place — ít tạo/xóa file hơn tmp+rename (OneDrive).
+        const writeInPlace = async () => {
+          await writeShardTree(novelDir, novelToWrite);
+          const f = await novelDir.getFileHandle(mainFile, { create: true });
+          const w = await f.createWritable();
+          await w.write(jsonStr);
+          await w.close();
+          await novelDir.getDirectoryHandle('images', { create: true });
+          await maybeWriteNovelBackup(novelDir);
+        };
+
         const lastManifestJson = lastNovelManifestJsonByIdRef.current.get(novelToWrite.id);
-        // Manifest trên đĩa (buildDiskManifest) luôn bỏ data → jsonStr không đổi khi chỉ sửa thẻ/tab;
-        // chỉ so manifest sẽ bỏ qua ghi shard và mất dữ liệu sau F5.
         if (
           lastManifestJson === jsonStr &&
           shardPlan.writes.length === 0 &&
           shardPlan.removed.length === 0
         ) {
+          await clearNovelShadow(novelToWrite.id);
           return { ok: true, mode: 'directory', skipped: 'unchanged' };
         }
-        await tryAtomic();
-        lastNovelManifestJsonByIdRef.current.set(novelToWrite.id, jsonStr);
-        bumpNovelStatsAfterWrite(novelToWrite);
-        return { ok: true, mode: 'directory' };
-      } catch (e1) {
-        console.warn('[TTC] syncNovel tryAtomic failed:', e1);
-        if (isFsPermissionWriteError(e1)) {
-          const retryPerm = await ensureDirectoryWritePermission(rootDir);
-          if (!retryPerm.ok) {
-            setTimeout(() => {
-              showToast(
-                `Lưu «${novelData.title || novelData.id || ''}» bị từ chối quyền ghi. Mở Thư viện → **Lưu Trữ / Kết nối thư mục** và chấp nhận quyền chỉnh sửa, rồi lưu lại.`,
-                'warning'
-              );
-            }, 0);
-            return { ok: false, mode: 'directory', reason: 'permission_denied_after_retry', error: e1 };
-          }
-        }
+
         try {
-          await tryDirect();
-          lastNovelManifestJsonByIdRef.current.set(novelToWrite.id, jsonStr);
-          bumpNovelStatsAfterWrite(novelToWrite);
-          return { ok: true, mode: 'directory', recoveredFrom: 'tryDirect' };
+          await withFsWriteRetry(
+            async () => {
+              await writeInPlace();
+            },
+            {
+              isPermissionHardError: isHardFsPermissionError,
+              onRetry: ({ attempt }) => {
+                if (attempt < 2) return;
+                const now = Date.now();
+                if (now - lockWaitToastCooldownRef.current < 8000) return;
+                lockWaitToastCooldownRef.current = now;
+                setTimeout(() => {
+                  showToast(
+                    `Đang chờ OneDrive nhả khóa file để lưu «${payloadNovel.title || payloadNovel.id || ''}»…`,
+                    'warning',
+                    { durationMs: 5000 }
+                  );
+                }, 0);
+              },
+            }
+          );
+          await markDiskSynced();
+          return { ok: true, mode: 'directory' };
         } catch (e2) {
-          console.error('[TTC] syncNovel tryDirect failed:', e2);
-          if (isFsPermissionWriteError(e2)) {
+          console.error('[TTC] syncNovel write failed after retries:', e2);
+          if (isHardFsPermissionError(e2) || (isFsPermissionWriteError(e2) && !isTransientFsWriteError(e2))) {
             setTimeout(() => {
-              showToast(
-                `Trình duyệt từ chối ghi «${novelData.title || novelData.id || ''}». Hãy kết nối lại thư mục truyện và cấp quyền chỉnh sửa (read/write).`,
-                'warning'
-              );
+              showDirectoryWritePermissionToast(payloadNovel);
             }, 0);
             return { ok: false, mode: 'directory', reason: 'permission_denied_write', error: e2 };
           }
+          if (isFsPermissionWriteError(e2)) {
+            const retryPerm = await ensureDirectoryWritePermission(rootDir);
+            if (!retryPerm.ok) {
+              setTimeout(() => {
+                showDirectoryWritePermissionToast(payloadNovel);
+              }, 0);
+              return { ok: false, mode: 'directory', reason: 'permission_denied_after_retry', error: e2 };
+            }
+            try {
+              await writeInPlace();
+              await markDiskSynced();
+              return { ok: true, mode: 'directory', recoveredFrom: 'permission_recheck' };
+            } catch (e3) {
+              setTimeout(() => {
+                showDirectoryWritePermissionToast(payloadNovel);
+              }, 0);
+              return { ok: false, mode: 'directory', reason: 'permission_denied_write', error: e3 };
+            }
+          }
           setTimeout(() => {
             showToast(
-              `Lỗi đồng bộ truyện ${novelData.title || novelData.id || ''}!${describeNovelSyncFailure(e2)}`,
-              'error'
+              `Lỗi đồng bộ truyện ${payloadNovel.title || payloadNovel.id || ''}!${describeNovelSyncFailure(e2)} Bản nháp vẫn giữ trong trình duyệt.`,
+              'error',
+              {
+                undoLabel: 'Cho phép ghi lại',
+                durationMs: 25000,
+                onUndo: () => {
+                  void regrantDirectoryWriteAndFlush();
+                },
+              }
             );
           }, 0);
           return { ok: false, mode: 'directory', reason: 'write_failed', error: e2 };
         }
-      }
       };
 
-      novelDiskWriteChainRef.current = novelDiskWriteChainRef.current
-        .catch(() => {})
-        .then(() => runFolderSync());
-      return novelDiskWriteChainRef.current;
+      const enqueueFolderSync = (payloadNovel, writeOpts = {}) => {
+        novelDiskWriteChainRef.current = novelDiskWriteChainRef.current
+          .catch(() => {})
+          .then(() => runFolderSync(payloadNovel, writeOpts));
+        return novelDiskWriteChainRef.current;
+      };
+
+      const novelId = String(novelData?.id || '').trim();
+      if (!novelId) {
+        return enqueueFolderSync(novelData, { forceBackup: forceBackup || immediate });
+      }
+
+      if (immediate) {
+        const pending = pendingNovelDiskByIdRef.current.get(novelId);
+        if (pending?.timer) {
+          clearTimeout(pending.timer);
+          pending.timer = null;
+        }
+        const resolvers = pending?.resolvers || [];
+        pendingNovelDiskByIdRef.current.delete(novelId);
+        const writePromise = enqueueFolderSync(novelData, { forceBackup: true });
+        for (const resolve of resolvers) {
+          void writePromise.then(resolve, (err) =>
+            resolve({ ok: false, mode: 'directory', reason: 'write_failed', error: err })
+          );
+        }
+        return writePromise;
+      }
+
+      return new Promise((resolve) => {
+        const prev = pendingNovelDiskByIdRef.current.get(novelId);
+        if (prev?.timer) clearTimeout(prev.timer);
+        const resolvers = prev?.resolvers || [];
+        resolvers.push(resolve);
+        const entry = {
+          novelData,
+          rootDir,
+          resolvers,
+          timer: null,
+          forceBackup: Boolean(prev?.forceBackup) || forceBackup,
+        };
+        entry.timer = setTimeout(() => {
+          const latest = pendingNovelDiskByIdRef.current.get(novelId);
+          pendingNovelDiskByIdRef.current.delete(novelId);
+          if (!latest) return;
+          const writePromise = enqueueFolderSync(latest.novelData, {
+            forceBackup: Boolean(latest.forceBackup),
+          });
+          for (const r of latest.resolvers) {
+            void writePromise.then(r, (err) =>
+              r({ ok: false, mode: 'directory', reason: 'write_failed', error: err })
+            );
+          }
+        }, NOVEL_DISK_DEBOUNCE_MS);
+        pendingNovelDiskByIdRef.current.set(novelId, entry);
+      });
     },
-    [bumpNovelStatsAfterWrite, showToast]
+    [bumpNovelStatsAfterWrite, regrantDirectoryWriteAndFlush, showDirectoryWritePermissionToast, showToast]
   );
 
   useEffect(() => {
@@ -464,6 +639,23 @@ export function useAppPersistence({
   }, [syncNovel]);
 
   const awaitNovelDiskIdle = useCallback(async () => {
+    const pendingEntries = [...pendingNovelDiskByIdRef.current.entries()];
+    for (const [, entry] of pendingEntries) {
+      if (entry?.timer) clearTimeout(entry.timer);
+    }
+    pendingNovelDiskByIdRef.current.clear();
+    for (const [, entry] of pendingEntries) {
+      if (!entry?.novelData || !syncNovelRef.current) continue;
+      const writePromise = syncNovelRef.current(entry.novelData, entry.rootDir, {
+        immediate: true,
+        forceBackup: Boolean(entry.forceBackup),
+      });
+      for (const r of entry.resolvers || []) {
+        void writePromise.then(r, (err) =>
+          r({ ok: false, mode: 'directory', reason: 'write_failed', error: err })
+        );
+      }
+    }
     await novelDiskWriteChainRef.current.catch(() => {});
   }, []);
 
@@ -479,6 +671,41 @@ export function useAppPersistence({
       } catch (pe) {
         console.warn(`[TTC] JSON truyện bị hỏng sau migrate: ${label}`, pe);
         return null;
+      }
+    };
+
+    const applyPendingShadow = async (loaded) => {
+      if (!wantId) return loaded;
+      // Chỉ dùng shadow khi đang lưu thư mục — localStorage đã là nguồn chính.
+      if (!rootDir || rootDir === 'LOCAL_STORAGE') return loaded;
+      try {
+        const shadow = await loadNovelShadow(wantId);
+        const resolved = resolveNovelWithShadow(loaded?.novel || null, shadow);
+        if (!resolved) return loaded;
+        if (!resolved.fromShadow) return loaded;
+        const novel = finalizeParsed(resolved.novel, `shadow:${wantId}`) || resolved.novel;
+        novel.__recoveredFromShadow = true;
+        const toastKey = `shadow:${wantId}`;
+        if (!recoveredNovelToastIdsRef.current.has(toastKey)) {
+          recoveredNovelToastIdsRef.current.add(toastKey);
+          setTimeout(() => {
+            showToast(
+              'Đã khôi phục bản chưa kịp ghi lên thư mục (sau F5 / lỗi đồng bộ). Đang thử lưu lại…',
+              'warning',
+              {
+                undoLabel: 'Cho phép ghi lại',
+                durationMs: 25000,
+                onUndo: () => {
+                  void regrantDirectoryWriteAndFlush();
+                },
+              }
+            );
+          }, 0);
+        }
+        return { novel, novelDir: loaded?.novelDir ?? null };
+      } catch (e) {
+        console.warn('[TTC] Không đọc được novel shadow:', e);
+        return loaded;
       }
     };
 
@@ -533,14 +760,14 @@ export function useAppPersistence({
       try {
         const novelDir = await rootDir.getDirectoryHandle(name);
         const hit = await tryDirWithBase(novelDir, name);
-        if (hit) return hit;
+        if (hit) return applyPendingShadow(hit);
         for (const alt of novelManifestBaseNameCandidates(meta)) {
           if (alt === name) continue;
           const hitAlt = await tryDirWithBase(novelDir, alt);
-          if (hitAlt) return hitAlt;
+          if (hitAlt) return applyPendingShadow(hitAlt);
         }
         const hitScan = await tryDirByManifestScan(novelDir);
-        if (hitScan) return hitScan;
+        if (hitScan) return applyPendingShadow(hitScan);
       } catch {
         /* thử candidate kế */
       }
@@ -554,10 +781,10 @@ export function useAppPersistence({
           const basesToTry = [...new Set([entryName, ...candidateBases])];
           for (const base of basesToTry) {
             const hit = await tryDirWithBase(h, base);
-            if (hit) return hit;
+            if (hit) return applyPendingShadow(hit);
           }
           const hitScan = await tryDirByManifestScan(h);
-          if (hitScan) return hitScan;
+          if (hitScan) return applyPendingShadow(hitScan);
         }
       } catch (e) {
         console.warn('[TTC] Quét thư mục gốc tìm truyện theo id:', e);
@@ -570,15 +797,19 @@ export function useAppPersistence({
       const text = await (await f.getFile()).text();
       const parsed = JSON.parse(text);
       const pid = String(parsed.id ?? '').trim();
-      if (wantId && pid && pid !== wantId) return null;
+      if (wantId && pid && pid !== wantId) {
+        return applyPendingShadow(null);
+      }
       const novel = finalizeParsed(parsed, `novels/${meta.id}.json`);
-      return novel ? { novel, novelDir: null } : null;
+      return applyPendingShadow(novel ? { novel, novelDir: null } : null);
     } catch (e) {
-      if (e && e.name === 'NotFoundError') return null;
+      if (e && e.name === 'NotFoundError') {
+        return applyPendingShadow(null);
+      }
       console.warn(`[TTC] Lỗi đọc novels/${meta.id}.json`, e);
-      return null;
+      return applyPendingShadow(null);
     }
-  }, [showToast]);
+  }, [regrantDirectoryWriteAndFlush, showToast]);
 
   return {
     syncIndex,

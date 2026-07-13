@@ -11,14 +11,32 @@ export function useToast() {
 
   const showToast = useCallback((msg, type = 'success', options = null) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    const hasUndo = options && typeof options.onUndo === 'function';
+    const onAction =
+      options && typeof options.onAction === 'function'
+        ? options.onAction
+        : options && typeof options.onUndo === 'function'
+          ? options.onUndo
+          : null;
+    const hasAction = typeof onAction === 'function';
+    const actionLabel = hasAction
+      ? options.actionLabel || options.undoLabel || 'Hoàn tác'
+      : undefined;
     setToastMessage({
       msg,
       type,
-      undoLabel: hasUndo ? (options.undoLabel || 'Hoan tac') : undefined,
-      onUndo: hasUndo ? options.onUndo : undefined,
+      undoLabel: actionLabel,
+      onUndo: hasAction ? onAction : undefined,
     });
-    const ms = hasUndo ? 9000 : 3500;
+    const ms =
+      typeof options?.durationMs === 'number'
+        ? options.durationMs
+        : hasAction
+          ? 20000
+          : 3500;
+    if (ms <= 0) {
+      toastTimerRef.current = null;
+      return;
+    }
     toastTimerRef.current = setTimeout(() => {
       setToastMessage(null);
       toastTimerRef.current = null;

@@ -278,7 +278,10 @@ export function useAppDirectoryBackup({
             current: i + 1,
             total: novelEntries.length,
           });
-          const novelResult = await syncNovel(novelEntries[i][1], dirHandle);
+          const novelResult = await syncNovel(novelEntries[i][1], dirHandle, {
+            immediate: true,
+            forceBackup: true,
+          });
           if (!novelResult?.ok) {
             setImportProgress(null);
             showToast(

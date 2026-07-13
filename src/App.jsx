@@ -342,6 +342,7 @@ export default function App() {
     novelsMetadataRef,
     globalTabsConfigRef,
     dirHandleRef,
+    activeNovelDataRef,
     setNovelStatsById,
     showToast,
   });
