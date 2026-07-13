@@ -1,7 +1,8 @@
 /**
- * Auto-wrap internal wiki links from existing entity names.
+ * Auto-wrap internal wiki links from existing entity names / aliases.
  * Only wraps text outside existing [[...]] ranges.
  * Longer names are matched first to avoid overlap.
+ * Giữ nguyên chữ đã khớp (alias hoặc tên chính) — không đổi sang tên chính thẻ.
  */
 import { isWikiWrapOptedOut } from './wikiLinkOptOut.js';
 import { shouldSkipWikiLinkInHierarchyContext } from './wikiHierarchyLinkGuard.js';
@@ -261,13 +262,10 @@ function pickMatchAt(text, start, candidates, variantsByLower, allMatchTexts, op
       return { start: span.start, end: span.end, skip: true };
     }
 
-    const surfaceMatch = matchesWikiNameSurface(candidate.matchText, sourceSlice);
     return {
       start: span.start,
       end: span.end,
-      wrapAs: candidate.wrapAs,
       matchedText: sourceSlice,
-      useCanonicalLabel: !surfaceMatch && candidate.tokenCount >= 3,
     };
   }
   return null;
@@ -346,12 +344,9 @@ export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap, options =
   let cursor = 0;
   for (const range of merged) {
     out += text.slice(cursor, range.start);
-    const matched = collapseSpaces(range.matchedText);
-    const canonical = collapseSpaces(range.wrapAs);
-    let label = matched || canonical;
-    if (range.useCanonicalLabel && canonical) label = canonical;
-    else if (canonical && matched && matched.length < canonical.length) label = canonical;
-    out += `[[${label}]]`;
+    // Luôn giữ surface đã gõ (tên chính / biệt danh / wiki trống sau này tạo thẻ).
+    const label = collapseSpaces(range.matchedText);
+    if (label) out += `[[${label}]]`;
     cursor = range.end;
   }
   out += text.slice(cursor);

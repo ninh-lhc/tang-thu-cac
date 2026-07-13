@@ -113,12 +113,50 @@ describe('autoWrapWikiLinksByEntityMap', () => {
     ].join('\n');
     const map = [{ name: 'Diệp Thiên Dật', entityName: 'Diệp Thiên Dật', dest: { entityId: 'mc-1' } }];
     const out = autoWrapWikiLinksByEntityMap(text, map);
-    expect(out.match(/\[\[Diệp Thiên Dật\]\]/g)?.length).toBe(5);
+    expect(out.match(/\[\[Diệp Thiên Dật\]\]/g)?.length).toBe(4);
+    // Cụm rút gọn «Diệp Thiên» vẫn bọc nhưng giữ nguyên chữ, không đổi thành tên đầy đủ.
+    expect(out).toContain('[[Diệp Thiên]]');
   });
 
   it('wraps flexible whitespace and relaxed casing for long names', () => {
     const text = 'gap  diệp   thiên   dật  trong doan.';
     const map = [{ name: 'Diệp Thiên Dật' }];
-    expect(autoWrapWikiLinksByEntityMap(text, map)).toContain('[[Diệp Thiên Dật]]');
+    expect(autoWrapWikiLinksByEntityMap(text, map)).toBe('gap  [[diệp thiên dật]]  trong doan.');
+  });
+
+  it('keeps alias surface when wrapping — does not rename to main entity name', () => {
+    const text = 'Thiện Đường chính thức trở thành thế lực lớn ở Khánh Thành.';
+    const map = [
+      {
+        name: 'Thiện Đường',
+        entityName: '5 Thế Lực Ban Đầu Khánh Thành',
+        dest: { entityId: 'force-5' },
+      },
+      {
+        name: '5 Thế Lực Ban Đầu Khánh Thành',
+        entityName: '5 Thế Lực Ban Đầu Khánh Thành',
+        dest: { entityId: 'force-5' },
+      },
+    ];
+    expect(autoWrapWikiLinksByEntityMap(text, map)).toBe(
+      '[[Thiện Đường]] chính thức trở thành thế lực lớn ở Khánh Thành.'
+    );
+  });
+
+  it('does not rewrite an already wrapped alias when the main card exists', () => {
+    const text = '[[Thiện Đường]] và [[5 Thế Lực Ban Đầu Khánh Thành]] cùng một thẻ.';
+    const map = [
+      {
+        name: 'Thiện Đường',
+        entityName: '5 Thế Lực Ban Đầu Khánh Thành',
+        dest: { entityId: 'force-5' },
+      },
+      {
+        name: '5 Thế Lực Ban Đầu Khánh Thành',
+        entityName: '5 Thế Lực Ban Đầu Khánh Thành',
+        dest: { entityId: 'force-5' },
+      },
+    ];
+    expect(autoWrapWikiLinksByEntityMap(text, map)).toBe(text);
   });
 });
