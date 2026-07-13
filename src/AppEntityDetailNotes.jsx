@@ -825,7 +825,8 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
     setNotesViewFieldFilters({});
   }, []);
 
-  const hasFieldFilterApplied = Object.keys(notesViewFieldFilters).length > 0;
+  const hasFieldFilterApplied =
+    !isListCardEntity(selectedEntity) && Object.keys(notesViewFieldFilters).length > 0;
   const hasTextSearch = isListCardEntity(selectedEntity)
     ? safeString(listCatalogQuery).trim()
     : safeString(notesViewQuery).trim();
@@ -939,7 +940,11 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
                 onClick={() => setShowNotesAdvancedPanel((v) => !v)}
                 aria-expanded={showNotesAdvancedPanel}
                 aria-controls="notes-advanced-panel"
-                title="Tìm trong ghi chép và lọc theo trường (giống Nâng cao ở danh sách thẻ)"
+                title={
+                  isListCardEntity(selectedEntity)
+                    ? 'Tìm trong danh mục thẻ — gõ từ khóa để lọc dòng'
+                    : 'Tìm trong ghi chép và lọc theo trường (giống Nâng cao ở danh sách thẻ)'
+                }
                 className={`${NOTES_ADV_TOOLBAR_BTN} ${
                   showNotesAdvancedPanel
                     ? 'bg-amber-900/30 border-amber-700/50 text-amber-300'
@@ -1019,92 +1024,112 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
               }
               placeholder={
                 isListCardEntity(selectedEntity)
-                  ? 'Tên thẻ, chuỗi hiển thị, đường dẫn…'
+                  ? 'Gõ để lọc dòng: tên thẻ, chuỗi hiển thị…'
                   : 'Tìm trong ghi chép...'
               }
               autoComplete="off"
               className="tt-kbd-focus h-9 w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 text-[12px] font-serif outline-none focus:border-amber-600/50 text-slate-200 placeholder:text-slate-500"
               aria-label={
                 isListCardEntity(selectedEntity)
-                  ? 'Tìm trong danh mục thẻ'
+                  ? 'Lọc dòng trong danh mục thẻ'
                   : 'Tìm trong nội dung ghi chép'
               }
             />
           </div>
-          <div className="grid grid-cols-1 gap-2.5 overflow-visible sm:grid-cols-2 lg:grid-cols-3">
-            {AdvancedFieldSelectCmp ? (
-              <AdvancedFieldSelectCmp
-                value={notesAdvFieldId}
-                onChange={(v) => {
-                  setNotesAdvFieldId(v);
-                  setNotesViewFieldFilters({});
-                }}
-                options={notesFilterOptions}
-                active={notesAdvFieldId !== 'none'}
-              />
-            ) : (
+          {isListCardEntity(selectedEntity) ? (
+            <div className="grid grid-cols-1 gap-2.5 overflow-visible sm:grid-cols-2">
               <select
-                value={notesAdvFieldId}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setNotesAdvFieldId(v);
-                  setNotesViewFieldFilters({});
-                }}
-                className={`tt-kbd-focus h-9 w-full rounded-xl border px-3 text-[12px] font-serif outline-none cursor-pointer ${
-                  notesAdvFieldId !== 'none'
-                    ? 'bg-amber-900/30 border-amber-700/50 text-amber-100'
-                    : 'bg-slate-900 border-slate-800 text-slate-200'
-                }`}
+                value={notesNotesSortMode}
+                onChange={(e) => setNotesNotesSortMode(e.target.value)}
+                className="tt-kbd-focus h-9 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-[12px] font-serif outline-none focus:border-amber-600/50 text-slate-200"
+                aria-label="Sắp xếp dòng danh mục"
               >
-                {notesFilterOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
+                <option value="none">Thứ tự gốc</option>
+                <option value="name_asc">A-Z (dòng)</option>
+                <option value="name_desc">Z-A (dòng)</option>
               </select>
-            )}
-            <select
-              value={safeString(notesViewFieldFilters[notesAdvFieldId] || '')}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (!v) setNotesViewFieldFilters({});
-                else setNotesViewFieldFilters({ [notesAdvFieldId]: v });
-              }}
-              disabled={
-                notesAdvFieldId === 'none' || !(valueBucket?.values && valueBucket.values.length > 0)
-              }
-              className="tt-kbd-focus h-9 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-[12px] font-serif outline-none focus:border-cyan-600/50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-200"
-              aria-label="Chọn giá trị lọc theo trường"
-            >
-              <option value="">
-                {notesAdvFieldId === 'none'
-                  ? 'Chọn trường trước…'
-                  : !(valueBucket?.values && valueBucket.values.length)
-                    ? 'Chưa có giá trị trên tab'
-                    : 'Chọn giá trị…'}
-              </option>
-              {(valueBucket?.values || []).map((val) => (
-                <option key={val} value={val}>
-                  {val.length > 80 ? `${val.slice(0, 77)}…` : val}
-                </option>
-              ))}
-            </select>
-            <select
-              value={notesNotesSortMode}
-              onChange={(e) => setNotesNotesSortMode(e.target.value)}
-              className="tt-kbd-focus h-9 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-[12px] font-serif outline-none focus:border-amber-600/50 text-slate-200"
-              aria-label="Sắp xếp sau khi lọc"
-            >
-              <option value="none">Thứ tự gốc</option>
-              <option value="name_asc">A-Z (mục / dòng)</option>
-              <option value="name_desc">Z-A (mục / dòng)</option>
-            </select>
-          </div>
-          <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
-            Lưu ý: <span className="text-slate-400">Tìm</span> và{' '}
-            <span className="text-slate-400">lọc theo trường</span> được áp dụng đồng thời; sắp xếp áp dụng
-            sau lọc.
-          </p>
+              <p className="text-[11px] text-slate-500 font-serif leading-relaxed self-center">
+                Gõ vào ô tìm → chỉ còn các dòng danh mục khớp (không phân biệt dấu).
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-2.5 overflow-visible sm:grid-cols-2 lg:grid-cols-3">
+                {AdvancedFieldSelectCmp ? (
+                  <AdvancedFieldSelectCmp
+                    value={notesAdvFieldId}
+                    onChange={(v) => {
+                      setNotesAdvFieldId(v);
+                      setNotesViewFieldFilters({});
+                    }}
+                    options={notesFilterOptions}
+                    active={notesAdvFieldId !== 'none'}
+                  />
+                ) : (
+                  <select
+                    value={notesAdvFieldId}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setNotesAdvFieldId(v);
+                      setNotesViewFieldFilters({});
+                    }}
+                    className={`tt-kbd-focus h-9 w-full rounded-xl border px-3 text-[12px] font-serif outline-none cursor-pointer ${
+                      notesAdvFieldId !== 'none'
+                        ? 'bg-amber-900/30 border-amber-700/50 text-amber-100'
+                        : 'bg-slate-900 border-slate-800 text-slate-200'
+                    }`}
+                  >
+                    {notesFilterOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <select
+                  value={safeString(notesViewFieldFilters[notesAdvFieldId] || '')}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!v) setNotesViewFieldFilters({});
+                    else setNotesViewFieldFilters({ [notesAdvFieldId]: v });
+                  }}
+                  disabled={
+                    notesAdvFieldId === 'none' || !(valueBucket?.values && valueBucket.values.length > 0)
+                  }
+                  className="tt-kbd-focus h-9 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-[12px] font-serif outline-none focus:border-cyan-600/50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-200"
+                  aria-label="Chọn giá trị lọc theo trường"
+                >
+                  <option value="">
+                    {notesAdvFieldId === 'none'
+                      ? 'Chọn trường trước…'
+                      : !(valueBucket?.values && valueBucket.values.length)
+                        ? 'Chưa có giá trị trên tab'
+                        : 'Chọn giá trị…'}
+                  </option>
+                  {(valueBucket?.values || []).map((val) => (
+                    <option key={val} value={val}>
+                      {val.length > 80 ? `${val.slice(0, 77)}…` : val}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={notesNotesSortMode}
+                  onChange={(e) => setNotesNotesSortMode(e.target.value)}
+                  className="tt-kbd-focus h-9 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-[12px] font-serif outline-none focus:border-amber-600/50 text-slate-200"
+                  aria-label="Sắp xếp sau khi lọc"
+                >
+                  <option value="none">Thứ tự gốc</option>
+                  <option value="name_asc">A-Z (mục / dòng)</option>
+                  <option value="name_desc">Z-A (mục / dòng)</option>
+                </select>
+              </div>
+              <p className="text-[11px] text-slate-500 font-serif leading-relaxed">
+                Lưu ý: <span className="text-slate-400">Tìm</span> và{' '}
+                <span className="text-slate-400">lọc theo trường</span> được áp dụng đồng thời; sắp xếp áp
+                dụng sau lọc.
+              </p>
+            </>
+          )}
         </div>
       )}
 
@@ -1241,7 +1266,6 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             {selectedEntity && isListCardEntity(selectedEntity) ? (
               <AppListCardInfoSearch
                 info={detailNotesMarkdown}
-                fieldValueFilters={notesViewFieldFilters}
                 searchQuery={listCatalogQuery}
                 onSearchQueryChange={setListCatalogQuery}
                 hideSearchBar

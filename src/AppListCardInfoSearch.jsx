@@ -1,4 +1,5 @@
 // Ô tìm kiếm + lọc dòng nội dung thẻ «Danh sách» (AUTO) ở chế độ Hồ sơ.
+// Gõ từ khóa → giữ dòng khớp; tùy chọn sắp xếp A-Z. Không còn lọc theo trường form.
 import React, { useDeferredValue, useId, useMemo, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
@@ -29,6 +30,7 @@ export function AppListCardInfoSearch({
   const deferred = useDeferredValue(safeString(query).trim());
   const inputId = useId();
 
+  // fieldValueFilters giữ prop tương thích; thẻ danh sách chỉ lọc theo ô tìm.
   const afterFields = useMemo(
     () => filterListCardInfoByFieldFilters(safeString(info), fieldValueFilters),
     [info, fieldValueFilters]
