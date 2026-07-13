@@ -1,15 +1,10 @@
 /**
  * Auto-sync list-card notes inside each collection tab.
  * A list card is any entity whose name starts with "Danh sach".
- * The helper keeps manual notes intact and only rewrites its AUTO block.
- * Ranh giới khối: dòng tiêu đề # Danh mục thẻ (AUTO) (không dùng <!-- --> để giao diện gọn).
- * Mỗi dòng: tên thẻ `[[…]]` + các mẩu «Tên hiển thị trường - giá trị» nối bằng dấu chấm giữa (·),
- * vẫn bọc màu / [[wiki]] như trước; giá trị plain in đậm trong `[color]…[/color]` (strong kế thừa màu); khi giá trị có `[[wiki]]` và nhiều đoạn « · » thì tách để link đúng từng đoạn.
- * Sắp xếp danh sách: ít mẩu sau tên trước, nhiều mẩu sau; cùng số mẩu thì tên thẻ A–Z (vi).
- * Thế lực/bản đồ: một ## địa·loại·hệ (tổng), các ### theo cấp bậc; trong mỗi cấp sort tên A–Z.
- * Tab bản đồ trùng «giới» trong chuỗi: cây trie theo f_vi_tri/f_dia_ban (sâu tới ####…); gộp thẻ chỉ ghi tới tinh cầu vào cấp đại lục khi có thẻ khác chứng minh cấp con đó.
- * Không lặp tên tab con (nho) trong org/cấp/tiêu đề khi đang xem đúng tab đó.
- * Dữ liệu cũ có <!-- AUTO_COLLECTION_LIST:... --> vẫn được đọc và xóa khi đồng bộ lại.
+ * Mỗi dòng: `[[Tên thẻ]]` + nguyên chuỗi ô hiển thị (`dynamicData.f_status` / `status`);
+ * hết chuỗi thì fallback chủ sở hữu. Không tách/dedupe nhiều field mẫu.
+ * Chỉ ghi khối AUTO khi thẻ danh sách chưa có block mới (thêm mới); block # tiêu đề đã có giữ nguyên.
+ * Legacy <!-- AUTO_COLLECTION_LIST --> vẫn được migrate 1 lần rồi giữ ổn định.
  */
 
 import {
@@ -405,6 +400,15 @@ function mergeCollectionListAutoBlock(baseText, blockBody) {
   const prefix = cleaned.trimEnd();
   const sep = prefix ? '\n\n' : '';
   return `${prefix}${sep}${body}`.trim();
+}
+
+/** Đã có khối AUTO định dạng mới (và không còn legacy HTML comment cần migrate). */
+export function hasCollectionListAutoBlock(baseText) {
+  const text = safeString(baseText);
+  if (!text) return false;
+  // Còn <!-- AUTO_COLLECTION_LIST --> → cần bộ 1 lần để bỏ marker cũ.
+  if (findLegacyAutoListRange(text)) return false;
+  return !!findTitleAutoListRange(text);
 }
 
 function isCollectionTab(tabConfig) {
@@ -1286,76 +1290,37 @@ function formatAutoListDetailBitsForPreview(detailBits, entity, tabConfig, owner
     .join(AUTO_LIST_DETAIL_SEP);
 }
 
-/**
- * Các mẩu sau `[[Tên thẻ]]` trong khối Danh sách (AUTO). Khi có mẫu tab: nếu có Số TT
- * (`sortPrefix`) thì chỉ các trường đã nhập số, thứ tự 1→2→3→4; không thì tối đa
- * {@link MAX_QUICK_ENTRY_SLOTS} trường đầu theo mẫu. Không có mẫu → legacy.
- */
-function collectDefaultEntityDetailBits(entity, tabConfig = null) {
-  const ordered = getAutoListDetailFieldObjects(tabConfig);
-  if (!ordered) {
-    return collectDefaultEntityDetailBitsLegacy(entity, tabConfig);
-  }
-  const bits = [];
-  const seen = new Set();
-  const pushBit = (raw) => {
-    const value = normalizeListBitToken(safeString(raw)).trim();
-    if (!value) return;
-    const key = normalize(value);
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    bits.push(value);
-  };
-  const pathDedupeSeen = new Set();
-  const isLocFieldForDedupe = (fid) =>
-    /(vi_tri|dia_ban|vị trí|địa bàn)/i.test(`${safeString(fid).trim()} `);
-  const isStatusLikeForPathDedupe = (fid) => {
-    const x = safeString(fid).trim();
-    const sig = `${x} `;
-    return /(^f_status$|^f_cap$|f_title|f_he_gioi)/i.test(x) || /(status|cap|title|tiêu đề)/i.test(sig);
-  };
+/** Nguyên chuỗi ô «Chuỗi hiển thị / dữ liệu AUTO» (`f_status`), fallback `entity.status`. */
+function getEntityDisplayLineRaw(entity) {
+  const fromDyn = safeString(entity?.dynamicData?.f_status).trim();
+  if (fromDyn) return fromDyn;
+  return safeString(entity?.status).trim();
+}
 
-  ordered.forEach(({ field, fieldId }) => {
-    const fid = safeString(fieldId).trim();
-    const rawValue = entity?.dynamicData?.[fieldId];
-    let tokens = collectListFieldTokens(fid, rawValue);
-    if (!tokens.length) return;
-    if (isLocFieldForDedupe(fid)) {
-      tokens.forEach((t) => pathDedupeSeen.add(normalize(t)));
-    } else if (isStatusLikeForPathDedupe(fid)) {
-      const next = tokens.filter((t) => {
-        const nk = normalize(t);
-        if (!nk) return false;
-        if (pathDedupeSeen.has(nk)) return false;
-        pathDedupeSeen.add(nk);
-        return true;
-      });
-      tokens = next;
-    }
-    if (!tokens.length) return;
-    pushLabeledListFieldBits(field || { id: fieldId, label: '' }, fieldId, rawValue, pushBit, tokens);
-  });
-  return bits.slice(0, AUTO_LIST_DETAIL_BIT_CAP);
+/** Giữ nguyên chuỗi hiển thị: không tách nhãn/field; chỉ bọc màu nếu chưa có [[wiki]]. */
+function formatRawDisplayLineForPreview(raw) {
+  const t = safeString(raw).trim();
+  if (!t) return '';
+  if (t.includes('[[')) return autoListSanitizeForColorTagInner(t);
+  return autoListWrapValueColoredBold(AUTO_LIST_FIELD_VALUE_COLOR, t);
 }
 
 function buildAutoListEntryPayload(entity, ownerLookupEntities = [], tabConfig = null) {
   const name = safeString(entity?.name).trim();
   if (!name) return null;
-  const ownerLabel = resolveOwnerLabel(entity, ownerLookupEntities, tabConfig);
-  const detailBits = collectDefaultEntityDetailBits(entity, tabConfig).filter((bit) => {
-    const bitNorm = normalize(bit);
-    if (!bitNorm) return false;
-    if (bitNorm === normalize(name)) return false;
-    return true;
-  });
-  return { name, detailBits, ownerLabel };
+  const displayLine = getEntityDisplayLineRaw(entity);
+  const displayNorm = normalize(displayLine);
+  const usableDisplay =
+    displayLine && displayNorm && displayNorm !== normalize(name) ? displayLine : '';
+  const ownerLabel = usableDisplay ? '' : resolveOwnerLabel(entity, ownerLookupEntities, tabConfig);
+  return { name, displayLine: usableDisplay, ownerLabel };
 }
 
-/** Số mẩu sau `[[Tên thẻ]]` trên dòng AUTO: nhiều mẩu meta hoặc 1 mẩu chủ; 0 nếu chỉ có tên. */
+/** Số mẩu sau `[[Tên thẻ]]` trên dòng AUTO: 1 nếu có chuỗi hiển thị hoặc chủ; 0 nếu chỉ tên. */
 function getAutoListLineSegmentCount(entity, ownerLookupEntities, tabConfig) {
   const p = buildAutoListEntryPayload(entity, ownerLookupEntities, tabConfig);
   if (!p) return 0;
-  if (p.detailBits.length > 0) return p.detailBits.length;
+  if (p.displayLine) return 1;
   if (p.ownerLabel) return 1;
   return 0;
 }
@@ -1363,14 +1328,9 @@ function getAutoListLineSegmentCount(entity, ownerLookupEntities, tabConfig) {
 function renderAutoListEntry(entity, ownerLookupEntities = [], tabConfig = null) {
   const payload = buildAutoListEntryPayload(entity, ownerLookupEntities, tabConfig);
   if (!payload) return '';
-  const { name, detailBits, ownerLabel } = payload;
-  if (detailBits.length > 0) {
-    return `[[${name}]]${AUTO_LIST_DETAIL_SEP}${formatAutoListDetailBitsForPreview(
-      detailBits,
-      entity,
-      tabConfig,
-      ownerLookupEntities
-    )}`;
+  const { name, displayLine, ownerLabel } = payload;
+  if (displayLine) {
+    return `[[${name}]]${AUTO_LIST_DETAIL_SEP}${formatRawDisplayLineForPreview(displayLine)}`;
   }
   if (ownerLabel) {
     const oPlain = autoListSanitizeForColorTagInner(ownerLabel);
@@ -1430,6 +1390,9 @@ function syncListCardsInTab(tabData, context, ownerLookupEntities) {
   let changed = false;
 
   listCards.forEach((listCard) => {
+    // Đã có khối AUTO (định dạng # tiêu đề) → giữ nguyên.
+    // Chưa có / chỉ còn legacy HTML comment → bộ 1 lần (migrate hoặc thêm mới).
+    if (hasCollectionListAutoBlock(listCard.info)) return;
     const nextInfo = mergeCollectionListAutoBlock(listCard.info, blockText);
     if (safeString(nextInfo) !== safeString(listCard.info)) {
       listCard.info = nextInfo;
