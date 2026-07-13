@@ -181,7 +181,7 @@ describe('collectionListCardSync (flat mode)', () => {
     expect(info).toContain('[[Rương Đại Lễ]] [color=#8ca0be]·[/color] [color=#f8fafc]**Lạc Nam**[/color]');
   });
 
-  it('keeps existing modern AUTO block unchanged on later sync', () => {
+  it('rewrites existing AUTO block when entities change', () => {
     const novel = buildNovel();
     const listCard = novel.data['ban-do']['ha-gioi'].entities[0];
     listCard.info =
@@ -190,12 +190,14 @@ describe('collectionListCardSync (flat mode)', () => {
 
     syncAllCollectionListCards(novel);
     const info = String(listCard.info || '');
-    expect(info).toContain('[[OLD KEEP]]');
-    expect(info).not.toContain('[[Băng Thiên Đại Lục]]');
-    expect(info).not.toContain('[[Thánh Thành]]');
+    expect(info).toContain('Ghi chú map');
+    expect(info).not.toContain('[[OLD KEEP]]');
+    expect(info).toContain('[[Băng Thiên Đại Lục]]');
+    expect(info).toContain('[[Thánh Thành]]');
+    expect(info).toContain('- Tổng số thẻ: 2');
   });
 
-  it('migrates legacy HTML AUTO markers once into modern block', () => {
+  it('migrates legacy HTML AUTO markers into modern block', () => {
     const novel = buildNovel();
     const listCard = novel.data['ban-do']['ha-gioi'].entities[0];
     listCard.info =
@@ -209,7 +211,7 @@ describe('collectionListCardSync (flat mode)', () => {
     expect(info).toContain('[[Băng Thiên Đại Lục]]');
   });
 
-  it('writes AUTO once when list card has no AUTO block yet', () => {
+  it('updates AUTO again after display line changes', () => {
     const novel = buildNovel();
     const listCard = novel.data['ban-do']['ha-gioi'].entities[0];
     listCard.info = 'Chỉ ghi chú tay';
@@ -220,13 +222,15 @@ describe('collectionListCardSync (flat mode)', () => {
     expect(info).toContain('Chỉ ghi chú tay');
     expect(info).toContain('# Danh mục thẻ (AUTO)');
     expect(info).toContain('[[Băng Thiên Đại Lục]]');
+    expect(info).toContain('Đại Lục');
     expect(hasCollectionListAutoBlock(info)).toBe(true);
 
-    // sync lần 2 không đổi nội dung dù entity đổi
     novel.data['ban-do']['ha-gioi'].entities[1].dynamicData.f_status = 'ĐÃ ĐỔI';
-    const before = info;
     syncAllCollectionListCards(novel);
-    expect(String(listCard.info || '')).toBe(before);
+    const after = String(listCard.info || '');
+    expect(after).toContain('[[Băng Thiên Đại Lục]] [color=#8ca0be]·[/color] [color=#f8fafc]**ĐÃ ĐỔI**[/color]');
+    expect(after).not.toContain('**Đại Lục**');
+    expect(after).toContain('Chỉ ghi chú tay');
   });
 
   it('recreates list card and reports recreated tabs', () => {

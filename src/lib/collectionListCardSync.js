@@ -3,8 +3,8 @@
  * A list card is any entity whose name starts with "Danh sach".
  * Mỗi dòng: `[[Tên thẻ]]` + nguyên chuỗi ô hiển thị (`dynamicData.f_status` / `status`);
  * hết chuỗi thì fallback chủ sở hữu. Không tách/dedupe nhiều field mẫu.
- * Chỉ ghi khối AUTO khi thẻ danh sách chưa có block mới (thêm mới); block # tiêu đề đã có giữ nguyên.
- * Legacy <!-- AUTO_COLLECTION_LIST --> vẫn được migrate 1 lần rồi giữ ổn định.
+ * Mỗi lần sync (tạo/sửa thẻ) đều viết lại khối AUTO; ghi chú tay ngoài block được giữ.
+ * Legacy <!-- AUTO_COLLECTION_LIST --> bị gỡ khi rewrite.
  */
 
 import {
@@ -402,11 +402,11 @@ function mergeCollectionListAutoBlock(baseText, blockBody) {
   return `${prefix}${sep}${body}`.trim();
 }
 
-/** Đã có khối AUTO định dạng mới (và không còn legacy HTML comment cần migrate). */
+/** Có khối AUTO định dạng `# Danh mục thẻ (AUTO)` và không còn legacy HTML comment. */
 export function hasCollectionListAutoBlock(baseText) {
   const text = safeString(baseText);
   if (!text) return false;
-  // Còn <!-- AUTO_COLLECTION_LIST --> → cần bộ 1 lần để bỏ marker cũ.
+  // Còn <!-- AUTO_COLLECTION_LIST --> → chưa phải block hiện đại sạch.
   if (findLegacyAutoListRange(text)) return false;
   return !!findTitleAutoListRange(text);
 }
@@ -1390,9 +1390,6 @@ function syncListCardsInTab(tabData, context, ownerLookupEntities) {
   let changed = false;
 
   listCards.forEach((listCard) => {
-    // Đã có khối AUTO (định dạng # tiêu đề) → giữ nguyên.
-    // Chưa có / chỉ còn legacy HTML comment → bộ 1 lần (migrate hoặc thêm mới).
-    if (hasCollectionListAutoBlock(listCard.info)) return;
     const nextInfo = mergeCollectionListAutoBlock(listCard.info, blockText);
     if (safeString(nextInfo) !== safeString(listCard.info)) {
       listCard.info = nextInfo;
