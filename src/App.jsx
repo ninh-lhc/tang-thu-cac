@@ -96,6 +96,7 @@ import { computeNovelQuickStats } from './lib/tinhThongKeNhanhTruyen.js';
 import { buildXrefEntityCatalogText } from './lib/xrefBangDanhMucThucThe.js';
 import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
+import { buildStatusTierLabelSet } from './lib/wikiHierarchyLinkGuard.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { exportEntityProfilePdf } from './entityProfilePrint.js';
 import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
@@ -764,6 +765,7 @@ export default function App() {
 
   // Global map - toan bo truyen, dung de resolve [[...]] link va renderMarkdown lookup.
   const entityMap = useMemo(() => buildEntityLinkMap(activeNovelData), [activeNovelData]);
+  const statusTierLabelSet = useMemo(() => buildStatusTierLabelSet(activeNovelData), [activeNovelData]);
 
   // Local/scoped map — chỉ tab hiện tại, dùng cho plain-text auto-link matcher (hiệu năng).
   const localEntityMap = useMemo(() => {
@@ -807,8 +809,8 @@ export default function App() {
   const globalLinkRegex = useMemo(() => {
      if (!shouldBuildGlobalRegex) return null;
      if (!deferredLocalEntityMap || deferredLocalEntityMap.length === 0) return null;
-     return buildWikiLinkMatcher(deferredLocalEntityMap);
-  }, [deferredLocalEntityMap, shouldBuildGlobalRegex]);
+     return buildWikiLinkMatcher(deferredLocalEntityMap, { tierLabelSet: statusTierLabelSet });
+  }, [deferredLocalEntityMap, shouldBuildGlobalRegex, statusTierLabelSet]);
 
   const [relatedEntities, setRelatedEntities] = useState([]);
   const [isCalculatingNetwork, setIsCalculatingNetwork] = useState(false);
@@ -3391,6 +3393,7 @@ export default function App() {
     setIsEntityEditing,
     recentlyMergedFields,
     entityMap,
+    statusTierLabelSet,
     globalLinkRegex,
     relatedEntities,
     isCalculatingNetwork,
@@ -3498,6 +3501,7 @@ export default function App() {
     editingMilestoneData,
     activeNovelData,
     entityMap,
+    statusTierLabelSet,
     showToast,
     autoLinkToastEnabled,
     isSettingsOpen,

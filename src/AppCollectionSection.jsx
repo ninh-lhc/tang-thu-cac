@@ -128,6 +128,7 @@ export function AppCollectionSection({
   setIsEntityEditing,
   recentlyMergedFields,
   entityMap,
+  statusTierLabelSet,
   globalLinkRegex,
   relatedEntities,
   isCalculatingNetwork,
@@ -721,6 +722,7 @@ export function AppCollectionSection({
                   debouncedMarkdownPreview={debouncedMarkdownPreview}
                   currentContextDirHandle={currentContextDirHandle}
                   entityMap={entityMap}
+                  statusTierLabelSet={statusTierLabelSet}
                   globalLinkRegex={globalLinkRegex}
                   onNavigate={handleNavigate}
                   detailNotesMarkdown={detailNotesText}

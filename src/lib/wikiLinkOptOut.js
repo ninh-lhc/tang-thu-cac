@@ -281,6 +281,7 @@ export function applyWikiLinkOptOutsForSave({
   autoWrapWikiLinksByEntityMapWithCount,
   autoWrapOnSave = false,
   preDetectedOptOuts = [],
+  tierLabelSet = null,
 }) {
   const storedBefore = readWikiLinkOptOuts({ wikiLinkOptOuts });
   const detected = mergeWikiLinkOptOuts(
@@ -302,7 +303,10 @@ export function applyWikiLinkOptOutsForSave({
       detectedCount,
     };
   }
-  const wrapped = autoWrapWikiLinksByEntityMapWithCount(preparedText, entityMap, { optOuts: merged });
+  const wrapped = autoWrapWikiLinksByEntityMapWithCount(preparedText, entityMap, {
+    optOuts: merged,
+    tierLabelSet: tierLabelSet instanceof Set ? tierLabelSet : null,
+  });
   return {
     text: wrapped.text,
     wikiLinkOptOuts: merged,

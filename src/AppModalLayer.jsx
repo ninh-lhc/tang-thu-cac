@@ -53,6 +53,7 @@ export function AppModalLayer({
   editingMilestoneData,
   activeNovelData,
   entityMap,
+  statusTierLabelSet,
   showToast,
   autoLinkToastEnabled,
   isSettingsOpen,
@@ -262,6 +263,7 @@ export function AppModalLayer({
         geminiApiKey={geminiApiKeys}
         geminiMode={aiMode}
         entityMap={entityMap}
+        statusTierLabelSet={statusTierLabelSet}
         showToast={showToast}
         autoLinkToastEnabled={autoLinkToastEnabled}
       />

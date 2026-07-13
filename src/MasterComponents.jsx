@@ -3490,10 +3490,15 @@ export const ModalMilestone = ({
   geminiApiKey,
   geminiMode = 'standard',
   entityMap = [],
+  statusTierLabelSet = null,
   showToast,
   autoLinkToastEnabled = true,
 }) => {
   const fieldsTemplate = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
+  const wikiWrapOptions = useMemo(
+    () => ({ tierLabelSet: statusTierLabelSet instanceof Set ? statusTierLabelSet : null }),
+    [statusTierLabelSet]
+  );
   const fieldSuggestions = useMemo(() => {
     const raw =
       tabConfig?.fieldSuggestionLists && typeof tabConfig.fieldSuggestionLists === 'object'
@@ -3575,7 +3580,7 @@ export const ModalMilestone = ({
       if (typeof value !== 'string') return [];
       const trimmed = safeString(value).trim();
       if (!trimmed) return [];
-      const fieldWrap = autoWrapWikiLinksByEntityMapWithCount(trimmed, entityMap);
+      const fieldWrap = autoWrapWikiLinksByEntityMapWithCount(trimmed, entityMap, wikiWrapOptions);
       wrappedCount += fieldWrap.count;
       return [[key, fieldWrap.text]];
     });
@@ -3588,7 +3593,7 @@ export const ModalMilestone = ({
       wrappedCount,
       hasSnapshot: Boolean(avatar || normalizedDynamicEntries.length > 0),
     };
-  }, [entityMap, snapshotData]);
+  }, [entityMap, snapshotData, wikiWrapOptions]);
   const recordAndSetEventDraft = (next) => {
     setEventEdit(({ text, history, hIndex }) => {
       if (history[hIndex] === next && text === next) {
@@ -3741,7 +3746,7 @@ export const ModalMilestone = ({
       const cleanedText = notesTypo.autoCleanOnSave ? prepareEntityNotesForSave(eventText) : eventText;
       const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
       const preparedText = formatSync.text;
-      const eventWrap = autoWrapWikiLinksByEntityMapWithCount(preparedText, entityMap);
+      const eventWrap = autoWrapWikiLinksByEntityMapWithCount(preparedText, entityMap, wikiWrapOptions);
       const preparedSnapshot = prepareSnapshotPayload();
       const nextSnapshot = preparedSnapshot.snapshot;
       const wrappedCount = eventWrap.count + preparedSnapshot.wrappedCount;
@@ -3938,7 +3943,7 @@ export const ModalMilestone = ({
     }
     const cleanedEarly = normalizeEventDraft(eventText);
     const workingText = cleanedEarly.text;
-    const localWrapEarly = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap);
+    const localWrapEarly = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap, wikiWrapOptions);
     if (localWrapEarly.count > 0 && localWrapEarly.text !== workingText) {
       recordAndSetEventDraft(localWrapEarly.text);
       toast(`Đã tự bọc ${localWrapEarly.count} [[liên kết]] theo thẻ có sẵn. Bấm lại AI nếu muốn gợi ý thêm cho khó.`);
@@ -3957,7 +3962,7 @@ export const ModalMilestone = ({
       const res = await suggestWikiLinkSpotsWithAI(workingText, geminiKeys, geminiMode);
       const spots = Array.isArray(res?.linkSpots) ? res.linkSpots : [];
       const aiNext = applyWikiLinkSpots(workingText, spots);
-      const fallbackWrap = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap);
+      const fallbackWrap = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap, wikiWrapOptions);
       const nextText = aiNext !== workingText ? aiNext : fallbackWrap.text;
       if (nextText !== workingText) {
         recordAndSetEventDraft(nextText);
@@ -3974,7 +3979,7 @@ export const ModalMilestone = ({
     } catch (error) {
       const msg = mapGeminiErrorToUserMessage(error);
       const rateLimited = /429|503|rate_limit|qua tai api/i.test(String(error?.message || ''));
-      const fallbackWrap = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap);
+      const fallbackWrap = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap, wikiWrapOptions);
       if (rateLimited && fallbackWrap.text !== workingText) {
         recordAndSetEventDraft(fallbackWrap.text);
         toast('AI đang quá tải (429/503), đã tự bọc link theo danh sách thẻ có sẵn.', 'warning');
@@ -4056,6 +4061,7 @@ export const ModalMilestone = ({
         entityMap,
         geminiApiKeys: geminiKeys,
         aiMode: geminiMode,
+        tierLabelSet: statusTierLabelSet,
         subject: milestoneSubject,
         onProgress: ({ step, phase, text }) => {
           if (phase === 'start') {

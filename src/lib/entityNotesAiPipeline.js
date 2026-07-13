@@ -90,17 +90,20 @@ export async function runNotesLinkStep(
     geminiApiKeys,
     aiMode = 'standard',
     wikiLinkOptOuts = null,
+    tierLabelSet = null,
     skipAi = false,
   } = {}
 ) {
   let text = safeString(sourceText);
   let localCount = 0;
+  const wrapOptions = {
+    optOuts: Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [],
+    tierLabelSet: tierLabelSet instanceof Set ? tierLabelSet : null,
+  };
   // Chạy local-wrap nhiều lượt cho đến khi ổn định để giảm bỏ sót ở pass đầu.
   const maxWrapPasses = 4;
   for (let pass = 0; pass < maxWrapPasses; pass += 1) {
-    const localWrap = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, {
-      optOuts: Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [],
-    });
+    const localWrap = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, wrapOptions);
     if (localWrap.text === text || localWrap.count <= 0) break;
     text = localWrap.text;
     localCount += localWrap.count;
@@ -133,9 +136,7 @@ export async function runNotesLinkStep(
   const res = await suggestWikiLinkSpotsWithAI(text, keys, aiMode);
   const spots = Array.isArray(res?.linkSpots) ? res.linkSpots : [];
   const aiNext = applyWikiLinkSpots(text, spots);
-  const fallbackWrap = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, {
-    optOuts: Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [],
-  });
+  const fallbackWrap = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, wrapOptions);
   const nextText = aiNext !== text ? aiNext : fallbackWrap.text;
   return {
     text: nextText,

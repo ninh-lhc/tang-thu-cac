@@ -76,6 +76,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   debouncedMarkdownPreview,
   currentContextDirHandle,
   entityMap,
+  statusTierLabelSet = null,
   globalLinkRegex,
   onNavigate,
   selfEntityId,
@@ -323,6 +324,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           geminiApiKeys,
           aiMode,
           wikiLinkOptOuts: effectiveWikiLinkOptOuts,
+          tierLabelSet: statusTierLabelSet,
           subject: entityNotesSubject,
           onProgress: ({ step, phase, text }) => {
             if (phase === 'start') {
@@ -537,6 +539,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
                 geminiApiKeys,
                 aiMode,
                 wikiLinkOptOuts: effectiveWikiLinkOptOuts,
+                tierLabelSet: statusTierLabelSet,
                 subject: entityNotesSubject,
                 skipAi: true,
                 onProgress: ({ step, phase, text }) => {
@@ -586,6 +589,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               autoWrapWikiLinksByEntityMapWithCount,
               autoWrapOnSave: latestNotesPrefs.autoWrapWikiOnSave,
               preDetectedOptOuts,
+              tierLabelSet: statusTierLabelSet,
             });
             if (saveResult.detectedCount > 0) {
               showToast(
@@ -722,6 +726,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   debouncedMarkdownPreview,
   currentContextDirHandle,
   entityMap,
+  statusTierLabelSet = null,
   globalLinkRegex,
   onNavigate,
   detailNotesMarkdown = '',
@@ -1222,6 +1227,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             debouncedMarkdownPreview={debouncedMarkdownPreview}
             currentContextDirHandle={currentContextDirHandle}
             entityMap={entityMap}
+            statusTierLabelSet={statusTierLabelSet}
             globalLinkRegex={globalLinkRegex}
             onNavigate={onNavigate}
             selfEntityId={selectedEntity.id}

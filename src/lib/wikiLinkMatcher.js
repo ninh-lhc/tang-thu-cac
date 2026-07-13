@@ -4,6 +4,7 @@
  */
 
 import { isWikiWrapOptedOut } from './wikiLinkOptOut.js';
+import { shouldSkipWikiLinkInHierarchyContext } from './wikiHierarchyLinkGuard.js';
 import {
   compareWikiNameSurfacePriority,
   hasLongerRegisteredWikiNameAt,
@@ -22,7 +23,7 @@ function collectAllNamesFromBuckets(buckets) {
   return names.sort((a, b) => compareWikiNameSurfacePriority(a, b));
 }
 
-export const buildWikiLinkMatcher = (entityMap) => {
+export const buildWikiLinkMatcher = (entityMap, options = {}) => {
   if (!Array.isArray(entityMap) || entityMap.length === 0) return null;
 
   const seen = new Set();
@@ -45,7 +46,8 @@ export const buildWikiLinkMatcher = (entityMap) => {
     names.sort((a, b) => compareWikiNameSurfacePriority(a.raw, b.raw));
   }
 
-  return { buckets, allNames: collectAllNamesFromBuckets(buckets) };
+  const tierLabelSet = options.tierLabelSet instanceof Set ? options.tierLabelSet : null;
+  return { buckets, allNames: collectAllNamesFromBuckets(buckets), tierLabelSet };
 };
 
 export const splitTextByWikiMatcher = (text, matcher, optOuts = []) => {
@@ -54,6 +56,7 @@ export const splitTextByWikiMatcher = (text, matcher, optOuts = []) => {
 
   const sourceLower = text.toLowerCase();
   const allNames = matcher.allNames || collectAllNamesFromBuckets(matcher.buckets);
+  const tierLabelSet = matcher.tierLabelSet || null;
   const parts = [];
   let cursor = 0;
   let i = 0;
@@ -70,7 +73,8 @@ export const splitTextByWikiMatcher = (text, matcher, optOuts = []) => {
           matchesWikiNameSurface(candidate.raw, text.slice(i, end)) &&
           !hasLongerRegisteredWikiNameAt(text, i, candidate.raw, allNames) &&
           !isWikiSurfacePrefixOfLongerProperPhrase(text, i, end, candidate.raw) &&
-          !isWikiWrapOptedOut(text, i, end, candidate.raw, optOuts)
+          !isWikiWrapOptedOut(text, i, end, candidate.raw, optOuts) &&
+          !shouldSkipWikiLinkInHierarchyContext(text, i, end, { tierLabelSet })
         ) {
           matchedName = candidate;
           break;

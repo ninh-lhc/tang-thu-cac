@@ -4,6 +4,7 @@
  * Longer names are matched first to avoid overlap.
  */
 import { isWikiWrapOptedOut } from './wikiLinkOptOut.js';
+import { shouldSkipWikiLinkInHierarchyContext } from './wikiHierarchyLinkGuard.js';
 import {
   compareWikiNameSurfacePriority,
   isWikiNameWordBoundary,
@@ -68,6 +69,11 @@ function rangesOverlap(a, b) {
   return a.start < b.end && b.start < a.end;
 }
 
+/** Khoảng trắng cùng dòng (không vượt \n) — tránh bọc tên xuyên dòng làm mất newline. */
+function isSameLineSpace(ch) {
+  return ch === ' ' || ch === '\t' || ch === '\f' || ch === '\v' || ch === '\u00a0';
+}
+
 /** Khớp cụm tên cho phép khoảng trắng linh hoạt giữa các từ. */
 function findFlexibleNameSpan(text, start, matchText) {
   const source = safeString(text);
@@ -78,11 +84,11 @@ function findFlexibleNameSpan(text, start, matchText) {
   if (tokens.length === 0) return null;
 
   let cursor = start;
-  while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+  while (cursor < source.length && isSameLineSpace(source[cursor])) cursor += 1;
   const spanStart = cursor;
 
   for (let t = 0; t < tokens.length; t += 1) {
-    while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+    while (cursor < source.length && isSameLineSpace(source[cursor])) cursor += 1;
     const token = tokens[t];
     const slice = source.slice(cursor);
     const re = new RegExp(`^${escapeRegExp(token)}`, 'iu');
@@ -230,7 +236,7 @@ function buildWrapCandidates(entityMap) {
   return { candidates, variantsByLower: byLower, allMatchTexts };
 }
 
-function pickMatchAt(text, start, candidates, variantsByLower, allMatchTexts, optOuts) {
+function pickMatchAt(text, start, candidates, variantsByLower, allMatchTexts, optOuts, tierLabelSet = null) {
   for (const candidate of candidates) {
     const span = findFlexibleNameSpan(text, start, candidate.matchText);
     if (!span) continue;
@@ -249,6 +255,11 @@ function pickMatchAt(text, start, candidates, variantsByLower, allMatchTexts, op
     }
 
     if (isWikiWrapOptedOut(text, span.start, span.end, candidate.matchText, optOuts)) continue;
+
+    if (shouldSkipWikiLinkInHierarchyContext(text, span.start, span.end, { tierLabelSet })) {
+      // Không thử ứng viên khác tại vị trí này — tránh khớp tên dài hơn xuyên token phân cấp.
+      return { start: span.start, end: span.end, skip: true };
+    }
 
     const surfaceMatch = matchesWikiNameSurface(candidate.matchText, sourceSlice);
     return {
@@ -284,6 +295,7 @@ export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap, options =
   const { candidates, variantsByLower, allMatchTexts } = buildWrapCandidates(entityMap);
   if (candidates.length === 0) return { text, count: 0 };
   const optOuts = Array.isArray(options?.optOuts) ? options.optOuts : [];
+  const tierLabelSet = options?.tierLabelSet instanceof Set ? options.tierLabelSet : null;
 
   const protectedRanges = collectProtectedRanges(text);
   const matches = [];
@@ -296,9 +308,13 @@ export function autoWrapWikiLinksByEntityMapWithCount(text, entityMap, options =
       continue;
     }
 
-    const picked = pickMatchAt(text, i, candidates, variantsByLower, allMatchTexts, optOuts);
+    const picked = pickMatchAt(text, i, candidates, variantsByLower, allMatchTexts, optOuts, tierLabelSet);
     if (!picked) {
       i += 1;
+      continue;
+    }
+    if (picked.skip) {
+      i = Math.max(i + 1, picked.end);
       continue;
     }
 
