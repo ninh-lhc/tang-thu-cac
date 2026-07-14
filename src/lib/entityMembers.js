@@ -48,7 +48,9 @@ function normalizeMemberWikiLinkOptOuts(value) {
 
 export function normalizeEntityMemberInput(input, { generateId } = {}) {
   const id = safeText(input?.id) || (typeof generateId === 'function' ? generateId('mem') : '');
-  return {
+  const parentId = safeText(input?.parentId) || null;
+  const sortRaw = Number(input?.sortOrder);
+  const out = {
     id,
     name: safeText(input?.name),
     alias: safeText(input?.alias),
@@ -57,6 +59,9 @@ export function normalizeEntityMemberInput(input, { generateId } = {}) {
     info: safeText(input?.info),
     wikiLinkOptOuts: normalizeMemberWikiLinkOptOuts(input?.wikiLinkOptOuts),
   };
+  if (parentId) out.parentId = parentId;
+  if (Number.isFinite(sortRaw)) out.sortOrder = Math.floor(sortRaw);
+  return out;
 }
 
 /**

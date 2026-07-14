@@ -282,6 +282,10 @@ export const AppMapEntityTreePanel = memo(function AppMapEntityTreePanel({
   onOpenEntity,
   onDetachEntity,
   onHideFeature,
+  embedded = false,
+  hideCollapse = false,
+  /** Thu gọn (vd. nửa hub «Cả hai»): không ép 2 cột nội bộ. */
+  compactLayout = false,
 }) {
   const selectedId = safeString(selectedEntity?.id);
   const forest = useMemo(() => buildMapForest(entities), [entities]);
@@ -312,7 +316,7 @@ export const AppMapEntityTreePanel = memo(function AppMapEntityTreePanel({
   );
 
   const [isPanelOpen, setIsPanelOpen] = useState(() =>
-    readPanelOpen(scopeKey, Boolean(selectedId) || forest.roots.length > 1)
+    embedded ? true : readPanelOpen(scopeKey, Boolean(selectedId) || forest.roots.length > 1)
   );
   const [collapsedIds, setCollapsedIds] = useState(() => new Set());
   const [unlockedIds, setUnlockedIds] = useState(() => new Set());
@@ -504,7 +508,14 @@ export const AppMapEntityTreePanel = memo(function AppMapEntityTreePanel({
     : '';
 
   return (
-    <section className="mb-8 overflow-hidden rounded-2xl border border-emerald-900/35 bg-[var(--tt-surface-1)] shadow-[var(--tt-shadow-card)]">
+    <section
+      className={
+        embedded
+          ? 'overflow-hidden'
+          : 'mb-8 overflow-hidden rounded-2xl border border-emerald-900/35 bg-[var(--tt-surface-1)] shadow-[var(--tt-shadow-card)]'
+      }
+    >
+      {!embedded && (
       <div
         className={`flex flex-col gap-3 bg-gradient-to-r from-emerald-950/40 via-slate-950/20 to-transparent px-4 py-3.5 lg:flex-row lg:items-center lg:justify-between ${
           isPanelOpen ? 'border-b border-slate-800/80' : ''
@@ -571,6 +582,7 @@ export const AppMapEntityTreePanel = memo(function AppMapEntityTreePanel({
               <EyeOff size={14} /> Ẩn
             </button>
           )}
+          {!hideCollapse && (
           <button
             type="button"
             onClick={() => setPanelOpen(!isPanelOpen)}
@@ -588,10 +600,52 @@ export const AppMapEntityTreePanel = memo(function AppMapEntityTreePanel({
               </>
             )}
           </button>
+          )}
         </div>
       </div>
+      )}
 
-      {!isPanelOpen && (
+      {embedded && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="min-w-0 flex flex-wrap items-center gap-1 text-[11px] font-serif text-slate-400">
+            {breadcrumb.length > 0 ? (
+              breadcrumb.map((item, index) => {
+                const id = safeString(item?.id);
+                const name = safeString(item?.name).trim() || '—';
+                const isLast = index === breadcrumb.length - 1;
+                return (
+                  <React.Fragment key={id || `${name}-${index}`}>
+                    {index > 0 && <span className="text-slate-600">›</span>}
+                    {isLast ? (
+                      <span className="font-semibold text-emerald-200/90">{name}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onOpenEntity?.(item)}
+                        className="tt-kbd-focus rounded px-0.5 text-slate-400 underline-offset-2 hover:text-cyan-200 hover:underline"
+                      >
+                        {name}
+                      </button>
+                    )}
+                  </React.Fragment>
+                );
+              })
+            ) : (
+              <span>Thẻ thật · khóa / kéo xếp A→Z</span>
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={() => beginCreateUnder(selectedEntity)}
+            disabled={!selectedId}
+            className="tt-kbd-focus flex h-9 items-center gap-1.5 rounded-lg border border-emerald-800/55 bg-emerald-950/35 px-2.5 text-[12px] font-bold text-emerald-100 hover:bg-emerald-900/40 disabled:opacity-45"
+          >
+            <Plus size={14} /> Con thẻ thật
+          </button>
+        </div>
+      )}
+
+      {!embedded && !isPanelOpen && (
         <div className="border-t border-slate-900/60 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-slate-800 bg-slate-900/30 px-3 py-2.5">
             <p className="min-w-0 font-serif text-[12px] text-slate-400">
@@ -610,8 +664,8 @@ export const AppMapEntityTreePanel = memo(function AppMapEntityTreePanel({
         </div>
       )}
 
-      {isPanelOpen && (
-        <div id="map-entity-tree-body" className="space-y-3 p-4" aria-labelledby={titleId}>
+      {(embedded || isPanelOpen) && (
+        <div id="map-entity-tree-body" className={`space-y-3 ${embedded ? '' : 'p-4'}`} aria-labelledby={titleId}>
           {draggedId && (
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-emerald-700/40 bg-emerald-950/25 px-3 py-2 text-[12px] text-emerald-100">
               <LockOpen size={14} className="text-amber-300" />
@@ -632,7 +686,11 @@ export const AppMapEntityTreePanel = memo(function AppMapEntityTreePanel({
             </div>
           )}
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(260px,0.85fr)]">
+          <div
+            className={`grid gap-4 ${
+              compactLayout ? '' : 'xl:grid-cols-[minmax(0,1.25fr)_minmax(260px,0.85fr)]'
+            }`}
+          >
             <div className="overflow-hidden rounded-xl border border-slate-800/90 bg-slate-950/40">
               <div className="flex items-center justify-between gap-2 border-b border-slate-800/90 bg-slate-900/35 px-3.5 py-2.5">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">

@@ -76,6 +76,12 @@ import {
   readEntityMembers,
   splitEntityMemberNames,
 } from './lib/entityMembers.js';
+import {
+  applyMemberMove,
+  nextMemberSortOrder,
+  reorderMemberAmongSiblings,
+  reparentMemberChildrenOnDelete,
+} from './lib/entityMemberTree.js';
 import { resolveEntityPageForSelection } from './lib/entitySelectionPage.js';
 import {
   ensureCollectionListCardsForNovel,
@@ -2012,18 +2018,26 @@ export default function App() {
         const idx = ent.members.findIndex((member) => safeString(member?.id) === savedId);
         if (idx > -1) {
           savedMode = 'update';
+          const prev = ent.members[idx];
           ent.members[idx] = {
-            ...ent.members[idx],
+            ...prev,
             ...savedMember,
-            createdAt: ent.members[idx].createdAt || savedMember.updatedAt,
+            parentId: savedMember.parentId || prev.parentId,
+            sortOrder: Number.isFinite(Number(savedMember.sortOrder))
+              ? savedMember.sortOrder
+              : prev.sortOrder,
+            createdAt: prev.createdAt || savedMember.updatedAt,
           };
+          if (!ent.members[idx].parentId) delete ent.members[idx].parentId;
         } else {
+          if (!Number.isFinite(Number(savedMember.sortOrder))) {
+            savedMember.sortOrder = nextMemberSortOrder(ent.members, savedMember.parentId || null);
+          }
           ent.members.push({
             ...savedMember,
             createdAt: savedMember.updatedAt,
           });
         }
-        ent.members.sort((a, b) => safeString(a?.name).localeCompare(safeString(b?.name), 'vi'));
       });
       if (ok === false) {
         showToast('Không lưu được thẻ con vì chưa có truyện đang mở.', 'error');
@@ -2037,6 +2051,80 @@ export default function App() {
       );
     },
     [activeTabLon, activeTabNho, selectedEntityId, selectedEntity?.name, updateActiveNovelData, showToast]
+  );
+
+  const handleMoveEntityMember = useCallback(
+    (memberId, newParentId, options = {}) => {
+      if (!selectedEntityId || !activeTabLon) return { ok: false, reason: 'no-entity' };
+      let result = { ok: false, reason: 'unknown' };
+      const ok = updateActiveNovelData((nov) => {
+        const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
+        const ent = tabData?.entities?.find((item) => item.id === selectedEntityId);
+        if (!ent || !Array.isArray(ent.members)) {
+          result = { ok: false, reason: 'not-found' };
+          return;
+        }
+        const id = safeString(memberId);
+        const member = ent.members.find((item) => safeString(item?.id) === id);
+        if (!member) {
+          result = { ok: false, reason: 'not-found' };
+          return;
+        }
+        const currentParent = safeString(member.parentId) || null;
+        const nextParent = safeString(newParentId) || null;
+        const beforeId = safeString(options?.beforeId) || null;
+        if (currentParent === nextParent && beforeId !== undefined) {
+          result = reorderMemberAmongSiblings(ent.members, id, beforeId || null);
+        } else {
+          result = applyMemberMove(ent.members, id, nextParent, { beforeId });
+        }
+      });
+      if (ok === false) return { ok: false, reason: 'no-novel' };
+      if (result.ok) {
+        showToast('Đã cập nhật cây thẻ con.', 'success');
+      } else if (result.reason === 'cycle') {
+        showToast('Không thể kéo vào nhánh con của chính nó.', 'warning');
+      }
+      return result;
+    },
+    [activeTabLon, activeTabNho, selectedEntityId, updateActiveNovelData, showToast]
+  );
+
+  const handleReorderEntityMember = useCallback(
+    (memberId, direction) => {
+      if (!selectedEntityId || !activeTabLon) return;
+      const dir = direction === 'up' ? -1 : 1;
+      let moved = false;
+      updateActiveNovelData((nov) => {
+        const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
+        const ent = tabData?.entities?.find((item) => item.id === selectedEntityId);
+        if (!ent || !Array.isArray(ent.members)) return;
+        const id = safeString(memberId);
+        const member = ent.members.find((item) => safeString(item?.id) === id);
+        if (!member) return;
+        const parentId = safeString(member.parentId) || null;
+        const siblings = [...ent.members]
+          .filter((item) => (safeString(item.parentId) || null) === parentId)
+          .sort((a, b) => {
+            const ao = Number(a?.sortOrder);
+            const bo = Number(b?.sortOrder);
+            const aOrder = Number.isFinite(ao) ? ao : 999999;
+            const bOrder = Number.isFinite(bo) ? bo : 999999;
+            if (aOrder !== bOrder) return aOrder - bOrder;
+            return safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
+          });
+        const index = siblings.findIndex((item) => safeString(item?.id) === id);
+        const swapWith = index + dir;
+        if (index < 0 || swapWith < 0 || swapWith >= siblings.length) return;
+        const beforeId = dir < 0
+          ? siblings[swapWith]?.id
+          : (siblings[swapWith + 1]?.id || null);
+        const result = reorderMemberAmongSiblings(ent.members, id, beforeId);
+        moved = Boolean(result?.ok);
+      });
+      if (moved) showToast('Đã đổi thứ tự hiển thị.', 'success');
+    },
+    [activeTabLon, activeTabNho, selectedEntityId, updateActiveNovelData, showToast]
   );
 
   const handleSaveEntityMemberFieldMeta = useCallback(
@@ -2072,12 +2160,13 @@ export default function App() {
       setConfirmDialog({
         isOpen: true,
         title: 'Xóa thẻ con',
-        message: `Xóa hồ sơ "${memberName}" khỏi thẻ cha? Wiki link của tên này sẽ không còn mở hồ sơ con nữa.`,
+        message: `Xóa hồ sơ "${memberName}" khỏi thẻ cha? Các thẻ con bên dưới sẽ được đẩy lên cùng cấp. Wiki link sẽ không còn mở hồ sơ này.`,
         onConfirm: () => {
           updateActiveNovelData((nov) => {
             const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
             const ent = tabData?.entities?.find((item) => item.id === selectedEntityId);
             if (!ent || !Array.isArray(ent.members)) return;
+            reparentMemberChildrenOnDelete(ent.members, memberId);
             ent.members = ent.members.filter((member) => safeString(member?.id) !== memberId);
           });
           setEntityMemberQuickViewDest((prev) => {
@@ -3811,6 +3900,8 @@ export default function App() {
     handleUpdateEntityInfo,
     handleSaveEntityMember,
     handleSaveEntityMemberFieldMeta,
+    handleMoveEntityMember,
+    handleReorderEntityMember,
     handleDeleteEntityMember,
     handleMoveMapEntity,
     handleCreateMapChildEntity,

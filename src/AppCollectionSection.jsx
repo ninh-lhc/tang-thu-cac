@@ -10,7 +10,7 @@
 import React from 'react';
 import {
   ChevronRight, Plus, Search, Filter, Save, Edit3, Eye,
-  User, BookOpen, Download, Settings, Shield, FolderTree,
+  User, BookOpen, Download, Settings, Shield,
 } from 'lucide-react';
 import { safeString, AsyncLocalImage } from './MasterUtils.jsx';
 import { FALLBACK_IMG } from './MasterEngines.js';
@@ -20,8 +20,7 @@ import { AppCollectionTrackTabs } from './AppCollectionTrackTabs.jsx';
 import { AppCollectionEmptyState } from './AppCollectionEmptyState.jsx';
 import { AppEntitySummaryBlocks } from './AppEntitySummaryBlocks.jsx';
 import { AppEntityDetailNotes } from './AppEntityDetailNotes.jsx';
-import { AppEntityMembersPanel } from './AppEntityMembersPanel.jsx';
-import { AppMapEntityTreePanel } from './AppMapEntityTreePanel.jsx';
+import { AppEntityStructureHub } from './AppEntityStructureHub.jsx';
 import { AppEntityTimelinePanel } from './AppEntityTimelinePanel.jsx';
 import { AppEntityDescriptionPanel } from './AppEntityDescriptionPanel.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
@@ -175,6 +174,8 @@ export function AppCollectionSection({
   handleUpdateEntityInfo,
   handleSaveEntityMember,
   handleSaveEntityMemberFieldMeta,
+  handleMoveEntityMember,
+  handleReorderEntityMember,
   handleDeleteEntityMember,
   handleMoveMapEntity,
   handleCreateMapChildEntity,
@@ -888,65 +889,49 @@ export function AppCollectionSection({
                   </div>
                 </div>
 
-                <AppEntityMembersPanel
-                  key={`${activeTabLon || 'lon'}:${activeTabNho || 'default'}:${selectedEntity?.id || 'entity-members'}`}
+                <AppEntityStructureHub
                   selectedEntity={selectedEntity}
-                  tabConfig={currentTabConfig}
-                  scopeKey={`${activeTabLon || 'lon'}:${activeTabNho || 'default'}`}
-                  onSaveMember={handleSaveEntityMember}
-                  onSaveMemberFieldMeta={handleSaveEntityMemberFieldMeta}
-                  onDeleteMember={handleDeleteEntityMember}
-                  onEditMemberNotes={handleEditMemberNotes}
-                  onOpenMember={(member) => {
-                    if (!member?.id || !selectedEntity?.id) return;
-                    handleNavigate({
-                      lonId: activeTabLon,
-                      nhoId: activeTabNho,
-                      entityId: selectedEntity.id,
-                      memberId: member.id,
-                    });
-                  }}
-                />
-
-                {entityTreeFeatureOn ? (
-                  <AppMapEntityTreePanel
-                    key={`map-tree:${entityTreeScopeKey}`}
-                    entities={collectionEntitiesRaw}
-                    selectedEntity={selectedEntity}
-                    scopeKey={entityTreeScopeKey}
-                    onMoveEntity={handleMoveMapEntity}
-                    onCreateChild={handleCreateMapChildEntity}
-                    onDetachEntity={handleDetachMapEntity}
-                    onHideFeature={hideEntityTreeFeature}
-                    onOpenEntity={(entity) => {
-                      if (!entity?.id) return;
+                  scopeKey={`${activeTabLon || 'lon'}:${activeTabNho || 'default'}:${selectedEntity?.id || 'entity'}`}
+                  treeFeatureOn={entityTreeFeatureOn}
+                  onEnableTree={enableEntityTreeFeature}
+                  membersPanelProps={{
+                    tabConfig: currentTabConfig,
+                    onSaveMember: handleSaveEntityMember,
+                    onSaveMemberFieldMeta: handleSaveEntityMemberFieldMeta,
+                    onMoveMember: handleMoveEntityMember,
+                    onReorderMember: handleReorderEntityMember,
+                    onDeleteMember: handleDeleteEntityMember,
+                    onEditMemberNotes: handleEditMemberNotes,
+                    onOpenMember: (member) => {
+                      if (!member?.id || !selectedEntity?.id) return;
                       handleNavigate({
                         lonId: activeTabLon,
                         nhoId: activeTabNho,
-                        entityId: entity.id,
+                        entityId: selectedEntity.id,
+                        memberId: member.id,
                       });
-                    }}
-                  />
-                ) : (
-                  <div className="mb-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-slate-800 bg-slate-950/30 px-4 py-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 text-sm font-heading font-bold text-slate-300">
-                        <FolderTree size={16} className="text-emerald-400/80" />
-                        Cây thư mục
-                      </div>
-                      <p className="mt-0.5 font-serif text-[12px] text-slate-500">
-                        Ẩn khi không dùng — bật để xếp thẻ cha/con, kéo thả và khóa nhánh trên mọi tab sưu tập.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={enableEntityTreeFeature}
-                      className="tt-kbd-focus flex h-9 items-center gap-1.5 rounded-lg border border-emerald-800/55 bg-emerald-950/35 px-3 text-[12px] font-bold text-emerald-100 hover:border-emerald-500/60 hover:bg-emerald-900/40"
-                    >
-                      <Eye size={14} /> Hiện cây thư mục
-                    </button>
-                  </div>
-                )}
+                    },
+                  }}
+                  treePanelProps={
+                    entityTreeFeatureOn
+                      ? {
+                          entities: collectionEntitiesRaw,
+                          onMoveEntity: handleMoveMapEntity,
+                          onCreateChild: handleCreateMapChildEntity,
+                          onDetachEntity: handleDetachMapEntity,
+                          onHideFeature: hideEntityTreeFeature,
+                          onOpenEntity: (entity) => {
+                            if (!entity?.id) return;
+                            handleNavigate({
+                              lonId: activeTabLon,
+                              nhoId: activeTabNho,
+                              entityId: entity.id,
+                            });
+                          },
+                        }
+                      : null
+                  }
+                />
 
                 <AppEntityDetailNotes
                   activeTabLon={activeTabLon}
