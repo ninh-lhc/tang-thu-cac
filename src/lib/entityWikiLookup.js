@@ -9,16 +9,22 @@ import { compareWikiNameSurfacePriority, matchesWikiNameSurface } from './wikiNa
 const createLookupBucket = () => new Map();
 
 const candidateEntityId = (candidate) => candidate?.dest?.entityId ?? candidate?.entityId ?? null;
+const candidateLookupId = (candidate) => {
+  const entityId = candidateEntityId(candidate);
+  if (!entityId) return null;
+  const memberId = candidate?.dest?.memberId ?? candidate?.memberId ?? null;
+  return memberId ? `${entityId}::member::${memberId}` : entityId;
+};
 
 function pushLookupCandidate(bucket, key, candidate) {
   if (!key) return;
   const current = bucket.get(key) || [];
-  const id = candidateEntityId(candidate);
+  const id = candidateLookupId(candidate);
   const surface = String(candidate?.name || '');
   // Giữ mọi biến thể bề mặt (tên chính + biệt danh) của CÙNG một thẻ:
   // chỉ bỏ khi trùng cả entityId LẪN bề mặt — nếu không, biệt danh viết thường
   // của thẻ sẽ bị tên hiển thị viết hoa nuốt mất, khiến nó không tự trỏ về chính nó.
-  if (current.some((item) => candidateEntityId(item) === id && String(item?.name || '') === surface)) return;
+  if (current.some((item) => candidateLookupId(item) === id && String(item?.name || '') === surface)) return;
   current.push(candidate);
   bucket.set(key, current);
 }

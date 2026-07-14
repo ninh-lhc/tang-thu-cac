@@ -20,6 +20,7 @@ import { AppCollectionTrackTabs } from './AppCollectionTrackTabs.jsx';
 import { AppCollectionEmptyState } from './AppCollectionEmptyState.jsx';
 import { AppEntitySummaryBlocks } from './AppEntitySummaryBlocks.jsx';
 import { AppEntityDetailNotes } from './AppEntityDetailNotes.jsx';
+import { AppEntityMembersPanel } from './AppEntityMembersPanel.jsx';
 import { AppEntityTimelinePanel } from './AppEntityTimelinePanel.jsx';
 import { AppEntityDescriptionPanel } from './AppEntityDescriptionPanel.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
@@ -146,6 +147,8 @@ export function AppCollectionSection({
   setDebouncedMarkdownPreview,
   setIsSplitPreview,
   handleUpdateEntityInfo,
+  handleSaveEntityMember,
+  handleDeleteEntityMember,
   handleSetSelectedEntityAutoSyncState,
   setImageForm,
   setIsInsertImageModalOpen,
@@ -695,6 +698,22 @@ export function AppCollectionSection({
                     </button>
                   </div>
                 </div>
+
+                <AppEntityMembersPanel
+                  key={selectedEntity?.id || 'entity-members'}
+                  selectedEntity={selectedEntity}
+                  onSaveMember={handleSaveEntityMember}
+                  onDeleteMember={handleDeleteEntityMember}
+                  onOpenMember={(member) => {
+                    if (!member?.id || !selectedEntity?.id) return;
+                    handleNavigate({
+                      lonId: activeTabLon,
+                      nhoId: activeTabNho,
+                      entityId: selectedEntity.id,
+                      memberId: member.id,
+                    });
+                  }}
+                />
 
                 <AppEntityDetailNotes
                   activeTabLon={activeTabLon}

@@ -6,6 +6,7 @@
 import { normalizeAsciiText, parseStatusHierarchy, splitStatusHierarchyTokens } from './statusHierarchyParser.js';
 import { buildSyntheticWikiNames } from './entityWikiDisambiguation.js';
 import { buildConfiguredSubTabIdsByLon, isConfiguredNovelDataPath } from './novelTabDataPaths.js';
+import { readEntityMembers } from './entityMembers.js';
 
 const NAME_SPLIT_RE = /[,/|()]/;
 const REALM_TIER_SUFFIXES = [
@@ -68,6 +69,26 @@ function collectEntityContextKeys(entity) {
   return out;
 }
 
+function collectEntityMemberContextKeys(member, parentEntity) {
+  const seen = new Set();
+  const out = [];
+
+  const push = (value) => {
+    const clean = String(value || '').replace(/\[\[|\]\]/g, '').trim();
+    const key = normalizeContextKey(clean);
+    if (!clean || !key || seen.has(key)) return;
+    seen.add(key);
+    out.push(key);
+  };
+
+  push(parentEntity?.name);
+  push(member?.name);
+  splitNames(member?.alias).forEach(push);
+  push(member?.role);
+  push(member?.status);
+  return out;
+}
+
 function isRealmSubTabPath(activeNovelData, lonId, nhoId) {
   const nhoKey = normalizeContextKey(String(nhoId || '').replace(/-/g, ' '));
   if (nhoKey.includes('canh gioi')) return true;
@@ -102,11 +123,12 @@ export function buildEntityLinkMap(activeNovelData) {
       const tabData = activeNovelData.data[lonId][nhoId];
       if (!tabData?.entities) return;
       tabData.entities.forEach((ent) => {
+        const parentContextKeys = collectEntityContextKeys(ent);
         const sharedMeta = {
           dest: { lonId, nhoId, entityId: ent.id },
           entityId: ent.id,
           entityName: String(ent?.name || '').trim(),
-          contextKeys: collectEntityContextKeys(ent),
+          contextKeys: parentContextKeys,
         };
         addNames(ent.name, sharedMeta);
         if (ent.dynamicData) addNames(ent.dynamicData.f_alias, sharedMeta);
@@ -121,6 +143,20 @@ export function buildEntityLinkMap(activeNovelData) {
           }).join(' | '),
           sharedMeta
         );
+        readEntityMembers(ent).forEach((member) => {
+          const memberId = String(member?.id || '').trim();
+          if (!memberId) return;
+          const memberMeta = {
+            dest: { lonId, nhoId, entityId: ent.id, memberId },
+            entityId: ent.id,
+            memberId,
+            entityName: String(ent?.name || '').trim(),
+            memberName: String(member?.name || '').trim(),
+            contextKeys: [...parentContextKeys, ...collectEntityMemberContextKeys(member, ent)],
+          };
+          addNames(member?.name, memberMeta);
+          addNames(member?.alias, memberMeta);
+        });
       });
     });
   });

@@ -25,6 +25,7 @@ const AppModalLenhNhanh = lazy(() => import('./AppModalLenhNhanh.jsx').then((m) 
 const AppModalGoiYNoiTraCuu = lazy(() => import('./AppModalGoiYNoiTraCuu.jsx').then((m) => ({ default: m.AppModalGoiYNoiTraCuu })));
 const AppModalAutoSyncGuide = lazy(() => import('./AppModalAutoSyncGuideVi.jsx').then((m) => ({ default: m.AppModalAutoSyncGuide })));
 const AppModalEntityNotesGuide = lazy(() => import('./AppModalEntityNotesGuideVi.jsx').then((m) => ({ default: m.AppModalEntityNotesGuide })));
+const AppModalEntityMemberProfile = lazy(() => import('./AppModalEntityMemberProfile.jsx').then((m) => ({ default: m.AppModalEntityMemberProfile })));
 
 export function AppModalLayer({
   isEntityModalOpen,
@@ -175,9 +176,24 @@ export function AppModalLayer({
   handleResyncAutoTabs,
   handleSaveCurrentTabsAsGenreTemplate,
   handleResetNovelSuggestionLists,
+  entityMemberQuickView,
+  setEntityMemberQuickView,
+  openEntityMemberParent,
+  currentContextDirHandleForMember,
+  globalLinkRegex,
+  handleNavigate,
 }) {
   return (
     <Suspense fallback={null}>
+      <AppModalEntityMemberProfile
+        profile={entityMemberQuickView}
+        onClose={() => setEntityMemberQuickView?.(null)}
+        onOpenParentEntity={openEntityMemberParent}
+        currentContextDirHandle={currentContextDirHandleForMember || currentContextDirHandle}
+        entityMap={entityMap}
+        linkRegex={globalLinkRegex}
+        onNavigate={handleNavigate}
+      />
       <ModalEntity
         isOpen={isEntityModalOpen}
         onClose={() => setIsEntityModalOpen(false)}

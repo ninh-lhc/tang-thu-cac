@@ -68,6 +68,12 @@ import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
 import { buildEntityNotesTabFieldBuckets } from './lib/entityNotesTabFilter.js';
 import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
+import {
+  findEntityMemberInNovel,
+  normalizeEntityMemberInput,
+  readEntityMembers,
+  splitEntityMemberNames,
+} from './lib/entityMembers.js';
 import { resolveEntityPageForSelection } from './lib/entitySelectionPage.js';
 import {
   ensureCollectionListCardsForNovel,
@@ -787,6 +793,13 @@ export default function App() {
         const dest = { lonId: activeTabLon, nhoId, entityId: ent.id };
         addNames(ent.name, dest);
         if (ent.dynamicData?.f_alias) addNames(ent.dynamicData.f_alias, dest);
+        readEntityMembers(ent).forEach((member) => {
+          const memberId = safeString(member?.id).trim();
+          if (!memberId) return;
+          const memberDest = { ...dest, memberId };
+          splitEntityMemberNames(member?.name).forEach((name) => temp.push({ name, dest: memberDest }));
+          splitEntityMemberNames(member?.alias).forEach((name) => temp.push({ name, dest: memberDest }));
+        });
       }
       const uniq = [];
       const seen = new Set();
@@ -1528,7 +1541,8 @@ export default function App() {
     dirHandleRef,
   });
 
-  const { handleNavigate, handleGoBack } = useAppNavigationAndHistory({
+  const [entityMemberQuickViewDest, setEntityMemberQuickViewDest] = useState(null);
+  const { handleNavigate: navigateToEntity, handleGoBack } = useAppNavigationAndHistory({
     activeTabLon,
     activeTabNho,
     activeTabCon,
@@ -1547,6 +1561,31 @@ export default function App() {
     setIsEntityEditing,
     setQuickCreateData,
   });
+  const entityMemberQuickView = useMemo(
+    () => findEntityMemberInNovel(activeNovelData, entityMemberQuickViewDest),
+    [activeNovelData, entityMemberQuickViewDest]
+  );
+  const handleNavigate = useCallback(
+    (dest) => {
+      const memberId = safeString(dest?.memberId || dest?.childId).trim();
+      if (memberId) {
+        setEntityMemberQuickViewDest({ ...dest, memberId });
+        return;
+      }
+      setEntityMemberQuickViewDest(null);
+      navigateToEntity(dest);
+    },
+    [navigateToEntity]
+  );
+  const openEntityMemberParent = useCallback(() => {
+    if (!entityMemberQuickView) return;
+    setEntityMemberQuickViewDest(null);
+    navigateToEntity({
+      lonId: entityMemberQuickView.lonId,
+      nhoId: entityMemberQuickView.nhoId,
+      entityId: entityMemberQuickView.entityId,
+    });
+  }, [entityMemberQuickView, navigateToEntity]);
 
   const handleConfirmQuickCreate = (name, path) => {
       const [lonId, nhoId] = path.split('|');
@@ -1838,6 +1877,96 @@ export default function App() {
      if (fieldId === 'f_desc') return ent.description;
      return '';
   };
+
+  const handleSaveEntityMember = useCallback(
+    (memberDraft) => {
+      if (!selectedEntityId || !activeTabLon) {
+        showToast('Hãy chọn một thẻ cha trước khi lưu nhân vật.', 'warning');
+        return;
+      }
+      const normalized = normalizeEntityMemberInput(memberDraft, { generateId });
+      const memberName = toDisplayTitleCase(normalized.name) || normalized.name;
+      if (!memberName) {
+        showToast('Điền tên nhân vật trước khi lưu.', 'warning');
+        return;
+      }
+      let savedMode = 'create';
+      const savedId = normalized.id;
+      const savedMember = {
+        ...normalized,
+        id: savedId,
+        name: memberName,
+        updatedAt: Date.now(),
+      };
+
+      const ok = updateActiveNovelData((nov) => {
+        const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
+        const ent = tabData?.entities?.find((item) => item.id === selectedEntityId);
+        if (!ent) return;
+        if (!Array.isArray(ent.members)) ent.members = [];
+        const idx = ent.members.findIndex((member) => safeString(member?.id) === savedId);
+        if (idx > -1) {
+          savedMode = 'update';
+          ent.members[idx] = {
+            ...ent.members[idx],
+            ...savedMember,
+            createdAt: ent.members[idx].createdAt || savedMember.updatedAt,
+          };
+        } else {
+          ent.members.push({
+            ...savedMember,
+            createdAt: savedMember.updatedAt,
+          });
+        }
+        ent.members.sort((a, b) => safeString(a?.name).localeCompare(safeString(b?.name), 'vi'));
+      });
+      if (ok === false) {
+        showToast('Không lưu được nhân vật con vì chưa có truyện đang mở.', 'error');
+        return;
+      }
+      showToast(
+        savedMode === 'update'
+          ? `Đã cập nhật hồ sơ ${memberName}.`
+          : `Đã thêm ${memberName} vào thẻ ${safeString(selectedEntity?.name) || 'đang chọn'}.`,
+        'success'
+      );
+    },
+    [activeTabLon, activeTabNho, selectedEntityId, selectedEntity?.name, updateActiveNovelData, showToast]
+  );
+
+  const handleDeleteEntityMember = useCallback(
+    (memberLike) => {
+      const memberId = safeString(memberLike?.id || memberLike).trim();
+      if (!memberId || !selectedEntityId || !activeTabLon) return;
+      const memberName = safeString(memberLike?.name).trim() || 'nhân vật này';
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Xóa hồ sơ nhân vật',
+        message: `Xóa hồ sơ "${memberName}" khỏi thẻ cha? Wiki link của tên này sẽ không còn mở hồ sơ con nữa.`,
+        onConfirm: () => {
+          updateActiveNovelData((nov) => {
+            const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
+            const ent = tabData?.entities?.find((item) => item.id === selectedEntityId);
+            if (!ent || !Array.isArray(ent.members)) return;
+            ent.members = ent.members.filter((member) => safeString(member?.id) !== memberId);
+          });
+          setEntityMemberQuickViewDest((prev) => {
+            if (safeString(prev?.memberId || prev?.childId) === memberId) return null;
+            return prev;
+          });
+          showToast(`Đã xóa hồ sơ ${memberName}.`, 'success');
+        },
+      });
+    },
+    [
+      activeTabLon,
+      activeTabNho,
+      selectedEntityId,
+      setConfirmDialog,
+      updateActiveNovelData,
+      showToast,
+    ]
+  );
 
   useEffect(() => {
       const handleSave = () => { if (isEditingMode) document.getElementById('save-standard-btn')?.click(); if (isEntityEditing) document.getElementById('save-entity-btn')?.click(); };
@@ -3412,6 +3541,8 @@ export default function App() {
     setDebouncedMarkdownPreview,
     setIsSplitPreview,
     handleUpdateEntityInfo,
+    handleSaveEntityMember,
+    handleDeleteEntityMember,
     handleSetSelectedEntityAutoSyncState,
     setImageForm,
     setIsInsertImageModalOpen,
@@ -3581,6 +3712,11 @@ export default function App() {
     hubSaveCreateEntity,
     runHubUpdateAi,
     applyHubUpdateSelected,
+    entityMemberQuickView,
+    setEntityMemberQuickView: setEntityMemberQuickViewDest,
+    openEntityMemberParent,
+    globalLinkRegex,
+    handleNavigate,
     quickCreateData,
     setQuickCreateData,
     handleConfirmQuickCreate,

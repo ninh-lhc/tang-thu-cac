@@ -206,4 +206,51 @@ describe('entityWikiLookup', () => {
     expect(entityMap.some((x) => x.dest?.entityId === 'ghost')).toBe(false);
     expect(entityMap.some((x) => x.dest?.entityId === 'keep')).toBe(true);
   });
+
+  it('indexes embedded member profiles as wiki targets under their parent card', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'the-luc',
+          label: 'The Luc',
+          subTabs: [{ id: 'ke-thu', label: 'Ke Thu', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'the-luc': {
+          'ke-thu': {
+            entities: [
+              {
+                id: 'tan-gia',
+                name: 'Tan Gia',
+                members: [
+                  {
+                    id: 'mem-tan-hao',
+                    name: 'Tan Hao',
+                    alias: 'Tan thieu chu',
+                    role: 'Thieu chu',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    };
+    const entityMap = buildEntityLinkMap(novel);
+    const lookup = buildEntityNameLookup(entityMap);
+
+    const byName = resolveEntityLookup(lookup, 'Tan Hao');
+    const byAlias = resolveEntityLookup(lookup, 'Tan thieu chu');
+    const parent = resolveEntityLookup(lookup, 'Tan Gia');
+
+    expect(parent?.dest).toEqual({ lonId: 'the-luc', nhoId: 'ke-thu', entityId: 'tan-gia' });
+    expect(byName?.dest).toEqual({
+      lonId: 'the-luc',
+      nhoId: 'ke-thu',
+      entityId: 'tan-gia',
+      memberId: 'mem-tan-hao',
+    });
+    expect(byAlias?.dest?.memberId).toBe('mem-tan-hao');
+  });
 });
