@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { BookOpen, Save, Edit3, Eye, ScrollText, Lock, Search, Filter } from 'lucide-react';
+import { ArrowLeft, BookOpen, Save, Edit3, Eye, ScrollText, Lock, Search, Filter } from 'lucide-react';
 import { MarkdownToolbar } from './MasterComponents.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import {
@@ -60,7 +60,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   wikiLinkOptOuts: initialWikiLinkOptOuts,
   geminiApiKeys,
   aiMode,
-  isExtractingAI,
+  isExtractingAI: _isExtractingAI,
   setIsExtractingAI,
   showToast,
   isSplitPreview,
@@ -84,6 +84,10 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   entityTemplateHint,
   onOpenAutoSyncGuide,
   onOpenEntityNotesGuide,
+  editingContext = null,
+  onCancelEdit = null,
+  saveButtonLabel = 'Lưu ghi chép',
+  allowImageTools = true,
 }) {
   const s0 = safeString(initialInfo);
   const [notesEdit, setNotesEdit] = useState(() => ({
@@ -380,6 +384,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
       setIsExtractingAI,
       setIsFormattingStructure,
       showToast,
+      statusTierLabelSet,
       syncDraftAndPreview,
     ]
   );
@@ -480,6 +485,29 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
 
   return (
     <>
+      {editingContext && (
+        <div className="mb-3 rounded-2xl border border-amber-700/45 bg-amber-950/20 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-amber-200">
+                {editingContext.label}
+              </div>
+              {editingContext.description && (
+                <p className="mt-1 font-serif text-sm text-slate-300">{editingContext.description}</p>
+              )}
+            </div>
+            {onCancelEdit && (
+              <button
+                type="button"
+                onClick={onCancelEdit}
+                className="tt-kbd-focus flex h-9 items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[12px] font-bold text-slate-300 hover:border-amber-600/50 hover:text-amber-200"
+              >
+                <ArrowLeft size={14} /> Quay lại thẻ cha
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-3 flex-wrap justify-end mb-2 w-full">
         {onOpenAutoSyncGuide && (
           <button
@@ -603,7 +631,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           }}
           className="px-5 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white"
         >
-          <Save size={16} /> Lưu ghi chép
+          <Save size={16} /> {saveButtonLabel}
         </button>
       </div>
 
@@ -612,11 +640,11 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           <MarkdownToolbar
             editorId="entity-info-editor"
             variant="entityNotes"
-            onInsertImage={(eid) => {
+            onInsertImage={allowImageTools ? (eid) => {
               setImageForm({ url: '', alt: '', editorId: eid });
               setIsInsertImageModalOpen(true);
-            }}
-            onPickLocalImage={handlePickScopedLocalImage}
+            } : null}
+            onPickLocalImage={allowImageTools ? handlePickScopedLocalImage : null}
             onUndo={undo}
             onRedo={redo}
             undoDisabled={undoDisabled}
@@ -741,6 +769,9 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   canViewTimelineCurrentProfile = false,
   timelineCurrentProfileLabel = '',
   onOpenTimelineCurrentEdit = null,
+  memberNotesEditTarget = null,
+  onSaveMemberNotes = null,
+  onCancelMemberNotesEdit = null,
 }) {
   const autoSyncControls = useMemo(() => {
     if (!selectedEntity || !currentTabConfig) return [];
@@ -768,7 +799,9 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
     });
     return role ? getAutoSyncRoleLabel(role) : '';
   }, [activeTabLon, activeTabNho, currentTabConfig]);
-  const isCurrentTimelineMode = detailProfileMode === 'current';
+  const isMemberNotesEditing = Boolean(memberNotesEditTarget?.id);
+  const memberNotesName = safeString(memberNotesEditTarget?.name).trim() || 'Nhân vật';
+  const isCurrentTimelineMode = !isMemberNotesEditing && detailProfileMode === 'current';
   const [isAutoControlsExpanded, setIsAutoControlsExpanded] = useState(false);
   const [showNotesAdvancedPanel, setShowNotesAdvancedPanel] = useState(false);
   const [notesViewQuery, setNotesViewQuery] = useState('');
@@ -815,7 +848,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
       setNotesNotesSortMode('none');
       setShowNotesAdvancedPanel(false);
     });
-  }, [detailProfileMode, selectedEntity?.id]);
+  }, [detailProfileMode, memberNotesEditTarget?.id, selectedEntity?.id]);
 
   const clearNotesAdvanced = useCallback(() => {
     setNotesViewQuery('');
@@ -859,6 +892,17 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
     return () => document.removeEventListener('mousedown', onMouseDown);
   }, [showNotesAdvancedPanel]);
 
+  const editSessionTarget = isMemberNotesEditing ? memberNotesEditTarget : selectedEntity;
+  const editSessionInfo = safeString(editSessionTarget?.info);
+  const editSessionSubject = isMemberNotesEditing ? memberNotesName : safeString(selectedEntity?.name);
+  const editSessionWikiLinkOptOuts = readWikiLinkOptOuts(editSessionTarget);
+  const editSessionKey = isMemberNotesEditing
+    ? `${selectedEntity?.id || 'entity'}:member:${memberNotesEditTarget?.id || 'none'}`
+    : `${selectedEntity?.id || 'entity'}:${detailProfileMode}`;
+  const handleEditSessionSave = isMemberNotesEditing
+    ? (text, meta) => onSaveMemberNotes?.(text, meta)
+    : handleUpdateEntityInfo;
+
   return (
     <div className="flex flex-col mt-4">
       <div className="flex justify-between items-end mb-6 pb-2 border-b border-slate-800/80">
@@ -869,12 +913,14 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
           <div>
             <h3 className="text-xl font-heading font-bold text-amber-100">Ghi Chép Chi Tiết</h3>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">
-              {getTerms(activeTabLon).infoDesc}
+              {isMemberNotesEditing
+                ? `Đang sửa ghi chú nhân vật: ${memberNotesName}`
+                : getTerms(activeTabLon).infoDesc}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap justify-end">
-          {typeof onChangeDetailProfileMode === 'function' && (
+          {!isMemberNotesEditing && typeof onChangeDetailProfileMode === 'function' && (
             <div className="inline-flex items-center gap-1 rounded-[40px] border border-slate-700 bg-slate-950/60 p-1">
               <button
                 type="button"
@@ -1133,7 +1179,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
         </div>
       )}
 
-      {selectedEntity && autoSyncControls.length > 0 && typeof handleSetSelectedEntityAutoSyncState === 'function' && (
+      {!isMemberNotesEditing && selectedEntity && autoSyncControls.length > 0 && typeof handleSetSelectedEntityAutoSyncState === 'function' && (
         <div className="mb-5 rounded-[32px] border border-cyan-800/40 bg-cyan-950/15 px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-cyan-200 font-semibold text-sm">
@@ -1223,17 +1269,19 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
       <div
         className={`flex flex-col transition-all duration-300 backdrop-blur-md ${
           isEntityEditing
-            ? 'bg-slate-900 border border-amber-700/50 shadow-[0_0_15px_rgba(217,119,6,0.1)] p-6 rounded-[40px]'
+            ? isMemberNotesEditing
+              ? 'bg-slate-900 border border-violet-700/55 shadow-[0_0_15px_rgba(124,58,237,0.12)] p-6 rounded-[40px]'
+              : 'bg-slate-900 border border-amber-700/50 shadow-[0_0_15px_rgba(217,119,6,0.1)] p-6 rounded-[40px]'
             : 'bg-slate-900/30 border border-slate-800/60 p-8 rounded-[40px]'
         }`}
       >
         {isEntityEditing && selectedEntity && !isCurrentTimelineMode ? (
           <EntityNotesEditSession
-            key={`${selectedEntity.id}:${detailProfileMode}`}
+            key={editSessionKey}
             activeTabLon={activeTabLon}
-            initialInfo={selectedEntity.info}
-            savedInfo={selectedEntity.info}
-            wikiLinkOptOuts={readWikiLinkOptOuts(selectedEntity)}
+            initialInfo={editSessionInfo}
+            savedInfo={editSessionInfo}
+            wikiLinkOptOuts={editSessionWikiLinkOptOuts}
             geminiApiKeys={geminiApiKeys}
             aiMode={aiMode}
             isExtractingAI={isExtractingAI}
@@ -1247,7 +1295,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             setIsInsertImageModalOpen={setIsInsertImageModalOpen}
             handlePickLocalImage={handlePickLocalImage}
             imageFileStemParts={imageFileStemParts}
-            handleUpdateEntityInfo={handleUpdateEntityInfo}
+            handleUpdateEntityInfo={handleEditSessionSave}
             setIsEntityEditing={setIsEntityEditing}
             debouncedMarkdownPreview={debouncedMarkdownPreview}
             currentContextDirHandle={currentContextDirHandle}
@@ -1256,10 +1304,17 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             globalLinkRegex={globalLinkRegex}
             onNavigate={onNavigate}
             selfEntityId={selectedEntity.id}
-            entityNotesSubject={selectedEntity.name}
+            entityNotesSubject={editSessionSubject}
             entityTemplateHint={entityTemplateHint}
             onOpenAutoSyncGuide={onOpenAutoSyncGuide}
             onOpenEntityNotesGuide={onOpenEntityNotesGuide}
+            editingContext={isMemberNotesEditing ? {
+              label: `Đang sửa ghi chú nhân vật: ${memberNotesName}`,
+              description: `Nội dung đang lưu riêng trong thẻ con thuộc ${safeString(selectedEntity?.name) || 'thẻ cha'}.`,
+            } : null}
+            onCancelEdit={isMemberNotesEditing ? onCancelMemberNotesEdit : null}
+            saveButtonLabel={isMemberNotesEditing ? 'Lưu vào nhân vật' : 'Lưu ghi chép'}
+            allowImageTools={!isMemberNotesEditing}
           />
         ) : (
           <div className="font-serif prose prose-invert max-w-none animate-fade-in min-h-[200px]">

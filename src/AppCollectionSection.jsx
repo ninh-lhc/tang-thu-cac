@@ -256,9 +256,74 @@ export function AppCollectionSection({
     [handlePickLocalImage, standardImageFileStemParts]
   );
   const [detailProfileMode, setDetailProfileMode] = React.useState('original');
+  const [memberNotesEditTargetId, setMemberNotesEditTargetId] = React.useState(null);
   const timelineCurrentProfile = React.useMemo(
     () => buildTimelineCurrentProfileView(selectedEntity),
     [selectedEntity]
+  );
+  const memberNotesEditTarget = React.useMemo(() => {
+    const targetId = safeString(memberNotesEditTargetId);
+    if (!targetId || !Array.isArray(selectedEntity?.members)) return null;
+    return selectedEntity.members.find((member) => safeString(member?.id) === targetId) || null;
+  }, [memberNotesEditTargetId, selectedEntity]);
+  const restoreParentNotesView = React.useCallback(() => {
+    const parentInfo = safeString(selectedEntity?.info);
+    setLivePreviewText(parentInfo);
+    setDebouncedMarkdownPreview(parentInfo);
+    setIsSplitPreview(false);
+  }, [selectedEntity?.info, setDebouncedMarkdownPreview, setIsSplitPreview, setLivePreviewText]);
+  const handleCancelMemberNotesEdit = React.useCallback(() => {
+    setMemberNotesEditTargetId(null);
+    restoreParentNotesView();
+    setIsEntityEditing(false);
+  }, [restoreParentNotesView, setIsEntityEditing]);
+  const handleEditMemberNotes = React.useCallback(
+    (member) => {
+      const memberId = safeString(member?.id);
+      if (!memberId) {
+        showToast?.('Hãy lưu hồ sơ nhân vật trước khi viết ghi chép chi tiết.', 'warning');
+        return;
+      }
+      setDetailProfileMode('original');
+      setMemberNotesEditTargetId(memberId);
+      const memberInfo = safeString(member?.info);
+      setLivePreviewText(memberInfo);
+      setDebouncedMarkdownPreview(memberInfo);
+      setIsSplitPreview(false);
+      setIsEntityEditing(true);
+      requestAnimationFrame(() => {
+        document.getElementById('entity-detail-notes-section')?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      });
+    },
+    [setDebouncedMarkdownPreview, setIsEntityEditing, setIsSplitPreview, setLivePreviewText, showToast]
+  );
+  const handleSaveMemberNotesEdit = React.useCallback(
+    (nextInfo, meta = {}) => {
+      if (!memberNotesEditTarget) {
+        showToast?.('Không tìm thấy nhân vật đang sửa ghi chép.', 'error');
+        handleCancelMemberNotesEdit();
+        return;
+      }
+      handleSaveEntityMember({
+        ...memberNotesEditTarget,
+        info: nextInfo,
+        wikiLinkOptOuts: Array.isArray(meta?.wikiLinkOptOuts) ? meta.wikiLinkOptOuts : [],
+      });
+      setMemberNotesEditTargetId(null);
+      restoreParentNotesView();
+      setIsEntityEditing(false);
+    },
+    [
+      handleCancelMemberNotesEdit,
+      handleSaveEntityMember,
+      memberNotesEditTarget,
+      restoreParentNotesView,
+      setIsEntityEditing,
+      showToast,
+    ]
   );
   const detailProfileSourceLabel = React.useMemo(() => {
     const latestMilestone = timelineCurrentProfile.latestMilestone;
@@ -303,7 +368,14 @@ export function AppCollectionSection({
     [handlePromoteMilestoneToBaseline, setDetailProfileMode, setCollectionSubTab]
   );
   React.useEffect(() => { setEntityFilterValueDraft(entityFilterValue || ''); }, [entityFilterValue]);
-  React.useEffect(() => { setDetailProfileMode('original'); }, [selectedEntity?.id]);
+  React.useEffect(() => {
+    setDetailProfileMode('original');
+    setMemberNotesEditTargetId(null);
+  }, [selectedEntity?.id]);
+  React.useEffect(() => {
+    if (!memberNotesEditTargetId || memberNotesEditTarget) return;
+    handleCancelMemberNotesEdit();
+  }, [handleCancelMemberNotesEdit, memberNotesEditTarget, memberNotesEditTargetId]);
   React.useEffect(() => {
     const t = setTimeout(() => setEntityFilterValue(entityFilterValueDraft), 260);
     return () => clearTimeout(t);
@@ -700,10 +772,12 @@ export function AppCollectionSection({
                 </div>
 
                 <AppEntityMembersPanel
-                  key={selectedEntity?.id || 'entity-members'}
+                  key={`${activeTabLon || 'lon'}:${activeTabNho || 'default'}:${selectedEntity?.id || 'entity-members'}`}
                   selectedEntity={selectedEntity}
+                  scopeKey={`${activeTabLon || 'lon'}:${activeTabNho || 'default'}`}
                   onSaveMember={handleSaveEntityMember}
                   onDeleteMember={handleDeleteEntityMember}
+                  onEditMemberNotes={handleEditMemberNotes}
                   onOpenMember={(member) => {
                     if (!member?.id || !selectedEntity?.id) return;
                     handleNavigate({
@@ -756,6 +830,9 @@ export function AppCollectionSection({
                   canViewTimelineCurrentProfile={timelineCurrentProfile.hasTimelineCurrentView}
                   timelineCurrentProfileLabel={detailProfileSourceLabel}
                   onOpenTimelineCurrentEdit={handleOpenCurrentTimelineEdit}
+                  memberNotesEditTarget={memberNotesEditTarget}
+                  onSaveMemberNotes={handleSaveMemberNotesEdit}
+                  onCancelMemberNotesEdit={handleCancelMemberNotesEdit}
                 />
 
                 <AppEntitySummaryBlocks

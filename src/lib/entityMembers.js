@@ -2,6 +2,7 @@
  * Helpers for member profiles embedded inside an entity card.
  * Used by wiki indexing, quick-view resolution, and the collection detail UI.
  * Keeps the persisted shape small: entity.members[] with name/alias/role/status/info.
+ * wikiLinkOptOuts is optional editor metadata for the shared detail notes editor.
  */
 
 const MEMBER_NAME_SPLIT_RE = /[,/|()]/;
@@ -22,6 +23,17 @@ export function readEntityMembers(entity) {
   return Array.isArray(entity?.members) ? entity.members.filter(Boolean) : [];
 }
 
+function normalizeMemberWikiLinkOptOuts(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      anchor: safeText(item?.anchor),
+      before: safeText(item?.before).slice(-40),
+      after: safeText(item?.after).slice(0, 40),
+    }))
+    .filter((item) => item.anchor);
+}
+
 export function normalizeEntityMemberInput(input, { generateId } = {}) {
   const id = safeText(input?.id) || (typeof generateId === 'function' ? generateId('mem') : '');
   return {
@@ -31,6 +43,7 @@ export function normalizeEntityMemberInput(input, { generateId } = {}) {
     role: safeText(input?.role),
     status: safeText(input?.status),
     info: safeText(input?.info),
+    wikiLinkOptOuts: normalizeMemberWikiLinkOptOuts(input?.wikiLinkOptOuts),
   };
 }
 

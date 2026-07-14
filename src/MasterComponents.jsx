@@ -183,6 +183,7 @@ export const MarkdownToolbar = ({
   onNotesAutoAnalysisOnSave,
 }) => {
   const sync = onEditorContentChange;
+  const hasImageTools = Boolean(onInsertImage || onPickLocalImage);
   const tb = (before, after) => () => handleToolbarClick(before, after, editorId, sync);
   const smartWrap = (marker) => () => handleToolbarSmartWrap(marker, editorId, sync);
   const linePref = (p) => () => handleToolbarToggleLinePrefix(editorId, p, sync);
@@ -503,7 +504,7 @@ export const MarkdownToolbar = ({
             </button>
           </>
         )}
-        <div className="w-px h-6 bg-slate-800 mx-1" />
+        {hasImageTools && <div className="w-px h-6 bg-slate-800 mx-1" />}
 
         <button
           type="button"
@@ -600,15 +601,17 @@ export const MarkdownToolbar = ({
           </>
         )}
         <div className="w-px h-6 bg-slate-800 mx-1" />
-        <button
-          type="button"
-          onMouseDown={preventToolbarFocusSteal}
-          onClick={() => onInsertImage(editorId)}
-          className={baseIconButtonClass}
-          title="Chèn Ảnh (URL)"
-        >
-          <ImageIcon size={16} />
-        </button>
+        {onInsertImage && (
+          <button
+            type="button"
+            onMouseDown={preventToolbarFocusSteal}
+            onClick={() => onInsertImage(editorId)}
+            className={baseIconButtonClass}
+            title="Chèn Ảnh (URL)"
+          >
+            <ImageIcon size={16} />
+          </button>
+        )}
         {onPickLocalImage && (
           <button
             type="button"

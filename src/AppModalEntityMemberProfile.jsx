@@ -7,7 +7,9 @@
 
 import React from 'react';
 import { ExternalLink, Link2, Shield, UserRound, X } from 'lucide-react';
-import { renderMarkdown, safeString } from './MasterUtils.jsx';
+import { safeString } from './MasterUtils.jsx';
+import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
+import { readWikiLinkOptOuts } from './lib/wikiLinkOptOut.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
 
 export function AppModalEntityMemberProfile({
@@ -92,13 +94,14 @@ export function AppModalEntityMemberProfile({
           )}
           <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-4">
             {safeString(member.info).trim()
-              ? renderMarkdown(
+              ? renderEntityNotesMarkdown(
                   safeString(member.info),
                   currentContextDirHandle,
                   entityMap,
                   linkRegex,
                   onNavigate,
-                  parentEntity?.id || null
+                  parentEntity?.id || null,
+                  readWikiLinkOptOuts(member)
                 )
               : (
                 <p className="py-8 text-center font-serif text-sm italic text-slate-500">
