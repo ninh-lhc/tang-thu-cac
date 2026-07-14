@@ -15,6 +15,7 @@ export const AppCollectionListContent = memo(function AppCollectionListContent({
   onEntityCardSelect,
   onEntityCardDelete,
   onEntityCardAddMilestone,
+  onEntityCardTogglePin,
   currentContextDirHandle,
   activeTabLon,
   entityPageSize,
@@ -87,6 +88,7 @@ export const AppCollectionListContent = memo(function AppCollectionListContent({
           onSelect={onEntityCardSelect}
           onDelete={onEntityCardDelete}
           onAddMilestone={onEntityCardAddMilestone}
+          onTogglePin={onEntityCardTogglePin}
           dirHandle={currentContextDirHandle}
           parentTabId={activeTabLon}
           parentLabel={currentTabConfig?._parentLabel}

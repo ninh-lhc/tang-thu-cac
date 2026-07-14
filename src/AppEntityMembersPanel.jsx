@@ -1,11 +1,11 @@
 // ==========================================
 // AppEntityMembersPanel.jsx
-// Purpose: manage member profiles embedded in one collection entity.
-// Imported by AppCollectionSection; persistence is handled by App.jsx callbacks.
-// Notes: member names/aliases become wiki targets through buildEntityLinkMap.
+// Purpose: manage child profiles (thẻ con) embedded in any collection entity.
+// Imported by AppCollectionSection; persistence via App.jsx callbacks.
+// Notes: 4 field labels + panel title are customizable per parent card.
 // ==========================================
 
-import React, { memo, useDeferredValue, useMemo, useState } from 'react';
+import React, { memo, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
   ChevronDown,
@@ -17,13 +17,21 @@ import {
   Plus,
   Save,
   Search,
+  Settings2,
   Trash2,
   UserRound,
   Users,
   X,
 } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
-import { readEntityMembers } from './lib/entityMembers.js';
+import {
+  DEFAULT_MEMBER_FIELD_LABELS,
+  MEMBER_FIELD_KEYS,
+  normalizeMemberFieldLabels,
+  readEntityMembers,
+  resolveMemberFieldLabels,
+  resolveMemberPanelTitle,
+} from './lib/entityMembers.js';
 import { normalizeSearchText } from './lib/normalizeSearchText.js';
 
 const EMPTY_MEMBER_DRAFT = {
@@ -37,6 +45,13 @@ const EMPTY_MEMBER_DRAFT = {
 };
 
 const PANEL_STORAGE_PREFIX = 'tt_entity_members_panel_open';
+
+const FIELD_PLACEHOLDERS = {
+  name: 'VD: tên hiển thị',
+  alias: 'Tách bằng dấu phẩy / gạch chéo',
+  role: 'VD: vai trò, loại, chức vị…',
+  status: 'VD: trạng thái, cấp bậc…',
+};
 
 function readPanelOpen(scopeKey, fallback) {
   if (!scopeKey || typeof localStorage === 'undefined') return fallback;
@@ -84,18 +99,39 @@ function memberSearchBlob(member) {
 
 export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
   selectedEntity,
+  tabConfig = null,
   scopeKey,
   onSaveMember,
   onDeleteMember,
   onOpenMember,
   onEditMemberNotes,
+  onSaveMemberFieldMeta,
 }) {
   const members = useMemo(() => readEntityMembers(selectedEntity), [selectedEntity]);
+  const resolvedLabels = useMemo(
+    () => resolveMemberFieldLabels(selectedEntity, tabConfig),
+    [selectedEntity, tabConfig]
+  );
+  const resolvedPanelTitle = useMemo(
+    () => resolveMemberPanelTitle(selectedEntity, tabConfig),
+    [selectedEntity, tabConfig]
+  );
+
   const [draft, setDraft] = useState(EMPTY_MEMBER_DRAFT);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [isPanelOpen, setIsPanelOpen] = useState(() => readPanelOpen(scopeKey, members.length > 0));
+  const [isLabelEditorOpen, setIsLabelEditorOpen] = useState(false);
+  const [labelDraft, setLabelDraft] = useState(() => ({ ...resolvedLabels }));
+  const [panelTitleDraft, setPanelTitleDraft] = useState(resolvedPanelTitle);
   const deferredQuery = useDeferredValue(query);
+
+  useEffect(() => {
+    if (!isLabelEditorOpen) {
+      setLabelDraft({ ...resolvedLabels });
+      setPanelTitleDraft(resolvedPanelTitle);
+    }
+  }, [resolvedLabels, resolvedPanelTitle, isLabelEditorOpen]);
 
   const filteredMembers = useMemo(() => {
     const q = normalizeSearchText(deferredQuery);
@@ -132,9 +168,26 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
     closeForm();
   };
 
+  const handleSaveLabels = (event) => {
+    event?.preventDefault?.();
+    const nextLabels = normalizeMemberFieldLabels(labelDraft);
+    const nextTitle = safeString(panelTitleDraft).trim() || resolvedPanelTitle;
+    onSaveMemberFieldMeta?.({
+      memberFieldLabels: nextLabels,
+      memberPanelTitle: nextTitle,
+    });
+    setLabelDraft(nextLabels);
+    setPanelTitleDraft(nextTitle);
+    setIsLabelEditorOpen(false);
+  };
+
   const draftName = safeString(draft.name).trim();
   const isEditingExisting = Boolean(draft.id);
   const panelTitleId = `entity-members-title-${safeString(selectedEntity?.id) || 'none'}`;
+  const labels = isLabelEditorOpen ? normalizeMemberFieldLabels(labelDraft) : resolvedLabels;
+  const panelTitle = isLabelEditorOpen
+    ? (safeString(panelTitleDraft).trim() || resolvedPanelTitle)
+    : resolvedPanelTitle;
 
   return (
     <section className="mb-8 overflow-hidden rounded-xl border border-slate-800/90 bg-slate-950/35 shadow-inner">
@@ -145,7 +198,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 id={panelTitleId} className="text-base font-heading font-bold text-cyan-100">Nhân vật trong thẻ</h3>
+              <h3 id={panelTitleId} className="text-base font-heading font-bold text-cyan-100">{panelTitle}</h3>
               <span className="rounded-md border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] font-bold text-slate-300">
                 {members.length}
               </span>
@@ -164,11 +217,26 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Lọc nhân vật..."
+                placeholder={`Lọc ${panelTitle.toLowerCase()}...`}
                 className="tt-kbd-focus h-9 w-52 rounded-lg border border-slate-800 bg-slate-900 pl-9 pr-3 text-[12px] text-slate-200 outline-none focus:border-cyan-600/50"
               />
             </div>
           )}
+          <button
+            type="button"
+            onClick={() => {
+              setPanelOpen(true);
+              setIsLabelEditorOpen((open) => !open);
+            }}
+            title="Đổi tiêu đề panel và nhãn 4 trường"
+            className={`tt-kbd-focus flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-bold transition-colors ${
+              isLabelEditorOpen
+                ? 'border-cyan-600/55 bg-cyan-950/30 text-cyan-200'
+                : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-cyan-600/50 hover:text-cyan-200'
+            }`}
+          >
+            <Settings2 size={14} /> Nhãn
+          </button>
           <button
             type="button"
             onClick={startCreateAndOpen}
@@ -211,14 +279,14 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
         <div
           id="entity-members-panel-body"
           aria-labelledby={panelTitleId}
-          className={`grid gap-4 p-4 ${isFormOpen ? 'xl:grid-cols-[minmax(260px,360px)_1fr]' : ''}`}
+          className={`grid gap-4 p-4 ${isFormOpen || isLabelEditorOpen ? 'xl:grid-cols-[minmax(260px,360px)_1fr]' : ''}`}
         >
           <div className="rounded-lg border border-slate-800 bg-slate-900/25">
             <div className="flex items-center justify-between gap-2 border-b border-slate-800 px-3 py-2.5">
               <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Danh sách</span>
               <span className="text-[11px] font-semibold text-slate-500">{filteredMembers.length}/{members.length}</span>
             </div>
-            <div className={`${isFormOpen ? 'max-h-[310px]' : 'max-h-[420px]'} overflow-y-auto p-2 custom-scrollbar`}>
+            <div className={`${isFormOpen || isLabelEditorOpen ? 'max-h-[310px]' : 'max-h-[420px]'} overflow-y-auto p-2 custom-scrollbar`}>
               {filteredMembers.length > 0 ? (
                 <div className="space-y-1.5">
                   {filteredMembers.map((member) => {
@@ -307,19 +375,74 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                 <div className="flex min-h-[116px] flex-col items-center justify-center rounded-lg border border-dashed border-slate-800 bg-slate-950/35 px-4 py-6 text-center">
                   <Users size={22} className="mb-2 text-slate-600" />
                   <p className="text-sm font-serif text-slate-500">
-                    {members.length === 0 ? 'Chưa có nhân vật.' : 'Không có kết quả.'}
+                    {members.length === 0 ? 'Chưa có thẻ con.' : 'Không có kết quả.'}
                   </p>
                 </div>
               )}
             </div>
           </div>
 
-          {isFormOpen && (
+          {isLabelEditorOpen && (
+            <form onSubmit={handleSaveLabels} className="rounded-lg border border-cyan-800/40 bg-slate-900/25 p-4">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-heading font-bold text-slate-100">Nhãn trường thẻ con</h4>
+                  <p className="mt-1 text-[12px] font-serif text-slate-500">
+                    Đổi tiêu đề panel và tên 4 trường — áp dụng cho thẻ cha đang mở.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsLabelEditorOpen(false)}
+                  className="tt-kbd-focus flex h-8 items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 px-2.5 text-[11px] font-bold text-slate-300 hover:text-slate-100"
+                >
+                  <X size={13} /> Hủy
+                </button>
+              </div>
+
+              <label className="mb-3 block">
+                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-500">Tiêu đề panel</span>
+                <input
+                  value={panelTitleDraft}
+                  onChange={(e) => setPanelTitleDraft(e.target.value)}
+                  placeholder="VD: Thẻ con, Nhân vật, Vật phẩm…"
+                  className="tt-kbd-focus h-10 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-cyan-600/50"
+                />
+              </label>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {MEMBER_FIELD_KEYS.map((key) => (
+                  <label key={key} className="block">
+                    <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                      Nhãn trường «{key}»
+                    </span>
+                    <input
+                      value={labelDraft[key] || ''}
+                      onChange={(e) => setLabelDraft((prev) => ({ ...prev, [key]: e.target.value }))}
+                      placeholder={DEFAULT_MEMBER_FIELD_LABELS[key]}
+                      className="tt-kbd-focus h-10 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-cyan-600/50"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="submit"
+                  className="tt-kbd-focus flex h-10 items-center gap-2 rounded-lg bg-cyan-700 px-4 text-sm font-bold text-white shadow-lg transition-colors hover:bg-cyan-600"
+                >
+                  <Save size={15} /> Lưu nhãn
+                </button>
+              </div>
+            </form>
+          )}
+
+          {isFormOpen && !isLabelEditorOpen && (
             <form onSubmit={handleSubmit} className="rounded-lg border border-slate-800 bg-slate-900/25 p-4">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <h4 className="text-sm font-heading font-bold text-slate-100">
-                    {isEditingExisting ? 'Sửa hồ sơ' : 'Thêm nhân vật'}
+                    {isEditingExisting ? 'Sửa hồ sơ' : `Thêm ${panelTitle.toLowerCase()}`}
                   </h4>
                   {draftName && (
                     <span className="mt-1 inline-flex max-w-full items-center gap-1 rounded-md border border-violet-700/40 bg-violet-950/25 px-2 py-0.5 text-[10px] font-bold text-violet-200">
@@ -338,42 +461,19 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-500">Tên nhân vật</span>
-                  <input
-                    value={draft.name}
-                    onChange={(e) => patchDraft({ name: e.target.value })}
-                    placeholder="VD: Tần Hạo"
-                    className="tt-kbd-focus h-10 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-cyan-600/50"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-500">Bí danh</span>
-                  <input
-                    value={draft.alias}
-                    onChange={(e) => patchDraft({ alias: e.target.value })}
-                    placeholder="Tách bằng dấu phẩy / gạch chéo"
-                    className="tt-kbd-focus h-10 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-cyan-600/50"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-500">Vai trò</span>
-                  <input
-                    value={draft.role}
-                    onChange={(e) => patchDraft({ role: e.target.value })}
-                    placeholder="VD: Thiếu chủ, trưởng lão..."
-                    className="tt-kbd-focus h-10 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-cyan-600/50"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-500">Trạng thái / tu vi</span>
-                  <input
-                    value={draft.status}
-                    onChange={(e) => patchDraft({ status: e.target.value })}
-                    placeholder="VD: Trúc Cơ hậu kỳ"
-                    className="tt-kbd-focus h-10 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-cyan-600/50"
-                  />
-                </label>
+                {MEMBER_FIELD_KEYS.map((key) => (
+                  <label key={key} className="block">
+                    <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                      {labels[key]}
+                    </span>
+                    <input
+                      value={draft[key] || ''}
+                      onChange={(e) => patchDraft({ [key]: e.target.value })}
+                      placeholder={FIELD_PLACEHOLDERS[key]}
+                      className="tt-kbd-focus h-10 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-cyan-600/50"
+                    />
+                  </label>
+                ))}
               </div>
 
               <div className="mt-4 rounded-lg border border-amber-800/35 bg-amber-950/10 p-3">
@@ -383,7 +483,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                       <BookOpen size={13} /> Ghi chép chi tiết
                     </div>
                     <p className="mt-1 text-[12px] font-serif text-slate-400">
-                      Dùng khu Ghi Chép Chi Tiết của thẻ cha để có đủ toolbar và AI. Nội dung sẽ lưu riêng vào nhân vật này.
+                      Dùng khu Ghi Chép Chi Tiết của thẻ cha để có đủ toolbar và AI. Nội dung lưu riêng vào thẻ con này.
                     </p>
                   </div>
                   <button
@@ -403,7 +503,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                   className="tt-kbd-focus flex h-10 items-center gap-2 rounded-lg bg-cyan-700 px-4 text-sm font-bold text-white shadow-lg transition-colors hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!draftName}
                 >
-                  <Save size={15} /> {isEditingExisting ? 'Lưu thay đổi' : 'Lưu nhân vật'}
+                  <Save size={15} /> {isEditingExisting ? 'Lưu thay đổi' : 'Lưu thẻ con'}
                 </button>
               </div>
             </form>

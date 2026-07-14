@@ -14,6 +14,7 @@ import {
   Undo2, Redo2, Underline, Strikethrough, Highlighter, ListOrdered, Quote,
   TrendingUp, BarChart2, BookMarked, Users, Layers, Activity, Eye,
   GitBranch, ZoomIn, ZoomOut, Maximize2, RefreshCw, SlidersHorizontal, Atom, Edit2, Command, Type,
+  Pin,
 } from 'lucide-react';
 import {
   FALLBACK_IMG, GENRES, THEMES,
@@ -64,6 +65,7 @@ import {
 import { isCultivationRelationScope } from './lib/cultivationRelationSync.js';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
 import { isForceCollectionScope } from './lib/theLucBanDoSync.js';
+import { isCatalogListCardEntity, isEntityListPinned, ENTITY_LIST_PIN_MAX } from './lib/entityListPin.js';
 import { inferForceSystemLabel } from './lib/forceRankLadder.js';
 import {
   collectMapSubTabsForForceUi,
@@ -1058,9 +1060,13 @@ function stripMapPrimaryLineSegmentsDuplicatedInSecondField(primaryLine, seconda
   return kept.join(delim);
 }
 
-export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, tabConfig, dirHandle, parentTabId, parentLabel }) => {
+export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, onTogglePin, tabConfig, dirHandle, parentTabId, parentLabel }) => {
   const fields = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const terms = getTerms(parentTabId);
+  const isCatalogListCard = isCatalogListCardEntity(entity);
+  // Thẻ Danh sách luôn đứng đầu — không hiện badge/nút ghim dù còn listPinRank cũ.
+  const isPinned = !isCatalogListCard && isEntityListPinned(entity);
+  const canTogglePin = typeof onTogglePin === 'function' && !isCatalogListCard;
   const isMapCardScope = isMapCollectionScope({
     activeTabLon: parentTabId,
     activeTabNho: tabConfig?.id || '',
@@ -1185,9 +1191,40 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
   const handleSelect = () => onSelect?.(entity);
   const handleDelete = (e) => { e?.stopPropagation?.(); onDelete?.(entity); };
   const handleAddMs = (e) => { e?.stopPropagation?.(); onAddMilestone?.(entity); };
+  const handleTogglePin = (e) => { e?.stopPropagation?.(); onTogglePin?.(entity); };
   return (
-    <div onClick={handleSelect} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-amber-600/50 hover:shadow-lg transition-all cursor-pointer group relative">
-      <button onClick={handleDelete} className="absolute top-4 right-4 text-slate-600 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity z-10"><Trash2 size={16}/></button>
+    <div
+      onClick={handleSelect}
+      className={`bg-slate-900 border rounded-2xl p-5 hover:border-amber-600/50 hover:shadow-lg transition-all cursor-pointer group relative ${
+        isPinned ? 'border-amber-500/55 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]' : 'border-slate-800'
+      }`}
+    >
+      <div className="absolute top-3 right-3 z-10 flex items-center gap-1">
+        {canTogglePin ? (
+          <button
+            type="button"
+            onClick={handleTogglePin}
+            title={isPinned ? 'Bỏ ghim thẻ' : `Ghim lên đầu (tối đa ${ENTITY_LIST_PIN_MAX}, sau thẻ Danh sách · xếp A→Z)`}
+            className={`tt-kbd-focus rounded-lg p-1.5 transition-all ${
+              isPinned
+                ? 'bg-amber-950/50 text-amber-300 opacity-100'
+                : 'text-slate-600 opacity-0 hover:bg-slate-800 hover:text-amber-300 group-hover:opacity-100'
+            }`}
+            aria-label={isPinned ? 'Bỏ ghim thẻ' : 'Ghim thẻ'}
+            aria-pressed={isPinned}
+          >
+            <Pin size={15} className={isPinned ? 'fill-amber-400/80' : ''} />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={handleDelete}
+          className="tt-kbd-focus rounded-lg p-1.5 text-slate-600 opacity-0 transition-opacity hover:text-rose-500 group-hover:opacity-100"
+          aria-label="Xóa thẻ"
+        >
+          <Trash2 size={15} />
+        </button>
+      </div>
       <div className="flex items-center gap-4 mb-4">
          <div className={`w-14 h-14 rounded-full border border-amber-600/20 flex items-center justify-center font-bold text-xl overflow-hidden flex-shrink-0 ${entity.avatar ? 'bg-slate-950' : avatarColors[colorIdx]}`}>
            {entity.avatar ? (
@@ -1196,9 +1233,14 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, ta
               ) : <img src={entity.avatar} className="w-full h-full object-cover" alt="" onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />
            ) : <span className={avatarTextColors[colorIdx]}>{safeString(entity.name).charAt(0).toUpperCase()}</span>}
          </div>
-         <div className="flex-1 min-w-0 pr-6">
+         <div className="flex-1 min-w-0 pr-12">
            <div className="flex flex-wrap items-center gap-2">
              <h4 className="text-amber-100 font-bold font-serif text-base leading-snug break-words" title={safeString(entity.name)}>{safeString(entity.name)}</h4>
+             {isPinned && (
+               <span className="inline-flex items-center gap-1 rounded-md border border-amber-700/45 bg-amber-950/35 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+                 <Pin size={10} className="fill-amber-400/80" /> Ghim
+               </span>
+             )}
              {mapSystemBadgeLabel && (
                <span
                  className="px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wide"

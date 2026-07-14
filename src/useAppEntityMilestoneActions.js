@@ -32,6 +32,7 @@ import {
   syncMapHierarchyNameReferences,
   TTC_MAP_ANCHOR_STUB_KEY,
 } from './lib/mapHierarchySync.js';
+import { detachMapChildrenOnDelete } from './lib/mapEntityTree.js';
 import {
   getEntityAutoFieldValue,
   hasAnyAutoSyncFieldChanged,
@@ -975,6 +976,7 @@ export function useAppEntityMilestoneActions({
             if (idx >= 0) {
               removedEntityName = safeString(tabData.entities[idx]?.name).trim();
               removedWasListCard = isListCardEntity(tabData.entities[idx]);
+              detachMapChildrenOnDelete(tabData.entities, entityIdToDelete);
               tabData.entities.splice(idx, 1);
               removedLonId = lonId;
               removedNhoId = nhoId;

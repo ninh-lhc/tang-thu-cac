@@ -1,11 +1,23 @@
 /**
- * Helpers for member profiles embedded inside an entity card.
+ * Helpers for child profiles (thẻ con) embedded inside an entity card.
  * Used by wiki indexing, quick-view resolution, and the collection detail UI.
- * Keeps the persisted shape small: entity.members[] with name/alias/role/status/info.
+ * Persisted shape: entity.members[] + optional entity.memberFieldLabels / memberPanelTitle.
  * wikiLinkOptOuts is optional editor metadata for the shared detail notes editor.
  */
 
 const MEMBER_NAME_SPLIT_RE = /[,/|()]/;
+
+export const MEMBER_FIELD_KEYS = ['name', 'alias', 'role', 'status'];
+
+/** Nhãn mặc định — generic, không gắn «nhân vật / thế lực». */
+export const DEFAULT_MEMBER_FIELD_LABELS = Object.freeze({
+  name: 'Tên',
+  alias: 'Bí danh / tên khác',
+  role: 'Vai trò / loại',
+  status: 'Trạng thái',
+});
+
+export const DEFAULT_MEMBER_PANEL_TITLE = 'Thẻ con';
 
 function safeText(value) {
   if (value == null || value === 'null' || value === 'undefined') return '';
@@ -47,6 +59,36 @@ export function normalizeEntityMemberInput(input, { generateId } = {}) {
   };
 }
 
+/**
+ * Chuẩn hóa nhãn 4 trường thẻ con.
+ * Ưu tiên: entity.memberFieldLabels → tabConfig.memberFieldLabels → mặc định.
+ */
+export function normalizeMemberFieldLabels(input) {
+  const src = input && typeof input === 'object' ? input : {};
+  const out = {};
+  MEMBER_FIELD_KEYS.forEach((key) => {
+    const custom = safeText(src[key]);
+    out[key] = custom || DEFAULT_MEMBER_FIELD_LABELS[key];
+  });
+  return out;
+}
+
+export function resolveMemberFieldLabels(entity, tabConfig) {
+  const fromEntity = entity?.memberFieldLabels;
+  const fromTab = tabConfig?.memberFieldLabels;
+  const hasEntity = fromEntity && typeof fromEntity === 'object'
+    && MEMBER_FIELD_KEYS.some((key) => safeText(fromEntity[key]));
+  return normalizeMemberFieldLabels(hasEntity ? fromEntity : fromTab);
+}
+
+export function resolveMemberPanelTitle(entity, tabConfig) {
+  const fromEntity = safeText(entity?.memberPanelTitle);
+  if (fromEntity) return fromEntity;
+  const fromTab = safeText(tabConfig?.memberPanelTitle);
+  if (fromTab) return fromTab;
+  return DEFAULT_MEMBER_PANEL_TITLE;
+}
+
 export function findEntityMemberById(entity, memberId) {
   const id = safeText(memberId);
   if (!id) return null;
@@ -80,5 +122,7 @@ export function findEntityMemberInNovel(activeNovelData, dest) {
     parentLabel: safeText(parentEntity.name),
     tabLabel: safeText(nhoConfig?.label || nhoId),
     lonLabel: safeText(lonConfig?.label || lonId),
+    fieldLabels: resolveMemberFieldLabels(parentEntity, nhoConfig),
+    panelTitle: resolveMemberPanelTitle(parentEntity, nhoConfig),
   };
 }

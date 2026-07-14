@@ -11,6 +11,7 @@
 //   AppModalLenhNhanh.jsx - Command palette
 //   AppModalGoiYNoiTraCuu.jsx - Gợi ý AI nối tra cứu
 //   lib/stripWikiBrackets.js, lib/computeRelatedEntities.js, lib/entityFieldValue.js, lib/entityCollectionQuery.js
+//   lib/mapEntityTree.js, AppMapEntityTreePanel.jsx - cây thư mục mapParentId (mọi tab sưu tập)
 //   useAppPersistence.js - sync index + file truyện
 //   AppAdvancedFieldSelect.jsx - collection filter select UI
 //   AppLibrarySidebar.jsx, useAppLibrarySidebarState.js - library rail UI + state
@@ -71,6 +72,7 @@ import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
 import {
   findEntityMemberInNovel,
   normalizeEntityMemberInput,
+  normalizeMemberFieldLabels,
   readEntityMembers,
   splitEntityMemberNames,
 } from './lib/entityMembers.js';
@@ -106,6 +108,13 @@ import { buildStatusTierLabelSet } from './lib/wikiHierarchyLinkGuard.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { exportEntityProfilePdf } from './entityProfilePrint.js';
 import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
+import {
+  applyMapMove,
+  filterEntitiesByMapBranch,
+  filterMapTreeRootsOnly,
+  inferMapParentIdsFromViTri,
+} from './lib/mapEntityTree.js';
+import { ENTITY_LIST_PIN_MAX, toggleEntityListPin } from './lib/entityListPin.js';
 import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
 import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import {
@@ -573,6 +582,35 @@ export default function App() {
     activeTabNho,
     entityFilterFields,
   });
+  const [mapListBranchMode, setMapListBranchMode] = useState('all');
+  const [entityTreeListRootId, setEntityTreeListRootId] = useState(null);
+  const isActiveMapCollection = useMemo(
+    () =>
+      isMapCollectionScope({
+        activeTabLon,
+        activeTabNho,
+        currentTabConfig,
+        parentLabel: sortedTabs.find((tab) => tab.id === activeTabLon)?.label || '',
+      }),
+    [activeTabLon, activeTabNho, currentTabConfig, sortedTabs]
+  );
+  const hasEntityTreeLinks = useMemo(
+    () => collectionEntitiesRaw.some((ent) => Boolean(safeString(ent?.mapParentId).trim())),
+    [collectionEntitiesRaw]
+  );
+  useEffect(() => {
+    if (currentTabConfig?.viewType !== 'collection-track' && mapListBranchMode !== 'all') {
+      setMapListBranchMode('all');
+    }
+  }, [currentTabConfig?.viewType, mapListBranchMode]);
+  useEffect(() => {
+    setEntityTreeListRootId(null);
+    setMapListBranchMode('all');
+  }, [activeTabLon, activeTabNho]);
+  useEffect(() => {
+    if (!selectedEntityId) return;
+    setEntityTreeListRootId(selectedEntityId);
+  }, [selectedEntityId]);
   useEffect(() => {
     if (currentTabConfig?.viewType !== 'collection-track') return;
     if (collectionSubTab !== 'list') return;
@@ -612,9 +650,28 @@ export default function App() {
     () => buildEntitySearchIndexMap(collectionEntitiesRaw),
     [collectionEntitiesRaw]
   );
+  const mapBranchScopedEntities = useMemo(() => {
+    if (mapListBranchMode !== 'branch') return collectionEntitiesRaw;
+    const rootId = safeString(entityTreeListRootId).trim();
+    if (rootId) {
+      return filterEntitiesByMapBranch(collectionEntitiesRaw, rootId);
+    }
+    // Chưa chọn gốc lọc: chỉ hiện thẻ gốc / chưa gắn — khác rõ so với «Tất cả».
+    return filterMapTreeRootsOnly(collectionEntitiesRaw);
+  }, [
+    collectionEntitiesRaw,
+    mapListBranchMode,
+    entityTreeListRootId,
+  ]);
+  const entityTreeListRootName = useMemo(() => {
+    const rootId = safeString(entityTreeListRootId).trim();
+    if (!rootId) return '';
+    const hit = collectionEntitiesRaw.find((ent) => safeString(ent?.id) === rootId);
+    return safeString(hit?.name).trim();
+  }, [collectionEntitiesRaw, entityTreeListRootId]);
   const entitiesList = useMemo(
     () =>
-      applyEntityCollectionFilters(collectionEntitiesRaw, {
+      applyEntityCollectionFilters(mapBranchScopedEntities, {
         entityFilterField,
         entityFilterValue: deferredEntityFilterValue,
         entitySearchQuery: deferredEntitySearch,
@@ -622,7 +679,7 @@ export default function App() {
         entitySortMode,
       }),
     [
-      collectionEntitiesRaw,
+      mapBranchScopedEntities,
       entitySearchIndexById,
       deferredEntitySearch,
       deferredEntityFilterValue,
@@ -1502,6 +1559,20 @@ export default function App() {
     ]
   );
   useEffect(() => {
+    if (!isActiveMapCollection || !activeTabLon) return;
+    const tabData = activeNovelDataRef.current?.data?.[activeTabLon]?.[activeTabNho || 'default'];
+    const entities = Array.isArray(tabData?.entities) ? tabData.entities : [];
+    const needsInfer = entities.some(
+      (ent) => !ent?.mapParentId && safeString(ent?.dynamicData?.f_vi_tri).trim()
+    );
+    if (!needsInfer) return;
+    updateActiveNovelData((nov) => {
+      const nextTab = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
+      if (!Array.isArray(nextTab?.entities)) return;
+      inferMapParentIdsFromViTri(nextTab.entities);
+    });
+  }, [isActiveMapCollection, activeTabLon, activeTabNho, updateActiveNovelData]);
+  useEffect(() => {
     if (!activeNovelData?.id) return;
     updateActiveNovelData((nov) => {
       syncAllCollectionListCards(nov);
@@ -1847,6 +1918,40 @@ export default function App() {
     handleDeleteEntity(ent.id);
   };
 
+  const onEntityCardTogglePin = useCallback(
+    (ent) => {
+      const entityId = safeString(ent?.id).trim();
+      if (!entityId || !activeTabLon) return;
+      let result = { ok: false, reason: 'unknown', pinned: false };
+      const ok = updateActiveNovelData((nov) => {
+        const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
+        if (!Array.isArray(tabData?.entities)) return;
+        result = toggleEntityListPin(tabData.entities, entityId);
+      });
+      if (ok === false) {
+        showToast('Không ghim được vì chưa có truyện đang mở.', 'error');
+        return;
+      }
+      if (!result.ok && result.reason === 'limit') {
+        showToast(`Chỉ ghim tối đa ${ENTITY_LIST_PIN_MAX} thẻ (thẻ Danh sách luôn đứng đầu, không chiếm chỗ ghim).`, 'warning');
+        return;
+      }
+      if (!result.ok && result.reason === 'list-card') {
+        showToast('Thẻ Danh sách luôn nằm đầu danh sách, không cần ghim.', 'info');
+        return;
+      }
+      if (!result.ok) {
+        showToast('Không ghim được thẻ này.', 'error');
+        return;
+      }
+      showToast(
+        result.pinned ? 'Đã ghim thẻ — các thẻ ghim xếp theo tên A→Z.' : 'Đã bỏ ghim thẻ.',
+        'success'
+      );
+    },
+    [activeTabLon, activeTabNho, updateActiveNovelData, showToast]
+  );
+
   const onEntityCardAddMilestone = useCallback((ent) => {
     setSelectedEntityId(ent.id);
     setCollectionSubTab('timeline');
@@ -1881,13 +1986,13 @@ export default function App() {
   const handleSaveEntityMember = useCallback(
     (memberDraft) => {
       if (!selectedEntityId || !activeTabLon) {
-        showToast('Hãy chọn một thẻ cha trước khi lưu nhân vật.', 'warning');
+        showToast('Hãy chọn một thẻ cha trước khi lưu thẻ con.', 'warning');
         return;
       }
       const normalized = normalizeEntityMemberInput(memberDraft, { generateId });
       const memberName = toDisplayTitleCase(normalized.name) || normalized.name;
       if (!memberName) {
-        showToast('Điền tên nhân vật trước khi lưu.', 'warning');
+        showToast('Điền tên thẻ con trước khi lưu.', 'warning');
         return;
       }
       let savedMode = 'create';
@@ -1921,7 +2026,7 @@ export default function App() {
         ent.members.sort((a, b) => safeString(a?.name).localeCompare(safeString(b?.name), 'vi'));
       });
       if (ok === false) {
-        showToast('Không lưu được nhân vật con vì chưa có truyện đang mở.', 'error');
+        showToast('Không lưu được thẻ con vì chưa có truyện đang mở.', 'error');
         return;
       }
       showToast(
@@ -1934,14 +2039,39 @@ export default function App() {
     [activeTabLon, activeTabNho, selectedEntityId, selectedEntity?.name, updateActiveNovelData, showToast]
   );
 
+  const handleSaveEntityMemberFieldMeta = useCallback(
+    (meta) => {
+      if (!selectedEntityId || !activeTabLon) {
+        showToast('Hãy chọn một thẻ cha trước khi đổi nhãn.', 'warning');
+        return;
+      }
+      const nextLabels = normalizeMemberFieldLabels(meta?.memberFieldLabels);
+      const nextTitle = safeString(meta?.memberPanelTitle).trim();
+      const ok = updateActiveNovelData((nov) => {
+        const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
+        const ent = tabData?.entities?.find((item) => item.id === selectedEntityId);
+        if (!ent) return;
+        ent.memberFieldLabels = nextLabels;
+        if (nextTitle) ent.memberPanelTitle = nextTitle;
+        else delete ent.memberPanelTitle;
+      });
+      if (ok === false) {
+        showToast('Không lưu được nhãn thẻ con vì chưa có truyện đang mở.', 'error');
+        return;
+      }
+      showToast('Đã cập nhật nhãn trường thẻ con.', 'success');
+    },
+    [activeTabLon, activeTabNho, selectedEntityId, updateActiveNovelData, showToast]
+  );
+
   const handleDeleteEntityMember = useCallback(
     (memberLike) => {
       const memberId = safeString(memberLike?.id || memberLike).trim();
       if (!memberId || !selectedEntityId || !activeTabLon) return;
-      const memberName = safeString(memberLike?.name).trim() || 'nhân vật này';
+      const memberName = safeString(memberLike?.name).trim() || 'thẻ con này';
       setConfirmDialog({
         isOpen: true,
-        title: 'Xóa hồ sơ nhân vật',
+        title: 'Xóa thẻ con',
         message: `Xóa hồ sơ "${memberName}" khỏi thẻ cha? Wiki link của tên này sẽ không còn mở hồ sơ con nữa.`,
         onConfirm: () => {
           updateActiveNovelData((nov) => {
@@ -1966,6 +2096,143 @@ export default function App() {
       updateActiveNovelData,
       showToast,
     ]
+  );
+
+  const handleMoveMapEntity = useCallback(
+    (nodeId, newParentId) => {
+      if (!activeTabLon) return;
+      let moveResult = { ok: false, reason: 'unknown' };
+      const ok = updateActiveNovelData((nov) => {
+        const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
+        if (!Array.isArray(tabData?.entities)) return;
+        moveResult = applyMapMove(tabData.entities, nodeId, newParentId);
+        if (!moveResult.ok) return;
+        const nho = (nov.tabsConfig || [])
+          .find((tab) => tab.id === activeTabLon)
+          ?.subTabs?.find((sub) => sub.id === (activeTabNho || 'default'));
+        const lonLabel = (nov.tabsConfig || []).find((tab) => tab.id === activeTabLon)?.label || '';
+        if (
+          isMapCollectionScope({
+            activeTabLon,
+            activeTabNho: activeTabNho || 'default',
+            currentTabConfig: nho,
+            parentLabel: lonLabel,
+          })
+        ) {
+          syncAllMapHierarchyAutoBlocks(nov);
+        }
+      });
+      if (ok === false) {
+        showToast('Không cập nhật được cây thư mục vì chưa có truyện đang mở.', 'error');
+        return;
+      }
+      if (!moveResult.ok) {
+        const reasonLabel =
+          moveResult.reason === 'cycle'
+            ? 'Không thể kéo thẻ vào nhánh con của chính nó.'
+            : moveResult.reason === 'self'
+              ? 'Không thể gắn thẻ làm cha của chính nó.'
+              : 'Không thể đổi cấp thẻ này.';
+        showToast(reasonLabel, 'warning');
+        return;
+      }
+      showToast(newParentId ? 'Đã gắn thẻ vào cấp cha mới.' : 'Đã gỡ thẻ về gốc / chưa gắn.', 'success');
+    },
+    [activeTabLon, activeTabNho, updateActiveNovelData, showToast]
+  );
+
+  const handleCreateMapChildEntity = useCallback(
+    ({ name, parentId } = {}) => {
+      if (!activeTabLon) {
+        showToast('Hãy chọn một tab sưu tập trước khi tạo thẻ con trong cây.', 'warning');
+        return null;
+      }
+      const childName = toDisplayTitleCase(safeString(name).trim()) || safeString(name).trim();
+      if (!childName) {
+        showToast('Điền tên thẻ trước khi tạo.', 'warning');
+        return null;
+      }
+      const newEntityId = generateId('ent');
+      let created = false;
+      let targetExistingId = null;
+      const ok = updateActiveNovelData((nov) => {
+        if (!nov.data) nov.data = {};
+        if (!nov.data[activeTabLon]) nov.data[activeTabLon] = {};
+        let tabData = nov.data[activeTabLon][activeTabNho || 'default'];
+        if (!tabData || typeof tabData === 'string') tabData = { overview: '', entities: [] };
+        if (!Array.isArray(tabData.entities)) tabData.entities = [];
+        const matched = findEquivalentEntityByName(tabData.entities, childName, {
+          allowExactNameMatch: false,
+        });
+        if (matched?.entity) {
+          targetExistingId = matched.entity.id;
+          const lon = (nov.tabsConfig || []).find((tab) => tab.id === activeTabLon);
+          const nho = lon?.subTabs?.find((sub) => sub.id === (activeTabNho || 'default'));
+          const autoCtx = buildAutoSyncContext(activeTabLon, activeTabNho || 'default', nho, lon?.label || '');
+          mergeNameIntoAutoAlias(matched.entity, childName, autoCtx);
+          if (parentId) {
+            applyMapMove(tabData.entities, matched.entity.id, parentId);
+          }
+        } else {
+          const parentEntity = parentId
+            ? tabData.entities.find((item) => safeString(item?.id) === safeString(parentId))
+            : null;
+          const nextEntity = {
+            id: newEntityId,
+            name: childName,
+            avatar: '',
+            rawText: '',
+            dynamicData: {},
+            info: '',
+            milestones: [],
+            images: [],
+          };
+          if (parentId && parentEntity) {
+            nextEntity.mapParentId = safeString(parentId);
+            nextEntity.dynamicData.f_vi_tri = safeString(parentEntity.name);
+          }
+          tabData.entities.push(nextEntity);
+          created = true;
+        }
+        nov.data[activeTabLon][activeTabNho || 'default'] = tabData;
+        if (created) lockFieldsTemplateIfFirstEntity(nov, activeTabLon, activeTabNho || 'default');
+        const lon = (nov.tabsConfig || []).find((tab) => tab.id === activeTabLon);
+        const nho = lon?.subTabs?.find((sub) => sub.id === (activeTabNho || 'default'));
+        if (
+          isMapCollectionScope({
+            activeTabLon,
+            activeTabNho: activeTabNho || 'default',
+            currentTabConfig: nho,
+            parentLabel: lon?.label || '',
+          })
+        ) {
+          syncAllMapHierarchyAutoBlocks(nov);
+        }
+        syncAllCollectionListCards(nov);
+      });
+      if (ok === false) {
+        showToast('Không tạo được địa danh con vì chưa có truyện đang mở.', 'error');
+        return null;
+      }
+      if (targetExistingId) {
+        showToast(`"${childName}" đã trùng thẻ có sẵn — đã gắn vào cây nếu chọn được cha.`, 'warning');
+        handleNavigate({ lonId: activeTabLon, nhoId: activeTabNho, entityId: targetExistingId });
+        return targetExistingId;
+      }
+      showToast(`Đã tạo ${childName} trong cây thư mục.`, 'success');
+      handleNavigate({ lonId: activeTabLon, nhoId: activeTabNho, entityId: newEntityId });
+      return newEntityId;
+    },
+    [activeTabLon, activeTabNho, updateActiveNovelData, showToast, handleNavigate]
+  );
+
+  const handleDetachMapEntity = useCallback(
+    (entityLike) => {
+      const id = safeString(entityLike?.id || entityLike).trim();
+      if (!id) return;
+      handleMoveMapEntity(id, null);
+    },
+    [handleMoveMapEntity]
   );
 
   useEffect(() => {
@@ -3518,6 +3785,7 @@ export default function App() {
     onEntityCardSelect,
     onEntityCardDelete,
     onEntityCardAddMilestone,
+    onEntityCardTogglePin,
     selectedEntity,
     isEntityEditing,
     setIsEntityEditing,
@@ -3542,7 +3810,18 @@ export default function App() {
     setIsSplitPreview,
     handleUpdateEntityInfo,
     handleSaveEntityMember,
+    handleSaveEntityMemberFieldMeta,
     handleDeleteEntityMember,
+    handleMoveMapEntity,
+    handleCreateMapChildEntity,
+    handleDetachMapEntity,
+    mapListBranchMode,
+    setMapListBranchMode,
+    entityTreeListRootId,
+    setEntityTreeListRootId,
+    entityTreeListRootName,
+    hasEntityTreeLinks,
+    collectionEntitiesRaw,
     handleSetSelectedEntityAutoSyncState,
     setImageForm,
     setIsInsertImageModalOpen,

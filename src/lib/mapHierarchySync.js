@@ -12,6 +12,7 @@ import {
 } from './autoSyncEntityPrefs.js';
 import { hasAutoSyncFeature, isAutoSyncExplicitlyOff } from './tabAutoSyncRole.js';
 import { isListCardEntity } from './collectionListCardSync.js';
+import { readMapParentId } from './mapEntityTree.js';
 
 const AUTO_MAP_META_START = '<!-- AUTO_MAP_HIERARCHY_META:START -->';
 const AUTO_MAP_META_END = '<!-- AUTO_MAP_HIERARCHY_META:END -->';
@@ -330,12 +331,26 @@ function ensureMapEntityByName(tabData, name, mapContext = {}) {
 }
 
 function buildMapRecords(entities, mapContext = {}) {
-  return (entities || [])
+  const list = Array.isArray(entities) ? entities : [];
+  const byId = new Map();
+  list.forEach((entity) => {
+    const id = safeString(entity?.id).trim();
+    if (id) byId.set(id, entity);
+  });
+
+  return list
     .map((entity) => {
       const name = safeString(entity?.name).trim();
       const nameKey = normalizeAscii(name);
       if (!nameKey) return null;
-      const parentSource = extractMapParentPath(entity, mapContext);
+
+      const mapParentId = readMapParentId(entity);
+      const mapParentEntity = mapParentId ? byId.get(mapParentId) : null;
+      const mapParentName = safeString(mapParentEntity?.name).trim();
+
+      const parentSource = mapParentName
+        ? { raw: mapParentName, fromStatusFallback: false }
+        : extractMapParentPath(entity, mapContext);
       const titleValue =
         getEntityAutoFieldValue(entity, mapContext, 'title') ||
         safeString(entity?.dynamicData?.f_title).trim();
@@ -352,7 +367,7 @@ function buildMapRecords(entities, mapContext = {}) {
         levelLabel: levelInfo.label,
         levelRank: levelInfo.rank,
         scaleLabel,
-      parentTokens: splitMapParentTokens(parentSource.raw).filter((token) => !isGenericMapParentToken(token)),
+        parentTokens: splitMapParentTokens(parentSource.raw).filter((token) => !isGenericMapParentToken(token)),
         fullChain: [],
         fullChainKeys: [],
       };
@@ -494,6 +509,12 @@ function syncMapHierarchyInTab(mapTab, mapPath = {}) {
   const referencedParents = new Set();
   (mapTab.entities || []).forEach((ent) => {
     if (isEntityAutoSyncDisabled(ent, AUTO_SYNC_ENGINE_MAP_HIERARCHY)) return;
+    const mapParentId = readMapParentId(ent);
+    if (mapParentId) {
+      const parentEnt = (mapTab.entities || []).find((item) => safeString(item?.id).trim() === mapParentId);
+      const parentName = safeString(parentEnt?.name).trim();
+      if (parentName && !isGenericMapParentToken(parentName)) referencedParents.add(parentName);
+    }
     const parentPath =
       getEntityAutoFieldValue(ent, mapContext, 'parent_path') ||
       ent?.dynamicData?.f_vi_tri;

@@ -1,47 +1,65 @@
 // Mục đích: Lọc + sắp xếp danh sách thực thể sưu tập (tìm kiếm + lọc trường cùng lúc).
 // Import bởi: App.jsx
-// Lưu ý: Dùng trong useMemo; không chứa React.
+// Lưu ý: Dùng trong useMemo; không chứa React. Thẻ Danh sách > user-ghim (A→Z) > sort mode.
 
 import { getEntityFieldValue, safeString } from './entityFieldValue.js';
 import { normalizeSearchText } from './normalizeSearchText.js';
+import {
+  isCatalogListCardEntity,
+  isEntityListPinned,
+} from './entityListPin.js';
 
 function normalizeAscii(value) {
   return normalizeSearchText(value);
 }
 
 function isListCardEntity(entity) {
-  return normalizeAscii(entity?.name).startsWith('danh sach');
+  return isCatalogListCardEntity(entity) || normalizeAscii(entity?.name).startsWith('danh sach');
+}
+
+/**
+ * Thứ tự: thẻ Danh sách (luôn đầu) → thẻ user-ghim (A→Z) → còn lại theo sort mode.
+ */
+function compareListPriorityThen(a, b, nextCompare) {
+  const aList = isListCardEntity(a);
+  const bList = isListCardEntity(b);
+  if (aList !== bList) return aList ? -1 : 1;
+
+  const aPinned = !aList && isEntityListPinned(a);
+  const bPinned = !bList && isEntityListPinned(b);
+  if (aPinned !== bPinned) return aPinned ? -1 : 1;
+  if (aPinned && bPinned) {
+    const byName = safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
+    if (byName !== 0) return byName;
+  }
+  return nextCompare(a, b);
 }
 
 function comparePinnedListThenNameAsc(a, b) {
-  const aPinned = isListCardEntity(a);
-  const bPinned = isListCardEntity(b);
-  if (aPinned !== bPinned) return aPinned ? -1 : 1;
-  return safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
+  return compareListPriorityThen(a, b, (x, y) =>
+    safeString(x?.name).localeCompare(safeString(y?.name), 'vi')
+  );
 }
 
 function comparePinnedListThenNameDesc(a, b) {
-  const aPinned = isListCardEntity(a);
-  const bPinned = isListCardEntity(b);
-  if (aPinned !== bPinned) return aPinned ? -1 : 1;
-  return safeString(b?.name).localeCompare(safeString(a?.name), 'vi');
+  return compareListPriorityThen(a, b, (x, y) =>
+    safeString(y?.name).localeCompare(safeString(x?.name), 'vi')
+  );
 }
 
 function comparePinnedListThenNewest(a, b) {
-  const aPinned = isListCardEntity(a);
-  const bPinned = isListCardEntity(b);
-  if (aPinned !== bPinned) return aPinned ? -1 : 1;
-  return safeString(b?.id).localeCompare(safeString(a?.id), 'vi');
+  return compareListPriorityThen(a, b, (x, y) =>
+    safeString(y?.id).localeCompare(safeString(x?.id), 'vi')
+  );
 }
 
 function comparePinnedListThenMilestones(a, b) {
-  const aPinned = isListCardEntity(a);
-  const bPinned = isListCardEntity(b);
-  if (aPinned !== bPinned) return aPinned ? -1 : 1;
-  const am = Array.isArray(a?.milestones) ? a.milestones.length : 0;
-  const bm = Array.isArray(b?.milestones) ? b.milestones.length : 0;
-  if (am !== bm) return bm - am;
-  return safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
+  return compareListPriorityThen(a, b, (x, y) => {
+    const am = Array.isArray(x?.milestones) ? x.milestones.length : 0;
+    const bm = Array.isArray(y?.milestones) ? y.milestones.length : 0;
+    if (am !== bm) return bm - am;
+    return safeString(x?.name).localeCompare(safeString(y?.name), 'vi');
+  });
 }
 
 // Chỉ mục tìm theo tên thẻ (name), không dùng info/title/dynamicData — tránh trúng từ trong dữ liệu dài.

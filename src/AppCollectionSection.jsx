@@ -10,7 +10,7 @@
 import React from 'react';
 import {
   ChevronRight, Plus, Search, Filter, Save, Edit3, Eye,
-  User, BookOpen, Download, Settings, Shield,
+  User, BookOpen, Download, Settings, Shield, FolderTree,
 } from 'lucide-react';
 import { safeString, AsyncLocalImage } from './MasterUtils.jsx';
 import { FALLBACK_IMG } from './MasterEngines.js';
@@ -21,6 +21,7 @@ import { AppCollectionEmptyState } from './AppCollectionEmptyState.jsx';
 import { AppEntitySummaryBlocks } from './AppEntitySummaryBlocks.jsx';
 import { AppEntityDetailNotes } from './AppEntityDetailNotes.jsx';
 import { AppEntityMembersPanel } from './AppEntityMembersPanel.jsx';
+import { AppMapEntityTreePanel } from './AppMapEntityTreePanel.jsx';
 import { AppEntityTimelinePanel } from './AppEntityTimelinePanel.jsx';
 import { AppEntityDescriptionPanel } from './AppEntityDescriptionPanel.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
@@ -30,6 +31,30 @@ import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
 import { isMapCollectionScope } from './lib/mapHierarchySync.js';
 import { isForceCollectionScope } from './lib/theLucBanDoSync.js';
 import { splitStatusHierarchyTokens } from './lib/statusHierarchyParser.js';
+import { tabHasEntityTreeLinks } from './lib/mapEntityTree.js';
+
+const ENTITY_TREE_ENABLED_PREFIX = 'tt_entity_tree_feature_on';
+
+function readEntityTreeFeatureOn(scopeKey, fallback) {
+  if (!scopeKey || typeof localStorage === 'undefined') return fallback;
+  try {
+    const saved = localStorage.getItem(`${ENTITY_TREE_ENABLED_PREFIX}:${scopeKey}`);
+    if (saved === '1') return true;
+    if (saved === '0') return false;
+  } catch {
+    /* best effort */
+  }
+  return fallback;
+}
+
+function writeEntityTreeFeatureOn(scopeKey, value) {
+  if (!scopeKey || typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(`${ENTITY_TREE_ENABLED_PREFIX}:${scopeKey}`, value ? '1' : '0');
+  } catch {
+    /* best effort */
+  }
+}
 
 function getLeafHierarchyLabel(value) {
   const raw = safeString(value)
@@ -123,6 +148,7 @@ export function AppCollectionSection({
   onEntityCardSelect,
   onEntityCardDelete,
   onEntityCardAddMilestone,
+  onEntityCardTogglePin,
   // entity detail
   selectedEntity,
   isEntityEditing,
@@ -148,7 +174,18 @@ export function AppCollectionSection({
   setIsSplitPreview,
   handleUpdateEntityInfo,
   handleSaveEntityMember,
+  handleSaveEntityMemberFieldMeta,
   handleDeleteEntityMember,
+  handleMoveMapEntity,
+  handleCreateMapChildEntity,
+  handleDetachMapEntity,
+  mapListBranchMode,
+  setMapListBranchMode,
+  entityTreeListRootId,
+  setEntityTreeListRootId,
+  entityTreeListRootName,
+  hasEntityTreeLinks,
+  collectionEntitiesRaw,
   handleSetSelectedEntityAutoSyncState,
   setImageForm,
   setIsInsertImageModalOpen,
@@ -257,6 +294,34 @@ export function AppCollectionSection({
   );
   const [detailProfileMode, setDetailProfileMode] = React.useState('original');
   const [memberNotesEditTargetId, setMemberNotesEditTargetId] = React.useState(null);
+  const entityTreeScopeKey = `${activeTabLon || 'lon'}:${activeTabNho || 'default'}`;
+  const tabTreeHasLinks = React.useMemo(
+    () => Boolean(hasEntityTreeLinks) || tabHasEntityTreeLinks(collectionEntitiesRaw),
+    [collectionEntitiesRaw, hasEntityTreeLinks]
+  );
+  const [entityTreeFeatureOn, setEntityTreeFeatureOn] = React.useState(() =>
+    readEntityTreeFeatureOn(entityTreeScopeKey, tabTreeHasLinks)
+  );
+  React.useEffect(() => {
+    setEntityTreeFeatureOn(readEntityTreeFeatureOn(entityTreeScopeKey, tabTreeHasLinks));
+  }, [entityTreeScopeKey, tabTreeHasLinks]);
+  React.useEffect(() => {
+    if (!tabTreeHasLinks) return;
+    setEntityTreeFeatureOn((prev) => {
+      if (prev) return prev;
+      writeEntityTreeFeatureOn(entityTreeScopeKey, true);
+      return true;
+    });
+  }, [entityTreeScopeKey, tabTreeHasLinks]);
+  const enableEntityTreeFeature = React.useCallback(() => {
+    writeEntityTreeFeatureOn(entityTreeScopeKey, true);
+    setEntityTreeFeatureOn(true);
+  }, [entityTreeScopeKey]);
+  const hideEntityTreeFeature = React.useCallback(() => {
+    writeEntityTreeFeatureOn(entityTreeScopeKey, false);
+    setEntityTreeFeatureOn(false);
+    setMapListBranchMode?.('all');
+  }, [entityTreeScopeKey, setMapListBranchMode]);
   const timelineCurrentProfile = React.useMemo(
     () => buildTimelineCurrentProfileView(selectedEntity),
     [selectedEntity]
@@ -464,6 +529,32 @@ export function AppCollectionSection({
                 <option value="milestones">Nhiều mốc trước</option>
                 <option value="newest">Mới tạo trước</option>
               </select>
+              {(tabTreeHasLinks || entityTreeFeatureOn || mapListBranchMode === 'branch') && (
+                <select
+                  value={mapListBranchMode}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setMapListBranchMode(next);
+                    if (next === 'branch' && selectedEntity?.id) {
+                      setEntityTreeListRootId?.(selectedEntity.id);
+                    }
+                  }}
+                  className={`${toolbarInputBase} bg-slate-900 border border-slate-800 px-3 outline-none focus:border-emerald-600/50 text-slate-300 cursor-pointer flex-shrink-0 ${
+                    mapListBranchMode === 'branch' ? 'border-emerald-700/50 text-emerald-200' : ''
+                  }`}
+                  aria-label="Lọc danh sách theo cây thư mục"
+                  title={
+                    mapListBranchMode === 'branch'
+                      ? (entityTreeListRootName
+                        ? `Đang lọc nhánh: ${entityTreeListRootName}`
+                        : 'Đang hiện thẻ gốc / chưa gắn. Mở một thẻ để lọc đúng nhánh con.')
+                      : 'Lọc danh sách theo cây thư mục'
+                  }
+                >
+                  <option value="all">Cây: Tất cả</option>
+                  <option value="branch">Cây: Theo nhánh</option>
+                </select>
+              )}
               <button
                 type="button"
                 onClick={() => setShowEntityAdvanced((v) => !v)}
@@ -504,6 +595,31 @@ export function AppCollectionSection({
 
         {/* Hàng 2 (chỉ collection-track): chip lọc đang active + panel Nâng cao — tách riêng để không làm lệch hàng tiêu đề */}
         {currentTabConfig?.viewType === 'collection-track' && (<>
+          {mapListBranchMode === 'branch' && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+              <span className="rounded-full border border-emerald-700/50 bg-emerald-950/30 px-2.5 py-1 font-serif text-emerald-100">
+                {entityTreeListRootName
+                  ? `Theo nhánh: ${entityTreeListRootName} (+ thẻ con)`
+                  : 'Theo nhánh: chỉ thẻ gốc / chưa gắn'}
+              </span>
+              {entityTreeListRootName ? (
+                <button
+                  type="button"
+                  onClick={() => setEntityTreeListRootId?.(null)}
+                  className="tt-kbd-focus rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 font-bold text-slate-300 hover:border-emerald-600/50 hover:text-emerald-200"
+                >
+                  Về chỉ gốc
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setMapListBranchMode('all')}
+                className="tt-kbd-focus rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 font-bold text-slate-300 hover:text-slate-100"
+              >
+                Bỏ lọc cây
+              </button>
+            </div>
+          )}
           {isEntityAdvancedActive && (
             <div className="flex items-center gap-2 flex-wrap mt-3 text-[11px]">
               {entityFilterField !== 'none' && entityFilterValue.trim() ? (
@@ -652,6 +768,7 @@ export function AppCollectionSection({
               onEntityCardSelect={onEntityCardSelect}
               onEntityCardDelete={onEntityCardDelete}
               onEntityCardAddMilestone={onEntityCardAddMilestone}
+              onEntityCardTogglePin={onEntityCardTogglePin}
               currentContextDirHandle={currentContextDirHandle}
               activeTabLon={activeTabLon}
               entityPageSize={entityPageSize}
@@ -774,8 +891,10 @@ export function AppCollectionSection({
                 <AppEntityMembersPanel
                   key={`${activeTabLon || 'lon'}:${activeTabNho || 'default'}:${selectedEntity?.id || 'entity-members'}`}
                   selectedEntity={selectedEntity}
+                  tabConfig={currentTabConfig}
                   scopeKey={`${activeTabLon || 'lon'}:${activeTabNho || 'default'}`}
                   onSaveMember={handleSaveEntityMember}
+                  onSaveMemberFieldMeta={handleSaveEntityMemberFieldMeta}
                   onDeleteMember={handleDeleteEntityMember}
                   onEditMemberNotes={handleEditMemberNotes}
                   onOpenMember={(member) => {
@@ -788,6 +907,46 @@ export function AppCollectionSection({
                     });
                   }}
                 />
+
+                {entityTreeFeatureOn ? (
+                  <AppMapEntityTreePanel
+                    key={`map-tree:${entityTreeScopeKey}`}
+                    entities={collectionEntitiesRaw}
+                    selectedEntity={selectedEntity}
+                    scopeKey={entityTreeScopeKey}
+                    onMoveEntity={handleMoveMapEntity}
+                    onCreateChild={handleCreateMapChildEntity}
+                    onDetachEntity={handleDetachMapEntity}
+                    onHideFeature={hideEntityTreeFeature}
+                    onOpenEntity={(entity) => {
+                      if (!entity?.id) return;
+                      handleNavigate({
+                        lonId: activeTabLon,
+                        nhoId: activeTabNho,
+                        entityId: entity.id,
+                      });
+                    }}
+                  />
+                ) : (
+                  <div className="mb-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-slate-800 bg-slate-950/30 px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-sm font-heading font-bold text-slate-300">
+                        <FolderTree size={16} className="text-emerald-400/80" />
+                        Cây thư mục
+                      </div>
+                      <p className="mt-0.5 font-serif text-[12px] text-slate-500">
+                        Ẩn khi không dùng — bật để xếp thẻ cha/con, kéo thả và khóa nhánh trên mọi tab sưu tập.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={enableEntityTreeFeature}
+                      className="tt-kbd-focus flex h-9 items-center gap-1.5 rounded-lg border border-emerald-800/55 bg-emerald-950/35 px-3 text-[12px] font-bold text-emerald-100 hover:border-emerald-500/60 hover:bg-emerald-900/40"
+                    >
+                      <Eye size={14} /> Hiện cây thư mục
+                    </button>
+                  </div>
+                )}
 
                 <AppEntityDetailNotes
                   activeTabLon={activeTabLon}

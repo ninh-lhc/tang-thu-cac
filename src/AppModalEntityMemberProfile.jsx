@@ -1,13 +1,14 @@
 // ==========================================
 // AppModalEntityMemberProfile.jsx
-// Purpose: quick-view modal for a member profile embedded under an entity card.
+// Purpose: quick-view modal for a child profile embedded under an entity card.
 // Imported by AppModalLayer; opened from wiki links whose dest has memberId.
-// Notes: parent card remains the real entity, while this modal shows the child profile.
+// Notes: parent card remains the real entity; labels come from parent/tab meta.
 // ==========================================
 
 import React from 'react';
 import { ExternalLink, Link2, Shield, UserRound, X } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
+import { DEFAULT_MEMBER_FIELD_LABELS } from './lib/entityMembers.js';
 import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
 import { readWikiLinkOptOuts } from './lib/wikiLinkOptOut.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
@@ -35,9 +36,12 @@ export function AppModalEntityMemberProfile({
   if (!isOpen) return null;
 
   const { member, parentEntity } = profile;
-  const memberName = safeString(member.name).trim() || 'Nhân vật chưa đặt tên';
+  const fieldLabels = profile.fieldLabels || DEFAULT_MEMBER_FIELD_LABELS;
+  const panelTitle = safeString(profile.panelTitle).trim() || 'Thẻ con';
+  const memberName = safeString(member.name).trim() || `${panelTitle} chưa đặt tên`;
   const alias = safeString(member.alias).trim();
-  const roleStatus = [member.role, member.status].map(safeString).filter(Boolean).join(' · ');
+  const role = safeString(member.role).trim();
+  const status = safeString(member.status).trim();
   const parentName = safeString(parentEntity?.name || profile.parentLabel).trim();
   const scopeLabel = [profile.lonLabel, profile.tabLabel].map(safeString).filter(Boolean).join(' › ');
 
@@ -46,7 +50,7 @@ export function AppModalEntityMemberProfile({
       className="fixed inset-0 z-[260] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm animate-fade-fast"
       role="dialog"
       aria-modal="true"
-      aria-label={`Hồ sơ nhân vật ${memberName}`}
+      aria-label={`Hồ sơ ${panelTitle.toLowerCase()} ${memberName}`}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose?.();
       }}
@@ -72,14 +76,29 @@ export function AppModalEntityMemberProfile({
                 {parentName ? <span>Thuộc {parentName}</span> : null}
                 {scopeLabel ? <span className="text-slate-600">· {scopeLabel}</span> : null}
               </p>
-              {roleStatus && <p className="mt-2 text-sm font-serif text-cyan-200">{roleStatus}</p>}
+              {(role || status) && (
+                <div className="mt-2 flex flex-wrap gap-2 text-sm font-serif text-cyan-200">
+                  {role && (
+                    <span className="rounded-md border border-cyan-800/40 bg-cyan-950/25 px-2 py-0.5">
+                      <span className="mr-1 text-[10px] font-bold uppercase tracking-widest text-cyan-400/80">{fieldLabels.role}:</span>
+                      {role}
+                    </span>
+                  )}
+                  {status && (
+                    <span className="rounded-md border border-cyan-800/40 bg-cyan-950/25 px-2 py-0.5">
+                      <span className="mr-1 text-[10px] font-bold uppercase tracking-widest text-cyan-400/80">{fieldLabels.status}:</span>
+                      {status}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="tt-kbd-focus rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-100"
-            aria-label="Đóng hồ sơ nhân vật"
+            aria-label={`Đóng hồ sơ ${panelTitle.toLowerCase()}`}
           >
             <X size={18} />
           </button>
@@ -88,7 +107,7 @@ export function AppModalEntityMemberProfile({
         <div className="min-h-0 flex-1 overflow-y-auto p-5 custom-scrollbar">
           {alias && (
             <div className="mb-4 rounded-lg border border-indigo-800/50 bg-indigo-950/20 px-3 py-2">
-              <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-indigo-300">Bí danh</div>
+              <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-indigo-300">{fieldLabels.alias}</div>
               <div className="font-serif text-sm text-indigo-100">{alias}</div>
             </div>
           )}
@@ -105,7 +124,7 @@ export function AppModalEntityMemberProfile({
                 )
               : (
                 <p className="py-8 text-center font-serif text-sm italic text-slate-500">
-                  Chưa có ghi chú chi tiết cho nhân vật này.
+                  Chưa có ghi chú chi tiết cho thẻ con này.
                 </p>
               )}
           </div>

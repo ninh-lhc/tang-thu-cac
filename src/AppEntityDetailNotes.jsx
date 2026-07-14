@@ -800,7 +800,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
     return role ? getAutoSyncRoleLabel(role) : '';
   }, [activeTabLon, activeTabNho, currentTabConfig]);
   const isMemberNotesEditing = Boolean(memberNotesEditTarget?.id);
-  const memberNotesName = safeString(memberNotesEditTarget?.name).trim() || 'Nhân vật';
+  const memberNotesName = safeString(memberNotesEditTarget?.name).trim() || 'Thẻ con';
   const isCurrentTimelineMode = !isMemberNotesEditing && detailProfileMode === 'current';
   const [isAutoControlsExpanded, setIsAutoControlsExpanded] = useState(false);
   const [showNotesAdvancedPanel, setShowNotesAdvancedPanel] = useState(false);
@@ -914,7 +914,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             <h3 className="text-xl font-heading font-bold text-amber-100">Ghi Chép Chi Tiết</h3>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">
               {isMemberNotesEditing
-                ? `Đang sửa ghi chú nhân vật: ${memberNotesName}`
+                ? `Đang sửa ghi chú thẻ con: ${memberNotesName}`
                 : getTerms(activeTabLon).infoDesc}
             </p>
           </div>
@@ -1309,11 +1309,11 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             onOpenAutoSyncGuide={onOpenAutoSyncGuide}
             onOpenEntityNotesGuide={onOpenEntityNotesGuide}
             editingContext={isMemberNotesEditing ? {
-              label: `Đang sửa ghi chú nhân vật: ${memberNotesName}`,
+              label: `Đang sửa ghi chú thẻ con: ${memberNotesName}`,
               description: `Nội dung đang lưu riêng trong thẻ con thuộc ${safeString(selectedEntity?.name) || 'thẻ cha'}.`,
             } : null}
             onCancelEdit={isMemberNotesEditing ? onCancelMemberNotesEdit : null}
-            saveButtonLabel={isMemberNotesEditing ? 'Lưu vào nhân vật' : 'Lưu ghi chép'}
+            saveButtonLabel={isMemberNotesEditing ? 'Lưu vào thẻ con' : 'Lưu ghi chép'}
             allowImageTools={!isMemberNotesEditing}
           />
         ) : (
