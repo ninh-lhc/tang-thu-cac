@@ -27,11 +27,6 @@ import {
   Trash2,
   Unlink,
   Users,
-  UserRound,
-  Gem,
-  Building2,
-  Folder,
-  Tag,
   X,
 } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
@@ -52,6 +47,7 @@ import {
   readMemberKind,
   resolveMemberKindDef,
 } from './lib/entityMemberKind.js';
+import { getMemberKindIcon } from './lib/entityMemberKindIcons.jsx';
 import {
   buildMemberForest,
   flattenMemberForest,
@@ -88,14 +84,6 @@ const FIELD_PLACEHOLDERS = {
   alias: 'Tách bằng dấu phẩy / gạch chéo',
   role: 'VD: vai trò, loại, chức vị…',
   status: 'VD: trạng thái, cấp bậc…',
-};
-
-const MEMBER_KIND_ICONS = {
-  person: UserRound,
-  asset: Gem,
-  org: Building2,
-  folder: Folder,
-  other: Tag,
 };
 
 function kindFilterBtnClass(active) {
@@ -197,7 +185,7 @@ function MemberTreeNode({
   const childCount = children.length;
   const hasParent = Boolean(readMemberParentId(member));
   const kindDef = resolveMemberKindDef(member?.kind);
-  const KindIcon = MEMBER_KIND_ICONS[kindDef.id] || Tag;
+  const KindIcon = getMemberKindIcon(member?.kind);
   const roleLine = formatMemberRoleLine(member);
   const rankStyle = resolveMemberRankStyle({
     role: member?.role,
@@ -710,7 +698,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
       {MEMBER_KINDS.map((kind) => {
         const count = kindCounts[kind.id] || 0;
         if (count === 0 && kindFilter !== kind.id) return null;
-        const Icon = MEMBER_KIND_ICONS[kind.id] || Tag;
+        const Icon = getMemberKindIcon(kind.id);
         return (
           <button
             key={kind.id}
@@ -928,7 +916,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                       const name = safeString(member.name).trim();
                       const roleLine = [member.role, member.status].map(safeString).filter(Boolean).join(' · ');
                       const kindDef = resolveMemberKindDef(member?.kind);
-                      const KindIcon = MEMBER_KIND_ICONS[kindDef.id] || Tag;
+                      const KindIcon = getMemberKindIcon(member?.kind);
                       return (
                         <div
                           key={member.id}
@@ -1117,7 +1105,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                 </legend>
                 <div className="flex flex-wrap gap-1.5">
                   {MEMBER_KINDS.map((kind) => {
-                    const Icon = MEMBER_KIND_ICONS[kind.id] || Tag;
+                    const Icon = getMemberKindIcon(kind.id);
                     const active = readMemberKind(draft) === kind.id;
                     return (
                       <button

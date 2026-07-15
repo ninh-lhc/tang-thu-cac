@@ -6,10 +6,11 @@
 // ==========================================
 
 import React from 'react';
-import { Building2, ExternalLink, Folder, Gem, Link2, Shield, Tag, UserRound, X } from 'lucide-react';
+import { ExternalLink, Link2, Shield, X } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
 import { DEFAULT_MEMBER_FIELD_LABELS } from './lib/entityMembers.js';
 import { readMemberKind, resolveMemberKindDef } from './lib/entityMemberKind.js';
+import { getMemberKindIcon } from './lib/entityMemberKindIcons.jsx';
 import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
 import { readWikiLinkOptOuts } from './lib/wikiLinkOptOut.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
@@ -44,14 +45,7 @@ export function AppModalEntityMemberProfile({
   const role = safeString(member.role).trim();
   const status = safeString(member.status).trim();
   const kindDef = resolveMemberKindDef(readMemberKind(member));
-  const kindIcons = {
-    person: UserRound,
-    asset: Gem,
-    org: Building2,
-    folder: Folder,
-    other: Tag,
-  };
-  const KindIcon = kindIcons[kindDef.id] || Tag;
+  const KindIcon = getMemberKindIcon(member?.kind);
   const parentName = safeString(parentEntity?.name || profile.parentLabel).trim();
   const scopeLabel = [profile.lonLabel, profile.tabLabel].map(safeString).filter(Boolean).join(' › ');
 
