@@ -1,9 +1,11 @@
 /**
  * Helpers for child profiles (thẻ con) embedded inside an entity card.
  * Used by wiki indexing, quick-view resolution, and the collection detail UI.
- * Persisted shape: entity.members[] + optional entity.memberFieldLabels / memberPanelTitle.
+ * Persisted shape: entity.members[] (+ member.kind) + optional entity.memberFieldLabels / memberPanelTitle.
  * wikiLinkOptOuts is optional editor metadata for the shared detail notes editor.
  */
+
+import { normalizeMemberKind } from './entityMemberKind.js';
 
 const MEMBER_NAME_SPLIT_RE = /[,/|()]/;
 
@@ -52,6 +54,7 @@ export function normalizeEntityMemberInput(input, { generateId } = {}) {
   const sortRaw = Number(input?.sortOrder);
   const out = {
     id,
+    kind: normalizeMemberKind(input?.kind),
     name: safeText(input?.name),
     alias: safeText(input?.alias),
     role: safeText(input?.role),

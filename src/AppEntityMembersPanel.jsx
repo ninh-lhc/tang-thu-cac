@@ -27,6 +27,11 @@ import {
   Trash2,
   Unlink,
   Users,
+  UserRound,
+  Gem,
+  Building2,
+  Folder,
+  Tag,
   X,
 } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
@@ -38,6 +43,15 @@ import {
   resolveMemberFieldLabels,
   resolveMemberPanelTitle,
 } from './lib/entityMembers.js';
+import {
+  DEFAULT_MEMBER_KIND,
+  MEMBER_KIND_FILTER_ALL,
+  MEMBER_KINDS,
+  countMembersByKind,
+  filterMembersByKind,
+  readMemberKind,
+  resolveMemberKindDef,
+} from './lib/entityMemberKind.js';
 import {
   buildMemberForest,
   flattenMemberForest,
@@ -55,6 +69,7 @@ import { normalizeSearchText } from './lib/normalizeSearchText.js';
 
 const EMPTY_MEMBER_DRAFT = {
   id: null,
+  kind: DEFAULT_MEMBER_KIND,
   name: '',
   alias: '',
   role: '',
@@ -74,6 +89,20 @@ const FIELD_PLACEHOLDERS = {
   role: 'VD: vai trò, loại, chức vị…',
   status: 'VD: trạng thái, cấp bậc…',
 };
+
+const MEMBER_KIND_ICONS = {
+  person: UserRound,
+  asset: Gem,
+  org: Building2,
+  folder: Folder,
+  other: Tag,
+};
+
+function kindFilterBtnClass(active) {
+  return active
+    ? 'border-violet-500/60 bg-violet-950/45 text-violet-100'
+    : 'border-slate-700 bg-slate-900/80 text-slate-400 hover:border-slate-600 hover:text-slate-200';
+}
 
 function readPanelOpen(scopeKey, fallback) {
   if (!scopeKey || typeof localStorage === 'undefined') return fallback;
@@ -108,6 +137,7 @@ function toDraft(member) {
   if (!member) return { ...EMPTY_MEMBER_DRAFT };
   return {
     id: member.id || null,
+    kind: readMemberKind(member),
     name: safeString(member.name),
     alias: safeString(member.alias),
     role: safeString(member.role),
@@ -120,7 +150,10 @@ function toDraft(member) {
 }
 
 function memberSearchBlob(member) {
+  const kindDef = resolveMemberKindDef(member?.kind);
   return [
+    kindDef.label,
+    kindDef.shortLabel,
     member?.name,
     member?.alias,
     member?.role,
@@ -163,11 +196,14 @@ function MemberTreeNode({
   const isDropTarget = dropTargetId === id && draggedId && draggedId !== id;
   const childCount = children.length;
   const hasParent = Boolean(readMemberParentId(member));
+  const kindDef = resolveMemberKindDef(member?.kind);
+  const KindIcon = MEMBER_KIND_ICONS[kindDef.id] || Tag;
   const roleLine = formatMemberRoleLine(member);
   const rankStyle = resolveMemberRankStyle({
     role: member?.role,
     status: member?.status,
     depth,
+    kind: member?.kind,
   });
   const hasNotes = Boolean(safeString(member?.info).trim());
 
@@ -270,6 +306,13 @@ function MemberTreeNode({
             <span className={MEMBER_WIKI_TEXT_CLASS} title={name ? `[[${name}]]` : undefined}>
               {name || 'Chưa đặt tên'}
             </span>
+          </span>
+          <span
+            className={`inline-flex shrink-0 items-center gap-0.5 rounded-md border px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${kindDef.chip}`}
+            title={kindDef.label}
+          >
+            <KindIcon size={10} className="shrink-0 opacity-90" />
+            <span className="hidden sm:inline">{kindDef.shortLabel}</span>
           </span>
           {roleLine ? (
             <span
@@ -445,7 +488,13 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
   hideCollapse = false,
 }) {
   const members = useMemo(() => readEntityMembers(selectedEntity), [selectedEntity]);
-  const forest = useMemo(() => buildMemberForest(members), [members]);
+  const [kindFilter, setKindFilter] = useState(MEMBER_KIND_FILTER_ALL);
+  const kindCounts = useMemo(() => countMembersByKind(members), [members]);
+  const membersForView = useMemo(() => {
+    const filtered = filterMembersByKind(members, kindFilter);
+    return filtered ?? members;
+  }, [members, kindFilter]);
+  const forest = useMemo(() => buildMemberForest(membersForView), [membersForView]);
   const resolvedLabels = useMemo(
     () => resolveMemberFieldLabels(selectedEntity, tabConfig),
     [selectedEntity, tabConfig]
@@ -481,6 +530,10 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
     }
   }, [resolvedLabels, resolvedPanelTitle, isLabelEditorOpen]);
 
+  useEffect(() => {
+    setKindFilter(MEMBER_KIND_FILTER_ALL);
+  }, [selectedEntity?.id]);
+
   useEffect(() => () => {
     if (hintTimerRef.current) window.clearTimeout(hintTimerRef.current);
   }, []);
@@ -492,13 +545,14 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
   }, []);
 
   const searchActive = Boolean(normalizeSearchText(deferredQuery));
+  const kindFilterActive = kindFilter !== MEMBER_KIND_FILTER_ALL;
   const filteredFlat = useMemo(() => {
     const q = normalizeSearchText(deferredQuery);
     if (!q) return null;
-    return flattenMemberForest(members).filter(({ member }) =>
+    return flattenMemberForest(membersForView).filter(({ member }) =>
       normalizeSearchText(memberSearchBlob(member)).includes(q)
     );
-  }, [members, deferredQuery]);
+  }, [membersForView, deferredQuery]);
 
   const patchDraft = (patch) => setDraft((prev) => ({ ...prev, ...patch }));
   const closeForm = () => {
@@ -512,6 +566,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
   const startCreate = (parentMember = null) => {
     setDraft({
       ...EMPTY_MEMBER_DRAFT,
+      kind: parentMember ? readMemberKind(parentMember) : DEFAULT_MEMBER_KIND,
       parentId: parentMember?.id || null,
     });
     setIsFormOpen(true);
@@ -635,6 +690,43 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
   const parentHint = draft.parentId
     ? members.find((item) => safeString(item?.id) === safeString(draft.parentId))
     : null;
+  const draftKindDef = resolveMemberKindDef(draft.kind);
+  const fieldPlaceholders = {
+    ...FIELD_PLACEHOLDERS,
+    role: draftKindDef.roleHint,
+    status: draftKindDef.statusHint,
+  };
+
+  const kindFilterBar = (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => setKindFilter(MEMBER_KIND_FILTER_ALL)}
+        className={`tt-kbd-focus rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wide transition-colors ${kindFilterBtnClass(kindFilter === MEMBER_KIND_FILTER_ALL)}`}
+      >
+        Tất cả
+        <span className="ml-1 tabular-nums opacity-75">{members.length}</span>
+      </button>
+      {MEMBER_KINDS.map((kind) => {
+        const count = kindCounts[kind.id] || 0;
+        if (count === 0 && kindFilter !== kind.id) return null;
+        const Icon = MEMBER_KIND_ICONS[kind.id] || Tag;
+        return (
+          <button
+            key={kind.id}
+            type="button"
+            onClick={() => setKindFilter(kind.id)}
+            className={`tt-kbd-focus inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wide transition-colors ${kindFilterBtnClass(kindFilter === kind.id)}`}
+            title={kind.label}
+          >
+            <Icon size={11} />
+            {kind.shortLabel}
+            <span className="tabular-nums opacity-75">{count}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <section
@@ -785,12 +877,22 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
           <div className="overflow-hidden rounded-xl border border-slate-800/80 bg-slate-950/40">
             <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 px-3 py-2">
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
-                {searchActive ? 'Kết quả lọc' : 'Cây thẻ con'}
+                {searchActive ? 'Kết quả lọc' : kindFilterActive ? 'Cây thẻ con (đã lọc loại)' : 'Cây thẻ con'}
               </span>
               <span className="text-[11px] tabular-nums text-slate-500">
-                {searchActive ? `${filteredFlat?.length || 0}/${members.length}` : members.length}
+                {searchActive
+                  ? `${filteredFlat?.length || 0}/${membersForView.length}`
+                  : kindFilterActive
+                    ? `${membersForView.length}/${members.length}`
+                    : members.length}
               </span>
             </div>
+
+            {!searchActive && (
+              <div className="border-b border-slate-800/80 px-3 py-2">
+                {kindFilterBar}
+              </div>
+            )}
 
             {!searchActive && (
               <div
@@ -825,6 +927,8 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                     {filteredFlat.map(({ member, depth }) => {
                       const name = safeString(member.name).trim();
                       const roleLine = [member.role, member.status].map(safeString).filter(Boolean).join(' · ');
+                      const kindDef = resolveMemberKindDef(member?.kind);
+                      const KindIcon = MEMBER_KIND_ICONS[kindDef.id] || Tag;
                       return (
                         <div
                           key={member.id}
@@ -840,6 +944,12 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                               <Link2 size={12} className={MEMBER_WIKI_ICON_CLASS} />
                               <span className={MEMBER_WIKI_TEXT_CLASS}>{name || 'Chưa đặt tên'}</span>
                             </span>
+                            <span
+                              className={`inline-flex shrink-0 items-center gap-0.5 rounded-md border px-1 py-0.5 text-[9px] font-bold uppercase ${kindDef.chip}`}
+                              title={kindDef.label}
+                            >
+                              <KindIcon size={10} />
+                            </span>
                             {roleLine ? (
                               <span
                                 className={`inline-flex max-w-[40%] shrink-0 truncate rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
@@ -847,6 +957,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                                     role: member.role,
                                     status: member.status,
                                     depth,
+                                    kind: member?.kind,
                                   }).chip
                                 }`}
                               >
@@ -901,13 +1012,19 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                     />
                   ))}
                 </div>
-              ) : (
-                <div className="flex min-h-[116px] flex-col items-center justify-center px-4 py-6 text-center">
-                  <Users size={22} className="mb-2 text-slate-600" />
-                  <p className="text-sm font-serif text-slate-500">Chưa có thẻ con.</p>
-                  <p className="mt-1 text-[11px] text-slate-600">VD: Tông chủ → Trưởng lão → Đệ tử</p>
-                </div>
-              )}
+                ) : (
+                  <div className="flex min-h-[116px] flex-col items-center justify-center px-4 py-6 text-center">
+                    <Users size={22} className="mb-2 text-slate-600" />
+                    <p className="text-sm font-serif text-slate-500">
+                      {kindFilterActive ? 'Không có thẻ con loại này.' : 'Chưa có thẻ con.'}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-600">
+                      {kindFilterActive
+                        ? 'Thử bộ lọc «Tất cả» hoặc thêm thẻ mới.'
+                        : 'VD: Nhân vật · Tài sản · Thế lực phụ thuộc'}
+                    </p>
+                  </div>
+                )}
             </div>
           </div>
 
@@ -994,6 +1111,31 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                 </button>
               </div>
 
+              <fieldset className="mb-3">
+                <legend className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                  Loại thẻ con
+                </legend>
+                <div className="flex flex-wrap gap-1.5">
+                  {MEMBER_KINDS.map((kind) => {
+                    const Icon = MEMBER_KIND_ICONS[kind.id] || Tag;
+                    const active = readMemberKind(draft) === kind.id;
+                    return (
+                      <button
+                        key={kind.id}
+                        type="button"
+                        onClick={() => patchDraft({ kind: kind.id })}
+                        className={`tt-kbd-focus inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-[11px] font-bold transition-colors ${
+                          active ? kind.chip : 'border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        <Icon size={13} />
+                        {kind.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
               <div className="grid gap-3 sm:grid-cols-2">
                 {MEMBER_FIELD_KEYS.map((key) => (
                   <label key={key} className="block">
@@ -1003,7 +1145,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                     <input
                       value={draft[key] || ''}
                       onChange={(e) => patchDraft({ [key]: e.target.value })}
-                      placeholder={FIELD_PLACEHOLDERS[key]}
+                      placeholder={fieldPlaceholders[key]}
                       className="tt-kbd-focus h-10 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-cyan-600/50"
                     />
                   </label>

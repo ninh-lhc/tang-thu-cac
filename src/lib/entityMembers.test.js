@@ -3,6 +3,7 @@ import {
   DEFAULT_MEMBER_FIELD_LABELS,
   DEFAULT_MEMBER_PANEL_TITLE,
   findEntityMemberInNovel,
+  normalizeEntityMemberInput,
   normalizeMemberFieldLabels,
   resolveMemberFieldLabels,
   resolveMemberPanelTitle,
@@ -37,6 +38,14 @@ describe('entityMembers field labels', () => {
     expect(resolveMemberFieldLabels({}, tab).name).toBe('Tên địa điểm');
     expect(resolveMemberFieldLabels({}, tab).status).toBe('Cấp');
     expect(resolveMemberPanelTitle({}, { memberPanelTitle: 'Địa điểm phụ' })).toBe('Địa điểm phụ');
+  });
+
+  it('persists kind on normalize', () => {
+    const out = normalizeEntityMemberInput(
+      { name: 'Mỏ linh thạch', kind: 'asset', role: 'Mỏ' },
+      { generateId: () => 'mem1' }
+    );
+    expect(out.kind).toBe('asset');
   });
 
   it('exposes labels when resolving a member from novel data', () => {

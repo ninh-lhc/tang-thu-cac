@@ -4,6 +4,7 @@
  */
 
 import { normalizeSearchText } from './normalizeSearchText.js';
+import { normalizeMemberKind } from './entityMemberKind.js';
 
 function safeText(value) {
   if (value == null || value === 'null' || value === 'undefined') return '';
@@ -119,14 +120,53 @@ function matchRankByRole(roleText) {
   return best;
 }
 
+/** Màu chip vai trò theo loại thẻ con (khi không khớp keyword nhân vật). */
+const MEMBER_RANK_BY_KIND = {
+  person: null,
+  asset: {
+    id: 'asset',
+    label: 'Tài sản',
+    chip: 'border-amber-400/65 bg-amber-950/40 text-amber-200',
+    text: 'text-amber-200',
+    keywords: [],
+  },
+  org: {
+    id: 'org',
+    label: 'Thế lực phụ',
+    chip: 'border-sky-400/65 bg-sky-950/40 text-sky-200',
+    text: 'text-sky-200',
+    keywords: [],
+  },
+  folder: {
+    id: 'folder',
+    label: 'Nhóm',
+    chip: 'border-slate-500/55 bg-slate-900/70 text-slate-300',
+    text: 'text-slate-300',
+    keywords: [],
+  },
+  other: {
+    id: 'other',
+    label: 'Khác',
+    chip: 'border-violet-400/55 bg-violet-950/35 text-violet-200',
+    text: 'text-violet-200',
+    keywords: [],
+  },
+};
+
 /**
- * @param {{ role?: string, status?: string, depth?: number }} input
+ * @param {{ role?: string, status?: string, depth?: number, kind?: string }} input
  * @returns {MemberRankStyle}
  */
-export function resolveMemberRankStyle({ role, status, depth = 0 } = {}) {
+export function resolveMemberRankStyle({ role, status, depth = 0, kind } = {}) {
   const combined = [role, status].map(safeText).filter(Boolean).join(' ');
   const fromText = matchRankByRole(combined);
   if (fromText) return fromText;
+
+  const kindKey = normalizeMemberKind(kind);
+  if (kindKey !== 'person' && MEMBER_RANK_BY_KIND[kindKey]) {
+    return MEMBER_RANK_BY_KIND[kindKey];
+  }
+
   const idx = Math.min(Math.max(Number(depth) || 0, 0), MEMBER_RANK_BY_DEPTH.length - 1);
   return MEMBER_RANK_BY_DEPTH[idx];
 }

@@ -16,4 +16,10 @@ describe('resolveMemberRankStyle', () => {
     expect(resolveMemberRankStyle({ depth: 2 }).id).toBe('disciple');
     expect(resolveMemberRankStyle({ depth: 5 }).id).toBe('guard');
   });
+
+  it('uses kind-based fallback for non-person members', () => {
+    expect(resolveMemberRankStyle({ kind: 'asset', depth: 0 }).id).toBe('asset');
+    expect(resolveMemberRankStyle({ kind: 'org', depth: 0 }).id).toBe('org');
+    expect(resolveMemberRankStyle({ kind: 'person', depth: 0 }).id).toBe('leader');
+  });
 });
