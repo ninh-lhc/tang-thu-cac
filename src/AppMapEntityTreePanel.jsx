@@ -33,6 +33,23 @@ import {
 const PANEL_STORAGE_PREFIX = 'tt_map_entity_tree_panel_open';
 const DND_TYPE = 'application/x-tt-map-entity-id';
 
+const GUIDE_W = 20; // px mỗi cột đường dẫn (guide column)
+const MAX_GUIDE_COLS = 10; // giới hạn cột vẽ; sâu hơn thì lùi bằng margin
+
+// Bảng màu theo cấp bậc — xoay vòng để cấp cha/con luôn khác màu, dễ phân biệt
+// khi cây có nhiều nhánh. line = màu đường guide, bar = thanh dấu cấp bên trái,
+// chip = màu badge đếm số con.
+const DEPTH_ACCENTS = [
+  { line: 'bg-cyan-400/45', bar: 'bg-cyan-400/70', chip: 'border-cyan-800/50 bg-cyan-950/40 text-cyan-200/90' },
+  { line: 'bg-violet-400/45', bar: 'bg-violet-400/70', chip: 'border-violet-800/50 bg-violet-950/40 text-violet-200/90' },
+  { line: 'bg-emerald-400/45', bar: 'bg-emerald-400/70', chip: 'border-emerald-800/50 bg-emerald-950/40 text-emerald-200/90' },
+  { line: 'bg-amber-400/45', bar: 'bg-amber-400/70', chip: 'border-amber-800/50 bg-amber-950/40 text-amber-200/90' },
+  { line: 'bg-rose-400/45', bar: 'bg-rose-400/70', chip: 'border-rose-800/50 bg-rose-950/40 text-rose-200/90' },
+  { line: 'bg-sky-400/45', bar: 'bg-sky-400/70', chip: 'border-sky-800/50 bg-sky-950/40 text-sky-200/90' },
+];
+
+const accentForDepth = (depth) => DEPTH_ACCENTS[((depth % DEPTH_ACCENTS.length) + DEPTH_ACCENTS.length) % DEPTH_ACCENTS.length];
+
 function readPanelOpen(scopeKey, fallback) {
   if (!scopeKey || typeof localStorage === 'undefined') return fallback;
   try {
@@ -65,6 +82,8 @@ function readDraggedId(event) {
 function MapTreeNode({
   entity,
   depth,
+  isLast = true,
+  guides = [],
   entities,
   selectedEntityId,
   collapsedIds,
@@ -92,16 +111,44 @@ function MapTreeNode({
   const isDropTarget = dropTargetId === id && draggedId && draggedId !== id;
   const childCount = children.length;
   const hasParent = Boolean(readMapParentId(entity));
+  const accent = accentForDepth(depth);
+
+  // Vẽ tối đa MAX_GUIDE_COLS cột; cấp sâu hơn thì lùi bằng margin để không tràn ngang.
+  const startCol = Math.max(0, depth - MAX_GUIDE_COLS);
+  const extraIndent = startCol * GUIDE_W;
+  const guideColumns = [];
+  for (let col = startCol; col < depth; col += 1) {
+    guideColumns.push(col);
+  }
+  // guides truyền xuống con: root (depth 0) không chiếm cột; cấp khác thêm cột của
+  // chính mình, có đường dọc nối tiếp nếu node này còn em phía dưới (!isLast).
+  const childGuides = depth === 0 ? [] : [...guides, !isLast];
 
   return (
     <div className="relative select-none">
-      {depth > 0 && (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute bottom-0 top-0 w-px bg-gradient-to-b from-emerald-800/50 via-slate-700/40 to-transparent"
-          style={{ left: `${(depth - 1) * 18 + 18}px` }}
-        />
-      )}
+      <div className="flex items-stretch" style={extraIndent ? { marginLeft: extraIndent } : undefined}>
+        {guideColumns.map((col) => {
+          const colAccent = accentForDepth(col + 1);
+          const isElbow = col === depth - 1;
+          if (isElbow) {
+            return (
+              <div key={col} aria-hidden className="relative w-[20px] shrink-0">
+                <span className={`absolute left-1/2 top-0 h-1/2 w-px -translate-x-1/2 ${colAccent.line}`} />
+                <span className={`absolute left-1/2 right-0 top-1/2 h-px ${colAccent.line}`} />
+                {!isLast && (
+                  <span className={`absolute bottom-0 left-1/2 top-1/2 w-px -translate-x-1/2 ${colAccent.line}`} />
+                )}
+              </div>
+            );
+          }
+          return (
+            <div key={col} aria-hidden className="relative w-[20px] shrink-0">
+              {guides[col] && (
+                <span className={`absolute bottom-0 left-1/2 top-0 w-px -translate-x-1/2 ${colAccent.line}`} />
+              )}
+            </div>
+          );
+        })}
 
       <div
         draggable={isUnlocked}
@@ -120,7 +167,7 @@ function MapTreeNode({
           onLockNode?.(id, { reason: 'leave' });
         }}
         className={[
-          'group relative flex items-center gap-1.5 rounded-xl border px-2 py-1.5 transition-all duration-150',
+          'group relative flex min-w-0 flex-1 items-center gap-1.5 rounded-xl border py-1.5 pl-2.5 pr-2 transition-all duration-150',
           isUnlocked ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
           isDragging ? 'scale-[0.98] opacity-40 border-dashed border-slate-600' : '',
           isDropTarget
@@ -131,14 +178,12 @@ function MapTreeNode({
                 ? 'border-cyan-500/50 bg-cyan-950/30 shadow-inner'
                 : 'border-slate-800/80 bg-slate-950/40 hover:border-slate-600 hover:bg-slate-900/70',
         ].join(' ')}
-        style={{ marginLeft: Math.min(depth, 10) * 18 }}
       >
-        {depth > 0 && (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute -left-[10px] top-1/2 h-px w-2.5 bg-slate-700/70"
-          />
-        )}
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute bottom-1.5 left-0 top-1.5 w-[3px] rounded-full ${accent.bar}`}
+          title={`Cấp ${depth + 1}`}
+        />
 
         <button
           type="button"
@@ -204,7 +249,7 @@ function MapTreeNode({
         </button>
 
         {childCount > 0 && (
-          <span className="hidden shrink-0 rounded-md border border-slate-700/80 bg-slate-900/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 sm:inline">
+          <span className={`hidden shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-bold sm:inline ${accent.chip}`}>
             {childCount}
           </span>
         )}
@@ -241,14 +286,17 @@ function MapTreeNode({
           <span className="pointer-events-none absolute -bottom-1 left-3 right-3 h-0.5 rounded-full bg-emerald-400/80 shadow-[0_0_8px_rgba(52,211,153,0.65)]" />
         )}
       </div>
+      </div>
 
       {!collapsed && childCount > 0 && (
-        <div className="mt-1 space-y-1">
-          {children.map((child) => (
+        <div className="mt-0.5 space-y-0.5">
+          {children.map((child, index) => (
             <MapTreeNode
               key={child.id}
               entity={child}
               depth={depth + 1}
+              isLast={index === children.length - 1}
+              guides={childGuides}
               entities={entities}
               selectedEntityId={selectedEntityId}
               collapsedIds={collapsedIds}

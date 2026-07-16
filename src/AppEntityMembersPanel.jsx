@@ -122,6 +122,17 @@ function readDraggedId(event) {
   ).trim();
 }
 
+// Vị trí thả so với 1 hàng: mép trên = chèn cùng cấp phía trước, mép dưới = cùng
+// cấp phía sau, giữa = làm con. Cho phép vừa đổi cấp vừa sắp xếp ngang hàng.
+function computeDropPosition(event) {
+  const rect = event.currentTarget?.getBoundingClientRect?.();
+  if (!rect || !rect.height) return 'inside';
+  const y = event.clientY - rect.top;
+  if (y < rect.height * 0.32) return 'before';
+  if (y > rect.height * 0.68) return 'after';
+  return 'inside';
+}
+
 function toDraft(member) {
   if (!member) return { ...EMPTY_MEMBER_DRAFT };
   return {
@@ -160,6 +171,7 @@ function MemberTreeNode({
   unlockedIds,
   draggedId,
   dropTargetId,
+  dropPosition,
   onToggleCollapse,
   onToggleLock,
   onLockNode,
@@ -183,6 +195,8 @@ function MemberTreeNode({
   const isActive = safeString(activeId) === id;
   const isDragging = draggedId === id;
   const isDropTarget = dropTargetId === id && draggedId && draggedId !== id;
+  const dropPos = isDropTarget ? dropPosition : null;
+  const isDropInside = dropPos === 'inside';
   const childCount = children.length;
   const hasParent = Boolean(readMemberParentId(member));
   const kindDef = resolveMemberKindDef(member?.kind);
@@ -222,7 +236,7 @@ function MemberTreeNode({
           'group relative grid h-10 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 rounded-lg px-1.5 transition-colors',
           isUnlocked ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
           isDragging ? 'opacity-35' : '',
-          isDropTarget
+          isDropInside
             ? 'bg-cyan-950/40 ring-1 ring-cyan-500/50'
             : isUnlocked
               ? 'bg-amber-950/25 ring-1 ring-amber-500/35'
@@ -420,8 +434,15 @@ function MemberTreeNode({
           </button>
         </div>
 
-        {isDropTarget && (
-          <span className="pointer-events-none absolute inset-x-2 bottom-0 h-px bg-cyan-400/70" />
+        {isDropTarget && dropPos === 'before' && (
+          <span className="pointer-events-none absolute inset-x-1 top-0 z-10 h-0.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.7)]">
+            <span className="absolute -left-0.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-cyan-300" />
+          </span>
+        )}
+        {isDropTarget && dropPos === 'after' && (
+          <span className="pointer-events-none absolute inset-x-1 bottom-0 z-10 h-0.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.7)]">
+            <span className="absolute -left-0.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-cyan-300" />
+          </span>
         )}
       </div>
 
@@ -438,6 +459,7 @@ function MemberTreeNode({
               unlockedIds={unlockedIds}
               draggedId={draggedId}
               dropTargetId={dropTargetId}
+              dropPosition={dropPosition}
               onToggleCollapse={onToggleCollapse}
               onToggleLock={onToggleLock}
               onLockNode={onLockNode}
@@ -506,6 +528,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
   const [unlockedIds, setUnlockedIds] = useState(() => new Set());
   const [draggedId, setDraggedId] = useState(null);
   const [dropTargetId, setDropTargetId] = useState(null);
+  const [dropPosition, setDropPosition] = useState('inside');
   const [rootDropActive, setRootDropActive] = useState(false);
   const [statusHint, setStatusHint] = useState('');
   const deferredQuery = useDeferredValue(query);
@@ -632,6 +655,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
   const clearDrag = useCallback(() => {
     setDraggedId(null);
     setDropTargetId(null);
+    setDropPosition('inside');
     setRootDropActive(false);
     rootEnterCountRef.current = 0;
   }, []);
@@ -641,24 +665,57 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
     event.dataTransfer.setData('text/plain', id);
     event.dataTransfer.effectAllowed = 'move';
     setDraggedId(id);
-    showHint(`Đang kéo «${name}» — thả lên thẻ khác để làm con, hoặc vào vùng Gốc`);
+    showHint(`Đang kéo «${name}» — thả mép trên/dưới để xếp cùng cấp, thả giữa để làm con`);
   }, [showHint]);
 
   const onDragOverTarget = useCallback((event, id) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
-    if (draggedId && draggedId !== id) setDropTargetId(id);
+    if (!draggedId || draggedId === id) return;
+    const position = computeDropPosition(event);
+    setDropTargetId(id);
+    setDropPosition((prev) => (prev === position ? prev : position));
   }, [draggedId]);
+
+  // Trả về danh sách anh em (đã sắp) của một parentId từ toàn bộ members thật.
+  const siblingsOfParent = useCallback(
+    (parentId) =>
+      parentId
+        ? getDirectMemberChildren(members, parentId)
+        : buildMemberForest(members).roots,
+    [members]
+  );
 
   const onDropOnTarget = useCallback((event, targetId) => {
     event.preventDefault();
     event.stopPropagation();
+    const position = computeDropPosition(event);
     const sourceId = readDraggedId(event) || draggedId;
     clearDrag();
     if (!sourceId || sourceId === targetId) return;
-    onMoveMember?.(sourceId, targetId);
+
+    if (position === 'inside') {
+      onMoveMember?.(sourceId, targetId);
+      lockNode(sourceId);
+      return;
+    }
+
+    const target = members.find((item) => safeString(item?.id) === safeString(targetId));
+    if (!target) return;
+    const destParentId = readMemberParentId(target); // null nếu target ở gốc
+    const sibs = siblingsOfParent(destParentId).filter(
+      (item) => safeString(item?.id) !== safeString(sourceId)
+    );
+    const targetIndex = sibs.findIndex((item) => safeString(item?.id) === safeString(targetId));
+    let beforeId = null;
+    if (position === 'before') {
+      beforeId = safeString(targetId);
+    } else if (targetIndex >= 0) {
+      beforeId = sibs[targetIndex + 1] ? safeString(sibs[targetIndex + 1].id) : null;
+    }
+    onMoveMember?.(sourceId, destParentId, { beforeId });
     lockNode(sourceId);
-  }, [clearDrag, draggedId, lockNode, onMoveMember]);
+  }, [clearDrag, draggedId, lockNode, members, onMoveMember, siblingsOfParent]);
 
   const onDropToRoot = useCallback((event) => {
     event.preventDefault();
@@ -981,6 +1038,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                       unlockedIds={unlockedIds}
                       draggedId={draggedId}
                       dropTargetId={dropTargetId}
+                      dropPosition={dropPosition}
                       onToggleCollapse={toggleCollapse}
                       onToggleLock={toggleLock}
                       onLockNode={lockNode}
