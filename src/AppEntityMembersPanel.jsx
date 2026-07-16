@@ -58,6 +58,7 @@ import {
   MEMBER_WIKI_CHIP_CLASS,
   MEMBER_WIKI_ICON_CLASS,
   MEMBER_WIKI_TEXT_CLASS,
+  MEMBER_ROLE_CHIP_BASE_CLASS,
   formatMemberRoleLine,
   resolveMemberRankStyle,
 } from './lib/entityMemberRankStyle.js';
@@ -304,14 +305,14 @@ function MemberTreeNode({
           </span>
           {roleLine ? (
             <span
-              className={`inline-flex max-w-[42%] shrink-0 truncate rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${rankStyle.chip}`}
+              className={`${MEMBER_ROLE_CHIP_BASE_CLASS} ${rankStyle.chip}`}
               title={`${rankStyle.label}: ${roleLine}`}
             >
               {roleLine}
             </span>
           ) : (
             <span
-              className={`hidden shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70 sm:inline-flex ${rankStyle.chip}`}
+              className={`hidden sm:inline-flex ${MEMBER_ROLE_CHIP_BASE_CLASS} opacity-70 ${rankStyle.chip}`}
               title={`Cấp nhánh (theo cây): ${rankStyle.label}`}
             >
               {rankStyle.label}
@@ -940,7 +941,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                             </span>
                             {roleLine ? (
                               <span
-                                className={`inline-flex max-w-[40%] shrink-0 truncate rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                                className={`${MEMBER_ROLE_CHIP_BASE_CLASS} ${
                                   resolveMemberRankStyle({
                                     role: member.role,
                                     status: member.status,

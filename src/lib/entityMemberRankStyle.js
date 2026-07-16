@@ -15,8 +15,16 @@ function safeText(value) {
 export const MEMBER_WIKI_CHIP_CLASS =
   'transition-colors cursor-pointer inline-flex max-w-full items-center gap-1 px-1.5 py-0.5 rounded-md bg-violet-800/45 hover:bg-violet-700/60 border-2 border-violet-400/70 shadow-[inset_0_0_0_1px_rgba(167,139,250,0.15)]';
 
-export const MEMBER_WIKI_TEXT_CLASS = 'truncate font-bold text-violet-300';
+/** Typo chung wiki name + nhãn vai trò/trạng thái trên cây thẻ con. */
+export const MEMBER_TREE_LABEL_TEXT_CLASS =
+  'truncate font-serif text-[13px] font-bold leading-tight tracking-normal normal-case';
+
+export const MEMBER_WIKI_TEXT_CLASS = `${MEMBER_TREE_LABEL_TEXT_CLASS} text-violet-300`;
 export const MEMBER_WIKI_ICON_CLASS = 'shrink-0 text-violet-400';
+
+/** Chip nhãn vai trò / trạng thái — cùng font với wiki link, không ép uppercase. */
+export const MEMBER_ROLE_CHIP_BASE_CLASS =
+  `inline-flex max-w-[42%] shrink-0 items-center truncate rounded-md border px-1.5 py-0.5 ${MEMBER_TREE_LABEL_TEXT_CLASS}`;
 
 /**
  * @typedef {{ id: string, label: string, chip: string, text: string, keywords: string[] }} MemberRankStyle
