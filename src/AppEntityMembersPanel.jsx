@@ -80,6 +80,22 @@ const EMPTY_MEMBER_DRAFT = {
 const PANEL_STORAGE_PREFIX = 'tt_entity_members_panel_open';
 const DND_TYPE = 'application/x-tt-entity-member-id';
 
+const GUIDE_W = 18;
+const MAX_GUIDE_COLS = 10;
+
+// Bảng màu theo cấp — đồng bộ với AppMapEntityTreePanel để hai cây nhìn cùng hệ.
+const DEPTH_ACCENTS = [
+  { line: 'bg-cyan-400/45', bar: 'bg-cyan-400/70', chip: 'border-cyan-800/50 bg-cyan-950/40 text-cyan-200/90' },
+  { line: 'bg-violet-400/45', bar: 'bg-violet-400/70', chip: 'border-violet-800/50 bg-violet-950/40 text-violet-200/90' },
+  { line: 'bg-emerald-400/45', bar: 'bg-emerald-400/70', chip: 'border-emerald-800/50 bg-emerald-950/40 text-emerald-200/90' },
+  { line: 'bg-amber-400/45', bar: 'bg-amber-400/70', chip: 'border-amber-800/50 bg-amber-950/40 text-amber-200/90' },
+  { line: 'bg-rose-400/45', bar: 'bg-rose-400/70', chip: 'border-rose-800/50 bg-rose-950/40 text-rose-200/90' },
+  { line: 'bg-sky-400/45', bar: 'bg-sky-400/70', chip: 'border-sky-800/50 bg-sky-950/40 text-sky-200/90' },
+];
+
+const accentForDepth = (depth) =>
+  DEPTH_ACCENTS[((depth % DEPTH_ACCENTS.length) + DEPTH_ACCENTS.length) % DEPTH_ACCENTS.length];
+
 const FIELD_PLACEHOLDERS = {
   name: 'VD: tên hiển thị',
   alias: 'Tách bằng dấu phẩy / gạch chéo',
@@ -165,6 +181,8 @@ function memberSearchBlob(member) {
 function MemberTreeNode({
   member,
   depth,
+  isLast = true,
+  guides = [],
   members,
   activeId,
   collapsedIds,
@@ -209,12 +227,45 @@ function MemberTreeNode({
     kind: member?.kind,
   });
   const hasNotes = Boolean(safeString(member?.info).trim());
+  const accent = accentForDepth(depth);
+
+  const startCol = Math.max(0, depth - MAX_GUIDE_COLS);
+  const extraIndent = startCol * GUIDE_W;
+  const guideColumns = [];
+  for (let col = startCol; col < depth; col += 1) {
+    guideColumns.push(col);
+  }
+  const childGuides = depth === 0 ? [] : [...guides, !isLast];
 
   const iconBtn =
     'tt-kbd-focus flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-800/80 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-30';
 
   return (
     <div className="select-none">
+      <div className="flex items-stretch" style={extraIndent ? { marginLeft: extraIndent } : undefined}>
+        {guideColumns.map((col) => {
+          const colAccent = accentForDepth(col + 1);
+          const isElbow = col === depth - 1;
+          if (isElbow) {
+            return (
+              <div key={col} aria-hidden className="relative w-[18px] shrink-0">
+                <span className={`absolute left-1/2 top-0 h-1/2 w-px -translate-x-1/2 ${colAccent.line}`} />
+                <span className={`absolute left-1/2 right-0 top-1/2 h-px ${colAccent.line}`} />
+                {!isLast && (
+                  <span className={`absolute bottom-0 left-1/2 top-1/2 w-px -translate-x-1/2 ${colAccent.line}`} />
+                )}
+              </div>
+            );
+          }
+          return (
+            <div key={col} aria-hidden className="relative w-[18px] shrink-0">
+              {guides[col] && (
+                <span className={`absolute bottom-0 left-1/2 top-0 w-px -translate-x-1/2 ${colAccent.line}`} />
+              )}
+            </div>
+          );
+        })}
+
       <div
         draggable={isUnlocked}
         aria-level={depth + 1}
@@ -233,7 +284,7 @@ function MemberTreeNode({
           onLockNode?.(id);
         }}
         className={[
-          'group relative grid h-10 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 rounded-lg px-1.5 transition-colors',
+          'group relative grid h-10 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 rounded-lg py-0 pl-2 pr-1.5 transition-colors',
           isUnlocked ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
           isDragging ? 'opacity-35' : '',
           isDropInside
@@ -245,6 +296,12 @@ function MemberTreeNode({
                 : 'hover:bg-slate-900/70',
         ].join(' ')}
       >
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute bottom-1.5 left-0 top-1.5 w-[3px] rounded-full ${accent.bar}`}
+          title={`Cấp ${depth + 1}`}
+        />
+
         {/* Cột điều khiển cây */}
         <div className="flex items-center gap-0.5">
           <button
@@ -333,7 +390,7 @@ function MemberTreeNode({
             </span>
           )}
           {childCount > 0 ? (
-            <span className="shrink-0 rounded bg-slate-800/80 px-1.5 py-px text-[10px] font-bold tabular-nums text-slate-500">
+            <span className={`shrink-0 rounded-md border px-1.5 py-px text-[10px] font-bold tabular-nums ${accent.chip}`}>
               {childCount}
             </span>
           ) : null}
@@ -445,14 +502,17 @@ function MemberTreeNode({
           </span>
         )}
       </div>
+      </div>
 
       {!collapsed && childCount > 0 && (
-        <div className="ml-7 border-l border-slate-800/80">
-          {children.map((child) => (
+        <div>
+          {children.map((child, index) => (
             <MemberTreeNode
               key={child.id}
               member={child}
               depth={depth + 1}
+              isLast={index === children.length - 1}
+              guides={childGuides}
               members={members}
               activeId={activeId}
               collapsedIds={collapsedIds}
@@ -1027,11 +1087,13 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                 )
               ) : forest.roots.length > 0 ? (
                 <div>
-                  {forest.roots.map((member) => (
+                  {forest.roots.map((member, index) => (
                     <MemberTreeNode
                       key={member.id}
                       member={member}
                       depth={0}
+                      isLast={index === forest.roots.length - 1}
+                      guides={[]}
                       members={members}
                       activeId={draft.id}
                       collapsedIds={collapsedIds}
