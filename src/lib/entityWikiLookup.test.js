@@ -253,4 +253,51 @@ describe('entityWikiLookup', () => {
     });
     expect(byAlias?.dest?.memberId).toBe('mem-tan-hao');
   });
+
+  it('resolves member alias with drifted later-token casing to the same child profile', () => {
+    const novel = {
+      tabsConfig: [
+        {
+          id: 'ban-do',
+          label: 'Ban Do',
+          subTabs: [{ id: 'ha-gioi', label: 'Ha Gioi', viewType: 'collection-track' }],
+        },
+      ],
+      data: {
+        'ban-do': {
+          'ha-gioi': {
+            entities: [
+              {
+                id: 'khanh-thanh',
+                name: 'Khanh Thanh',
+                members: [
+                  {
+                    id: 'mem-loi-duong',
+                    name: 'Lôi Đường',
+                    alias: 'Lôi Gia',
+                    role: 'Ngu Dai The Luc',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    };
+    const lookup = buildEntityNameLookup(buildEntityLinkMap(novel));
+
+    expect(resolveEntityLookup(lookup, 'Lôi Đường')?.dest?.memberId).toBe('mem-loi-duong');
+    expect(resolveEntityLookup(lookup, 'Lôi Gia')?.dest?.memberId).toBe('mem-loi-duong');
+    expect(resolveEntityLookup(lookup, 'Lôi gia')?.dest?.memberId).toBe('mem-loi-duong');
+    // Viết thường hết vẫn không khớp — tránh bọc nhầm cụm thường ngữ.
+    expect(resolveEntityLookup(lookup, 'lôi gia')).toBeNull();
+  });
+
+  it('still refuses title-case entity fallback for mixed-case generic mentions', () => {
+    const lookup = buildEntityNameLookup([
+      { name: 'He Thong', dest: { entityId: 'ba-chu-he-thong' } },
+    ]);
+    expect(resolveEntityLookup(lookup, 'He thong')).toBeNull();
+    expect(resolveEntityLookup(lookup, 'he thong')).toBeNull();
+  });
 });

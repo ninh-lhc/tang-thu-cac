@@ -182,11 +182,43 @@ function filterLookupCandidatesBySurface(candidates, rawName) {
   return compatible.sort((a, b) => compareWikiNameSurfacePriority(a?.name, b?.name));
 }
 
+/** Cùng một thẻ con (memberId) — dùng nới rule hoa thường cho biệt danh. */
+function isUniqueMemberCandidateSet(candidates) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  if (list.length === 0) return false;
+  if (!list.every((item) => item?.dest?.memberId || item?.memberId)) return false;
+  const ids = new Set(list.map(candidateLookupId).filter(Boolean));
+  return ids.size === 1;
+}
+
+/** Token đầu khớp hoa thường — tránh «lôi gia» (viết thường hết) khớp «Lôi Gia». */
+function firstTokenCaseMatches(rawName, candidateName) {
+  const rawTokens = getWordTokens(rawName);
+  const candidateTokens = getWordTokens(candidateName);
+  if (!rawTokens[0] || !candidateTokens[0]) return false;
+  if (rawTokens[0].toLocaleLowerCase('vi-VN') !== candidateTokens[0].toLocaleLowerCase('vi-VN')) {
+    return false;
+  }
+  return isUpperLetter(rawTokens[0][0]) === isUpperLetter(candidateTokens[0][0]);
+}
+
 function pickCaseAwareLowerCandidate(lookup, rawName, sourceMeta) {
   const raw = String(rawName || '').trim();
   if (!raw) return null;
   const lower = raw.toLowerCase();
-  const candidates = filterLookupCandidatesBySurface(lookup.exact?.get(lower), raw);
+  const rawBucket = lookup.exact?.get(lower) || [];
+  let candidates = filterLookupCandidatesBySurface(rawBucket, raw);
+
+  // Biệt danh thẻ con: «Lôi gia» phải trỏ về «Lôi Gia» khi đích unique.
+  // Rule surface chữ hoa từng ký tự quá chặt với tên riêng 2 từ; vẫn từ chối
+  // cụm viết thường hết và thẻ thường (vd. He thong → He Thong).
+  if (candidates.length === 0 && isUniqueMemberCandidateSet(rawBucket)) {
+    const relaxed = rawBucket.filter((candidate) =>
+      firstTokenCaseMatches(raw, String(candidate?.name || '').trim())
+    );
+    if (relaxed.length > 0) candidates = relaxed;
+  }
+
   if (candidates.length === 0) return null;
 
   const exactCaseCandidates = filterLookupCandidatesBySurface(lookup.exactCase?.get(raw), raw);
@@ -206,7 +238,11 @@ function pickCaseAwareLowerCandidate(lookup, rawName, sourceMeta) {
   const best = rankedVariants[0];
   const next = rankedVariants[1];
   if (!best) return null;
-  if (best.distance > 0.25) return null;
+  if (best.distance > 0.25) {
+    const allowMemberAliasDrift =
+      isUniqueMemberCandidateSet(candidates) && firstTokenCaseMatches(raw, best.name);
+    if (!allowMemberAliasDrift) return null;
+  }
   if (next && next.distance === best.distance) return null;
 
   return pickLookupCandidate(
