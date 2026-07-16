@@ -7,6 +7,7 @@ import {
   ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS,
 } from './EntityNotesHighlightedEditor.jsx';
 import { EntityNotesAiToolsMenu } from './EntityNotesAiToolsMenu.jsx';
+import { EntityNotesFindReplacePanel } from './EntityNotesFindReplacePanel.jsx';
 import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
 import { filterEntityNotesMarkdown, sortMarkdownSectionsAfterFilter } from './lib/entityNotesTabFilter.js';
 import { isListCardEntity } from './lib/collectionListCardSync.js';
@@ -533,6 +534,13 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           onRunPipeline={handleRunAiPipeline}
           isRunning={isAiPipelineRunning}
           runningStep={aiPipelineStep}
+        />
+        <EntityNotesFindReplacePanel
+          text={notesEdit.text}
+          subjectHint={entityNotesSubject}
+          disabled={isAiPipelineRunning}
+          showToast={showToast}
+          onReplace={syncDraftAndPreview}
         />
         <button
           id="save-entity-btn"
