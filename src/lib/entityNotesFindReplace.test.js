@@ -60,4 +60,60 @@ describe('entityNotesFindReplace', () => {
     const text = 'abc';
     expect(replaceEntityNotesText(text, '', 'x')).toEqual({ text: 'abc', count: 0 });
   });
+
+  it('wraps plain matches as wiki links', () => {
+    const text = 'Tần gia mạnh. Người Tần gia ít.';
+    const result = replaceEntityNotesText(text, 'Tần gia', '', { wrapMatched: true });
+    expect(result.count).toBe(2);
+    expect(result.text).toBe('[[Tần gia]] mạnh. Người [[Tần gia]] ít.');
+  });
+
+  it('does not double-wrap text already in wiki brackets', () => {
+    const text = '[[Tần gia]] và Tần gia khác.';
+    const result = replaceEntityNotesText(text, 'Tần gia', '', { wrapMatched: true });
+    expect(result.count).toBe(1);
+    expect(result.text).toBe('[[Tần gia]] và [[Tần gia]] khác.');
+  });
+
+  it('does not wrap partial matches inside an existing wiki link', () => {
+    const text = '[[Tần gia]] và Tần gia.';
+    const result = replaceEntityNotesText(text, 'Tần', '', { wrapMatched: true });
+    expect(result.count).toBe(1);
+    expect(result.text).toBe('[[Tần gia]] và [[Tần]] gia.');
+  });
+
+  it('wraps replacement text after replace', () => {
+    const text = 'Tần gia gặp Tần gia.';
+    const result = replaceEntityNotesText(text, 'Tần gia', 'Kim Phong Tế Vũ Lâu', {
+      wrapReplacement: true,
+    });
+    expect(result.count).toBe(2);
+    expect(result.text).toBe('[[Kim Phong Tế Vũ Lâu]] gặp [[Kim Phong Tế Vũ Lâu]].');
+  });
+
+  it('strips outer brackets when wrapping replacement label', () => {
+    const text = 'Tần gia.';
+    const result = replaceEntityNotesText(text, 'Tần gia', '[[Kim Phong Tế Vũ Lâu]]', {
+      wrapReplacement: true,
+    });
+    expect(result.text).toBe('[[Kim Phong Tế Vũ Lâu]].');
+  });
+
+  it('replaces an existing wiki link with one wrapped replacement', () => {
+    const text = '[[Tần gia]] gặp Tần gia.';
+    const result = replaceEntityNotesText(text, 'Tần gia', 'Kim Phong Tế Vũ Lâu', {
+      wrapReplacement: true,
+    });
+    expect(result.count).toBe(2);
+    expect(result.text).toBe('[[Kim Phong Tế Vũ Lâu]] gặp [[Kim Phong Tế Vũ Lâu]].');
+  });
+
+  it('keeps one wiki layer when replacing a partial match inside a wiki link', () => {
+    const text = '[[Tần gia]] gặp Tần gia.';
+    const result = replaceEntityNotesText(text, 'Tần', 'Kim', {
+      wrapReplacement: true,
+    });
+    expect(result.count).toBe(2);
+    expect(result.text).toBe('[[Kim gia]] gặp [[Kim]] gia.');
+  });
 });

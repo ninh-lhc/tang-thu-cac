@@ -17,6 +17,47 @@ function equalsFold(a, b, caseSensitive) {
   return a.toLocaleLowerCase('vi-VN') === b.toLocaleLowerCase('vi-VN');
 }
 
+/** Bỏ [[ ]] bọc ngoài nếu người dùng dán sẵn wiki vào ô thay thế. */
+export function stripWikiBracketLabel(value) {
+  const raw = safeString(value).trim();
+  if (!raw) return '';
+  if (raw.startsWith('[[') && raw.endsWith(']]')) {
+    return raw.slice(2, -2).trim();
+  }
+  return raw;
+}
+
+export function formatWikiLinkLabel(value) {
+  const inner = stripWikiBracketLabel(value);
+  if (!inner) return '';
+  return `[[${inner}]]`;
+}
+
+function collectWikiRanges(text) {
+  const source = safeString(text);
+  const ranges = [];
+  const wikiRe = /\[\[[\s\S]*?\]\]/g;
+  let match;
+  while ((match = wikiRe.exec(source)) !== null) {
+    ranges.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      innerStart: match.index + 2,
+      innerEnd: match.index + match[0].length - 2,
+    });
+  }
+  return ranges;
+}
+
+function findContainingWikiRange(ranges, matchStart, matchEnd) {
+  return ranges.find((range) => matchStart >= range.innerStart && matchEnd <= range.innerEnd) || null;
+}
+
+/** Cụm tìm thấy đã nằm trong [[…]] — không bọc lại. */
+function isInsideWikiLink(ranges, matchStart, matchEnd) {
+  return Boolean(findContainingWikiRange(ranges, matchStart, matchEnd));
+}
+
 function buildFindRegex(find, { caseSensitive = false, wholeWord = true } = {}) {
   const needle = safeString(find);
   if (!needle) return null;
@@ -61,6 +102,9 @@ function collectMatches(text, find, options = {}) {
   const replacement = safeString(options.replaceWith ?? '');
   const caseSensitive = Boolean(options.caseSensitive);
   const wholeWord = options.wholeWord !== false;
+  const skipAlreadyWiki = Boolean(options.wrapMatched);
+  const wrapReplacement = Boolean(options.wrapReplacement);
+  const wikiRanges = skipAlreadyWiki || wrapReplacement ? collectWikiRanges(source) : [];
   const re = buildFindRegex(needle, { caseSensitive, wholeWord });
   if (!re || !needle) return [];
 
@@ -69,10 +113,30 @@ function collectMatches(text, find, options = {}) {
   while (match) {
     const start = match.index;
     const end = start + match[0].length;
+    const containingWiki = wikiRanges.length ? findContainingWikiRange(wikiRanges, start, end) : null;
+    if (skipAlreadyWiki && isInsideWikiLink(wikiRanges, start, end)) {
+      if (match[0].length === 0) re.lastIndex += 1;
+      match = re.exec(source);
+      continue;
+    }
     if (
       !isAlreadyInsideReplacement(source, start, end, needle, replacement, caseSensitive)
     ) {
-      out.push({ start, end, matched: match[0] });
+      if (
+        wrapReplacement &&
+        containingWiki &&
+        start === containingWiki.innerStart &&
+        end === containingWiki.innerEnd
+      ) {
+        out.push({
+          start: containingWiki.start,
+          end: containingWiki.end,
+          matched: match[0],
+          replaceWholeWikiLink: true,
+        });
+      } else {
+        out.push({ start, end, matched: match[0], insideWikiLink: Boolean(containingWiki) });
+      }
     }
     if (match[0].length === 0) {
       re.lastIndex += 1;
@@ -86,6 +150,17 @@ export function countEntityNotesFindMatches(text, find, options = {}) {
   return collectMatches(text, find, options).length;
 }
 
+function resolveReplacementText(matched, replaceWith, options = {}) {
+  const replacement = safeString(replaceWith);
+  if (replacement) {
+    if (options.insideWikiLink) return stripWikiBracketLabel(replacement);
+    if (options.wrapReplacement) return formatWikiLinkLabel(replacement);
+    return replacement;
+  }
+  if (options.wrapMatched) return formatWikiLinkLabel(matched);
+  return matched;
+}
+
 /**
  * @returns {{ text: string, count: number }}
  */
@@ -93,8 +168,19 @@ export function replaceEntityNotesText(text, find, replaceWith, options = {}) {
   const source = safeString(text);
   const needle = safeString(find);
   const replacement = safeString(replaceWith);
+  const wrapMatched = Boolean(options.wrapMatched);
+  const wrapReplacement = Boolean(options.wrapReplacement);
+
   if (!needle) return { text: source, count: 0 };
-  if (needle === replacement && options.caseSensitive !== false) {
+  if (!replacement && !wrapMatched && !wrapReplacement) {
+    return { text: source, count: 0 };
+  }
+  if (
+    replacement === needle &&
+    !wrapReplacement &&
+    !wrapMatched &&
+    options.caseSensitive !== false
+  ) {
     return { text: source, count: 0 };
   }
 
@@ -108,9 +194,19 @@ export function replaceEntityNotesText(text, find, replaceWith, options = {}) {
   let cursor = 0;
   matches.forEach((item) => {
     out += source.slice(cursor, item.start);
-    out += replacement;
+    out += resolveReplacementText(item.matched, replacement, {
+      wrapMatched,
+      wrapReplacement,
+      insideWikiLink: item.insideWikiLink && wrapReplacement,
+    });
     cursor = item.end;
   });
   out += source.slice(cursor);
+  if (out === source) return { text: source, count: 0 };
   return { text: out, count: matches.length };
+}
+
+/** Bọc [[wiki]] hàng loạt cho mọi cụm khớp (giữ nguyên chữ trong văn bản). */
+export function wrapEntityNotesWikiMatches(text, find, options = {}) {
+  return replaceEntityNotesText(text, find, '', { ...options, wrapMatched: true });
 }

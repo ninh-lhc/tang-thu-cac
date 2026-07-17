@@ -11,11 +11,12 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Replace, X } from 'lucide-react';
+import { Replace, Link2, X } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
 import {
   countEntityNotesFindMatches,
   replaceEntityNotesText,
+  wrapEntityNotesWikiMatches,
 } from './lib/entityNotesFindReplace.js';
 
 const SHORTCUT_LABEL = 'Ctrl+H';
@@ -45,6 +46,8 @@ export const EntityNotesFindReplacePanel = forwardRef(function EntityNotesFindRe
   const [replaceWith, setReplaceWith] = useState('');
   const [wholeWord, setWholeWord] = useState(true);
   const [caseSensitive, setCaseSensitive] = useState(false);
+  const [wrapWikiFind, setWrapWikiFind] = useState(false);
+  const [wrapWikiReplace, setWrapWikiReplace] = useState(false);
   const findInputRef = useRef(null);
 
   const openPanel = useCallback(
@@ -100,33 +103,83 @@ export const EntityNotesFindReplacePanel = forwardRef(function EntityNotesFindRe
     return () => document.removeEventListener('keydown', onKey, true);
   }, [closePanel, open]);
 
-  const matchCount = useMemo(
-    () =>
-      countEntityNotesFindMatches(text, find, {
-        wholeWord,
-        caseSensitive,
-        replaceWith,
-      }),
-    [text, find, wholeWord, caseSensitive, replaceWith]
+  const matchOptions = useMemo(
+    () => ({
+      wholeWord,
+      caseSensitive,
+      replaceWith,
+      wrapMatched: wrapWikiFind,
+    }),
+    [wholeWord, caseSensitive, replaceWith, wrapWikiFind]
   );
 
-  const handleReplaceAll = () => {
+  const matchCount = useMemo(
+    () => countEntityNotesFindMatches(text, find, matchOptions),
+    [text, find, matchOptions]
+  );
+
+  const runAction = () => {
     const needle = safeString(find).trim();
     if (!needle) {
       showToast?.('Nhập cụm cần tìm.', 'warning');
       return;
     }
-    const result = replaceEntityNotesText(text, needle, safeString(replaceWith), {
-      wholeWord,
-      caseSensitive,
-    });
+    const replacement = safeString(replaceWith);
+    const wrapOnly = wrapWikiFind && !replacement && !wrapWikiReplace;
+
+    let result;
+    if (wrapOnly) {
+      result = wrapEntityNotesWikiMatches(text, needle, { wholeWord, caseSensitive });
+    } else {
+      if (!replacement && !wrapWikiFind && !wrapWikiReplace) {
+        showToast?.('Nhập chuỗi thay thế hoặc bật bọc [[wiki]].', 'warning');
+        return;
+      }
+      result = replaceEntityNotesText(text, needle, replacement, {
+        wholeWord,
+        caseSensitive,
+        wrapMatched: wrapWikiFind && !replacement,
+        wrapReplacement: wrapWikiReplace && Boolean(replacement),
+      });
+    }
+
     if (result.count === 0) {
       showToast?.('Không tìm thấy chỗ nào để thay.', 'warning');
       return;
     }
     onReplace?.(result.text);
-    showToast?.(`Đã thay ${result.count} chỗ.`, 'success');
+    if (wrapOnly) {
+      showToast?.(`Đã bọc [[wiki]] ${result.count} chỗ.`, 'success');
+    } else if (wrapWikiReplace) {
+      showToast?.(`Đã thay ${result.count} chỗ và bọc [[wiki]].`, 'success');
+    } else if (wrapWikiFind && !replacement) {
+      showToast?.(`Đã bọc [[wiki]] ${result.count} chỗ.`, 'success');
+    } else {
+      showToast?.(`Đã thay ${result.count} chỗ.`, 'success');
+    }
   };
+
+  const handleWrapWikiOnly = () => {
+    const needle = safeString(find).trim();
+    if (!needle) {
+      showToast?.('Nhập cụm cần tìm.', 'warning');
+      return;
+    }
+    const result = wrapEntityNotesWikiMatches(text, needle, { wholeWord, caseSensitive });
+    if (result.count === 0) {
+      showToast?.('Không còn chỗ nào chưa bọc [[wiki]].', 'warning');
+      return;
+    }
+    onReplace?.(result.text);
+    showToast?.(`Đã bọc [[wiki]] ${result.count} chỗ.`, 'success');
+  };
+
+  const primaryLabel = useMemo(() => {
+    const replacement = safeString(replaceWith);
+    if (wrapWikiFind && !replacement && !wrapWikiReplace) return 'Bọc wiki tất cả';
+    if (wrapWikiReplace && replacement) return 'Thay & bọc wiki';
+    return 'Thay tất cả';
+  }, [replaceWith, wrapWikiFind, wrapWikiReplace]);
 
   return (
     <div className="relative">
@@ -183,7 +236,7 @@ export const EntityNotesFindReplacePanel = forwardRef(function EntityNotesFindRe
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  handleReplaceAll();
+                  runAction();
                 }
               }}
               placeholder="Tần gia"
@@ -201,13 +254,35 @@ export const EntityNotesFindReplacePanel = forwardRef(function EntityNotesFindRe
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  handleReplaceAll();
+                  runAction();
                 }
               }}
               placeholder={safeString(subjectHint).trim() || 'Lĩnh Nam Tần gia'}
               className="tt-kbd-focus h-9 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-amber-600/50"
             />
           </label>
+
+          <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] text-slate-400">
+            <label className="inline-flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={wrapWikiFind}
+                onChange={(e) => setWrapWikiFind(e.target.checked)}
+                className="rounded border-slate-600"
+              />
+              Bọc [[wiki]] cụm tìm
+            </label>
+            <label className="inline-flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={wrapWikiReplace}
+                onChange={(e) => setWrapWikiReplace(e.target.checked)}
+                disabled={!safeString(replaceWith).trim()}
+                className="rounded border-slate-600 disabled:opacity-40"
+              />
+              Bọc [[wiki]] sau thay
+            </label>
+          </div>
 
           <div className="mb-3 flex flex-wrap gap-3 text-[11px] text-slate-400">
             <label className="inline-flex cursor-pointer items-center gap-1.5">
@@ -233,7 +308,17 @@ export const EntityNotesFindReplacePanel = forwardRef(function EntityNotesFindRe
             </span>
           </div>
 
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={handleWrapWikiOnly}
+              disabled={disabled || !safeString(find).trim() || matchCount === 0}
+              className="tt-kbd-focus flex h-9 items-center gap-1.5 rounded-xl border border-violet-700/50 bg-violet-950/35 px-3 text-[12px] font-bold text-violet-100 hover:bg-violet-900/40 disabled:cursor-not-allowed disabled:opacity-45"
+              title="Chỉ bọc [[wiki]] cho cụm tìm thấy, không đổi chữ"
+            >
+              <Link2 size={13} />
+              Chỉ bọc wiki
+            </button>
             <button
               type="button"
               onClick={closePanel}
@@ -243,12 +328,12 @@ export const EntityNotesFindReplacePanel = forwardRef(function EntityNotesFindRe
             </button>
             <button
               type="button"
-              onClick={handleReplaceAll}
+              onClick={runAction}
               disabled={disabled || !safeString(find).trim() || matchCount === 0}
               className="tt-kbd-focus flex h-9 items-center gap-1.5 rounded-xl bg-amber-700 px-3.5 text-[12px] font-bold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-45"
             >
               <Replace size={13} />
-              Thay tất cả
+              {primaryLabel}
               {matchCount > 0 ? ` (${matchCount})` : ''}
             </button>
           </div>
