@@ -1,8 +1,16 @@
 /**
  * Panel tìm & thay hàng loạt trong ghi chép chi tiết.
- * Dùng cạnh EntityNotesAiToolsMenu; logic thuần ở lib/entityNotesFindReplace.js.
+ * Phím tắt: Ctrl+H (mở/đóng). Esc đóng. Logic thuần ở lib/entityNotesFindReplace.js.
  */
-import React, { useMemo, useState } from 'react';
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Replace, X } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
 import {
@@ -10,31 +18,87 @@ import {
   replaceEntityNotesText,
 } from './lib/entityNotesFindReplace.js';
 
-export function EntityNotesFindReplacePanel({
-  text = '',
-  onReplace,
-  subjectHint = '',
-  disabled = false,
-  showToast,
-}) {
+const SHORTCUT_LABEL = 'Ctrl+H';
+
+function readEditorSelection(editorId = 'entity-info-editor') {
+  const el = document.getElementById(editorId);
+  if (!el || typeof el.selectionStart !== 'number') return '';
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  if (end <= start) return '';
+  return safeString(el.value).slice(start, end).trim();
+}
+
+export const EntityNotesFindReplacePanel = forwardRef(function EntityNotesFindReplacePanel(
+  {
+    text = '',
+    onReplace,
+    subjectHint = '',
+    disabled = false,
+    showToast,
+    editorId = 'entity-info-editor',
+  },
+  ref
+) {
   const [open, setOpen] = useState(false);
   const [find, setFind] = useState('');
   const [replaceWith, setReplaceWith] = useState('');
   const [wholeWord, setWholeWord] = useState(true);
   const [caseSensitive, setCaseSensitive] = useState(false);
+  const findInputRef = useRef(null);
 
-  const toggleOpen = () => {
-    setOpen((wasOpen) => {
-      const next = !wasOpen;
-      if (next) {
-        const hint = safeString(subjectHint).trim();
-        if (hint) {
-          setReplaceWith((prev) => (safeString(prev).trim() ? prev : hint));
+  const openPanel = useCallback(
+    ({ seedFromSelection = true } = {}) => {
+      if (disabled) return;
+      if (seedFromSelection) {
+        const selected = readEditorSelection(editorId);
+        if (selected && selected.length <= 80) {
+          setFind(selected);
         }
       }
-      return next;
-    });
-  };
+      const hint = safeString(subjectHint).trim();
+      if (hint) {
+        setReplaceWith((prev) => (safeString(prev).trim() ? prev : hint));
+      }
+      setOpen(true);
+      window.setTimeout(() => {
+        findInputRef.current?.focus?.();
+        findInputRef.current?.select?.();
+      }, 0);
+    },
+    [disabled, editorId, subjectHint]
+  );
+
+  const closePanel = useCallback(() => setOpen(false), []);
+
+  const toggleOpen = useCallback(() => {
+    if (open) closePanel();
+    else openPanel({ seedFromSelection: true });
+  }, [closePanel, open, openPanel]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      open: openPanel,
+      close: closePanel,
+      toggle: toggleOpen,
+      isOpen: () => open,
+    }),
+    [closePanel, open, openPanel, toggleOpen]
+  );
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        closePanel();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [closePanel, open]);
 
   const matchCount = useMemo(
     () =>
@@ -73,29 +137,34 @@ export function EntityNotesFindReplacePanel({
         className={[
           'px-3 py-2.5 rounded-[40px] text-[11px] font-bold transition-all shadow-md flex items-center gap-1.5 border disabled:opacity-50',
           open
-            ? 'bg-amber-950/45 text-amber-100 border-amber-600/55'
-            : 'bg-slate-900/80 text-slate-200 hover:bg-slate-800 border-slate-700/80',
+            ? 'bg-amber-900/55 text-amber-50 border-amber-500/70 ring-1 ring-amber-400/30'
+            : 'bg-amber-950/50 text-amber-100 hover:bg-amber-900/45 border-amber-700/50',
         ].join(' ')}
-        title="Tìm và thay hàng loạt — dùng để thêm địa danh vào tên gia tộc trùng"
+        title={`Tìm kiếm và thay thế hàng loạt (${SHORTCUT_LABEL})`}
+        aria-expanded={open}
+        aria-label="Tìm kiếm và thay thế"
       >
         <Replace size={13} />
-        Tìm &amp; thay
+        Tìm thay thế
+        <kbd className="ml-0.5 rounded border border-amber-700/50 bg-amber-950/60 px-1 py-px text-[9px] font-bold tracking-wide text-amber-200/80">
+          {SHORTCUT_LABEL}
+        </kbd>
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-2 w-[min(100vw-2rem,360px)] rounded-2xl border border-slate-700/90 bg-slate-950/95 p-3 shadow-2xl backdrop-blur-md">
+        <div className="absolute right-0 bottom-full z-30 mb-2 w-[min(100vw-2rem,360px)] rounded-2xl border border-slate-700/90 bg-slate-950/95 p-3 shadow-2xl backdrop-blur-md">
           <div className="mb-2.5 flex items-center justify-between gap-2">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-widest text-amber-200/90">
-                Tìm &amp; thay hàng loạt
+                Tìm kiếm và thay thế
               </p>
               <p className="mt-0.5 text-[11px] font-serif text-slate-500">
-                VD: «Tần gia» → «Lĩnh Nam Tần gia»
+                {SHORTCUT_LABEL} mở/đóng · Esc đóng · VD: «Tần gia» → «Lĩnh Nam Tần gia»
               </p>
             </div>
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={closePanel}
               className="tt-kbd-focus flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-800 hover:text-slate-200"
               aria-label="Đóng"
             >
@@ -108,8 +177,15 @@ export function EntityNotesFindReplacePanel({
               Tìm
             </span>
             <input
+              ref={findInputRef}
               value={find}
               onChange={(e) => setFind(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleReplaceAll();
+                }
+              }}
               placeholder="Tần gia"
               className="tt-kbd-focus h-9 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-amber-600/50"
             />
@@ -122,13 +198,19 @@ export function EntityNotesFindReplacePanel({
             <input
               value={replaceWith}
               onChange={(e) => setReplaceWith(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleReplaceAll();
+                }
+              }}
               placeholder={safeString(subjectHint).trim() || 'Lĩnh Nam Tần gia'}
               className="tt-kbd-focus h-9 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-amber-600/50"
             />
           </label>
 
           <div className="mb-3 flex flex-wrap gap-3 text-[11px] text-slate-400">
-            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+            <label className="inline-flex cursor-pointer items-center gap-1.5">
               <input
                 type="checkbox"
                 checked={wholeWord}
@@ -137,7 +219,7 @@ export function EntityNotesFindReplacePanel({
               />
               Cả từ
             </label>
-            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+            <label className="inline-flex cursor-pointer items-center gap-1.5">
               <input
                 type="checkbox"
                 checked={caseSensitive}
@@ -154,7 +236,7 @@ export function EntityNotesFindReplacePanel({
           <div className="flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={closePanel}
               className="tt-kbd-focus h-9 rounded-xl border border-slate-700 bg-slate-900 px-3 text-[12px] font-bold text-slate-300 hover:text-slate-100"
             >
               Đóng
@@ -174,4 +256,4 @@ export function EntityNotesFindReplacePanel({
       )}
     </div>
   );
-}
+});

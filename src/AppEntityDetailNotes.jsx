@@ -104,6 +104,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   const textareaRef = useRef(null);
   const previewScrollRef = useRef(null);
   const scrollSyncLockRef = useRef(false);
+  const findReplaceRef = useRef(null);
   // Đang ghép chữ IME (tiếng Việt): chặn mọi setState đồng bộ toolbar/caret để React
   // không re-render và ghi đè value cũ giữa lúc compose ⇒ tránh rớt/lặp ký tự.
   const isComposingRef = useRef(false);
@@ -172,6 +173,13 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
 
   useEffect(() => {
     const onKey = (e) => {
+      // Ctrl+H: mở/đóng tìm & thay (không dùng Cmd+H — trên Mac là Ẩn cửa sổ)
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        e.stopPropagation();
+        findReplaceRef.current?.toggle?.();
+        return;
+      }
       const ta = document.getElementById('entity-info-editor');
       if (!ta || document.activeElement !== ta) return;
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
@@ -535,13 +543,6 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           isRunning={isAiPipelineRunning}
           runningStep={aiPipelineStep}
         />
-        <EntityNotesFindReplacePanel
-          text={notesEdit.text}
-          subjectHint={entityNotesSubject}
-          disabled={isAiPipelineRunning}
-          showToast={showToast}
-          onReplace={syncDraftAndPreview}
-        />
         <button
           id="save-entity-btn"
           type="button"
@@ -641,6 +642,14 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         >
           <Save size={16} /> {saveButtonLabel}
         </button>
+        <EntityNotesFindReplacePanel
+          ref={findReplaceRef}
+          text={notesEdit.text}
+          subjectHint={entityNotesSubject}
+          disabled={isAiPipelineRunning}
+          showToast={showToast}
+          onReplace={syncDraftAndPreview}
+        />
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col animate-fade-in overflow-hidden min-h-[400px]">

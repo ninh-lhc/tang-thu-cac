@@ -34,6 +34,8 @@ export function EntityNotesAiToolsMenu({
   isRunning = false,
   runningStep = null,
   disabled = false,
+  /** Slot nút bổ sung (vd. Tìm thay thế) — hiện ngay trước các bước AI. */
+  leadingSlot = null,
 }) {
   const progressLabel = runningStep ? getNotesAiPipelineStepLabel(runningStep) : '';
 
@@ -43,6 +45,7 @@ export function EntityNotesAiToolsMenu({
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
+      {leadingSlot}
       {TOOL_ITEMS.map((item) => {
         const Icon = item.icon;
         return (
