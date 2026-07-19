@@ -3,11 +3,43 @@ import {
   DEFAULT_MEMBER_FIELD_LABELS,
   DEFAULT_MEMBER_PANEL_TITLE,
   findEntityMemberInNovel,
+  mergeEntityMemberUpdate,
   normalizeEntityMemberInput,
   normalizeMemberFieldLabels,
   resolveMemberFieldLabels,
   resolveMemberPanelTitle,
 } from './entityMembers.js';
+
+describe('entity member updates', () => {
+  it('preserves detailed notes when saving basic profile fields', () => {
+    const previous = {
+      id: 'm1',
+      name: 'Mai Huyền Sương',
+      role: 'Cấp chủ',
+      info: 'Nội dung ghi chép đã lưu',
+      wikiLinkOptOuts: [{ anchor: 'Trường Hận Cung', before: 'thuộc ', after: '.' }],
+    };
+    const basicFormPayload = {
+      id: 'm1',
+      name: 'Mai Huyền Sương',
+      role: 'điện chủ',
+      info: '',
+      wikiLinkOptOuts: [],
+    };
+
+    expect(mergeEntityMemberUpdate(previous, basicFormPayload, { preserveNotes: true })).toMatchObject({
+      role: 'điện chủ',
+      info: 'Nội dung ghi chép đã lưu',
+      wikiLinkOptOuts: [{ anchor: 'Trường Hận Cung', before: 'thuộc', after: '.' }],
+    });
+  });
+
+  it('allows the notes editor to replace or clear detailed notes', () => {
+    const previous = { id: 'm1', info: 'Cũ', wikiLinkOptOuts: [{ anchor: 'A' }] };
+    const notesPayload = { id: 'm1', info: '', wikiLinkOptOuts: [] };
+    expect(mergeEntityMemberUpdate(previous, notesPayload)).toMatchObject(notesPayload);
+  });
+});
 
 describe('entityMembers field labels', () => {
   it('falls back to generic defaults', () => {

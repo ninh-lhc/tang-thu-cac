@@ -71,6 +71,7 @@ import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
 import {
   findEntityMemberInNovel,
+  mergeEntityMemberUpdate,
   normalizeEntityMemberInput,
   normalizeMemberFieldLabels,
   readEntityMembers,
@@ -1990,7 +1991,7 @@ export default function App() {
   };
 
   const handleSaveEntityMember = useCallback(
-    (memberDraft) => {
+    (memberDraft, options = {}) => {
       if (!selectedEntityId || !activeTabLon) {
         showToast('Hãy chọn một thẻ cha trước khi lưu thẻ con.', 'warning');
         return;
@@ -2020,8 +2021,9 @@ export default function App() {
           savedMode = 'update';
           const prev = ent.members[idx];
           ent.members[idx] = {
-            ...prev,
-            ...savedMember,
+            ...mergeEntityMemberUpdate(prev, savedMember, {
+              preserveNotes: options?.preserveNotes === true,
+            }),
             parentId: savedMember.parentId || prev.parentId,
             sortOrder: Number.isFinite(Number(savedMember.sortOrder))
               ? savedMember.sortOrder

@@ -657,7 +657,8 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
 
   const handleSubmit = (event) => {
     event?.preventDefault?.();
-    onSaveMember?.(draft);
+    // This form only owns basic fields. Notes may have been saved separately while it was open.
+    onSaveMember?.(draft, { preserveNotes: true });
     closeForm();
   };
 

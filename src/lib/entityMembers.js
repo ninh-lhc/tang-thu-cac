@@ -68,6 +68,19 @@ export function normalizeEntityMemberInput(input, { generateId } = {}) {
 }
 
 /**
+ * Merge a member update while allowing the basic-profile form to leave notes untouched.
+ * The notes editor passes the full notes payload and therefore uses the default behavior.
+ */
+export function mergeEntityMemberUpdate(previous, next, { preserveNotes = false } = {}) {
+  const merged = { ...previous, ...next };
+  if (preserveNotes) {
+    merged.info = safeText(previous?.info);
+    merged.wikiLinkOptOuts = normalizeMemberWikiLinkOptOuts(previous?.wikiLinkOptOuts);
+  }
+  return merged;
+}
+
+/**
  * Chuẩn hóa nhãn 4 trường thẻ con.
  * Ưu tiên: entity.memberFieldLabels → tabConfig.memberFieldLabels → mặc định.
  */
