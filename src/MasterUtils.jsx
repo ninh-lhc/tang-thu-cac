@@ -11,7 +11,7 @@ import {
 import { FALLBACK_IMG } from './MasterEngines.js';
 import { splitTextByWikiMatcher } from './lib/wikiLinkMatcher.js';
 import { buildEntityNameLookup, resolveEntityLookup } from './lib/entityWikiLookup.js';
-import { buildWikiLinkOptOutFromUnwrap } from './lib/wikiLinkOptOut.js';
+import { buildWikiLinkOptOutFromUnwrap, resolveWikiUnwrapRange } from './lib/wikiLinkOptOut.js';
 import { isCaretInsideWikiLink } from './lib/entityNotesWikiCaret.js';
 
 export const generateId = (prefix) => `${prefix}-${Math.random().toString(36).substring(2, 11)}`;
@@ -1727,6 +1727,54 @@ export const applyWikiLinkUnwrap = (text, selStart, selEnd) => {
   return { newText: nv, selStart: caret, selEnd: caret };
 };
 
+/** Toggle [[wiki]] for a selection/caret, including the caret position produced by a first wrap. */
+export const applyWikiLinkToggle = (text, selStart, selEnd) => {
+  const start = Math.max(0, Number(selStart) || 0);
+  const end = Math.max(start, Number(selEnd) || 0);
+  const selectedInsideWiki = start < end
+    && text.slice(Math.max(0, start - 2), start) === '[['
+    && text.slice(end, end + 2) === ']]';
+
+  if (selectedInsideWiki) {
+    const inner = text.slice(start, end);
+    return {
+      newText: text.slice(0, start - 2) + inner + text.slice(end + 2),
+      selStart: start - 2,
+      selEnd: end - 2,
+      mode: 'unwrap',
+      unwrapStart: start - 2,
+      unwrapEnd: end + 2,
+    };
+  }
+
+  const unwrapAt = (pos) => {
+    const range = resolveWikiUnwrapRange(text, pos, pos);
+    if (!range) return null;
+    const { newText, selStart: nextStart, selEnd: nextEnd } = applyWikiLinkUnwrap(text, pos, pos);
+    return {
+      newText,
+      selStart: nextStart,
+      selEnd: nextEnd,
+      mode: 'unwrap',
+      unwrapStart: range.wikiStart,
+      unwrapEnd: range.wikiEnd,
+    };
+  };
+
+  if (start === end) {
+    const direct = unwrapAt(start);
+    if (direct) return direct;
+    // applyWikiLinkWrap leaves the caret immediately after `]]` when no text is selected.
+    if (start >= 2 && text.slice(start - 2, start) === ']]') {
+      const justWrapped = unwrapAt(start - 2);
+      if (justWrapped) return justWrapped;
+    }
+  }
+
+  const wrapped = applyWikiLinkWrap(text, start, end);
+  return { ...wrapped, mode: 'wrap' };
+};
+
 export const handleToolbarClick = (before, after = '', editorId, onAfterApply) => {
   const textarea = document.getElementById(editorId);
   if (!textarea) return;
@@ -1756,6 +1804,14 @@ export const handleToolbarClick = (before, after = '', editorId, onAfterApply) =
     const wikiOptOut = buildWikiLinkOptOutFromUnwrap(text, start, end);
     const { newText, selStart, selEnd } = applyWikiLinkUnwrap(text, start, end);
     apply(newText, selStart, selEnd, wikiOptOut ? { wikiOptOut } : undefined);
+    return;
+  }
+  if (before === '__WIKI_TOGGLE__') {
+    const result = applyWikiLinkToggle(text, start, end);
+    const wikiOptOut = result.mode === 'unwrap'
+      ? buildWikiLinkOptOutFromUnwrap(text, result.unwrapStart, result.unwrapEnd)
+      : null;
+    apply(result.newText, result.selStart, result.selEnd, wikiOptOut ? { wikiOptOut } : undefined);
     return;
   }
 

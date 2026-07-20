@@ -118,6 +118,26 @@ describe('AppEntityDetailNotes', () => {
     expect(screen.getByRole('textbox').value).toBe('~~Doan~~ mau can gach.');
   });
 
+  it('toggles wiki wrapping with Ctrl+G while the notes editor is focused', () => {
+    const props = createProps({
+      selectedEntity: {
+        id: 'entity-1',
+        name: 'Mai Huyền Sương',
+        info: 'Mai Huyền Sương',
+      },
+    });
+    render(<AppEntityDetailNotes {...props} />);
+
+    const textbox = screen.getByRole('textbox');
+    textbox.focus();
+    textbox.setSelectionRange(0, textbox.value.length);
+    fireEvent.keyDown(document, { key: 'g', ctrlKey: true });
+    expect(textbox.value).toBe('[[Mai Huyền Sương]]');
+
+    fireEvent.keyDown(document, { key: 'g', ctrlKey: true });
+    expect(textbox.value).toBe('Mai Huyền Sương');
+  });
+
   it('opens the in-app notes guide from the detail header', () => {
     const onOpenEntityNotesGuide = vi.fn();
     const props = createProps({

@@ -15,6 +15,7 @@ import { AppListCardInfoSearch } from './AppListCardInfoSearch.jsx';
 import {
   safeString,
   getEntityNotesToolbarState,
+  handleToolbarClick,
   resolveEntityNotesLineBreak,
   resolveEntityNotesBackspace,
   resolveEntityNotesTabIndent,
@@ -182,6 +183,17 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
       }
       const ta = document.getElementById('entity-info-editor');
       if (!ta || document.activeElement !== ta) return;
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleToolbarClick('__WIKI_TOGGLE__', '', 'entity-info-editor', (nextText, meta) => {
+          if (meta?.wikiOptOut) {
+            setPendingWikiLinkOptOuts((prev) => mergeWikiLinkOptOuts(prev, [meta.wikiOptOut]));
+          }
+          recordAndSetDraft(nextText);
+        });
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         undo();
@@ -192,7 +204,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, [undo, redo]);
+  }, [recordAndSetDraft, undo, redo]);
 
   useEffect(() => {
     const el = textareaRef.current || document.getElementById('entity-info-editor');

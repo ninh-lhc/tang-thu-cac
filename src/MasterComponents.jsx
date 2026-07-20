@@ -517,7 +517,7 @@ export const MarkdownToolbar = ({
               ? 'border-indigo-500/60 bg-indigo-900/60 text-indigo-100'
               : 'border-indigo-900/50 bg-indigo-950/50 text-indigo-500 hover:bg-indigo-900 hover:text-indigo-300'
           }`}
-          title="Wiki Link: bôi đen chữ để bọc [[...]], hoặc chèn [[]] tại con trỏ"
+          title="Wiki Link: bôi đen chữ để bọc [[...]], hoặc chèn [[]] tại con trỏ (Ctrl+G để bật/tắt)"
         >
           <Link2 size={16} />
         </button>

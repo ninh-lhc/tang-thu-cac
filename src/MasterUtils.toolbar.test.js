@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   getEntityNotesToolbarState,
+  handleToolbarClick,
   handleToolbarSmartWrap,
   handleToolbarToggleLinePrefix,
   resolveEntityNotesBackspace,
@@ -47,6 +48,26 @@ describe('toolbar helpers', () => {
     handleToolbarSmartWrap('~~', 'entity-info-editor');
 
     expect(textarea.value).toBe('~~Doan~~ can gach');
+  });
+
+  it('toggles a wiki link off on the second shortcut press for selected text', () => {
+    const textarea = mountEditor('Mai Huyền Sương', 0, 'Mai Huyền Sương'.length);
+
+    handleToolbarClick('__WIKI_TOGGLE__', '', 'entity-info-editor');
+    expect(textarea.value).toBe('[[Mai Huyền Sương]]');
+
+    handleToolbarClick('__WIKI_TOGGLE__', '', 'entity-info-editor');
+    expect(textarea.value).toBe('Mai Huyền Sương');
+  });
+
+  it('toggles a wiki link off on the second shortcut press without a selection', () => {
+    const textarea = mountEditor('Mai Huyền Sương');
+
+    handleToolbarClick('__WIKI_TOGGLE__', '', 'entity-info-editor');
+    expect(textarea.value).toBe('[[Mai Huyền Sương]]');
+
+    handleToolbarClick('__WIKI_TOGGLE__', '', 'entity-info-editor');
+    expect(textarea.value).toBe('Mai Huyền Sương');
   });
 
   it('detects inline and line-level toolbar states from the editor context', () => {
