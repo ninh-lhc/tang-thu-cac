@@ -27,7 +27,7 @@ describe('entity member updates', () => {
       wikiLinkOptOuts: [],
     };
 
-    expect(mergeEntityMemberUpdate(previous, basicFormPayload, { preserveNotes: true })).toMatchObject({
+    expect(mergeEntityMemberUpdate(previous, basicFormPayload)).toMatchObject({
       role: 'điện chủ',
       info: 'Nội dung ghi chép đã lưu',
       wikiLinkOptOuts: [{ anchor: 'Trường Hận Cung', before: 'thuộc', after: '.' }],
@@ -37,7 +37,7 @@ describe('entity member updates', () => {
   it('allows the notes editor to replace or clear detailed notes', () => {
     const previous = { id: 'm1', info: 'Cũ', wikiLinkOptOuts: [{ anchor: 'A' }] };
     const notesPayload = { id: 'm1', info: '', wikiLinkOptOuts: [] };
-    expect(mergeEntityMemberUpdate(previous, notesPayload)).toMatchObject(notesPayload);
+    expect(mergeEntityMemberUpdate(previous, notesPayload, { replaceNotes: true })).toMatchObject(notesPayload);
   });
 });
 

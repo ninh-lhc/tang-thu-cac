@@ -377,7 +377,7 @@ export function AppCollectionSection({
         ...memberNotesEditTarget,
         info: nextInfo,
         wikiLinkOptOuts: Array.isArray(meta?.wikiLinkOptOuts) ? meta.wikiLinkOptOuts : [],
-      });
+      }, { replaceNotes: true });
       setMemberNotesEditTargetId(null);
       restoreParentNotesView();
       setIsEntityEditing(false);

@@ -68,12 +68,12 @@ export function normalizeEntityMemberInput(input, { generateId } = {}) {
 }
 
 /**
- * Merge a member update while allowing the basic-profile form to leave notes untouched.
- * The notes editor passes the full notes payload and therefore uses the default behavior.
+ * Merge a member update while leaving notes untouched by default.
+ * Only the dedicated notes editor may opt into replacing the notes payload.
  */
-export function mergeEntityMemberUpdate(previous, next, { preserveNotes = false } = {}) {
+export function mergeEntityMemberUpdate(previous, next, { replaceNotes = false } = {}) {
   const merged = { ...previous, ...next };
-  if (preserveNotes) {
+  if (!replaceNotes) {
     merged.info = safeText(previous?.info);
     merged.wikiLinkOptOuts = normalizeMemberWikiLinkOptOuts(previous?.wikiLinkOptOuts);
   }

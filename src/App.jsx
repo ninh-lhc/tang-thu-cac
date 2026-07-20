@@ -2022,7 +2022,7 @@ export default function App() {
           const prev = ent.members[idx];
           ent.members[idx] = {
             ...mergeEntityMemberUpdate(prev, savedMember, {
-              preserveNotes: options?.preserveNotes === true,
+              replaceNotes: options?.replaceNotes === true,
             }),
             parentId: savedMember.parentId || prev.parentId,
             sortOrder: Number.isFinite(Number(savedMember.sortOrder))
