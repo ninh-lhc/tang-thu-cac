@@ -5,7 +5,7 @@
 // Notes: violet = hồ sơ nhúng; emerald = thẻ thật cùng tab. Cả hai có ẩn/hiện.
 // ==========================================
 
-import React, { memo, useEffect, useMemo, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Columns2, ChevronDown, ChevronUp, Eye, EyeOff, FolderTree, LayoutPanelTop, Users } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
 import { AppEntityMembersPanel } from './AppEntityMembersPanel.jsx';
@@ -15,18 +15,6 @@ import { readEntityMembers } from './lib/entityMembers.js';
 const HUB_MODE_PREFIX = 'tt_entity_structure_hub_mode';
 const MEMBERS_FEATURE_PREFIX = 'tt_entity_members_feature_on';
 const HUB_OPEN_PREFIX = 'tt_entity_structure_hub_open';
-
-function readHubOpen(scopeKey, fallback) {
-  if (!scopeKey || typeof localStorage === 'undefined') return fallback;
-  try {
-    const saved = localStorage.getItem(`${HUB_OPEN_PREFIX}:${scopeKey}`);
-    if (saved === '1') return true;
-    if (saved === '0') return false;
-  } catch {
-    /* best effort */
-  }
-  return fallback;
-}
 
 function writeHubOpen(scopeKey, value) {
   if (!scopeKey || typeof localStorage === 'undefined') return;
@@ -101,7 +89,9 @@ export const AppEntityStructureHub = memo(function AppEntityStructureHub({
   const [membersFeatureOn, setMembersFeatureOn] = useState(() =>
     readMembersFeatureOn(scopeKey, true)
   );
-  const [hubOpen, setHubOpen] = useState(() => readHubOpen(scopeKey, true));
+  // Mỗi lần mở/chuyển thẻ đều bắt đầu thu gọn; người dùng chủ động mở khi cần.
+  const [hubOpen, setHubOpen] = useState(false);
+  const previousScopeKeyRef = useRef(scopeKey);
   const [mode, setMode] = useState(() =>
     readHubMode(
       scopeKey,
@@ -113,8 +103,10 @@ export const AppEntityStructureHub = memo(function AppEntityStructureHub({
   );
 
   useEffect(() => {
+    const openedAnotherEntity = previousScopeKeyRef.current !== scopeKey;
+    previousScopeKeyRef.current = scopeKey;
     setMembersFeatureOn(readMembersFeatureOn(scopeKey, true));
-    setHubOpen(readHubOpen(scopeKey, true));
+    if (openedAnotherEntity) setHubOpen(false);
     setMode(
       readHubMode(
         scopeKey,
