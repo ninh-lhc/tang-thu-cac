@@ -10,7 +10,7 @@
 import React from 'react';
 import {
   ChevronRight, Plus, Search, Filter, Save, Edit3, Eye,
-  User, BookOpen, Download, Settings, Shield,
+  User, BookOpen, Download, Settings, Shield, ArrowRightLeft,
 } from 'lucide-react';
 import { safeString, AsyncLocalImage } from './MasterUtils.jsx';
 import { FALLBACK_IMG } from './MasterEngines.js';
@@ -21,6 +21,7 @@ import { AppCollectionEmptyState } from './AppCollectionEmptyState.jsx';
 import { AppEntitySummaryBlocks } from './AppEntitySummaryBlocks.jsx';
 import { AppEntityDetailNotes } from './AppEntityDetailNotes.jsx';
 import { AppEntityStructureHub } from './AppEntityStructureHub.jsx';
+import { AppModalEntityTransfer } from './AppModalEntityTransfer.jsx';
 import { AppEntityTimelinePanel } from './AppEntityTimelinePanel.jsx';
 import { AppEntityDescriptionPanel } from './AppEntityDescriptionPanel.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
@@ -31,6 +32,7 @@ import { isMapCollectionScope } from './lib/mapHierarchySync.js';
 import { isForceCollectionScope } from './lib/theLucBanDoSync.js';
 import { splitStatusHierarchyTokens } from './lib/statusHierarchyParser.js';
 import { tabHasEntityTreeLinks } from './lib/mapEntityTree.js';
+import { isListCardEntity } from './lib/collectionListCardSync.js';
 
 const ENTITY_TREE_ENABLED_PREFIX = 'tt_entity_tree_feature_on';
 
@@ -174,6 +176,8 @@ export function AppCollectionSection({
   handleUpdateEntityInfo,
   handleSaveEntityMember,
   handleSaveEntityMemberFieldMeta,
+  handleTransferEntityToTab,
+  handlePromoteEntityMember,
   handleMoveEntityMember,
   handleReorderEntityMember,
   handleDeleteEntityMember,
@@ -295,6 +299,7 @@ export function AppCollectionSection({
   );
   const [detailProfileMode, setDetailProfileMode] = React.useState('original');
   const [memberNotesEditTargetId, setMemberNotesEditTargetId] = React.useState(null);
+  const [entityTransferRequest, setEntityTransferRequest] = React.useState(null);
   const entityTreeScopeKey = `${activeTabLon || 'lon'}:${activeTabNho || 'default'}`;
   const tabTreeHasLinks = React.useMemo(
     () => Boolean(hasEntityTreeLinks) || tabHasEntityTreeLinks(collectionEntitiesRaw),
@@ -390,6 +395,15 @@ export function AppCollectionSection({
       setIsEntityEditing,
       showToast,
     ]
+  );
+  const handleConfirmEntityTransfer = React.useCallback(
+    (request, destination) => {
+      const completed = request?.mode === 'promote'
+        ? handlePromoteEntityMember?.(request.memberId, destination)
+        : handleTransferEntityToTab?.(request.entityId, destination);
+      if (completed !== false) setEntityTransferRequest(null);
+    },
+    [handlePromoteEntityMember, handleTransferEntityToTab]
   );
   const detailProfileSourceLabel = React.useMemo(() => {
     const latestMilestone = timelineCurrentProfile.latestMilestone;
@@ -874,6 +888,19 @@ export function AppCollectionSection({
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {!isListCardEntity(selectedEntity) && (
+                      <button
+                        onClick={() => setEntityTransferRequest({
+                          mode: 'move',
+                          entityId: selectedEntity?.id,
+                          itemName: selectedEntity?.name,
+                        })}
+                        className="px-4 py-2.5 bg-cyan-950/35 hover:bg-cyan-900/45 border border-cyan-800/45 text-cyan-300 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors shadow-md"
+                        title="Di chuyển thẻ thật này sang tab sưu tập khác"
+                      >
+                        <ArrowRightLeft size={13}/> Chuyển tab
+                      </button>
+                    )}
                     <button
                       onClick={() => handleExportEntityPDF(detailEntity, currentTabConfig)}
                       className="px-4 py-2.5 bg-indigo-900/30 hover:bg-indigo-800/50 border border-indigo-700/40 text-indigo-300 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors shadow-md"
@@ -902,6 +929,11 @@ export function AppCollectionSection({
                     onReorderMember: handleReorderEntityMember,
                     onDeleteMember: handleDeleteEntityMember,
                     onEditMemberNotes: handleEditMemberNotes,
+                    onPromoteMember: (member) => setEntityTransferRequest({
+                      mode: 'promote',
+                      memberId: member?.id,
+                      itemName: member?.name,
+                    }),
                     onOpenMember: (member) => {
                       if (!member?.id || !selectedEntity?.id) return;
                       handleNavigate({
@@ -1092,6 +1124,16 @@ export function AppCollectionSection({
             </div>
           )}
         </div>
+      )}
+      {entityTransferRequest && (
+        <AppModalEntityTransfer
+          key={`${entityTransferRequest.mode}:${entityTransferRequest.entityId || entityTransferRequest.memberId || ''}`}
+          request={entityTransferRequest}
+          tabsConfig={activeNovelData?.tabsConfig}
+          source={{ lonId: activeTabLon, nhoId: activeTabNho || 'default' }}
+          onClose={() => setEntityTransferRequest(null)}
+          onConfirm={handleConfirmEntityTransfer}
+        />
       )}
     </div>
   );

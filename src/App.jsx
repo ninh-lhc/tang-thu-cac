@@ -85,6 +85,10 @@ import {
 } from './lib/entityMemberTree.js';
 import { resolveEntityPageForSelection } from './lib/entitySelectionPage.js';
 import {
+  moveEntityAcrossCollectionTabs,
+  promoteEntityMemberToCollectionCard,
+} from './lib/entityTransfer.js';
+import {
   ensureCollectionListCardsForNovel,
   syncAllCollectionListCards,
 } from './lib/collectionListCardSync.js';
@@ -2189,6 +2193,71 @@ export default function App() {
     ]
   );
 
+  const handleTransferEntityToTab = useCallback(
+    (entityId, destination) => {
+      const id = safeString(entityId).trim();
+      if (!id || !activeTabLon || !destination?.lonId) return false;
+      let result = { ok: false, reason: 'unknown' };
+      const ok = updateActiveNovelData((nov) => {
+        result = moveEntityAcrossCollectionTabs(
+          nov,
+          { lonId: activeTabLon, nhoId: activeTabNho || 'default' },
+          destination,
+          id
+        );
+        if (!result.ok) return;
+        syncAllMapHierarchyAutoBlocks(nov);
+        syncAllCollectionListCards(nov);
+      });
+      if (ok === false || !result.ok) {
+        showToast(result.reason === 'same-tab' ? 'Thẻ đã nằm trong tab này.' : 'Không thể di chuyển thẻ sang tab đã chọn.', 'error');
+        return false;
+      }
+      showToast(`Đã chuyển ${safeString(result.entity?.name) || 'thẻ'} sang tab mới.`, 'success');
+      handleNavigate({ lonId: destination.lonId, nhoId: destination.nhoId, entityId: id });
+      return true;
+    },
+    [activeTabLon, activeTabNho, updateActiveNovelData, showToast, handleNavigate]
+  );
+
+  const handlePromoteEntityMember = useCallback(
+    (memberId, destination) => {
+      if (!selectedEntityId || !activeTabLon || !destination?.lonId) return false;
+      let result = { ok: false, reason: 'unknown' };
+      const ok = updateActiveNovelData((nov) => {
+        result = promoteEntityMemberToCollectionCard(
+          nov,
+          { lonId: activeTabLon, nhoId: activeTabNho || 'default' },
+          destination,
+          selectedEntityId,
+          memberId,
+          { generateId }
+        );
+        if (!result.ok) return;
+        lockFieldsTemplateIfFirstEntity(nov, destination.lonId, destination.nhoId || 'default');
+        syncAllMapHierarchyAutoBlocks(nov);
+        syncAllCollectionListCards(nov);
+      });
+      if (ok === false || !result.ok) {
+        showToast('Không thể chuyển thẻ con thành thẻ thật.', 'error');
+        return false;
+      }
+      showToast(
+        result.movedDescendantCount > 0
+          ? `Đã tạo thẻ thật và chuyển theo ${result.movedDescendantCount} thẻ con trong nhánh.`
+          : 'Đã chuyển thành thẻ thật.',
+        'success'
+      );
+      handleNavigate({
+        lonId: destination.lonId,
+        nhoId: destination.nhoId,
+        entityId: result.entityId,
+      });
+      return true;
+    },
+    [activeTabLon, activeTabNho, selectedEntityId, updateActiveNovelData, showToast, handleNavigate]
+  );
+
   const handleMoveMapEntity = useCallback(
     (nodeId, newParentId) => {
       if (!activeTabLon) return;
@@ -3902,6 +3971,8 @@ export default function App() {
     handleUpdateEntityInfo,
     handleSaveEntityMember,
     handleSaveEntityMemberFieldMeta,
+    handleTransferEntityToTab,
+    handlePromoteEntityMember,
     handleMoveEntityMember,
     handleReorderEntityMember,
     handleDeleteEntityMember,

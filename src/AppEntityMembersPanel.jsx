@@ -9,6 +9,7 @@ import React, { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef,
 import {
   ArrowDown,
   ArrowUp,
+  ArrowUpRight,
   BookOpen,
   ChevronDown,
   ChevronRight,
@@ -196,6 +197,7 @@ function MemberTreeNode({
   onOpenMember,
   onEditMember,
   onEditMemberNotes,
+  onPromoteMember,
   onDeleteMember,
   onCreateChild,
   onDetachMember,
@@ -480,6 +482,18 @@ function MemberTreeNode({
 
           <button
             type="button"
+            title="Chuyển thành thẻ thật"
+            onClick={(event) => {
+              event.stopPropagation();
+              onPromoteMember?.(member);
+            }}
+            className={`${iconBtn} text-cyan-400/80 opacity-0 hover:text-cyan-200 group-hover:opacity-100 focus-visible:opacity-100`}
+          >
+            <ArrowUpRight size={13} />
+          </button>
+
+          <button
+            type="button"
             title="Xóa"
             onClick={(event) => {
               event.stopPropagation();
@@ -526,6 +540,7 @@ function MemberTreeNode({
               onOpenMember={onOpenMember}
               onEditMember={onEditMember}
               onEditMemberNotes={onEditMemberNotes}
+              onPromoteMember={onPromoteMember}
               onDeleteMember={onDeleteMember}
               onCreateChild={onCreateChild}
               onDetachMember={onDetachMember}
@@ -550,6 +565,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
   onDeleteMember,
   onOpenMember,
   onEditMemberNotes,
+  onPromoteMember,
   onSaveMemberFieldMeta,
   onMoveMember,
   onReorderMember,
@@ -1108,6 +1124,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                       onOpenMember={onOpenMember}
                       onEditMember={startEdit}
                       onEditMemberNotes={onEditMemberNotes}
+                      onPromoteMember={onPromoteMember}
                       onDeleteMember={onDeleteMember}
                       onCreateChild={(parent) => {
                         setPanelOpen(true);
