@@ -47,6 +47,7 @@ import {
 } from './lib/theLucBanDoSync.js';
 import { buildEntityNoteTemplate, mergeEntityNoteDetailSectionFromDynamicData } from './lib/entityNoteTemplateVi.js';
 import { getEffectiveAutoSyncRole } from './lib/tabAutoSyncRole.js';
+import { reconcileRetiredWikiAliases } from './lib/retiredWikiAliases.js';
 import {
   hasBaselineArchiveAtChapterZero,
   promoteMilestoneToBaseline,
@@ -273,10 +274,16 @@ export function useAppEntityMilestoneActions({
               : [];
             const prevDyn = tabData.entities[idx].dynamicData || {};
             const mergedDyn = { ...prevDyn, ...dynamicData };
+            const wikiRetiredAliases = reconcileRetiredWikiAliases(
+              prevDyn.f_alias,
+              mergedDyn.f_alias,
+              tabData.entities[idx].wikiRetiredAliases
+            );
             delete mergedDyn[TTC_MAP_ANCHOR_STUB_KEY];
             const statusLine = getStatusLineForCurrentTab({
               ...tabData.entities[idx],
               dynamicData: mergedDyn,
+              wikiRetiredAliases,
             });
             const preservedInfo = safeString(tabData.entities[idx].info);
             const mergedInfo = copyRawToInfo

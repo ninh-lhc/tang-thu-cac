@@ -84,6 +84,7 @@ import {
   reparentMemberChildrenOnDelete,
 } from './lib/entityMemberTree.js';
 import { resolveEntityPageForSelection } from './lib/entitySelectionPage.js';
+import { reconcileRetiredWikiAliases } from './lib/retiredWikiAliases.js';
 import {
   moveEntityAcrossCollectionTabs,
   promoteEntityMemberToCollectionCard,
@@ -2028,6 +2029,11 @@ export default function App() {
             ...mergeEntityMemberUpdate(prev, savedMember, {
               replaceNotes: options?.replaceNotes === true,
             }),
+            wikiRetiredAliases: reconcileRetiredWikiAliases(
+              prev.alias,
+              savedMember.alias,
+              prev.wikiRetiredAliases
+            ),
             parentId: savedMember.parentId || prev.parentId,
             sortOrder: Number.isFinite(Number(savedMember.sortOrder))
               ? savedMember.sortOrder

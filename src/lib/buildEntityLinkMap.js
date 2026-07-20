@@ -7,6 +7,7 @@ import { normalizeAsciiText, parseStatusHierarchy, splitStatusHierarchyTokens } 
 import { buildSyntheticWikiNames } from './entityWikiDisambiguation.js';
 import { buildConfiguredSubTabIdsByLon, isConfiguredNovelDataPath } from './novelTabDataPaths.js';
 import { readEntityMembers } from './entityMembers.js';
+import { splitWikiAliasNames } from './retiredWikiAliases.js';
 
 const NAME_SPLIT_RE = /[,/|()]/;
 const REALM_TIER_SUFFIXES = [
@@ -132,6 +133,9 @@ export function buildEntityLinkMap(activeNovelData) {
         };
         addNames(ent.name, sharedMeta);
         if (ent.dynamicData) addNames(ent.dynamicData.f_alias, sharedMeta);
+        splitWikiAliasNames(ent.wikiRetiredAliases).forEach((name) => {
+          map.push({ name, ...sharedMeta, retired: true });
+        });
         if (isRealmSubTabPath(activeNovelData, lonId, nhoId)) {
           addNames(buildRealmTierAliasNames(ent?.name).join(' | '), sharedMeta);
         }
@@ -156,6 +160,9 @@ export function buildEntityLinkMap(activeNovelData) {
           };
           addNames(member?.name, memberMeta);
           addNames(member?.alias, memberMeta);
+          splitWikiAliasNames(member?.wikiRetiredAliases).forEach((name) => {
+            map.push({ name, ...memberMeta, retired: true });
+          });
         });
       });
     });

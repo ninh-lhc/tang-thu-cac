@@ -46,6 +46,7 @@ export function buildEntityNameLookup(entityMap) {
     byCanonicalFingerprint: createLookupBucket(),
     byEntityId: new Map(),
     exactNameVariantsByLower: new Map(),
+    retiredExact: new Set(),
     totalItems: 0,
     __isEntityLookup: true,
   };
@@ -57,6 +58,10 @@ export function buildEntityNameLookup(entityMap) {
     const name = String(entry.name).trim();
     if (!name) continue;
     const lower = name.toLowerCase();
+    if (entry.retired) {
+      lookup.retiredExact.add(lower);
+      continue;
+    }
     const candidate = {
       ...entry,
       name,
@@ -261,6 +266,7 @@ export function resolveEntityLookup(lookup, rawName, { selfEntityId = null } = {
   if (exact) return exact;
 
   const lower = raw.toLowerCase();
+  if (lookup.retiredExact?.has(lower)) return null;
   if ((lookup.exactNameVariantsByLower?.get(lower)?.size || 0) > 0) return null;
 
   const fp = buildEntityNameFingerprint(raw);
