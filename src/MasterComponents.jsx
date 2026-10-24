@@ -47,7 +47,9 @@ import {
   suggestWikiLinkSpotsWithAI,
   truncateForAI,
   mapGeminiErrorToUserMessage,
+  toDisplayTitleCase,
 } from './MasterUtils.jsx';
+import { findQuickCreateEquivalentInTab } from './lib/entityNotesWikiLinkUi.js';
 import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
 import { autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
 import { MILESTONE_LABELS } from './lib/milestoneLabels.js';
@@ -4345,7 +4347,7 @@ export const ModalMilestone = ({
               </div>
               <div>
                 <label className="mb-1 block text-xs font-bold uppercase tracking-widest text-slate-400">
-                  Tên mới sau nâng cấp (tuỳ chọn)
+                  Tên mới sau nâng cấp/thay đổi (tuỳ chọn)
                 </label>
                 <input
                   value={safeString(formData.nextEntityName)}
@@ -4353,8 +4355,10 @@ export const ModalMilestone = ({
                   className="w-full rounded-[22px] border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 font-serif outline-none transition-colors focus:border-amber-500"
                   placeholder="VD: Tháp Phượng Hoàng"
                 />
-                <p className="mt-1 text-[11px] font-serif text-slate-500">
-                  Nếu nhập, khi lưu mốc sẽ tự đổi tên thẻ hiện tại sang tên mới này.
+                <p className="mt-1 text-[11px] font-serif leading-relaxed text-slate-500">
+                  Nếu nhập tên mới, tên hiện tại của thẻ sẽ được đổi. Tên cũ vẫn được giữ làm tên gọi khác để
+                  các wiki-link cũ tiếp tục hoạt động. Nội dung [[tên cũ]] trong ghi chú sẽ không bị tự động thay
+                  đổi.
                 </p>
               </div>
 
@@ -4595,7 +4599,16 @@ export const ModalMilestone = ({
 };
 
 
-export const ModalQuickCreate = ({ isOpen, onClose, quickCreateName, onConfirm, activeTabs }) => {
+export const ModalQuickCreate = ({
+  isOpen,
+  onClose,
+  quickCreateName,
+  onConfirm,
+  activeTabs,
+  activeNovelData = null,
+  onOpenExisting = null,
+  normalizeQuickCreateName = null,
+}) => {
     const [selectedPath, setSelectedPath] = useState('');
     
     const collectionTabs = [];
@@ -4608,6 +4621,16 @@ export const ModalQuickCreate = ({ isOpen, onClose, quickCreateName, onConfirm, 
             })
         });
     }
+
+    const duplicateInTab = useMemo(() => {
+      if (!selectedPath || !quickCreateName) return null;
+      return findQuickCreateEquivalentInTab(
+        activeNovelData,
+        selectedPath,
+        quickCreateName,
+        (name) => toDisplayTitleCase(name),
+      );
+    }, [activeNovelData, quickCreateName, selectedPath]);
 
     const trapRefQuick = useFocusTrap(isOpen);
     if (!isOpen) return null;
@@ -4622,10 +4645,32 @@ export const ModalQuickCreate = ({ isOpen, onClose, quickCreateName, onConfirm, 
              <h2 className="text-xl font-heading font-bold text-emerald-500 mb-2">Ngưng Tụ Ý Niệm</h2>
              <p className="text-sm text-slate-400 font-serif mb-6">Khí tức <strong className="text-emerald-400">{quickCreateName}</strong> chưa được ghi chép. Bạn muốn tạo hồ sơ cho nó ở thẻ nào?</p>
              
-             <select className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 focus:border-emerald-500 outline-none mb-6 font-serif" value={selectedPath} onChange={e => setSelectedPath(e.target.value)}>
+             <select className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 focus:border-emerald-500 outline-none mb-4 font-serif" value={selectedPath} onChange={e => setSelectedPath(e.target.value)}>
                 <option value="">-- Chọn phân loại thẻ --</option>
                 {collectionTabs.map(t => <option key={t.path} value={t.path}>{t.label}</option>)}
              </select>
+
+             {duplicateInTab && (
+               <div className="mb-4 rounded-xl border border-amber-500/35 bg-amber-950/25 px-4 py-3 text-sm text-amber-100/95 font-serif">
+                 <p className="mb-2">
+                   Thẻ tương đương <strong className="text-amber-200">{duplicateInTab.entityName}</strong> đã có trong phân loại này.
+                 </p>
+                 <button
+                   type="button"
+                   className="tt-kbd-focus rounded-lg border border-amber-500/45 bg-amber-900/35 px-3 py-1.5 text-xs font-bold text-amber-100 hover:bg-amber-800/45"
+                   onClick={() => {
+                     onOpenExisting?.({
+                       lonId: duplicateInTab.lonId,
+                       nhoId: duplicateInTab.nhoId,
+                       entityId: duplicateInTab.entityId,
+                     });
+                     onClose();
+                   }}
+                 >
+                   Mở thẻ có sẵn
+                 </button>
+               </div>
+             )}
 
              <div className="flex justify-end gap-3">
                 <button onClick={onClose} className="px-5 py-2.5 text-slate-400 font-serif hover:text-slate-200">Hủy</button>

@@ -60,6 +60,63 @@ const APP_GLOBAL_CSS = `
           outline: 2px solid rgba(217, 119, 6, 0.55);
           outline-offset: 2px;
         }
+
+        /* Ghi chép chi tiết — Markdown table (preview only) */
+        .theme-wrapper .entity-notes-md-table-wrap {
+          -webkit-overflow-scrolling: touch;
+        }
+        .theme-wrapper .entity-notes-md-table {
+          border-collapse: separate;
+          border-spacing: 0;
+        }
+        .theme-wrapper .entity-notes-md-table-th {
+          position: sticky;
+          top: 0;
+          z-index: 2;
+          vertical-align: top;
+          border: 1px solid rgba(51, 65, 85, 0.55);
+          padding: 0.625rem 0.75rem;
+          font-weight: 600;
+          color: rgba(237, 233, 254, 0.95);
+          background: rgba(30, 41, 59, 0.92);
+          box-shadow: 0 1px 0 rgba(148, 163, 184, 0.12);
+        }
+        .theme-wrapper .entity-notes-md-table-td {
+          vertical-align: top;
+          border: 1px solid rgba(51, 65, 85, 0.45);
+          padding: 0.5rem 0.75rem;
+          color: rgba(226, 232, 240, 0.92);
+        }
+        .theme-wrapper .entity-notes-md-table-cell-inner {
+          overflow-wrap: break-word;
+          word-wrap: break-word;
+          hyphens: auto;
+          min-width: 4.5rem;
+          max-width: 22rem;
+        }
+        .theme-wrapper .entity-notes-md-table[data-wide="true"] .entity-notes-md-table-cell-inner {
+          max-width: none;
+          min-width: 3.25rem;
+        }
+        .theme-wrapper .entity-notes-md-table .tt-kbd-focus:focus-visible {
+          outline-color: rgba(167, 139, 250, 0.75);
+        }
+        .theme-wrapper .entity-notes-md-table-row:nth-child(even) {
+          background: rgba(15, 23, 42, 0.35);
+        }
+        .theme-wrapper .entity-notes-md-table-row:hover {
+          background: rgba(51, 65, 85, 0.32);
+        }
+        .theme-wrapper .entity-notes-md-table [data-entity-wiki-link] {
+          max-width: 100%;
+        }
+        .theme-wrapper .wiki-link--missing:hover {
+          filter: brightness(1.08);
+        }
+        .theme-wrapper .wiki-link--missing:focus-visible {
+          outline: 2px solid rgba(251, 191, 36, 0.65);
+          outline-offset: 2px;
+        }
         .font-serif { font-family: 'Lora', 'Noto Serif', Georgia, 'Times New Roman', serif; }
         .font-heading { font-family: 'Playfair Display', 'Noto Serif', Georgia, serif; }
         .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }

@@ -6,6 +6,12 @@ import {
   EntityNotesHighlightedEditor,
   ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS,
 } from './EntityNotesHighlightedEditor.jsx';
+import { EntityNotesWikiAutocomplete } from './EntityNotesWikiAutocomplete.jsx';
+import {
+  applyWikiAutocompleteSelection,
+  buildWikiAutocompleteSuggestions,
+  findOpenWikiBracketSession,
+} from './lib/entityNotesWikiAutocomplete.js';
 import { EntityNotesAiToolsMenu } from './EntityNotesAiToolsMenu.jsx';
 import { EntityNotesFindReplacePanel } from './EntityNotesFindReplacePanel.jsx';
 import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
@@ -110,7 +116,10 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   // không re-render và ghi đè value cũ giữa lúc compose ⇒ tránh rớt/lặp ký tự.
   const isComposingRef = useRef(false);
   const [toolbarState, setToolbarState] = useState(() => getEntityNotesToolbarState(s0, 0, 0));
-  const [, setEditorCaret] = useState(0);
+  const [editorCaret, setEditorCaret] = useState(0);
+  const [wikiAcSelectedIndex, setWikiAcSelectedIndex] = useState(0);
+  const [wikiAcSuppressedAt, setWikiAcSuppressedAt] = useState(null);
+  const editorSurfaceRef = useRef(null);
   const templateProfile = useMemo(
     () =>
       resolveEntityNotesTemplateProfile({
@@ -120,6 +129,32 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
       }),
     [activeTabLon, entityNotesSubject, entityTemplateHint]
   );
+
+  const wikiAcSession = useMemo(
+    () => findOpenWikiBracketSession(notesEdit.text, editorCaret),
+    [editorCaret, notesEdit.text]
+  );
+  const wikiAcItems = useMemo(() => {
+    if (!wikiAcSession) return [];
+    return buildWikiAutocompleteSuggestions(entityMap, wikiAcSession.query, selfEntityId);
+  }, [entityMap, selfEntityId, wikiAcSession]);
+  const wikiAcOpen =
+    Boolean(wikiAcSession) &&
+    wikiAcItems.length > 0 &&
+    wikiAcSuppressedAt !== wikiAcSession?.queryEnd;
+
+  useEffect(() => {
+    setWikiAcSelectedIndex(0);
+    if (wikiAcSession?.queryEnd !== wikiAcSuppressedAt) {
+      setWikiAcSuppressedAt(null);
+    }
+  }, [wikiAcSession?.query, wikiAcSession?.queryEnd, wikiAcSuppressedAt]);
+
+  const wikiAcPopupTop = useMemo(() => {
+    if (!wikiAcSession) return 0;
+    const lineNo = notesEdit.text.slice(0, wikiAcSession.queryEnd).split('\n').length;
+    return Math.min(Math.max(0, (lineNo - 1) * notesTypo.sizePx * 1.85), 220);
+  }, [notesEdit.text, notesTypo.sizePx, wikiAcSession]);
 
   const effectiveWikiLinkOptOuts = useMemo(
     () =>
@@ -438,6 +473,19 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     },
     [syncDraftAndPreview]
   );
+  const applyWikiAutocompletePick = useCallback(
+    (item) => {
+      if (!wikiAcSession || !item) return;
+      if (item.kind === 'create') {
+        onNavigate?.({ type: 'QUICK_CREATE', name: item.name });
+        return;
+      }
+      const out = applyWikiAutocompleteSelection(notesEdit.text, wikiAcSession, item.name);
+      if (!out) return;
+      applyEditorMutation({ newText: out.newText, selStart: out.selEnd, selEnd: out.selEnd });
+    },
+    [applyEditorMutation, notesEdit.text, onNavigate, wikiAcSession]
+  );
   const handleEditorPaste = useCallback(
     (event) => {
       const clipboardText = event.clipboardData?.getData?.('text/plain') || '';
@@ -462,6 +510,29 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     (event) => {
       if (event.nativeEvent.isComposing || event.key === 'Process') return;
       const textarea = event.currentTarget;
+      if (wikiAcOpen) {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          setWikiAcSelectedIndex((i) => Math.min(wikiAcItems.length - 1, i + 1));
+          return;
+        }
+        if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          setWikiAcSelectedIndex((i) => Math.max(0, i - 1));
+          return;
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          if (wikiAcSession) setWikiAcSuppressedAt(wikiAcSession.queryEnd);
+          return;
+        }
+        if (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey)) {
+          event.preventDefault();
+          const picked = wikiAcItems[wikiAcSelectedIndex] || wikiAcItems[0];
+          if (picked) applyWikiAutocompletePick(picked);
+          return;
+        }
+      }
       if (event.key === 'Tab') {
         const nextState = resolveEntityNotesTabIndent(
           textarea.value,
@@ -501,7 +572,14 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         }
       }
     },
-    [applyEditorMutation]
+    [
+      applyEditorMutation,
+      applyWikiAutocompletePick,
+      wikiAcItems,
+      wikiAcOpen,
+      wikiAcSelectedIndex,
+      wikiAcSession,
+    ]
   );
 
   return (
@@ -706,7 +784,18 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         <div
           className={`flex min-h-0 gap-4 overflow-hidden ${ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS} ${isSplitPreview ? 'flex-row' : 'flex-col'}`}
         >
-          <EntityNotesHighlightedEditor
+          <div
+            ref={editorSurfaceRef}
+            className={`relative min-h-0 ${isSplitPreview ? 'h-full w-1/2 flex-shrink-0' : 'h-full flex-1'}`}
+          >
+            <EntityNotesWikiAutocomplete
+              open={wikiAcOpen}
+              items={wikiAcItems}
+              selectedIndex={wikiAcSelectedIndex}
+              style={{ top: wikiAcPopupTop + 8, left: 8 }}
+              onPick={applyWikiAutocompletePick}
+            />
+            <EntityNotesHighlightedEditor
             ref={textareaRef}
             id="entity-info-editor"
             value={notesEdit.text}
@@ -717,7 +806,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
                 getEntityNotesToolbarState(e.target.value, e.target.selectionStart, e.target.selectionEnd)
               );
             }}
-            className={isSplitPreview ? 'h-full min-h-0 w-1/2 flex-shrink-0' : 'h-full min-h-0 flex-1'}
+            className="h-full min-h-0 w-full"
             style={{
               fontFamily: getEntityNotesFontStack(notesTypo.fontKey),
               fontSize: `${notesTypo.sizePx}px`,
@@ -734,6 +823,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             onCompositionStart={handleCompositionStart}
             onCompositionEnd={handleCompositionEnd}
           />
+          </div>
           {isSplitPreview && (
             <MarkdownPreviewPane
               text={debouncedMarkdownPreview}

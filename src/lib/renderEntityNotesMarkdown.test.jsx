@@ -1,12 +1,13 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { safeString } from '../MasterUtils.jsx';
 import {
   buildEntityNotesPreviewModel,
   computeEntityNotesHeadingSectionCounts,
   renderEntityNotesMarkdown,
 } from './renderEntityNotesMarkdown.jsx';
+import { buildEntityLinkMap } from './buildEntityLinkMap.js';
 
 describe('renderEntityNotesMarkdown', () => {
   it('renders long-form analysis blocks with stronger structure', () => {
@@ -248,6 +249,39 @@ describe('renderEntityNotesMarkdown', () => {
     });
   });
 
+  it('keeps alias wiki label in preview while resolving to canonical entity', () => {
+    const novel = {
+      tabsConfig: [{ id: 'lon', label: 'L', subTabs: [{ id: 'sub', label: 'S' }] }],
+      data: {
+        lon: {
+          sub: {
+            entities: [
+              {
+                id: 'entity-001',
+                name: 'Tiểu Lý Phi Đao',
+                dynamicData: { f_alias: 'A Phi, Phi Đao' },
+              },
+            ],
+          },
+        },
+      },
+    };
+    const entityMap = buildEntityLinkMap(novel);
+    const onNavigate = vi.fn();
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown('Nhan vat [[A Phi]] va [[Tiểu Lý Phi Đao]].', null, entityMap, null, onNavigate, 'entity-001')}
+      </div>
+    );
+
+    expect(container.textContent).toContain('A Phi');
+    expect(container.textContent).not.toMatch(/Tiểu Lý Phi Đao.*A Phi/);
+    const selfLinks = container.querySelectorAll('[data-entity-wiki-link="self"]');
+    expect(selfLinks.length).toBe(2);
+    fireEvent.click(selfLinks[0]);
+    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ entityId: 'entity-001' }));
+  });
+
   it('distinguishes self vs external wiki links on the same card', () => {
     const { container } = render(
       <div>
@@ -425,5 +459,163 @@ describe('renderEntityNotesMarkdown', () => {
     expect(container.textContent).not.toContain('[/color]');
     expect(container.textContent).toContain('Bất Hủ Tiên Thần');
     expect(container.textContent).toContain('Cấp 200 đến 499');
+  });
+
+  it('renders GFM markdown tables with alignment and wiki links', () => {
+    const md = [
+      '| Nhân vật | Cảnh giới |',
+      '|:---|:---:|',
+      '| **[[Tô Thần]]** | [[Luyện Khí]] |',
+      '',
+      '| Trái | Giữa | Phải |',
+      '|---|:---:|---:|',
+      '| A | B | C |',
+    ].join('\n');
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(
+          md,
+          null,
+          [
+            { id: 'e1', name: 'Tô Thần' },
+            { id: 'e2', name: 'Luyện Khí' },
+          ],
+          null,
+          vi.fn(),
+        )}
+      </div>
+    );
+
+    const tables = container.querySelectorAll('.entity-notes-md-table');
+    expect(tables.length).toBe(2);
+    expect(container.querySelectorAll('th').length).toBeGreaterThanOrEqual(5);
+    expect(container.querySelectorAll('[data-entity-wiki-link]').length).toBeGreaterThanOrEqual(2);
+    expect(container.textContent).toContain('Tô Thần');
+    expect(container.textContent).toContain('Luyện Khí');
+  });
+
+  it('renders escaped pipe inside table cell', () => {
+    const md = ['| Nội dung |', '|---|', '| A \\| B |'].join('\n');
+    const { container } = render(
+      <div>{renderEntityNotesMarkdown(md, null, [], null, vi.fn())}</div>
+    );
+    expect(container.querySelector('.entity-notes-md-table')).not.toBeNull();
+    expect(container.textContent).toContain('A | B');
+  });
+
+  it('keeps markdown table lines inside fenced code as plain code', () => {
+    const md = ['```', '| A | B |', '|---|---|', '```'].join('\n');
+    const { container } = render(
+      <div>{renderEntityNotesMarkdown(md, null, [], null, vi.fn())}</div>
+    );
+    expect(container.querySelector('.entity-notes-md-table')).toBeNull();
+    expect(container.querySelector('pre code')?.textContent).toContain('| A | B |');
+  });
+
+  it('pads short table rows to header column count', () => {
+    const md = ['| A | B | C |', '|---|---|---|', '| 1 | 2 |'].join('\n');
+    const { container } = render(
+      <div>{renderEntityNotesMarkdown(md, null, [], null, vi.fn())}</div>
+    );
+    const cells = container.querySelectorAll('tbody tr:first-child td');
+    expect(cells.length).toBe(3);
+  });
+
+  it('shows safe pending wiki chip for unknown entity in table', () => {
+    const md = ['| X |', '|---|', '| [[Khong Ton Tai]] |'].join('\n');
+    const { container } = render(
+      <div>{renderEntityNotesMarkdown(md, null, [], null, vi.fn())}</div>
+    );
+    expect(container.querySelector('[data-entity-wiki-link="pending"]')).not.toBeNull();
+  });
+
+  it('renders Obsidian-style info callout with icon and nested table', () => {
+    const md = [
+      '> [!info] Tiêu đề bảng',
+      '> | Cột | Giá trị |',
+      '> |---|---|',
+      '> | [[A]] | 100 |',
+    ].join('\n');
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(md, null, [{ id: '1', name: 'A' }], null, vi.fn())}
+      </div>
+    );
+    expect(container.textContent).toContain('Tiêu đề bảng');
+    expect(container.querySelector('section .entity-notes-md-table')).not.toBeNull();
+    expect(container.querySelector('section svg')).not.toBeNull();
+  });
+
+  it('keeps plain blockquote when line is not a callout marker', () => {
+    const md = '> Tong ket ngan gon';
+    const { container } = render(
+      <div>{renderEntityNotesMarkdown(md, null, [], null, vi.fn())}</div>
+    );
+    expect(container.querySelector('blockquote')).not.toBeNull();
+    expect(container.querySelector('section')).toBeNull();
+  });
+
+  it('marks wide tables for horizontal scroll layout', () => {
+    const header = Array.from({ length: 16 }, (_, i) => `C${i + 1}`).join(' | ');
+    const sep = Array.from({ length: 16 }, () => '---').join('|');
+    const row = Array.from({ length: 16 }, (_, i) => String(i)).join(' | ');
+    const md = [`| ${header} |`, `|${sep}|`, `| ${row} |`].join('\n');
+    const { container } = render(
+      <div>{renderEntityNotesMarkdown(md, null, [], null, vi.fn())}</div>
+    );
+    expect(container.querySelector('.entity-notes-md-table[data-wide="true"]')).not.toBeNull();
+  });
+
+  it('pending wiki-link uses accessible label and opens QUICK_CREATE on click', () => {
+    const onNavigate = vi.fn();
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown('Xem [[Triệu Hoán Không Gian]]', null, [], null, onNavigate)}
+      </div>
+    );
+    const pending = container.querySelector('[data-entity-wiki-link="pending"]');
+    expect(pending).not.toBeNull();
+    expect(pending?.getAttribute('aria-label')).toBe('Tạo ghi chú cho Triệu Hoán Không Gian');
+    expect(pending?.className).toContain('wiki-link--missing');
+    expect(pending?.textContent).toContain('Triệu Hoán Không Gian');
+    expect(pending?.textContent).not.toMatch(/^\+\s/);
+    fireEvent.click(pending);
+    expect(onNavigate).toHaveBeenCalledWith({
+      type: 'QUICK_CREATE',
+      name: 'Triệu Hoán Không Gian',
+    });
+  });
+
+  it('renders pending and existing wiki links in the same table row', () => {
+    const md = [
+      '| Entity chưa tồn tại | Entity đã tồn tại |',
+      '|---|---|',
+      '| [[Entity Mới]] | [[Entity Đã Có]] |',
+    ].join('\n');
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(
+          md,
+          null,
+          [{ id: 'e2', name: 'Entity Đã Có' }],
+          null,
+          vi.fn(),
+        )}
+      </div>
+    );
+    expect(container.querySelector('[data-entity-wiki-link="pending"]')).not.toBeNull();
+    expect(container.querySelector('[data-entity-wiki-link="external"]')).not.toBeNull();
+  });
+
+  it('wiki chips in table are keyboard-focusable', () => {
+    const md = ['| X |', '|---|---|', '| [[Ton Canh]] |'].join('\n');
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(md, null, [{ id: 'e', name: 'Ton Canh' }], null, vi.fn())}
+      </div>
+    );
+    const chip = container.querySelector('[data-entity-wiki-link="external"]');
+    expect(chip?.getAttribute('tabindex')).toBe('0');
+    expect(chip?.className).toContain('tt-kbd-focus');
   });
 });

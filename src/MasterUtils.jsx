@@ -11,8 +11,17 @@ import {
 import { FALLBACK_IMG } from './MasterEngines.js';
 import { splitTextByWikiMatcher } from './lib/wikiLinkMatcher.js';
 import { buildEntityNameLookup, resolveEntityLookup } from './lib/entityWikiLookup.js';
-import { buildWikiLinkOptOutFromUnwrap, resolveWikiUnwrapRange } from './lib/wikiLinkOptOut.js';
+import { buildWikiLinkOptOutFromUnwrap } from './lib/wikiLinkOptOut.js';
 import { isCaretInsideWikiLink } from './lib/entityNotesWikiCaret.js';
+import {
+  buildPendingWikiLinkAriaLabel,
+  buildPendingWikiLinkTitle,
+} from './lib/entityNotesWikiLinkUi.js';
+import {
+  toggleWikiLinkSelection,
+  unwrapWikiLinkSelection,
+  wrapSelectionAsWikiLink,
+} from './lib/entityNotesWikiEdit.js';
 
 export const generateId = (prefix) => `${prefix}-${Math.random().toString(36).substring(2, 11)}`;
 
@@ -771,7 +780,19 @@ export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className, styl
 });
 
 const WIKI_CHIP_SHELL =
-  'transition-colors cursor-pointer inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md';
+  'tt-kbd-focus transition-colors cursor-pointer inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md max-w-full';
+
+const wikiChipKeyboardProps = (onActivate) => ({
+  role: 'button',
+  tabIndex: 0,
+  onKeyDown: (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      onActivate(e);
+    }
+  },
+});
 
 /** Chip wiki trong preview ghi chép — chữ + icon in đậm, màu riêng (xanh cùng thẻ / tím khác thẻ). */
 function getEntityNotesWikiLinkChip(isSelfLink, pending = false) {
@@ -801,6 +822,43 @@ function getEntityNotesWikiLinkChip(isSelfLink, pending = false) {
     title: 'Mở thẻ / tab khác (tím)',
   };
 }
+
+const renderPendingWikiLinkChip = ({ key, innerText, onNavigate, inlineOptions, notesPreview }) => {
+  const pendingChip = notesPreview
+    ? getEntityNotesWikiLinkChip(false, true)
+    : {
+        className:
+          'tt-kbd-focus text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded-md hover:text-emerald-400 hover:bg-emerald-900/30 border border-dashed border-slate-600 hover:border-emerald-500/50 transition-all cursor-pointer inline-flex items-center gap-1 max-w-full',
+        textClass: 'font-bold text-amber-200',
+        iconClass: 'text-amber-300',
+        'data-entity-wiki-link': 'pending',
+      };
+  const textClass = pendingChip.textClass || 'font-bold text-amber-200';
+  const iconClass = pendingChip.iconClass || textClass;
+  const wrap = !!inlineOptions?.wikiLinkWrap;
+  const activate = () => onNavigate({ type: 'QUICK_CREATE', name: innerText });
+  const aria = buildPendingWikiLinkAriaLabel(innerText);
+  const tip = buildPendingWikiLinkTitle(innerText);
+  return (
+    <span
+      key={key}
+      {...wikiChipKeyboardProps(activate)}
+      onClick={(e) => {
+        e.stopPropagation();
+        activate();
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      className={`${pendingChip.className}${notesPreview ? ' wiki-link--missing' : ''}`}
+      data-entity-wiki-link={pendingChip['data-entity-wiki-link'] || 'pending'}
+      data-wiki-link-name={innerText}
+      aria-label={aria}
+      title={notesPreview ? tip : pendingChip.title || tip}
+    >
+      <Plus size={12} className={`shrink-0 ${iconClass}`} aria-hidden="true" />
+      <span className={`${textClass} ${wrap ? 'min-w-0 break-words' : 'truncate'}`}>{innerText}</span>
+    </span>
+  );
+};
 
 const getWikiLinkClassName = (isSelfLink, variant = 'inline') => {
   if (variant === 'entityNotes') {
@@ -848,6 +906,7 @@ export const processPlainTextWithLinks = (
               return (
                 <span
                   key={i}
+                  {...wikiChipKeyboardProps(() => onNavigate(match.dest))}
                   onClick={(e) => {
                     e.stopPropagation();
                     onNavigate(match.dest);
@@ -857,7 +916,7 @@ export const processPlainTextWithLinks = (
                   title={chip.title || `Mở hồ sơ: ${rawText}`}
                 >
                   <Link2 size={12} className={`shrink-0 ${iconClass}`} />
-                  <span className={textClass || 'font-bold'}>{rawText}</span>
+                  <span className={`${textClass || 'font-bold'} truncate`}>{rawText}</span>
                 </span>
               );
             }
@@ -1175,6 +1234,7 @@ export const processInline = (
           return (
             <span
               key={i}
+              {...wikiChipKeyboardProps(() => onNavigate(match.dest))}
               onClick={(e) => {
                 e.stopPropagation();
                 onNavigate(match.dest);
@@ -1184,34 +1244,17 @@ export const processInline = (
               title={chip.title || `Mở hồ sơ: ${innerText}`}
             >
               <Link2 size={12} className={`shrink-0 ${iconClass}`} />
-              <span className={textClass || 'font-bold'}>{innerText}</span>
+              <span className={`${textClass || 'font-bold'} truncate`}>{innerText}</span>
             </span>
           );
         }
-        const pendingChip = inlineOptions?.entityNotesPreview
-          ? getEntityNotesWikiLinkChip(false, true)
-          : {
-              className:
-                'text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded-md hover:text-emerald-400 hover:bg-emerald-900/30 border border-dashed border-slate-600 hover:border-emerald-500/50 transition-all cursor-pointer inline-flex items-center gap-1',
-              title: 'Thực thể chưa có hồ sơ. Nhấp để ngưng tụ (tạo mới)!',
-            };
-        const pendingTextClass = pendingChip.textClass || 'font-bold text-amber-200';
-        const pendingIconClass = pendingChip.iconClass || pendingTextClass;
-        return (
-          <span
-            key={i}
-            onClick={(e) => {
-              e.stopPropagation();
-              onNavigate({ type: 'QUICK_CREATE', name: innerText });
-            }}
-            className={pendingChip.className}
-            data-entity-wiki-link={pendingChip['data-entity-wiki-link']}
-            title={pendingChip.title}
-          >
-            <Plus size={12} className={`shrink-0 ${pendingIconClass}`} />
-            <span className={pendingTextClass}>{innerText}</span>
-          </span>
-        );
+        return renderPendingWikiLinkChip({
+          key: i,
+          innerText,
+          onNavigate,
+          inlineOptions,
+          notesPreview: !!inlineOptions?.entityNotesPreview,
+        });
       }
       const colorMatch = part.match(INLINE_COLOR_RE);
       if (colorMatch) {
@@ -1668,111 +1711,33 @@ export const resolveEntityNotesTabIndent = (text, selStart, selEnd, { outdent = 
 
 /** Bọc wiki [[...]]: có bôi đen → bọc vùng chọn; không bôi đen → bọc đoạn đã gõ trên dòng (trước con trỏ). */
 export const applyWikiLinkWrap = (text, selStart, selEnd) => {
-  if (selStart < selEnd) {
-    const inner = text.slice(selStart, selEnd);
-    const nv = text.slice(0, selStart) + '[[' + inner + ']]' + text.slice(selEnd);
-    return { newText: nv, selStart: selStart + 2, selEnd: selStart + 2 + inner.length };
-  }
-  const pos = selStart;
-  const lineStart = text.lastIndexOf('\n', Math.max(0, pos - 1)) + 1;
-  let l = lineStart;
-  let r = pos;
-  while (r > l && /\s/.test(text[r - 1])) r--;
-  while (l < r && /\s/.test(text[l])) l++;
-  if (r <= l) {
-    const nv = text.slice(0, pos) + '[[]]' + text.slice(pos);
-    return { newText: nv, selStart: pos + 2, selEnd: pos + 2 };
-  }
-  let wrapL = l;
-  let wrapR = r;
-  if (r - l > WIKI_WRAP_MAX_PREFIX) {
-    let l2 = r;
-    while (l2 > lineStart && !/\s/.test(text[l2 - 1])) l2--;
-    while (l2 < r && /\s/.test(text[l2])) l2++;
-    if (l2 < r) {
-      wrapL = l2;
-      wrapR = r;
-    }
-  }
-  const inner = text.slice(wrapL, wrapR);
-  const nv = text.slice(0, wrapL) + '[[' + inner + ']]' + text.slice(wrapR);
-  const caret = wrapL + 2 + inner.length + 2;
-  return { newText: nv, selStart: caret, selEnd: caret };
+  const result = wrapSelectionAsWikiLink(text, selStart, selEnd, { maxPrefix: WIKI_WRAP_MAX_PREFIX });
+  return {
+    newText: result.newText,
+    selStart: result.selStart,
+    selEnd: result.selEnd,
+  };
 };
 
 /** Gỡ wiki [[...]]: ưu tiên vùng chọn; nếu không chọn thì gỡ cặp [[ ]] bao quanh con trỏ. */
 export const applyWikiLinkUnwrap = (text, selStart, selEnd) => {
-  if (selStart < selEnd) {
-    const picked = text.slice(selStart, selEnd);
-    if (picked.startsWith('[[') && picked.endsWith(']]') && picked.length >= 4) {
-      const inner = picked.slice(2, -2);
-      const nv = text.slice(0, selStart) + inner + text.slice(selEnd);
-      return { newText: nv, selStart, selEnd: selStart + inner.length };
-    }
-    const cleaned = picked.replace(/\[\[/g, '').replace(/\]\]/g, '');
-    if (cleaned === picked) return { newText: text, selStart, selEnd };
-    const nv = text.slice(0, selStart) + cleaned + text.slice(selEnd);
-    return { newText: nv, selStart, selEnd: selStart + cleaned.length };
-  }
-
-  const pos = selStart;
-  const left = text.lastIndexOf('[[', pos);
-  const right = text.indexOf(']]', pos);
-  if (left === -1 || right === -1 || left >= right) return { newText: text, selStart, selEnd };
-  if (left + 2 > pos || right < pos) return { newText: text, selStart, selEnd };
-
-  const inner = text.slice(left + 2, right);
-  const nv = text.slice(0, left) + inner + text.slice(right + 2);
-  const caret = Math.max(left, pos - 2);
-  return { newText: nv, selStart: caret, selEnd: caret };
+  const result = unwrapWikiLinkSelection(text, selStart, selEnd);
+  return {
+    newText: result.newText,
+    selStart: result.selStart,
+    selEnd: result.selEnd,
+  };
 };
 
 /** Toggle [[wiki]] for a selection/caret, including the caret position produced by a first wrap. */
 export const applyWikiLinkToggle = (text, selStart, selEnd) => {
   const start = Math.max(0, Number(selStart) || 0);
   const end = Math.max(start, Number(selEnd) || 0);
-  const selectedInsideWiki = start < end
-    && text.slice(Math.max(0, start - 2), start) === '[['
-    && text.slice(end, end + 2) === ']]';
-
-  if (selectedInsideWiki) {
-    const inner = text.slice(start, end);
-    return {
-      newText: text.slice(0, start - 2) + inner + text.slice(end + 2),
-      selStart: start - 2,
-      selEnd: end - 2,
-      mode: 'unwrap',
-      unwrapStart: start - 2,
-      unwrapEnd: end + 2,
-    };
+  let result = toggleWikiLinkSelection(text, start, end);
+  if (!result.changed && start === end && start >= 2 && text.slice(start - 2, start) === ']]') {
+    result = toggleWikiLinkSelection(text, start - 2, start - 2);
   }
-
-  const unwrapAt = (pos) => {
-    const range = resolveWikiUnwrapRange(text, pos, pos);
-    if (!range) return null;
-    const { newText, selStart: nextStart, selEnd: nextEnd } = applyWikiLinkUnwrap(text, pos, pos);
-    return {
-      newText,
-      selStart: nextStart,
-      selEnd: nextEnd,
-      mode: 'unwrap',
-      unwrapStart: range.wikiStart,
-      unwrapEnd: range.wikiEnd,
-    };
-  };
-
-  if (start === end) {
-    const direct = unwrapAt(start);
-    if (direct) return direct;
-    // applyWikiLinkWrap leaves the caret immediately after `]]` when no text is selected.
-    if (start >= 2 && text.slice(start - 2, start) === ']]') {
-      const justWrapped = unwrapAt(start - 2);
-      if (justWrapped) return justWrapped;
-    }
-  }
-
-  const wrapped = applyWikiLinkWrap(text, start, end);
-  return { ...wrapped, mode: 'wrap' };
+  return result;
 };
 
 export const handleToolbarClick = (before, after = '', editorId, onAfterApply) => {

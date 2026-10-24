@@ -29,4 +29,30 @@ describe('cleanupEntityNotesText', () => {
   it('keeps quote/callout body after the > prefix', () => {
     expect(cleanupEntityNotesText('> [!NOTE] Ghi chu quan trong')).toBe('> [!NOTE] Ghi chu quan trong');
   });
+
+  it('preserves markdown table blocks when cleaning pasted LLM text', () => {
+    const input = [
+      '| A | B |',
+      '|---|---|',
+      '| [[X]] | [[Y]] |',
+      '',
+      'Doan van tiep theo bi',
+      'ngat dong.',
+    ].join('\n');
+
+    expect(cleanupEntityNotesText(input)).toBe(
+      [
+        '| A | B |',
+        '|---|---|',
+        '| [[X]] | [[Y]] |',
+        '',
+        'Doan van tiep theo bi ngat dong.',
+      ].join('\n')
+    );
+  });
+
+  it('preserves table syntax inside fenced code during cleanup', () => {
+    const input = ['```', '| A | B |', '|---|---|', '```'].join('\n');
+    expect(cleanupEntityNotesText(input)).toBe(input);
+  });
 });

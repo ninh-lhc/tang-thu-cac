@@ -69,6 +69,7 @@ import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
 import { buildEntityNotesTabFieldBuckets } from './lib/entityNotesTabFilter.js';
 import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
+import { buildEntityNameLookup, resolveEntityLookup } from './lib/entityWikiLookup.js';
 import {
   findEntityMemberInNovel,
   mergeEntityMemberUpdate,
@@ -1650,6 +1651,17 @@ export default function App() {
   );
   const handleNavigate = useCallback(
     (dest) => {
+      if (dest?.type === 'QUICK_CREATE') {
+        const rawName = safeString(dest.name).trim();
+        if (rawName && entityMap?.length) {
+          const lookup = buildEntityNameLookup(entityMap);
+          const existing = resolveEntityLookup(lookup, rawName, { selfEntityId: selectedEntityId });
+          if (existing?.dest?.entityId) {
+            navigateToEntity(existing.dest);
+            return;
+          }
+        }
+      }
       const memberId = safeString(dest?.memberId || dest?.childId).trim();
       if (memberId) {
         setEntityMemberQuickViewDest({ ...dest, memberId });
@@ -1658,7 +1670,7 @@ export default function App() {
       setEntityMemberQuickViewDest(null);
       navigateToEntity(dest);
     },
-    [navigateToEntity]
+    [entityMap, navigateToEntity, selectedEntityId]
   );
   const openEntityMemberParent = useCallback(() => {
     if (!entityMemberQuickView) return;

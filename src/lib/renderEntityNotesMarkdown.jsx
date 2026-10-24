@@ -5,10 +5,22 @@
 // ==========================================
 
 import React from 'react';
-import { ScrollText } from 'lucide-react';
+import {
+  AlertTriangle,
+  CircleAlert,
+  Info,
+  Lightbulb,
+  ScrollText,
+  Sparkles,
+} from 'lucide-react';
 import { safeString, processInline } from '../MasterUtils.jsx';
 import { buildEntityNameLookup } from './entityWikiLookup.js';
 import { resolveEntityNotesCallout } from './entityNotesSemantics.js';
+import {
+  isMarkdownTableRowLine,
+  normalizeTableColumnCount,
+  tryParseMarkdownTableBlock,
+} from './markdownTable.js';
 
 const DIVIDER_RE = /^(?:-{3,}|\*{3,}|_{3,})$/;
 const SECTION_HEADING_RE = /^\*\*(\d+)\.\s(.+?)\*\*$/;
@@ -31,6 +43,27 @@ const ENTITY_NOTES_TYPO = {
   listMarker: 'text-slate-500',
   listRail: 'border-slate-700/40',
   body: 'text-slate-200/95',
+};
+
+const CALLOUT_ICON_BY_KEY = {
+  info: Info,
+  tip: Lightbulb,
+  important: AlertTriangle,
+  caution: AlertTriangle,
+  error: CircleAlert,
+  note: ScrollText,
+  key: Sparkles,
+};
+
+const resolveCalloutIcon = (callout, roleKey) => {
+  const iconKey = safeString(callout?.icon).toLowerCase();
+  if (iconKey && CALLOUT_ICON_BY_KEY[iconKey]) return CALLOUT_ICON_BY_KEY[iconKey];
+  const role = String(roleKey || callout?.role || '').toUpperCase();
+  if (role === 'WARNING' || role === 'IMPORTANT' || role === 'CAUTION') return AlertTriangle;
+  if (role === 'INFO' || role === 'DEFINITION') return Info;
+  if (role === 'KEY' || role === 'TIP') return Lightbulb;
+  if (role === 'ERROR') return CircleAlert;
+  return ScrollText;
 };
 
 const CALLOUT_STYLES = {
@@ -152,7 +185,9 @@ const isBlockBoundary = (line) => {
     SECTION_HEADING_RE.test(trimmed) ||
     BULLET_RE.test(normalized) ||
     ORDERED_RE.test(normalized) ||
-    IMAGE_LINE_RE.test(trimmed)
+    IMAGE_LINE_RE.test(trimmed) ||
+    isMarkdownTableRowLine(normalized) ||
+    trimmed.startsWith('```')
   );
 };
 
@@ -229,6 +264,82 @@ const renderInlineBodyWithLeadLabel = (body, context) => {
   }
 
   return processInline(normalized, dirHandle, lookup, linkRegex, onNavigate, selfEntityId, listOpts);
+};
+
+const TABLE_ALIGN_CLASS = {
+  left: 'text-left',
+  center: 'text-center',
+  right: 'text-right',
+};
+
+const renderEntityNotesTableBlock = (tableBlock, context, baseKey, startIndex, buildJumpProps, mergeClassName) => {
+  const { dirHandle, lookup, linkRegex, onNavigate, selfEntityId } = context;
+  const normalized = normalizeTableColumnCount(tableBlock.header, tableBlock.aligns, tableBlock.rows);
+  const lineNo = startIndex + 1;
+  const jumpProps = buildJumpProps(lineNo);
+
+  const renderCell = (cellText) =>
+    processInline(
+      safeString(cellText),
+      dirHandle,
+      lookup,
+      linkRegex,
+      onNavigate,
+      selfEntityId,
+      inlineOptsForContext(context, { wikiLinkWrap: true }),
+    );
+
+  const tableMinWidthRem = Math.max(normalized.colCount * 6.5, 12);
+
+  return (
+    <div
+      key={`${baseKey}-table-${startIndex}`}
+      {...jumpProps}
+      className={mergeClassName(
+        jumpProps,
+        'entity-notes-md-table-wrap custom-scrollbar my-5 max-w-full overflow-x-auto rounded-xl border border-slate-700/50 bg-slate-950/40',
+      )}
+    >
+      <table
+        className="entity-notes-md-table w-full border-collapse text-[1.02rem] leading-relaxed"
+        data-wide={normalized.colCount > 8 ? 'true' : undefined}
+        style={{ minWidth: `${tableMinWidthRem}rem` }}
+      >
+        <thead className="entity-notes-md-table-head">
+          <tr>
+            {normalized.header.map((cell, ci) => {
+              const align = normalized.aligns[ci] || 'left';
+              return (
+                <th
+                  key={`${baseKey}-th-${startIndex}-${ci}`}
+                  className={`entity-notes-md-table-th ${TABLE_ALIGN_CLASS[align] || TABLE_ALIGN_CLASS.left}`}
+                >
+                  <div className="entity-notes-md-table-cell-inner">{renderCell(cell)}</div>
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {normalized.rows.map((row, ri) => (
+            <tr key={`${baseKey}-tr-${startIndex}-${ri}`} className="entity-notes-md-table-row">
+              {row.map((cell, ci) => {
+                const align = normalized.aligns[ci] || 'left';
+                return (
+                  <td
+                    key={`${baseKey}-td-${startIndex}-${ri}-${ci}`}
+                    className={`entity-notes-md-table-td ${TABLE_ALIGN_CLASS[align] || TABLE_ALIGN_CLASS.left}`}
+                  >
+                    <div className="entity-notes-md-table-cell-inner">{renderCell(cell)}</div>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 };
 
 function renderBlocksFromLines(lines, context, options = {}) {
@@ -354,6 +465,51 @@ function renderBlocksFromLines(lines, context, options = {}) {
       continue;
     }
 
+    if (trimmed.startsWith('```')) {
+      const fenceLines = [];
+      const startIndex = lineIndex;
+      lineIndex += 1;
+      while (lineIndex < lines.length) {
+        const fenceLine = safeString(lines[lineIndex]);
+        if (fenceLine.trim().startsWith('```')) {
+          lineIndex += 1;
+          break;
+        }
+        fenceLines.push(fenceLine);
+        lineIndex += 1;
+      }
+      const jumpProps = buildJumpProps(startIndex + 1);
+      blocks.push(
+        <pre
+          key={`${baseKey}-code-${startIndex}`}
+          {...jumpProps}
+          className={mergeClassName(
+            jumpProps,
+            'my-5 overflow-x-auto rounded-2xl border border-slate-700/60 bg-slate-950/80 px-4 py-3 font-mono text-[0.92rem] leading-relaxed text-slate-300 whitespace-pre-wrap',
+          )}
+        >
+          <code>{fenceLines.join('\n')}</code>
+        </pre>
+      );
+      continue;
+    }
+
+    const tableBlock = tryParseMarkdownTableBlock(lines, lineIndex);
+    if (tableBlock) {
+      blocks.push(
+        renderEntityNotesTableBlock(
+          tableBlock,
+          context,
+          baseKey,
+          lineIndex,
+          buildJumpProps,
+          mergeClassName,
+        ),
+      );
+      lineIndex = tableBlock.endLine;
+      continue;
+    }
+
     if (DIVIDER_RE.test(trimmed)) {
       const jumpProps = buildJumpProps(lineIndex + 1);
       blocks.push(
@@ -459,6 +615,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
         const style = CALLOUT_STYLES[callout?.accent || 'violet'] || CALLOUT_STYLES.violet;
         const explicitTitle = safeString(markerMatch[2]).trim();
         const title = explicitTitle || callout?.title || role;
+        const CalloutIcon = resolveCalloutIcon(callout, role);
         const contentLines = quoteLines.slice(1);
         const innerModel = renderBlocksFromLines(contentLines, context, {
           baseKey: `${baseKey}-callout-${startIndex}`,
@@ -476,11 +633,19 @@ function renderBlocksFromLines(lines, context, options = {}) {
               `my-5 rounded-3xl border px-5 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${style.shell}`
             )}
           >
-            <div className="mb-3 flex items-center gap-3">
-              <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] ${style.badge}`}>
-                {callout?.label || role}
+            <div className="mb-3 flex items-start gap-3">
+              <span
+                className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${style.badge}`}
+                aria-hidden
+              >
+                <CalloutIcon size={18} strokeWidth={2.25} />
               </span>
-              <h4 className={`font-heading text-lg font-bold ${style.title}`}>{title}</h4>
+              <div className="min-w-0 flex-1">
+                <span className={`mb-1 inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.2em] ${style.badge}`}>
+                  {callout?.label || role}
+                </span>
+                <h4 className={`font-heading text-lg font-bold leading-snug ${style.title}`}>{title}</h4>
+              </div>
             </div>
             <div className="min-w-0">
               {innerModel.blocks.length > 0 ? (

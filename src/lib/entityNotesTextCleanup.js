@@ -4,6 +4,8 @@
 // bị ngắt dòng, thừa khoảng trắng hoặc dính ký tự khoảng trắng đặc biệt.
 // ==========================================
 
+import { isMarkdownTableRowLine } from './markdownTable.js';
+
 const DIVIDER_RE = /^(?:-{3,}|\*{3,}|_{3,})$/;
 const HEADING_RE = /^(#{1,3})\s+(.*)$/;
 const BULLET_RE = /^(\s*[-*]\s+)(.*)$/;
@@ -11,7 +13,7 @@ const ORDERED_RE = /^(\s*\d+\.\s+)(.*)$/;
 const QUOTE_RE = /^(\s*)(>\s+)(.*)$/;
 const IMAGE_RE = /^!\[(.*?)\]\((.*?)\)$/;
 /** Plain line after a list block should start a new paragraph, not merge into the last bullet. */
-const PLAIN_BREAKS_FROM_LIST_RE = /^(?:#{1,6}\s|>\s|!\[|«|\[\[)/;
+const PLAIN_BREAKS_FROM_LIST_RE = /^(?:#{1,6}\s|>\s|!\[|«|\[\[|\|)/;
 
 const normalizeRawWhitespace = (value) =>
   String(value || '')
@@ -64,6 +66,10 @@ const classifyLine = (rawLine) => {
     };
   }
 
+  if (isMarkdownTableRowLine(normalizedLine)) {
+    return { type: 'table', value: normalizedLine.replace(/[ \t]+$/g, '') };
+  }
+
   return { type: 'plain', value: cleanInlineSpacing(trimmed) };
 };
 
@@ -109,7 +115,33 @@ export function cleanupEntityNotesText(value) {
   };
 
   const lines = src.split('\n');
+  let inCodeFence = false;
+  let codeFenceLines = [];
+
   for (let i = 0; i < lines.length; i += 1) {
+    const normalizedLine = normalizeRawWhitespace(lines[i]).replace(/[ \t]+$/g, '');
+    const trimmedFence = normalizedLine.trim();
+
+    if (inCodeFence) {
+      codeFenceLines.push(normalizedLine);
+      if (trimmedFence.startsWith('```')) {
+        inCodeFence = false;
+        flushParagraph();
+        flushGroupedLines();
+        pushSegment(codeFenceLines.join('\n'));
+        codeFenceLines = [];
+      }
+      continue;
+    }
+
+    if (trimmedFence.startsWith('```')) {
+      flushParagraph();
+      flushGroupedLines();
+      inCodeFence = true;
+      codeFenceLines = [normalizedLine];
+      continue;
+    }
+
     const current = classifyLine(lines[i]);
 
     if (current.type === 'blank') {
@@ -135,7 +167,12 @@ export function cleanupEntityNotesText(value) {
 
     flushParagraph();
 
-    if (current.type === 'bullet' || current.type === 'ordered' || current.type === 'quote') {
+    if (
+      current.type === 'bullet' ||
+      current.type === 'ordered' ||
+      current.type === 'quote' ||
+      current.type === 'table'
+    ) {
       if (!groupedLines || groupedLines.type !== current.type) {
         flushGroupedLines();
         groupedLines = { type: current.type, lines: [] };
@@ -150,6 +187,9 @@ export function cleanupEntityNotesText(value) {
 
   flushParagraph();
   flushGroupedLines();
+  if (inCodeFence && codeFenceLines.length > 0) {
+    pushSegment(codeFenceLines.join('\n'));
+  }
 
   if (segments.length === 0) return '';
   let out = segments[0];

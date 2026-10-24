@@ -49,6 +49,14 @@ import { buildEntityNoteTemplate, mergeEntityNoteDetailSectionFromDynamicData } 
 import { getEffectiveAutoSyncRole } from './lib/tabAutoSyncRole.js';
 import { reconcileRetiredWikiAliases } from './lib/retiredWikiAliases.js';
 import {
+  applyEntityRename,
+  entityNamesEquivalentForRename,
+  formatEntityRenameCollisionMessage,
+  milestoneHasAppliedRename,
+  MILESTONE_RENAME_LOCKED_MESSAGE,
+  validateEntityRename,
+} from './lib/entityRename.js';
+import {
   hasBaselineArchiveAtChapterZero,
   promoteMilestoneToBaseline,
   readProfileBaselineMilestoneId,
@@ -156,6 +164,44 @@ export function useAppEntityMilestoneActions({
     },
     [currentAutoFieldContext]
   );
+  const buildEntityAliasAccess = useCallback(
+    () => ({
+      read: (entity) =>
+        getEntityAutoFieldValue(entity, currentAutoFieldContext, 'alias') ||
+        safeString(entity?.dynamicData?.f_alias),
+      write: (entity, value) => {
+        const updated = setEntityAutoFieldValue(entity, currentAutoFieldContext, 'alias', value);
+        if (!updated) {
+          if (!entity.dynamicData || typeof entity.dynamicData !== 'object') entity.dynamicData = {};
+          entity.dynamicData.f_alias = value;
+        }
+      },
+    }),
+    [currentAutoFieldContext]
+  );
+  const syncRenameSideEffects = useCallback(
+    (nov, ent, entPrevName, renameTarget) => {
+      let ownerMilestoneRenameSynced = 0;
+      let mapHierarchyRenameSynced = 0;
+      if (activeTabLon !== 'nhan-vat') {
+        ownerMilestoneRenameSynced = syncAutoOwnerMilestonesItemRename(nov, {
+          entityId: ent.id,
+          oldName: entPrevName,
+          newName: renameTarget,
+        });
+      }
+      if (isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig })) {
+        mapHierarchyRenameSynced = syncMapHierarchyNameReferences(nov, {
+          entityId: ent.id,
+          oldName: entPrevName,
+          newName: renameTarget,
+        });
+      }
+      syncAllCollectionListCards(nov);
+      return { ownerMilestoneRenameSynced, mapHierarchyRenameSynced };
+    },
+    [activeTabLon, activeTabNho, currentTabConfig]
+  );
   const hasCurrentAutoFieldChange = useCallback(
     (changedFieldIds, fieldKeys, fallbackFieldIds = []) =>
       hasAnyAutoSyncFieldChanged(currentAutoFieldContext, changedFieldIds, fieldKeys) ||
@@ -254,6 +300,32 @@ export function useAppEntityMilestoneActions({
       let mapHierarchyAutoApplied = false;
       let mapHierarchyRenameSynced = 0;
 
+      if (formData.id) {
+        const previewTab = activeNovelData?.data?.[activeTabLon]?.[activeTabNho || 'default'];
+        const previewEnt = previewTab?.entities?.find((e) => e.id === formData.id);
+        const prevNamePreview = safeString(previewEnt?.name).trim();
+        if (
+          previewEnt &&
+          !entityNamesEquivalentForRename(prevNamePreview, normalizedEntityName)
+        ) {
+          const validation = validateEntityRename(activeNovelData, {
+            entityId: formData.id,
+            currentName: prevNamePreview,
+          }, normalizedEntityName);
+          if (!validation.ok) {
+            if (validation.code === 'collision') {
+              showToast(
+                formatEntityRenameCollisionMessage(normalizedEntityName, validation.collision),
+                'warning'
+              );
+            } else if (validation.message) {
+              showToast(validation.message, 'warning');
+            }
+            return;
+          }
+        }
+      }
+
       let saveOk = false;
       try {
         saveOk = updateActiveNovelData((nov) => {
@@ -268,7 +340,6 @@ export function useAppEntityMilestoneActions({
         if (formData.id) {
           const idx = tabData.entities.findIndex((e) => e.id === formData.id);
           if (idx > -1) {
-            const prevName = safeString(tabData.entities[idx].name).trim();
             const prevImages = Array.isArray(tabData.entities[idx].images)
               ? tabData.entities[idx].images
               : [];
@@ -299,37 +370,35 @@ export function useAppEntityMilestoneActions({
                 });
             tabData.entities[idx] = {
               ...tabData.entities[idx],
-              name: normalizedEntityName,
+              name: tabData.entities[idx].name,
               avatar: formData.avatar,
               rawText: formData.rawText,
               status: statusLine,
               dynamicData: mergedDyn,
               images: prevImages,
               info: mergedInfo,
+              wikiRetiredAliases,
             };
+            const entRef = tabData.entities[idx];
+            const renameResult = applyEntityRename(entRef, {
+              newName: normalizedEntityName,
+              aliasAccess: buildEntityAliasAccess(),
+            });
+            if (renameResult.renamed) {
+              const side = syncRenameSideEffects(nov, entRef, renameResult.oldName, renameResult.newName);
+              ownerMilestoneRenameSynced = side.ownerMilestoneRenameSynced;
+              mapHierarchyRenameSynced = side.mapHierarchyRenameSynced;
+            } else if (normalizedEntityName !== safeString(entRef.name).trim()) {
+              entRef.name = normalizedEntityName;
+            }
             applyAutoRelationNotesForEntity(nov, {
-              sourceEntity: tabData.entities[idx],
+              sourceEntity: entRef,
               sourceLonId: activeTabLon,
               sourceNhoId: activeTabNho || 'default',
               sourceNhoConfig: currentTabConfig,
               sourceParentLabel: currentTabConfig?._parentLabel || '',
               statusLine,
             });
-            const nextName = normalizedEntityName;
-            if (activeTabLon !== 'nhan-vat' && prevName && nextName && prevName !== nextName) {
-              ownerMilestoneRenameSynced = syncAutoOwnerMilestonesItemRename(nov, {
-                entityId: formData.id,
-                oldName: prevName,
-                newName: nextName,
-              });
-            }
-            if (isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig }) && prevName && nextName && prevName !== nextName) {
-              mapHierarchyRenameSynced = syncMapHierarchyNameReferences(nov, {
-                entityId: formData.id,
-                oldName: prevName,
-                newName: nextName,
-              });
-            }
           }
         } else {
           const mergedNew = { ...dynamicData };
@@ -537,6 +606,8 @@ export function useAppEntityMilestoneActions({
       currentTabConfig,
       getStatusLineForCurrentTab,
       mergeAliasForCurrentTab,
+      buildEntityAliasAccess,
+      syncRenameSideEffects,
       updateActiveNovelData,
       setSelectedEntityId,
       setSelectedMilestoneId,
@@ -664,14 +735,62 @@ export function useAppEntityMilestoneActions({
       let timelineNameUpdated = false;
       let ownerMilestoneRenameSynced = 0;
       let mapHierarchyRenameSynced = 0;
+
+      const previewTab = activeNovelData?.data?.[activeTabLon]?.[activeTabNho || 'default'];
+      const previewEnt = previewTab?.entities?.find((e) => e.id === selectedEntityId);
+      const prevName = safeString(previewEnt?.name).trim();
+      const nextRaw = safeString(formData?.nextEntityName).trim();
+      const nextEntityName = nextRaw ? toDisplayTitleCase(nextRaw) : '';
+      const willRename = !!(
+        nextEntityName &&
+        prevName &&
+        !entityNamesEquivalentForRename(prevName, nextEntityName)
+      );
+
+      if (formData.id && previewEnt) {
+        const existingMs = (previewEnt.milestones || []).find((m) => m.id === formData.id);
+        if (existingMs && milestoneHasAppliedRename(previewEnt, existingMs)) {
+          const oldNext = safeString(existingMs.nextEntityName).trim();
+          const newNext = safeString(formData.nextEntityName).trim();
+          const oldNorm = oldNext ? toDisplayTitleCase(oldNext) : '';
+          const newNorm = newNext ? toDisplayTitleCase(newNext) : '';
+          if (oldNorm !== newNorm) {
+            showToast(MILESTONE_RENAME_LOCKED_MESSAGE, 'warning');
+            return;
+          }
+        }
+      }
+
+      if (willRename) {
+        const validation = validateEntityRename(
+          activeNovelData,
+          { entityId: selectedEntityId, currentName: prevName },
+          nextEntityName
+        );
+        if (!validation.ok) {
+          if (validation.code === 'collision') {
+            showToast(formatEntityRenameCollisionMessage(nextEntityName, validation.collision), 'warning');
+          } else if (validation.message) {
+            showToast(validation.message, 'warning');
+          }
+          return;
+        }
+      }
+
       updateActiveNovelData((nov) => {
         if (!nov.data?.[activeTabLon]) return;
         const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
         const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
         if (ent) {
-          const prevName = safeString(ent.name).trim();
-          const nextEntityName = toDisplayTitleCase(formData?.nextEntityName);
+          const entPrevName = safeString(ent.name).trim();
+          const renameTarget = nextEntityName;
+          const shouldRename = !!(
+            renameTarget &&
+            entPrevName &&
+            !entityNamesEquivalentForRename(entPrevName, renameTarget)
+          );
           if (!ent.milestones) ent.milestones = [];
+          const milestoneId = formData.id || generateId('ms');
           if (formData.id) {
             const idx = ent.milestones.findIndex((m) => m.id === formData.id);
             if (idx > -1) {
@@ -686,7 +805,7 @@ export function useAppEntityMilestoneActions({
             }
           } else {
             ent.milestones.push({
-              id: generateId('ms'),
+              id: milestoneId,
               chapter: parseInt(formData.chapter, 10),
               title: safeString(formData.title).trim(),
               nextEntityName: safeString(formData.nextEntityName).trim(),
@@ -695,25 +814,19 @@ export function useAppEntityMilestoneActions({
             });
           }
           ent.milestones.sort((a, b) => a.chapter - b.chapter);
-          if (prevName && nextEntityName && prevName !== nextEntityName) {
-            ent.name = nextEntityName;
-            mergeAliasForCurrentTab(ent, prevName);
-            timelineNameUpdated = true;
-            if (activeTabLon !== 'nhan-vat') {
-              ownerMilestoneRenameSynced = syncAutoOwnerMilestonesItemRename(nov, {
-                entityId: ent.id,
-                oldName: prevName,
-                newName: nextEntityName,
-              });
+          if (shouldRename) {
+            const renameResult = applyEntityRename(ent, {
+              newName: renameTarget,
+              timelineEventId: formData.id || milestoneId,
+              chapter: parseInt(formData.chapter, 10),
+              aliasAccess: buildEntityAliasAccess(),
+            });
+            if (renameResult.renamed) {
+              timelineNameUpdated = true;
+              const side = syncRenameSideEffects(nov, ent, renameResult.oldName, renameResult.newName);
+              ownerMilestoneRenameSynced = side.ownerMilestoneRenameSynced;
+              mapHierarchyRenameSynced = side.mapHierarchyRenameSynced;
             }
-            if (isMapCollectionScope({ activeTabLon, activeTabNho, currentTabConfig })) {
-              mapHierarchyRenameSynced = syncMapHierarchyNameReferences(nov, {
-                entityId: ent.id,
-                oldName: prevName,
-                newName: nextEntityName,
-              });
-            }
-            syncAllCollectionListCards(nov);
           }
         }
       });
@@ -731,7 +844,10 @@ export function useAppEntityMilestoneActions({
           : null
       );
       if (timelineNameUpdated) {
-        showToast('Đã tự đổi tên thẻ theo mốc timeline và lưu tên cũ vào bí danh.', 'success');
+        showToast(
+          'Đã đổi tên thẻ theo mốc timeline. Tên cũ được giữ làm tên gọi khác; [[tên cũ]] trong ghi chú không bị đổi.',
+          'success'
+        );
       }
       if (ownerMilestoneRenameSynced > 0) {
         showToast(
@@ -750,16 +866,25 @@ export function useAppEntityMilestoneActions({
       activeTabNho,
       currentTabConfig,
       selectedEntityId,
-      mergeAliasForCurrentTab,
+      buildEntityAliasAccess,
+      syncRenameSideEffects,
       showToast,
       setActiveNovelData,
       syncNovelRef,
       dirHandleRef,
+      activeNovelData,
     ]
   );
 
   const handleDeleteMilestone = useCallback(
     (msId) => {
+      const previewTab = activeNovelData?.data?.[activeTabLon]?.[activeTabNho || 'default'];
+      const previewEnt = previewTab?.entities?.find((e) => e.id === selectedEntityId);
+      const targetMs = (previewEnt?.milestones || []).find((m) => m.id === msId);
+      if (previewEnt && targetMs && milestoneHasAppliedRename(previewEnt, targetMs)) {
+        showToast(MILESTONE_RENAME_LOCKED_MESSAGE, 'warning');
+        return;
+      }
       setConfirmDialog({
         isOpen: true,
         title: 'Xóa Kỷ Nguyên',

@@ -79,10 +79,56 @@ export const ENTITY_NOTES_CALLOUTS = {
     title: 'Kết luận',
     accent: 'rose',
   },
+  INFO: {
+    role: 'INFO',
+    label: 'Thông tin',
+    title: 'Thông tin',
+    accent: 'sky',
+    icon: 'info',
+  },
+  TIP: {
+    role: 'TIP',
+    label: 'Mẹo',
+    title: 'Mẹo',
+    accent: 'emerald',
+    icon: 'tip',
+  },
+  IMPORTANT: {
+    role: 'IMPORTANT',
+    label: 'Quan trọng',
+    title: 'Quan trọng',
+    accent: 'amber',
+    icon: 'important',
+  },
+  CAUTION: {
+    role: 'CAUTION',
+    label: 'Chú ý',
+    title: 'Chú ý',
+    accent: 'amber',
+    icon: 'caution',
+  },
+  ERROR: {
+    role: 'ERROR',
+    label: 'Lỗi',
+    title: 'Lỗi',
+    accent: 'rose',
+    icon: 'error',
+  },
+};
+
+/** Alias Obsidian → callout nội bộ (giữ cú pháp `> [!info] …`). */
+const OBSIDIAN_CALLOUT_ROLE_ALIASES = {
+  FAQ: 'DEFINITION',
+  QUESTION: 'KEY',
+  QUOTE: 'NOTE',
+  BUG: 'ERROR',
+  SUCCESS: 'EXAMPLE',
 };
 
 export function resolveEntityNotesCallout(role) {
-  return ENTITY_NOTES_CALLOUTS[String(role || '').toUpperCase()] || null;
+  const key = String(role || '').toUpperCase();
+  const mapped = OBSIDIAN_CALLOUT_ROLE_ALIASES[key] || key;
+  return ENTITY_NOTES_CALLOUTS[mapped] || null;
 }
 
 export function buildEntityNotesCalloutBlock(role, title = '', bodyLines = ['']) {

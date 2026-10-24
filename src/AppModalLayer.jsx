@@ -426,6 +426,8 @@ export function AppModalLayer({
         quickCreateName={quickCreateData}
         onConfirm={handleConfirmQuickCreate}
         activeTabs={activeTabs}
+        activeNovelData={activeNovelData}
+        onOpenExisting={handleNavigate}
       />
 
       {isManageTabsOpen && (
