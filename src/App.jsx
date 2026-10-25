@@ -72,6 +72,7 @@ import { AppPhongChuVaTheme } from './AppPhongChuVaTheme.jsx';
 import { buildEntityNotesTabFieldBuckets } from './lib/entityNotesTabFilter.js';
 import { computeDashboardStats } from './lib/appDashboardStats.js';
 import { buildEntityLinkMap } from './lib/buildEntityLinkMap.js';
+import { buildEntityLinkFingerprint } from './lib/buildEntityLinkFingerprint.js';
 import { buildEntityNameLookup, resolveEntityLookup } from './lib/entityWikiLookup.js';
 import {
   findEntityMemberInNovel,
@@ -98,6 +99,8 @@ import {
   isListCardEntity,
   syncAllCollectionListCards,
 } from './lib/collectionListCardSync.js';
+import { markAllShardsDirty, markShardDirty } from './lib/dirtyShardTracker.js';
+import { commitNovelUpdate } from './lib/patchNovelData.js';
 import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
 import {
   getDeepSearchCacheNamespace,
@@ -935,7 +938,19 @@ export default function App() {
   ]);
 
   // Global map - toan bo truyen, dung de resolve [[...]] link va renderMarkdown lookup.
-  const entityMap = useMemo(() => buildEntityLinkMap(activeNovelData), [activeNovelData]);
+  // Bỏ qua rebuild khi clone novel chỉ đổi ghi chú/mốc (fingerprint không gồm các trường đó).
+  const entityLinkFingerprintRef = useRef('');
+  const entityLinkMapCacheRef = useRef([]);
+  const entityMap = useMemo(() => {
+    const fp = buildEntityLinkFingerprint(activeNovelData);
+    if (fp === entityLinkFingerprintRef.current && entityLinkMapCacheRef.current.length > 0) {
+      return entityLinkMapCacheRef.current;
+    }
+    const result = buildEntityLinkMap(activeNovelData);
+    entityLinkFingerprintRef.current = fp;
+    entityLinkMapCacheRef.current = result;
+    return result;
+  }, [activeNovelData]);
   const statusTierLabelSet = useMemo(() => buildStatusTierLabelSet(activeNovelData), [activeNovelData]);
 
   // Local/scoped map — chỉ tab hiện tại, dùng cho plain-text auto-link matcher (hiệu năng).
@@ -1590,8 +1605,11 @@ export default function App() {
     (updateFn) => {
       const currentData = activeNovelDataRef.current;
       if (!currentData) return false;
-      const updatedData = structuredClone(currentData);
-      updateFn(updatedData);
+      const committed = commitNovelUpdate(currentData, updateFn);
+      if (committed.dirty === 'none' || committed.novel === currentData) return true;
+      if (committed.dirty === 'all') markAllShardsDirty(currentData.data);
+      else markShardDirty(committed.dirty.lonId, committed.dirty.nhoId || 'default');
+      const updatedData = committed.novel;
       const nextStats = { ...novelStatsByIdRef.current };
       if (!updatedData.__partialData) {
         nextStats[updatedData.id] = countEntitiesInNovel(updatedData);
@@ -1673,10 +1691,19 @@ export default function App() {
       (ent) => !ent?.mapParentId && safeString(ent?.dynamicData?.f_vi_tri).trim()
     );
     if (!needsInfer) return;
-    updateActiveNovelData((nov) => {
-      const nextTab = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
-      if (!Array.isArray(nextTab?.entities)) return;
-      inferMapParentIdsFromViTri(nextTab.entities);
+    updateActiveNovelData({
+      lonId: activeTabLon,
+      nhoId: activeTabNho || 'default',
+      updater: (nho) => {
+        if (!nho || !Array.isArray(nho.entities)) return nho;
+        const copies = nho.entities.map((ent) => ({ ...ent }));
+        const changed = inferMapParentIdsFromViTri(copies);
+        if (!changed) return nho;
+        const entities = nho.entities.map((ent, index) =>
+          ent?.mapParentId === copies[index]?.mapParentId ? ent : copies[index],
+        );
+        return { ...nho, entities };
+      },
     });
   }, [isActiveMapCollection, activeTabLon, activeTabNho, updateActiveNovelData]);
   useEffect(() => {
@@ -1964,18 +1991,35 @@ export default function App() {
   });
 
   const handleSaveStandardEditor = () => {
-    updateActiveNovelData(n => {
-       if (!n.data) n.data = {}; if (!n.data[activeTabLon]) n.data[activeTabLon] = {};
-       const content = document.getElementById('standard-editor').value;
-       if (activeTabCon) {
-           if (!n.data[activeTabLon][activeTabNho]) n.data[activeTabLon][activeTabNho] = {};
-           n.data[activeTabLon][activeTabNho][activeTabCon] = content;
-       } else {
-           let currentVal = n.data[activeTabLon][activeTabNho || 'default'];
-           if (typeof currentVal === 'object' && currentVal !== null) { currentVal.overview = content; n.data[activeTabLon][activeTabNho || 'default'] = currentVal; }
-           else { n.data[activeTabLon][activeTabNho || 'default'] = content; }
-       }
-    });
+    const content = document.getElementById('standard-editor').value;
+    const lonId = activeTabLon;
+    const nhoId = activeTabNho || 'default';
+    const bucket = activeNovelDataRef.current?.data?.[lonId]?.[nhoId];
+    if (bucket == null) {
+      updateActiveNovelData((n) => {
+        if (!n.data) n.data = {};
+        if (!n.data[lonId]) n.data[lonId] = {};
+        if (activeTabCon) {
+          if (!n.data[lonId][nhoId] || typeof n.data[lonId][nhoId] !== 'object') n.data[lonId][nhoId] = {};
+          n.data[lonId][nhoId][activeTabCon] = content;
+        } else {
+          n.data[lonId][nhoId] = content;
+        }
+      });
+    } else {
+      updateActiveNovelData({
+        lonId,
+        nhoId,
+        updater: (nho) => {
+          if (activeTabCon) {
+            const base = nho && typeof nho === 'object' ? { ...nho } : {};
+            return { ...base, [activeTabCon]: content };
+          }
+          if (nho && typeof nho === 'object') return { ...nho, overview: content };
+          return content;
+        },
+      });
+    }
     setIsEditingMode(false); setIsSplitPreview(false); showToast('Khắc ấn đại đạo thành công!');
   };
 
@@ -2040,16 +2084,18 @@ export default function App() {
     (ent) => {
       const entityId = safeString(ent?.id).trim();
       if (!entityId || !activeTabLon) return;
-      let result = { ok: false, reason: 'unknown', pinned: false };
-      const ok = updateActiveNovelData((nov) => {
-        const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
-        if (!Array.isArray(tabData?.entities)) return;
-        result = toggleEntityListPin(tabData.entities, entityId);
-      });
-      if (ok === false) {
-        showToast('Không ghim được vì chưa có truyện đang mở.', 'error');
+      const lonId = activeTabLon;
+      const nhoId = activeTabNho || 'default';
+      const tabData = activeNovelDataRef.current?.data?.[lonId]?.[nhoId];
+      const entities = Array.isArray(tabData?.entities) ? tabData.entities : [];
+      const index = entities.findIndex((item) => safeString(item?.id) === entityId);
+      if (index < 0) {
+        showToast('Không ghim được thẻ này.', 'error');
         return;
       }
+      const scratch = entities.slice();
+      scratch[index] = { ...entities[index] };
+      const result = toggleEntityListPin(scratch, entityId);
       if (!result.ok && result.reason === 'limit') {
         showToast(`Chỉ ghim tối đa ${ENTITY_LIST_PIN_MAX} thẻ (thẻ Danh sách luôn đứng đầu, không chiếm chỗ ghim).`, 'warning');
         return;
@@ -2060,6 +2106,16 @@ export default function App() {
       }
       if (!result.ok) {
         showToast('Không ghim được thẻ này.', 'error');
+        return;
+      }
+      const ok = updateActiveNovelData({
+        lonId,
+        nhoId,
+        entityId,
+        updater: () => scratch[index],
+      });
+      if (ok === false) {
+        showToast('Không ghim được vì chưa có truyện đang mở.', 'error');
         return;
       }
       showToast(
@@ -2122,40 +2178,45 @@ export default function App() {
         updatedAt: Date.now(),
       };
 
-      const ok = updateActiveNovelData((nov) => {
-        const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
-        const ent = tabData?.entities?.find((item) => item.id === selectedEntityId);
-        if (!ent) return;
-        if (!Array.isArray(ent.members)) ent.members = [];
-        const idx = ent.members.findIndex((member) => safeString(member?.id) === savedId);
-        if (idx > -1) {
-          savedMode = 'update';
-          const prev = ent.members[idx];
-          ent.members[idx] = {
-            ...mergeEntityMemberUpdate(prev, savedMember, {
-              replaceNotes: options?.replaceNotes === true,
-            }),
-            wikiRetiredAliases: reconcileRetiredWikiAliases(
-              prev.alias,
-              savedMember.alias,
-              prev.wikiRetiredAliases
-            ),
-            parentId: savedMember.parentId || prev.parentId,
-            sortOrder: Number.isFinite(Number(savedMember.sortOrder))
-              ? savedMember.sortOrder
-              : prev.sortOrder,
-            createdAt: prev.createdAt || savedMember.updatedAt,
-          };
-          if (!ent.members[idx].parentId) delete ent.members[idx].parentId;
-        } else {
-          if (!Number.isFinite(Number(savedMember.sortOrder))) {
-            savedMember.sortOrder = nextMemberSortOrder(ent.members, savedMember.parentId || null);
+      const ok = updateActiveNovelData({
+        lonId: activeTabLon,
+        nhoId: activeTabNho || 'default',
+        entityId: selectedEntityId,
+        updater: (ent) => {
+          if (!ent) return ent;
+          const members = Array.isArray(ent.members) ? ent.members.slice() : [];
+          const idx = members.findIndex((member) => safeString(member?.id) === savedId);
+          if (idx > -1) {
+            savedMode = 'update';
+            const prev = members[idx];
+            const nextMember = {
+              ...mergeEntityMemberUpdate(prev, savedMember, {
+                replaceNotes: options?.replaceNotes === true,
+              }),
+              wikiRetiredAliases: reconcileRetiredWikiAliases(
+                prev.alias,
+                savedMember.alias,
+                prev.wikiRetiredAliases
+              ),
+              parentId: savedMember.parentId || prev.parentId,
+              sortOrder: Number.isFinite(Number(savedMember.sortOrder))
+                ? savedMember.sortOrder
+                : prev.sortOrder,
+              createdAt: prev.createdAt || savedMember.updatedAt,
+            };
+            if (!nextMember.parentId) delete nextMember.parentId;
+            members[idx] = nextMember;
+          } else {
+            if (!Number.isFinite(Number(savedMember.sortOrder))) {
+              savedMember.sortOrder = nextMemberSortOrder(members, savedMember.parentId || null);
+            }
+            members.push({
+              ...savedMember,
+              createdAt: savedMember.updatedAt,
+            });
           }
-          ent.members.push({
-            ...savedMember,
-            createdAt: savedMember.updatedAt,
-          });
-        }
+          return { ...ent, members };
+        },
       });
       if (ok === false) {
         showToast('Không lưu được thẻ con vì chưa có truyện đang mở.', 'error');
@@ -2175,27 +2236,33 @@ export default function App() {
     (memberId, newParentId, options = {}) => {
       if (!selectedEntityId || !activeTabLon) return { ok: false, reason: 'no-entity' };
       let result = { ok: false, reason: 'unknown' };
-      const ok = updateActiveNovelData((nov) => {
-        const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
-        const ent = tabData?.entities?.find((item) => item.id === selectedEntityId);
-        if (!ent || !Array.isArray(ent.members)) {
-          result = { ok: false, reason: 'not-found' };
-          return;
-        }
-        const id = safeString(memberId);
-        const member = ent.members.find((item) => safeString(item?.id) === id);
-        if (!member) {
-          result = { ok: false, reason: 'not-found' };
-          return;
-        }
-        const currentParent = safeString(member.parentId) || null;
-        const nextParent = safeString(newParentId) || null;
-        const beforeId = safeString(options?.beforeId) || null;
-        if (currentParent === nextParent && beforeId !== undefined) {
-          result = reorderMemberAmongSiblings(ent.members, id, beforeId || null);
-        } else {
-          result = applyMemberMove(ent.members, id, nextParent, { beforeId });
-        }
+      const ok = updateActiveNovelData({
+        lonId: activeTabLon,
+        nhoId: activeTabNho || 'default',
+        entityId: selectedEntityId,
+        updater: (ent) => {
+          if (!ent || !Array.isArray(ent.members)) {
+            result = { ok: false, reason: 'not-found' };
+            return ent;
+          }
+          const id = safeString(memberId);
+          const members = ent.members.map((member) => ({ ...member }));
+          const member = members.find((item) => safeString(item?.id) === id);
+          if (!member) {
+            result = { ok: false, reason: 'not-found' };
+            return ent;
+          }
+          const currentParent = safeString(member.parentId) || null;
+          const nextParent = safeString(newParentId) || null;
+          const beforeId = safeString(options?.beforeId) || null;
+          if (currentParent === nextParent && beforeId !== undefined) {
+            result = reorderMemberAmongSiblings(members, id, beforeId || null);
+          } else {
+            result = applyMemberMove(members, id, nextParent, { beforeId });
+          }
+          if (!result.ok) return ent;
+          return { ...ent, members };
+        },
       });
       if (ok === false) return { ok: false, reason: 'no-novel' };
       if (result.ok) {
@@ -2213,32 +2280,38 @@ export default function App() {
       if (!selectedEntityId || !activeTabLon) return;
       const dir = direction === 'up' ? -1 : 1;
       let moved = false;
-      updateActiveNovelData((nov) => {
-        const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
-        const ent = tabData?.entities?.find((item) => item.id === selectedEntityId);
-        if (!ent || !Array.isArray(ent.members)) return;
-        const id = safeString(memberId);
-        const member = ent.members.find((item) => safeString(item?.id) === id);
-        if (!member) return;
-        const parentId = safeString(member.parentId) || null;
-        const siblings = [...ent.members]
-          .filter((item) => (safeString(item.parentId) || null) === parentId)
-          .sort((a, b) => {
-            const ao = Number(a?.sortOrder);
-            const bo = Number(b?.sortOrder);
-            const aOrder = Number.isFinite(ao) ? ao : 999999;
-            const bOrder = Number.isFinite(bo) ? bo : 999999;
-            if (aOrder !== bOrder) return aOrder - bOrder;
-            return safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
-          });
-        const index = siblings.findIndex((item) => safeString(item?.id) === id);
-        const swapWith = index + dir;
-        if (index < 0 || swapWith < 0 || swapWith >= siblings.length) return;
-        const beforeId = dir < 0
-          ? siblings[swapWith]?.id
-          : (siblings[swapWith + 1]?.id || null);
-        const result = reorderMemberAmongSiblings(ent.members, id, beforeId);
-        moved = Boolean(result?.ok);
+      updateActiveNovelData({
+        lonId: activeTabLon,
+        nhoId: activeTabNho || 'default',
+        entityId: selectedEntityId,
+        updater: (ent) => {
+          if (!ent || !Array.isArray(ent.members)) return ent;
+          const id = safeString(memberId);
+          const members = ent.members.map((member) => ({ ...member }));
+          const member = members.find((item) => safeString(item?.id) === id);
+          if (!member) return ent;
+          const parentId = safeString(member.parentId) || null;
+          const siblings = members
+            .filter((item) => (safeString(item.parentId) || null) === parentId)
+            .sort((a, b) => {
+              const ao = Number(a?.sortOrder);
+              const bo = Number(b?.sortOrder);
+              const aOrder = Number.isFinite(ao) ? ao : 999999;
+              const bOrder = Number.isFinite(bo) ? bo : 999999;
+              if (aOrder !== bOrder) return aOrder - bOrder;
+              return safeString(a?.name).localeCompare(safeString(b?.name), 'vi');
+            });
+          const index = siblings.findIndex((item) => safeString(item?.id) === id);
+          const swapWith = index + dir;
+          if (index < 0 || swapWith < 0 || swapWith >= siblings.length) return ent;
+          const beforeId = dir < 0
+            ? siblings[swapWith]?.id
+            : (siblings[swapWith + 1]?.id || null);
+          const reorder = reorderMemberAmongSiblings(members, id, beforeId);
+          moved = Boolean(reorder?.ok);
+          if (!moved) return ent;
+          return { ...ent, members };
+        },
       });
       if (moved) showToast('Đã đổi thứ tự hiển thị.', 'success');
     },
@@ -2253,13 +2326,17 @@ export default function App() {
       }
       const nextLabels = normalizeMemberFieldLabels(meta?.memberFieldLabels);
       const nextTitle = safeString(meta?.memberPanelTitle).trim();
-      const ok = updateActiveNovelData((nov) => {
-        const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
-        const ent = tabData?.entities?.find((item) => item.id === selectedEntityId);
-        if (!ent) return;
-        ent.memberFieldLabels = nextLabels;
-        if (nextTitle) ent.memberPanelTitle = nextTitle;
-        else delete ent.memberPanelTitle;
+      const ok = updateActiveNovelData({
+        lonId: activeTabLon,
+        nhoId: activeTabNho || 'default',
+        entityId: selectedEntityId,
+        updater: (ent) => {
+          if (!ent) return ent;
+          const next = { ...ent, memberFieldLabels: nextLabels };
+          if (nextTitle) next.memberPanelTitle = nextTitle;
+          else delete next.memberPanelTitle;
+          return next;
+        },
       });
       if (ok === false) {
         showToast('Không lưu được nhãn thẻ con vì chưa có truyện đang mở.', 'error');
@@ -2280,12 +2357,19 @@ export default function App() {
         title: 'Xóa thẻ con',
         message: `Xóa hồ sơ "${memberName}" khỏi thẻ cha? Các thẻ con bên dưới sẽ được đẩy lên cùng cấp. Wiki link sẽ không còn mở hồ sơ này.`,
         onConfirm: () => {
-          updateActiveNovelData((nov) => {
-            const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
-            const ent = tabData?.entities?.find((item) => item.id === selectedEntityId);
-            if (!ent || !Array.isArray(ent.members)) return;
-            reparentMemberChildrenOnDelete(ent.members, memberId);
-            ent.members = ent.members.filter((member) => safeString(member?.id) !== memberId);
+          updateActiveNovelData({
+            lonId: activeTabLon,
+            nhoId: activeTabNho || 'default',
+            entityId: selectedEntityId,
+            updater: (ent) => {
+              if (!ent || !Array.isArray(ent.members)) return ent;
+              const members = ent.members.map((member) => ({ ...member }));
+              reparentMemberChildrenOnDelete(members, memberId);
+              return {
+                ...ent,
+                members: members.filter((member) => safeString(member?.id) !== memberId),
+              };
+            },
           });
           setEntityMemberQuickViewDest((prev) => {
             if (safeString(prev?.memberId || prev?.childId) === memberId) return null;

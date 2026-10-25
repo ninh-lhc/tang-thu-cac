@@ -16,8 +16,14 @@ import React, {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from 'react';
-import { buildEntityNotesEditorHighlightHtml } from './lib/entityNotesEditorWikiHighlight.js';
+import {
+  buildEntityNotesEditorHighlightHtml,
+  escapeEntityNotesEditorPlainHtml,
+} from './lib/entityNotesEditorWikiHighlight.js';
+
+const HIGHLIGHT_DEBOUNCE_MS = 250;
 
 /** Chiều cao vùng soạn cố định để textarea luôn có scrollport (dùng chung detail notes + modal mốc). */
 export const ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS =
@@ -97,10 +103,19 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
 
   useImperativeHandle(ref, () => textareaRef.current, []);
 
-  const highlightHtml = useMemo(
-    () => buildEntityNotesEditorHighlightHtml(value, { selfEntityId, entityMap }),
-    [value, selfEntityId, entityMap]
-  );
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedValue(value), HIGHLIGHT_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [value]);
+
+  const highlightHtml = useMemo(() => {
+    if (debouncedValue !== value) {
+      return escapeEntityNotesEditorPlainHtml(value);
+    }
+    return buildEntityNotesEditorHighlightHtml(value, { selfEntityId, entityMap });
+  }, [value, debouncedValue, selfEntityId, entityMap]);
 
   const syncHighlightScroll = useCallback(() => {
     const ta = textareaRef.current;

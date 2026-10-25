@@ -12,6 +12,7 @@ import {
 import { buildNovelSearchIndex, countEntitiesInNovel } from './deepSearchCore.js';
 import { cleanupAutoRelationLegacyInfoForNovel } from './lib/autoRelationDetailNote.js';
 import { syncAllCollectionListCardsDetailed } from './lib/collectionListCardSync.js';
+import { markAllShardsDirty, markShardDirty } from './lib/dirtyShardTracker.js';
 import { buildAutoSyncPlanFromTabsConfig, runNovelAutoSyncPlan } from './lib/autoSyncManager.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 
@@ -111,6 +112,7 @@ export function useAppNovelSelectionAndHydration({
             ? runNovelAutoSyncPlan(data, buildAutoSyncPlanFromTabsConfig(data.tabsConfig || []), { recordLog: false })
             : { changed: partialListCardSync.changed, forceWarning: '' };
           const migrated = migrateTabsFieldTemplates(data);
+          markAllShardsDirty(migrated?.data);
           setActiveNovelData(migrated);
           if (autoSyncResult.forceWarning) {
             showToast(autoSyncResult.forceWarning, 'warning');
@@ -218,6 +220,7 @@ export function useAppNovelSelectionAndHydration({
         });
         const partial = partialLoaded?.novel;
         if (partial?.data?.[lonId]?.[nhoId]) {
+          markShardDirty(lonId, nhoId);
           setActiveNovelData((prev) => {
             if (!prev || prev.id !== activeNovelData.id) return prev;
             const next = structuredClone(prev);
@@ -266,6 +269,7 @@ export function useAppNovelSelectionAndHydration({
             buildAutoSyncPlanFromTabsConfig(fullData.tabsConfig || []),
             { recordLog: false }
           );
+          markAllShardsDirty(fullData?.data);
           setActiveNovelData((prev) => {
             if (!prev || prev.id !== key) return prev;
             return fullData;

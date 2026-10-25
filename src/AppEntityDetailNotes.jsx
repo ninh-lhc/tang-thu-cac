@@ -125,6 +125,10 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   const [wikiAcSelectedIndex, setWikiAcSelectedIndex] = useState(0);
   const [wikiAcSuppressedAt, setWikiAcSuppressedAt] = useState(null);
   const editorSurfaceRef = useRef(null);
+  /** Keystroke onChange đã cập nhật toolbar — bỏ qua useEffect trùng trên notesEdit.text. */
+  const toolbarSyncedFromChangeRef = useRef(false);
+  const OPT_OUTS_DEBOUNCE_MS = 300;
+  const [debouncedDraftForOptOuts, setDebouncedDraftForOptOuts] = useState(s0);
   const templateProfile = useMemo(
     () =>
       resolveEntityNotesTemplateProfile({
@@ -161,15 +165,27 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     return Math.min(Math.max(0, (lineNo - 1) * notesTypo.sizePx * 1.85), 220);
   }, [notesEdit.text, notesTypo.sizePx, wikiAcSession]);
 
-  const effectiveWikiLinkOptOuts = useMemo(
-    () =>
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedDraftForOptOuts(notesEdit.text), OPT_OUTS_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [notesEdit.text]);
+
+  const savedBaselineForOptOuts = safeString(savedInfo ?? initialInfo);
+
+  const resolveDraftWikiLinkOptOuts = useCallback(
+    (draftText) =>
       resolveEffectiveWikiLinkOptOuts({
         stored: initialWikiLinkOptOuts,
         pending: pendingWikiLinkOptOuts,
-        savedBaseline: safeString(savedInfo ?? initialInfo),
-        draftText: notesEdit.text,
+        savedBaseline: savedBaselineForOptOuts,
+        draftText,
       }),
-    [initialInfo, initialWikiLinkOptOuts, notesEdit.text, pendingWikiLinkOptOuts, savedInfo]
+    [initialWikiLinkOptOuts, pendingWikiLinkOptOuts, savedBaselineForOptOuts]
+  );
+
+  const effectiveWikiLinkOptOuts = useMemo(
+    () => resolveDraftWikiLinkOptOuts(debouncedDraftForOptOuts),
+    [debouncedDraftForOptOuts, resolveDraftWikiLinkOptOuts]
   );
 
   useEffect(() => {
@@ -271,6 +287,10 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   }, [syncToolbarStateFromEditor]);
 
   useEffect(() => {
+    if (toolbarSyncedFromChangeRef.current) {
+      toolbarSyncedFromChangeRef.current = false;
+      return;
+    }
     syncToolbarStateFromEditor();
   }, [notesEdit.text, syncToolbarStateFromEditor]);
 
@@ -388,7 +408,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           entityMap,
           geminiApiKeys,
           aiMode,
-          wikiLinkOptOuts: effectiveWikiLinkOptOuts,
+          wikiLinkOptOuts: resolveDraftWikiLinkOptOuts(currentText),
           tierLabelSet: statusTierLabelSet,
           subject: entityNotesSubject,
           onProgress: ({ step, phase, text }) => {
@@ -440,7 +460,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
       entityMap,
       entityNotesSubject,
       geminiApiKeys,
-      effectiveWikiLinkOptOuts,
+      resolveDraftWikiLinkOptOuts,
       notesEdit.text,
       setIsExtractingAI,
       setIsFormattingStructure,
@@ -665,12 +685,13 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               if (savePipelineSteps.includes('format')) {
                 setIsFormattingStructure(true);
               }
+              const wikiLinkOptOutsAtSave = resolveDraftWikiLinkOptOuts(rawDraft);
               const pipelineResult = await runNotesAiPipeline(rawDraft, {
                 steps: savePipelineSteps,
                 entityMap,
                 geminiApiKeys,
                 aiMode,
-                wikiLinkOptOuts: effectiveWikiLinkOptOuts,
+                wikiLinkOptOuts: wikiLinkOptOutsAtSave,
                 tierLabelSet: statusTierLabelSet,
                 subject: entityNotesSubject,
                 skipAi: true,
@@ -826,6 +847,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             id="entity-info-editor"
             value={notesEdit.text}
             onChange={(e) => {
+              toolbarSyncedFromChangeRef.current = true;
               recordAndSetDraft(e.target.value);
               setEditorCaret(e.target.selectionStart);
               setToolbarState(

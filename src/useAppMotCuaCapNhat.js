@@ -18,6 +18,7 @@ import {
 } from './MasterUtils.jsx';
 import { stripWikiBracketSyntax } from './lib/stripWikiBrackets.js';
 import { mutateNovelJournalSelections } from './appNhatKyVaGoiThe.js';
+import { markAllShardsDirty } from './lib/dirtyShardTracker.js';
 import { isAutoRelationScopeLonId, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
 import { syncAllCollectionListCards } from './lib/collectionListCardSync.js';
 import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
@@ -373,6 +374,7 @@ export function useAppMotCuaCapNhat({
         onUndo:
           prevNovel
             ? () => {
+                markAllShardsDirty(prevNovel?.data);
                 setActiveNovelData(structuredClone(prevNovel));
                 void (syncNovelRef.current && syncNovelRef.current(prevNovel, dirHandleRef.current));
               }

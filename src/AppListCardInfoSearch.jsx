@@ -52,15 +52,19 @@ export function AppListCardInfoSearch({
     setEntityPage: useDynamicAuto ? setEntityPage : null,
   });
 
-  const afterFields = useMemo(
-    () => filterListCardInfoByFieldFilters(safeString(info), fieldValueFilters),
-    [info, fieldValueFilters]
-  );
+  const afterFields = useMemo(() => {
+    if (useDynamicAuto) {
+      return { text: '', isFiltered: false, keptContentLines: -1 };
+    }
+    return filterListCardInfoByFieldFilters(safeString(info), fieldValueFilters);
+  }, [info, fieldValueFilters, useDynamicAuto]);
 
-  const { text: searchText, matchCount, isFiltered } = useMemo(
-    () => filterListCardInfoBySearchQuery(afterFields.text, deferred),
-    [afterFields.text, deferred]
-  );
+  const { text: searchText, matchCount, isFiltered } = useMemo(() => {
+    if (useDynamicAuto) {
+      return { text: '', matchCount: null, isFiltered: false };
+    }
+    return filterListCardInfoBySearchQuery(afterFields.text, deferred);
+  }, [afterFields.text, deferred, useDynamicAuto]);
 
   const text = useMemo(
     () => sortListCardContentLinesPreservingStructure(searchText, sortMode),
@@ -70,29 +74,29 @@ export function AppListCardInfoSearch({
   const fieldFilteredEmpty =
     afterFields.isFiltered && afterFields.keptContentLines === 0;
 
-  const legacyNodes = useMemo(
-    () =>
-      renderEntityNotesMarkdown(
-        text,
-        dirHandle,
-        entityMap,
-        linkRegex,
-        onNavigate,
-        selfEntityId,
-        Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [],
-        { activeNovelData },
-      ),
-    [
+  const legacyNodes = useMemo(() => {
+    if (useDynamicAuto) return null;
+    return renderEntityNotesMarkdown(
       text,
       dirHandle,
       entityMap,
       linkRegex,
       onNavigate,
       selfEntityId,
-      wikiLinkOptOuts,
-      activeNovelData,
-    ]
-  );
+      Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [],
+      { activeNovelData },
+    );
+  }, [
+    text,
+    dirHandle,
+    entityMap,
+    linkRegex,
+    onNavigate,
+    selfEntityId,
+    wikiLinkOptOuts,
+    activeNovelData,
+    useDynamicAuto,
+  ]);
 
   const showLegacyFilterHints = !useDynamicAuto;
 

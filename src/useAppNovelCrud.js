@@ -7,6 +7,7 @@
 
 import { useCallback, useState } from 'react';
 import { ensureCollectionListCardsForNovel } from './lib/collectionListCardSync.js';
+import { markAllShardsDirty } from './lib/dirtyShardTracker.js';
 import { removeNovelStorageFromRoot } from './lib/novelDiskLayout.js';
 import { clearNovelShadow } from './lib/novelShadowStore.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
@@ -153,6 +154,7 @@ export function useAppNovelCrud({
       novelStatsByIdRef.current = nextStats;
       setNovelStatsById(nextStats);
       setNovelsMetadata(newMetaList);
+      markAllShardsDirty(newFullData?.data);
       setActiveNovelData(newFullData);
       novelsMetadataRef.current = newMetaList;
       setIsAddNovelOpen(false);

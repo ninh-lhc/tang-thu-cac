@@ -36,6 +36,7 @@ import {
   isTransientFsWriteError,
   withFsWriteRetry,
 } from './lib/novelDiskWritePolicy.js';
+import { consumeDirtyShards } from './lib/dirtyShardTracker.js';
 
 /** migrateNovel luôn xóa storageLayout; khi novel đang lưu dạng shard trên đĩa thì phải gắn lại để lazy-load + sync an toàn. */
 function restoreShardedLayoutIfNeeded(parsedBeforeMigrate, migrated) {
@@ -456,7 +457,12 @@ export function useAppPersistence({
           return { ok: false, mode: 'directory', reason: 'manifest_build_failed', error: e };
         }
         const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
-        const shardPlan = buildShardWritePlan(novelToWrite.data || {}, getShardState(novelDir).hashes);
+        const dirtyKeys = consumeDirtyShards();
+        const shardPlan = buildShardWritePlan(
+          novelToWrite.data || {},
+          getShardState(novelDir).hashes,
+          dirtyKeys,
+        );
         const mainFile = `${folderName}.json`;
         let cachedBackupJson = null;
         const getBackupJson = () => {
@@ -487,7 +493,7 @@ export function useAppPersistence({
         };
         // Ưu tiên ghi đè in-place — ít tạo/xóa file hơn tmp+rename (OneDrive).
         const writeInPlace = async () => {
-          await writeShardTree(novelDir, novelToWrite);
+          await writeShardTree(novelDir, novelToWrite, dirtyKeys);
           const f = await novelDir.getFileHandle(mainFile, { create: true });
           const w = await f.createWritable();
           await w.write(jsonStr);

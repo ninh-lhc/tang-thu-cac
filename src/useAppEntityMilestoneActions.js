@@ -9,6 +9,7 @@ import { countEntitiesInNovel } from './deepSearchCore.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
 import { applyAutoRelationNotesForEntity, isAutoRelationScopeLonId, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
 import { isListCardEntity, syncAllCollectionListCards, syncAllCollectionListCardsDetailed } from './lib/collectionListCardSync.js';
+import { markAllShardsDirty } from './lib/dirtyShardTracker.js';
 import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
 import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
@@ -562,6 +563,7 @@ export function useAppEntityMilestoneActions({
           ? {
               undoLabel: 'Hoàn tác',
               onUndo: () => {
+                markAllShardsDirty(prev?.data);
                 setActiveNovelData(structuredClone(prev));
                 void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
               },
@@ -685,18 +687,17 @@ export function useAppEntityMilestoneActions({
       let ownerMilestoneAutoApplied = false;
       let ownerMilestoneApplyWarning = '';
 
-      updateActiveNovelData((nov) => {
-        if (!nov.data?.[activeTabLon]) return;
-        const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
-        const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
-        if (ent) {
-          ent.info = content;
-          // Network "Mạng Lưới Nhân Quả" đọc [[...]] từ rawText, cần đồng bộ theo info.
-          ent.rawText = content;
-          if (Array.isArray(opts.wikiLinkOptOuts)) {
-            ent.wikiLinkOptOuts = opts.wikiLinkOptOuts;
-          }
-          if (ownerTimelineHint) {
+      if (ownerTimelineHint) {
+        updateActiveNovelData((nov) => {
+          if (!nov.data?.[activeTabLon]) return;
+          const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
+          const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
+          if (ent) {
+            ent.info = content;
+            ent.rawText = content;
+            if (Array.isArray(opts.wikiLinkOptOuts)) {
+              ent.wikiLinkOptOuts = opts.wikiLinkOptOuts;
+            }
             const ownerApplyResult = appendOwnerAcquisitionMilestoneDetailed(nov, ownerTimelineHint, {
               name: ent.name,
               entityId: ent.id,
@@ -705,9 +706,20 @@ export function useAppEntityMilestoneActions({
             ownerMilestoneApplyWarning =
               ownerMilestoneApplyReasonToMessage(ownerApplyResult) || ownerMilestoneApplyWarning;
           }
-        }
-        syncAllCollectionListCards(nov);
-      });
+          syncAllCollectionListCards(nov);
+        });
+      } else {
+        updateActiveNovelData({
+          lonId: activeTabLon,
+          nhoId: activeTabNho || 'default',
+          entityId: selectedEntityId,
+          updater: (ent) => {
+            const next = { ...ent, info: content, rawText: content };
+            if (Array.isArray(opts.wikiLinkOptOuts)) next.wikiLinkOptOuts = opts.wikiLinkOptOuts;
+            return next;
+          },
+        });
+      }
 
       showToast(
         ownerMilestoneAutoApplied
@@ -854,6 +866,7 @@ export function useAppEntityMilestoneActions({
           ? {
               undoLabel: 'Hoàn tác',
               onUndo: () => {
+                markAllShardsDirty(prev?.data);
                 setActiveNovelData(structuredClone(prev));
                 void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
               },
@@ -918,6 +931,7 @@ export function useAppEntityMilestoneActions({
             showToast('Đã xóa mốc.', 'success', {
               undoLabel: 'Hoàn tác xóa',
               onUndo: () => {
+                markAllShardsDirty(prev?.data);
                 setActiveNovelData(structuredClone(prev));
                 setSelectedMilestoneId(prevMilestoneId || null);
                 void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
@@ -983,6 +997,7 @@ export function useAppEntityMilestoneActions({
           ? {
               undoLabel: 'Hoàn tác',
               onUndo: () => {
+                markAllShardsDirty(prev?.data);
                 setActiveNovelData(structuredClone(prev));
                 void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
               },
@@ -1026,6 +1041,7 @@ export function useAppEntityMilestoneActions({
             showToast('Đã xóa miêu tả.', 'success', {
               undoLabel: 'Hoàn tác xóa',
               onUndo: () => {
+                markAllShardsDirty(prev?.data);
                 setActiveNovelData(structuredClone(prev));
                 setSelectedDescriptionId?.(prevDescId || null);
                 void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
@@ -1076,6 +1092,7 @@ export function useAppEntityMilestoneActions({
             ? {
                 undoLabel: 'Hoàn tác',
                 onUndo: () => {
+                  markAllShardsDirty(prev?.data);
                   setActiveNovelData(structuredClone(prev));
                   void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
                 },
@@ -1205,6 +1222,7 @@ export function useAppEntityMilestoneActions({
           const nextStats = { ...novelStatsByIdRef.current, [updated.id]: countEntitiesInNovel(updated) };
           novelStatsByIdRef.current = nextStats;
           setNovelStatsById(nextStats);
+          markAllShardsDirty(updated?.data);
           setActiveNovelData(updated);
           syncNovelRef.current?.(updated, dirHandleRef.current);
           if (prevSelectedId === entityIdToDelete) setSelectedEntityId(null);
@@ -1215,6 +1233,7 @@ export function useAppEntityMilestoneActions({
           showToast(deleteMsg, 'success', {
             undoLabel: 'Hoàn tác xóa',
             onUndo: () => {
+              markAllShardsDirty(prev?.data);
               setActiveNovelData(prev);
               if (prevSelectedId) setSelectedEntityId(prevSelectedId);
               void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
@@ -1425,6 +1444,7 @@ export function useAppEntityMilestoneActions({
                   undoLabel: 'Hoàn tác',
                   onUndo: () => {
                     setRecentlyMergedFields(new Set());
+                    markAllShardsDirty(prev?.data);
                     setActiveNovelData(structuredClone(prev));
                     void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
                   },
@@ -1502,6 +1522,7 @@ export function useAppEntityMilestoneActions({
             onUndo: prev
               ? () => {
                   setRecentlyMergedFields(new Set());
+                  markAllShardsDirty(prev?.data);
                   setActiveNovelData(structuredClone(prev));
                   void (syncNovelRef.current && syncNovelRef.current(prev, dirHandleRef.current));
                 }

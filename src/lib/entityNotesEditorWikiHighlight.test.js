@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildEntityNotesEditorHighlightHtml } from './entityNotesEditorWikiHighlight.js';
+import {
+  buildEntityNotesEditorHighlightHtml,
+  escapeEntityNotesEditorPlainHtml,
+} from './entityNotesEditorWikiHighlight.js';
 
 describe('buildEntityNotesEditorHighlightHtml', () => {
   it('wraps resolved wiki links without font-bold (caret-safe)', () => {
@@ -20,6 +23,13 @@ describe('buildEntityNotesEditorHighlightHtml', () => {
   it('plain text without brackets stays unwrapped', () => {
     const html = buildEntityNotesEditorHighlightHtml('Chi la text thuong.');
     expect(html).not.toContain('<span');
+  });
+
+  it('escapeEntityNotesEditorPlainHtml escapes without wiki spans', () => {
+    const text = 'Dong 1\nDong 2 & giữ [[literal]]';
+    expect(escapeEntityNotesEditorPlainHtml(text)).toBe(
+      'Dong 1\nDong 2 &amp; giữ [[literal]]'
+    );
   });
 
   it('does not match [[ on one line to ]] on another line', () => {

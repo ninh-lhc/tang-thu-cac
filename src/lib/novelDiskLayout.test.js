@@ -107,4 +107,49 @@ describe('novelDiskLayout', () => {
     const planAfterEdit = buildShardWritePlan(edited.data, hashes);
     expect(planAfterEdit.writes.length).toBe(1);
   });
+
+  it('skips stringify for shards that are not dirty when a previous hash exists', () => {
+    const prev = new Map([
+      ['L/A.json', JSON.stringify({ overview: 'old-a' }, null, 2)],
+      ['L/B.json', JSON.stringify({ overview: 'old-b' }, null, 2)],
+    ]);
+    const data = {
+      L: {
+        A: { overview: 'new-a' },
+        B: { overview: 'changed-but-not-dirty' },
+      },
+    };
+    const plan = buildShardWritePlan(data, prev, new Set(['L\x00A']));
+    expect(plan.writes.map((w) => w.rel)).toEqual(['L/A.json']);
+    expect(plan.nextHashes.get('L/B.json')).toBe(prev.get('L/B.json'));
+    expect(plan.writes[0].jsonStr).toContain('new-a');
+  });
+
+  it('stringifies every shard when dirtyKeys is omitted', () => {
+    const prev = new Map([
+      ['L/A.json', JSON.stringify({ overview: 'old-a' }, null, 2)],
+      ['L/B.json', JSON.stringify({ overview: 'old-b' }, null, 2)],
+    ]);
+    const data = {
+      L: {
+        A: { overview: 'new-a' },
+        B: { overview: 'new-b' },
+      },
+    };
+    const plan = buildShardWritePlan(data, prev);
+    expect(plan.writes.map((w) => w.rel).sort()).toEqual(['L/A.json', 'L/B.json']);
+  });
+
+  it('stringifies a new shard even when it is not in dirtyKeys', () => {
+    const prev = new Map([['L/A.json', JSON.stringify({ overview: 'a' }, null, 2)]]);
+    const data = {
+      L: {
+        A: { overview: 'a' },
+        C: { overview: 'fresh' },
+      },
+    };
+    const plan = buildShardWritePlan(data, prev, new Set(['L\x00A']));
+    expect(plan.writes.map((w) => w.rel)).toEqual(['L/C.json']);
+    expect(plan.nextHashes.get('L/A.json')).toBe(prev.get('L/A.json'));
+  });
 });

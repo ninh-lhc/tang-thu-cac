@@ -17,9 +17,7 @@ function escapeHtml(text) {
     .replace(/>/g, '&gt;');
 }
 
-function resolveWikiToneClass(inner, { selfEntityId = null, entityMap = null } = {}) {
-  const lookup =
-    Array.isArray(entityMap) && entityMap.length > 0 ? buildEntityNameLookup(entityMap) : null;
+function resolveWikiToneClass(inner, { selfEntityId = null, lookup = null } = {}) {
   if (!lookup) return 'text-amber-300';
   const resolved = resolveEntityLookup(lookup, inner, { selfEntityId: safeString(selfEntityId).trim() });
   if (!resolved?.dest?.entityId) return 'text-amber-300';
@@ -69,11 +67,20 @@ export function buildEntityNotesEditorHighlightHtml(text, { selfEntityId = null,
   const source = safeString(text);
   if (!source) return '';
 
-  const options = { selfEntityId, entityMap };
+  const lookup =
+    Array.isArray(entityMap) && entityMap.length > 0 ? buildEntityNameLookup(entityMap) : null;
+  const options = { selfEntityId, lookup };
   const parts = source.split('\n');
   const lines = parts.map((line, index) => {
     const highlighted = highlightWikiOnLine(line, options);
     return index < parts.length - 1 ? `${highlighted}\n` : highlighted;
   });
   return lines.join('');
+}
+
+/** Lớp highlight khi đang gõ — chỉ escape HTML, giữ nguyên newline/whitespace như bản full highlight. */
+export function escapeEntityNotesEditorPlainHtml(text) {
+  const source = safeString(text);
+  if (!source) return '';
+  return escapeHtml(source);
 }

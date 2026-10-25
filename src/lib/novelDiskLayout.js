@@ -78,14 +78,22 @@ export function getShardState(dirHandle) {
 }
 
 /** Tính kế hoạch ghi shard dựa trên cache hash nội bộ (skip shard không đổi). */
-export function buildShardWritePlan(data, previousHashes) {
+export function buildShardWritePlan(data, previousHashes, dirtyKeys) {
   const keys = listShardKeysFromData(data);
   const writes = [];
   const nextHashes = new Map();
   const expected = new Set();
+  const useDirty = dirtyKeys instanceof Set && dirtyKeys.size > 0;
   for (const { lonId, nhoId } of keys) {
     const rel = shardKeyPath(lonId, nhoId);
     expected.add(rel);
+    if (useDirty && !dirtyKeys.has(`${lonId}\x00${nhoId}`)) {
+      const prev = previousHashes.get(rel);
+      if (prev !== undefined) {
+        nextHashes.set(rel, prev);
+        continue;
+      }
+    }
     const jsonStr = JSON.stringify(data[lonId][nhoId], null, 2);
     nextHashes.set(rel, jsonStr);
     if (previousHashes.get(rel) !== jsonStr) {
@@ -283,9 +291,9 @@ async function writeShardFile(lonDirHandle, nhoSeg, jsonStr) {
  * @param {FileSystemDirectoryHandle} novelDirHandle
  * @param {object} novelData — object đầy đủ trong memory (có .data)
  */
-export async function writeShardTree(novelDirHandle, novelData) {
+export async function writeShardTree(novelDirHandle, novelData, dirtyKeys) {
   const shardState = getShardState(novelDirHandle);
-  const plan = buildShardWritePlan(novelData.data || {}, shardState.hashes);
+  const plan = buildShardWritePlan(novelData.data || {}, shardState.hashes, dirtyKeys);
 
   const dataDir = await novelDirHandle.getDirectoryHandle(DATA_DIR_NAME, { create: true });
 
