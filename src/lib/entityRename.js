@@ -97,6 +97,57 @@ export function validateEntityRename(activeNovelData, { entityId, currentName = 
   return { ok: true, code: 'valid', renamed: true };
 }
 
+export const RETROACTIVE_RENAME_BLOCK_MESSAGE =
+  'Không thể thêm mốc đổi tên hồi tố vì thứ tự chapter chưa được rebuild tự động.';
+
+export const RENAME_CHAPTER_ORDER_BLOCK_MESSAGE =
+  'Không thể thêm mốc đổi tên ở chương này vì thứ tự rename bị trùng hoặc hồi tố.';
+
+export const MILESTONE_RENAME_CHAPTER_LOCKED_MESSAGE =
+  'Mốc này đã làm thay đổi tên entity. Không thể sửa chương sau khi rename đã áp dụng. Hãy dùng Hoàn tác rồi tạo lại mốc nếu cần.';
+
+/** Chapter lớn nhất đã ghi trong renameHistory (bỏ qua một milestone khi sửa mốc đó). */
+export function findMaxRenameHistoryChapter(entity, { excludeTimelineEventId = null } = {}) {
+  const exclude = String(excludeTimelineEventId || '').trim();
+  const history = Array.isArray(entity?.renameHistory) ? entity.renameHistory : [];
+  let max = null;
+  for (const row of history) {
+    const msId = String(row?.timelineEventId || '').trim();
+    if (exclude && msId === exclude) continue;
+    const ch = row?.chapter;
+    if (Number.isFinite(ch)) {
+      max = max == null ? ch : Math.max(max, ch);
+    }
+  }
+  return max;
+}
+
+export function validateTimelineRenameChapter(entity, chapter, { excludeTimelineEventId = null } = {}) {
+  const ch = Number.parseInt(String(chapter ?? ''), 10);
+  if (!Number.isFinite(ch)) return { ok: true };
+  const maxPrior = findMaxRenameHistoryChapter(entity, { excludeTimelineEventId });
+  if (maxPrior != null && ch <= maxPrior) {
+    return {
+      ok: false,
+      code: ch < maxPrior ? 'retroactive' : 'chapter_order',
+      message: RENAME_CHAPTER_ORDER_BLOCK_MESSAGE,
+    };
+  }
+  return { ok: true };
+}
+
+export function validateMilestoneChapterEdit(entity, milestone, newChapter) {
+  if (!entity || !milestone?.id || !milestoneHasAppliedRename(entity, milestone)) {
+    return { ok: true };
+  }
+  const oldCh = Number.parseInt(String(milestone.chapter ?? ''), 10);
+  const newCh = Number.parseInt(String(newChapter ?? ''), 10);
+  if (Number.isFinite(oldCh) && Number.isFinite(newCh) && oldCh !== newCh) {
+    return { ok: false, message: MILESTONE_RENAME_CHAPTER_LOCKED_MESSAGE };
+  }
+  return { ok: true };
+}
+
 export function removeNameFromAliasText(aliasText, nameToRemove) {
   const removeKey = String(nameToRemove || '')
     .trim()
@@ -139,7 +190,14 @@ export function createDefaultAliasAccess(_entity) {
  */
 export function applyEntityRename(
   entity,
-  { newName, timelineEventId = null, chapter = null, changedAt = null, aliasAccess = null } = {}
+  {
+    newName,
+    timelineEventId = null,
+    chapter = null,
+    changedAt = null,
+    reason = null,
+    aliasAccess = null,
+  } = {}
 ) {
   if (!entity) return { ok: false, renamed: false, code: 'no_entity' };
 
@@ -174,6 +232,7 @@ export function applyEntityRename(
     milestoneId: timelineEventId,
     chapter,
     changedAt,
+    reason,
   });
 
   return { ok: true, renamed: true, code: 'renamed', oldName: prevName, newName: target };
@@ -181,7 +240,7 @@ export function applyEntityRename(
 
 export function recordEntityRenameHistory(
   entity,
-  { oldName, newName, milestoneId = null, chapter = null, changedAt = null } = {}
+  { oldName, newName, milestoneId = null, chapter = null, changedAt = null, reason = null } = {}
 ) {
   if (!entity) return;
   const prev = String(oldName || '').trim();
@@ -194,13 +253,16 @@ export function recordEntityRenameHistory(
     ? history.filter((row) => String(row?.timelineEventId || '') !== msId)
     : history;
 
-  withoutDup.push({
+  const row = {
     oldName: prev,
     newName: next,
     chapter: Number.isFinite(chapter) ? chapter : null,
     timelineEventId: msId || null,
     changedAt: changedAt || new Date().toISOString(),
-  });
+  };
+  const reasonText = String(reason || '').trim();
+  if (reasonText) row.reason = reasonText;
+  withoutDup.push(row);
   entity.renameHistory = withoutDup;
 }
 

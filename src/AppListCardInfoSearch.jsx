@@ -1,5 +1,4 @@
-// Ô tìm kiếm + lọc dòng nội dung thẻ «Danh sách» (AUTO) ở chế độ Hồ sơ.
-// Gõ từ khóa → giữ dòng khớp; tùy chọn sắp xếp A-Z. Không còn lọc theo trường form.
+// Preview thẻ «Danh sách»: AUTO động từ view-model collection; fallback lọc markdown khi không có VM.
 import React, { useDeferredValue, useId, useMemo, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
@@ -9,6 +8,7 @@ import {
   filterListCardInfoBySearchQuery,
   sortListCardContentLinesPreservingStructure,
 } from './lib/listCardInfoSearch.js';
+import { useListCardDynamicAutoPreview } from './lib/listCardDynamicAutoPreview.jsx';
 
 export function AppListCardInfoSearch({
   info,
@@ -22,6 +22,12 @@ export function AppListCardInfoSearch({
   onSearchQueryChange,
   hideSearchBar = false,
   sortMode = 'none',
+  activeNovelData = null,
+  listViewMode = 'list',
+  collectionViewModel = null,
+  onEntitySelect = null,
+  wikiLinkOptOuts = null,
+  setEntityPage = null,
 }) {
   const [internalQuery, setInternalQuery] = useState('');
   const controlled = typeof onSearchQueryChange === 'function';
@@ -29,8 +35,23 @@ export function AppListCardInfoSearch({
   const setQuery = controlled ? onSearchQueryChange : setInternalQuery;
   const deferred = useDeferredValue(safeString(query).trim());
   const inputId = useId();
+  const useDynamicAuto = Boolean(collectionViewModel);
 
-  // fieldValueFilters giữ prop tương thích; thẻ danh sách chỉ lọc theo ô tìm.
+  const dynamicPreview = useListCardDynamicAutoPreview({
+    info,
+    dirHandle,
+    entityMap,
+    linkRegex,
+    onNavigate,
+    selfEntityId,
+    activeNovelData,
+    listViewMode,
+    collectionViewModel: useDynamicAuto ? collectionViewModel : null,
+    onEntitySelect,
+    wikiLinkOptOuts,
+    setEntityPage: useDynamicAuto ? setEntityPage : null,
+  });
+
   const afterFields = useMemo(
     () => filterListCardInfoByFieldFilters(safeString(info), fieldValueFilters),
     [info, fieldValueFilters]
@@ -48,6 +69,32 @@ export function AppListCardInfoSearch({
 
   const fieldFilteredEmpty =
     afterFields.isFiltered && afterFields.keptContentLines === 0;
+
+  const legacyNodes = useMemo(
+    () =>
+      renderEntityNotesMarkdown(
+        text,
+        dirHandle,
+        entityMap,
+        linkRegex,
+        onNavigate,
+        selfEntityId,
+        Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [],
+        { activeNovelData },
+      ),
+    [
+      text,
+      dirHandle,
+      entityMap,
+      linkRegex,
+      onNavigate,
+      selfEntityId,
+      wikiLinkOptOuts,
+      activeNovelData,
+    ]
+  );
+
+  const showLegacyFilterHints = !useDynamicAuto;
 
   return (
     <div className="space-y-2 min-h-[200px]">
@@ -79,38 +126,33 @@ export function AppListCardInfoSearch({
               </button>
             ) : null}
           </div>
-          {isFiltered ? (
+          {showLegacyFilterHints && isFiltered ? (
             <span className="text-[11px] text-slate-500 font-serif tabular-nums shrink-0" aria-live="polite">
               {matchCount === 0 ? 'Không có dòng khớp' : `${matchCount} dòng khớp`}
             </span>
           ) : null}
         </div>
-      ) : isFiltered ? (
+      ) : showLegacyFilterHints && isFiltered ? (
         <p className="text-[11px] text-slate-500 font-serif tabular-nums" aria-live="polite">
           {matchCount === 0 ? 'Không có dòng khớp tìm kiếm' : `${matchCount} dòng khớp tìm kiếm`}
         </p>
       ) : null}
-      {fieldFilteredEmpty ? (
+      {showLegacyFilterHints && fieldFilteredEmpty ? (
         <p className="text-sm text-amber-200/90 font-serif border border-amber-900/50 rounded-md px-3 py-2 bg-amber-950/25">
           Không có dòng danh mục nào chứa đủ giá trị đã chọn ở bộ lọc trường. Thử bỏ bớt lọc hoặc chọn &quot;Tất cả&quot;.
         </p>
       ) : null}
-      {!fieldFilteredEmpty && isFiltered && matchCount === 0 ? (
+      {showLegacyFilterHints && !fieldFilteredEmpty && isFiltered && matchCount === 0 ? (
         <p className="text-sm text-amber-200/90 font-serif border border-amber-900/50 rounded-md px-3 py-2 bg-amber-950/25">
           Thử từ khóa khác (không phân biệt dấu) hoặc xóa ô tìm để xem toàn bộ danh mục.
         </p>
       ) : null}
       <div className="font-serif max-w-none animate-fade-in">
-        {!fieldFilteredEmpty ? (
-          renderEntityNotesMarkdown(
-            text,
-            dirHandle,
-            entityMap,
-            linkRegex,
-            onNavigate,
-            selfEntityId
-          )
-        ) : null}
+        {!fieldFilteredEmpty || useDynamicAuto
+          ? dynamicPreview.usesDynamicAuto
+            ? dynamicPreview.nodes
+            : legacyNodes
+          : null}
       </div>
     </div>
   );

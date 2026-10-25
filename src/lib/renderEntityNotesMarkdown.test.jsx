@@ -618,4 +618,32 @@ describe('renderEntityNotesMarkdown', () => {
     expect(chip?.getAttribute('tabindex')).toBe('0');
     expect(chip?.className).toContain('tt-kbd-focus');
   });
+
+  it('renders ttc-query block as dynamic table with wiki entity links', () => {
+    const novel = {
+      data: {
+        'do-thi-nhan-vat': {
+          hero: {
+            entities: [{ id: 'c1', name: 'Ton Canh', dynamicData: { f_level: '9' } }],
+          },
+        },
+      },
+    };
+    const md = [
+      '```ttc-query',
+      'VIEW TABLE',
+      'FROM entity',
+      'SELECT entity, f_level',
+      '```',
+    ].join('\n');
+    const entityMap = [{ id: 'c1', name: 'Ton Canh', dest: { entityId: 'c1', lonId: 'do-thi-nhan-vat', nhoId: 'hero' } }];
+    const { container } = render(
+      <div>
+        {renderEntityNotesMarkdown(md, null, entityMap, null, vi.fn(), null, null, { activeNovelData: novel })}
+      </div>,
+    );
+    expect(container.querySelector('[data-ttc-query-view="table"]')).not.toBeNull();
+    expect(container.querySelector('[data-entity-wiki-link]')).not.toBeNull();
+    expect(container.textContent).toContain('9');
+  });
 });

@@ -25,7 +25,8 @@ import { MAX_QUICK_ENTRY_SLOTS } from './entityQuickEntrySlots.js';
 
 const LEGACY_AUTO_LIST_START = '<!-- AUTO_COLLECTION_LIST:START -->';
 const LEGACY_AUTO_LIST_END = '<!-- AUTO_COLLECTION_LIST:END -->';
-const AUTO_LIST_TITLE = '# Danh m\u1ee5c th\u1ebb (AUTO)';
+export const COLLECTION_AUTO_LIST_TITLE = '# Danh m\u1ee5c th\u1ebb (AUTO)';
+const AUTO_LIST_TITLE = COLLECTION_AUTO_LIST_TITLE;
 /** Giới hạn độ dài một mẩu «Nhãn - giá trị» sau [[Tên thẻ]] (tránh dòng AUTO quá dài). */
 const AUTO_LIST_LABELED_FIELD_MAX_LEN = 180;
 
@@ -400,6 +401,31 @@ function mergeCollectionListAutoBlock(baseText, blockBody) {
   const prefix = cleaned.trimEnd();
   const sep = prefix ? '\n\n' : '';
   return `${prefix}${sep}${body}`.trim();
+}
+
+/**
+ * Tách ghi chép quanh khối AUTO hệ thống (giữ source, ẩn khi preview động).
+ * @returns {{ before: string, after: string, hasAutoBlock: boolean }}
+ */
+export function splitNoteAroundCollectionAutoBlock(baseText) {
+  const text = safeString(baseText);
+  const legacy = findLegacyAutoListRange(text);
+  if (legacy) {
+    return {
+      before: text.slice(0, legacy.start),
+      after: text.slice(legacy.end),
+      hasAutoBlock: true,
+    };
+  }
+  const titleRange = findTitleAutoListRange(text);
+  if (!titleRange) {
+    return { before: text, after: '', hasAutoBlock: false };
+  }
+  return {
+    before: text.slice(0, titleRange.start),
+    after: text.slice(titleRange.end),
+    hasAutoBlock: true,
+  };
 }
 
 /** Có khối AUTO định dạng `# Danh mục thẻ (AUTO)` và không còn legacy HTML comment. */
@@ -1291,10 +1317,14 @@ function formatAutoListDetailBitsForPreview(detailBits, entity, tabConfig, owner
 }
 
 /** Nguyên chuỗi ô «Chuỗi hiển thị / dữ liệu AUTO» (`f_status`), fallback `entity.status`. */
-function getEntityDisplayLineRaw(entity) {
+export function getEntityAutoDisplayString(entity) {
   const fromDyn = safeString(entity?.dynamicData?.f_status).trim();
   if (fromDyn) return fromDyn;
   return safeString(entity?.status).trim();
+}
+
+function getEntityDisplayLineRaw(entity) {
+  return getEntityAutoDisplayString(entity);
 }
 
 /** Giữ nguyên chuỗi hiển thị: không tách nhãn/field; chỉ bọc màu nếu chưa có [[wiki]]. */

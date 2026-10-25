@@ -11,6 +11,7 @@ export const MarkdownPreviewPane = memo(function MarkdownPreviewPane({
   onNavigate,
   selfEntityId = null,
   wikiLinkOptOuts = null,
+  activeNovelData = null,
   variant = 'standard',
   className = '',
   containerRef = null,
@@ -25,9 +26,11 @@ export const MarkdownPreviewPane = memo(function MarkdownPreviewPane({
         ? buildEntityNotesPreviewModel(text || '', dirHandle, entityMap, linkRegex, onNavigate, selfEntityId, {
             onJumpToLine,
             wikiLinkOptOuts: Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [],
+            activeNovelData,
+            tabsConfig: activeNovelData?.tabsConfig ?? null,
           })
         : null,
-    [dirHandle, entityMap, linkRegex, onJumpToLine, onNavigate, selfEntityId, text, variant, wikiLinkOptOuts]
+    [activeNovelData, dirHandle, entityMap, linkRegex, onJumpToLine, onNavigate, selfEntityId, text, variant, wikiLinkOptOuts]
   );
   const renderer = variant === 'entityNotes' ? renderEntityNotesMarkdown : renderMarkdown;
 

@@ -3540,6 +3540,7 @@ export const ModalMilestone = ({
   statusTierLabelSet = null,
   showToast,
   autoLinkToastEnabled = true,
+  lockChapterAfterRename = false,
 }) => {
   const fieldsTemplate = resolveFieldsTemplate(tabConfig, parentTabId, parentLabel);
   const wikiWrapOptions = useMemo(
@@ -4329,9 +4330,17 @@ export const ModalMilestone = ({
                   type="number"
                   value={safeString(formData.chapter)}
                   onChange={(event) => patchFormData({ chapter: event.target.value })}
-                  className="w-full rounded-[22px] border border-slate-700 bg-slate-900 px-4 py-3 text-base font-bold text-amber-300 outline-none transition-colors focus:border-amber-500"
+                  readOnly={lockChapterAfterRename}
+                  aria-readonly={lockChapterAfterRename || undefined}
+                  className={`w-full rounded-[22px] border border-slate-700 bg-slate-900 px-4 py-3 text-base font-bold text-amber-300 outline-none transition-colors focus:border-amber-500 ${lockChapterAfterRename ? 'cursor-not-allowed opacity-80' : ''}`}
                   placeholder="VD: 150"
                 />
+                {lockChapterAfterRename ? (
+                  <p className="mt-1 text-[11px] font-serif leading-relaxed text-amber-200/80">
+                    Mốc này đã làm thay đổi tên entity. Không thể sửa chương sau khi rename đã áp dụng. Hãy dùng Hoàn
+                    tác rồi tạo lại mốc nếu cần.
+                  </p>
+                ) : null}
               </div>
 
               <div>

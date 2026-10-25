@@ -5,11 +5,15 @@ import {
   applyEntityRename,
   entityNamesEquivalentForRename,
   findEntityRenameCollision,
+  findMaxRenameHistoryChapter,
   milestoneHasAppliedRename,
   purgeNamesFromWikiRetiredAliases,
   recordEntityRenameHistory,
   removeNameFromAliasText,
   validateEntityRename,
+  validateTimelineRenameChapter,
+  validateMilestoneChapterEdit,
+  RENAME_CHAPTER_ORDER_BLOCK_MESSAGE,
 } from './entityRename.js';
 
 function novelWithEntities(entities) {
@@ -163,6 +167,88 @@ describe('entityRename', () => {
   it('entityNamesEquivalentForRename respects fingerprint rules', () => {
     expect(entityNamesEquivalentForRename('Tần Vũ', 'Tần Vũ')).toBe(true);
     expect(entityNamesEquivalentForRename('Độ Kiếp', 'độ kiếp')).toBe(false);
+  });
+
+  it('applyEntityRename unchanged does not append renameHistory', () => {
+    const ent = { id: 'a', name: 'Tần Vũ', dynamicData: { f_alias: 'X' } };
+    const r = applyEntityRename(ent, { newName: 'Tần Vũ' });
+    expect(r.renamed).toBe(false);
+    expect(ent.renameHistory).toBeUndefined();
+    expect(ent.dynamicData.f_alias).toBe('X');
+  });
+
+  it('direct-form rename records reason without timelineEventId', () => {
+    const ent = { id: 'a', name: 'A', dynamicData: {} };
+    applyEntityRename(ent, { newName: 'B', reason: 'direct-form' });
+    expect(ent.renameHistory[0].reason).toBe('direct-form');
+    expect(ent.renameHistory[0].timelineEventId).toBeNull();
+    expect(ent.renameHistory[0].chapter).toBeNull();
+  });
+
+  it('blocks retroactive timeline rename by chapter order', () => {
+    const ent = {
+      id: 'a',
+      name: 'Thiên Đế',
+      renameHistory: [
+        { oldName: 'Tần Vũ', newName: 'Tần Đế', chapter: 50, timelineEventId: 'ms1' },
+        { oldName: 'Tần Đế', newName: 'Thiên Đế', chapter: 120, timelineEventId: 'ms2' },
+      ],
+    };
+    expect(findMaxRenameHistoryChapter(ent)).toBe(120);
+    const retro = validateTimelineRenameChapter(ent, 80);
+    expect(retro.ok).toBe(false);
+    expect(retro.code).toBe('retroactive');
+    expect(retro.message).toBe(RENAME_CHAPTER_ORDER_BLOCK_MESSAGE);
+    expect(validateTimelineRenameChapter(ent, 150).ok).toBe(true);
+  });
+
+  it('blocks duplicate rename at the same chapter as prior rename', () => {
+    const ent = {
+      id: 'a',
+      name: 'Tần Đế',
+      renameHistory: [{ oldName: 'Tần Vũ', newName: 'Tần Đế', chapter: 120, timelineEventId: 'ms1' }],
+    };
+    const dup = validateTimelineRenameChapter(ent, 120);
+    expect(dup.ok).toBe(false);
+    expect(dup.code).toBe('chapter_order');
+  });
+
+  it('blocks chapter edit on milestone that already applied rename', () => {
+    const ent = {
+      id: 'a',
+      name: 'Tần Đế',
+      renameHistory: [{ oldName: 'Tần Vũ', newName: 'Tần Đế', chapter: 120, timelineEventId: 'ms1' }],
+      milestones: [{ id: 'ms1', chapter: 120, nextEntityName: 'Tần Đế' }],
+    };
+    expect(validateMilestoneChapterEdit(ent, ent.milestones[0], 120).ok).toBe(true);
+    expect(validateMilestoneChapterEdit(ent, ent.milestones[0], 121).ok).toBe(false);
+  });
+
+  it('entityMap rebuilds from undo snapshot after rename', () => {
+    const novel = novelWithEntities([{ id: 'a', name: 'Tên Cũ', dynamicData: {} }]);
+    const prev = structuredClone(novel);
+    applyEntityRename(novel.data.lon.sub.entities[0], { newName: 'Tên Mới', reason: 'direct-form' });
+    expect(buildEntityLinkMap(novel).some((row) => row.name === 'Tên Mới')).toBe(true);
+    const restoredMap = buildEntityLinkMap(prev);
+    expect(restoredMap.some((row) => row.name === 'Tên Cũ')).toBe(true);
+    expect(restoredMap.some((row) => row.name === 'Tên Mới')).toBe(false);
+  });
+
+  it('undo snapshot restores rename-related entity fields', () => {
+    const entity = {
+      id: 'a',
+      name: 'Tần Vũ',
+      dynamicData: { f_alias: '' },
+      wikiRetiredAliases: [],
+      renameHistory: [],
+    };
+    const prev = structuredClone(entity);
+    applyEntityRename(entity, { newName: 'Tần Đế', reason: 'direct-form' });
+    expect(entity.name).toBe('Tần Đế');
+    const restored = structuredClone(prev);
+    expect(restored.name).toBe('Tần Vũ');
+    expect(restored.dynamicData.f_alias).toBe('');
+    expect(restored.renameHistory).toEqual([]);
   });
 });
 

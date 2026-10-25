@@ -15,6 +15,7 @@ import {
 import { safeString, AsyncLocalImage } from './MasterUtils.jsx';
 import { FALLBACK_IMG } from './MasterEngines.js';
 import { AppCollectionListContent } from './AppCollectionListContent.jsx';
+import { AppCollectionListViewConfigModal } from './AppCollectionListViewConfigModal.jsx';
 import { AppGalleryContent } from './AppGalleryContent.jsx';
 import { AppCollectionTrackTabs } from './AppCollectionTrackTabs.jsx';
 import { AppCollectionEmptyState } from './AppCollectionEmptyState.jsx';
@@ -144,6 +145,11 @@ export function AppCollectionSection({
   groupVisibleCount,
   setGroupVisibleCount,
   entityPageSize,
+  listViewConfig,
+  collectionViewModel,
+  listCardAutoViewModel,
+  collectionFieldOptions,
+  onUpdateListViewConfig,
   handleAddEntityImage,
   handleRemoveEntityImage,
   onEntityCardSelect,
@@ -265,6 +271,8 @@ export function AppCollectionSection({
 
   const [entityFilterValueDraft, setEntityFilterValueDraft] = React.useState(entityFilterValue || '');
   const [isCollectionSwitching, setIsCollectionSwitching] = React.useState(false);
+  const [listViewConfigOpen, setListViewConfigOpen] = React.useState(false);
+  const listViewMode = listViewConfig?.mode === 'table' ? 'table' : 'list';
   const currentTabEntities = React.useMemo(() => {
     if (!activeNovelData || !activeTabLon || !activeTabNho) return [];
     const tabData = activeNovelData.data?.[activeTabLon]?.[activeTabNho || 'default'];
@@ -589,6 +597,39 @@ export function AppCollectionSection({
                   Xóa lọc
                 </button>
               )}
+              <div className="flex rounded-xl border border-slate-800 overflow-hidden flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => onUpdateListViewConfig?.({ mode: 'list' })}
+                  className={`${toolbarCtrlBase} px-3 border-0 rounded-none ${
+                    listViewMode === 'list'
+                      ? 'bg-amber-900/40 text-amber-200'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Danh sách
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateListViewConfig?.({ mode: 'table' })}
+                  className={`${toolbarCtrlBase} px-3 border-0 border-l border-slate-800 rounded-none ${
+                    listViewMode === 'table'
+                      ? 'bg-amber-900/40 text-amber-200'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Bảng
+                </button>
+              </div>
+              {listViewMode === 'table' && (
+                <button
+                  type="button"
+                  onClick={() => setListViewConfigOpen(true)}
+                  className={`${toolbarCtrlBase} px-3 border border-slate-800 bg-slate-900 text-slate-300 hover:text-slate-100 flex-shrink-0`}
+                >
+                  Thiết lập bảng
+                </button>
+              )}
             </>) : (
               <button
                 id="save-standard-btn"
@@ -771,6 +812,8 @@ export function AppCollectionSection({
             />
             <AppCollectionListContent
               collectionSubTab={collectionSubTab}
+              listViewMode={listViewMode}
+              collectionViewModel={collectionViewModel}
               entitiesList={entitiesList}
               entityPage={entityPage}
               setEntityPage={setEntityPage}
@@ -787,7 +830,24 @@ export function AppCollectionSection({
               currentContextDirHandle={currentContextDirHandle}
               activeTabLon={activeTabLon}
               entityPageSize={entityPageSize}
+              wikiContext={{
+                dirHandle: currentContextDirHandle,
+                lookup: entityMap,
+                linkRegex: globalLinkRegex,
+                onNavigate: handleNavigate,
+              }}
             />
+            {listViewConfigOpen && (
+              <AppCollectionListViewConfigModal
+                fieldOptions={collectionFieldOptions || []}
+                initialColumns={listViewConfig?.columns || []}
+                onClose={() => setListViewConfigOpen(false)}
+                onSave={(columns) => {
+                  onUpdateListViewConfig?.({ columns });
+                  setListViewConfigOpen(false);
+                }}
+              />
+            )}
 
             <AppCollectionEmptyState
               show={(collectionSubTab === 'detail' || collectionSubTab === 'timeline' || collectionSubTab === 'description') && !selectedEntity}
@@ -991,6 +1051,7 @@ export function AppCollectionSection({
                   debouncedMarkdownPreview={debouncedMarkdownPreview}
                   currentContextDirHandle={currentContextDirHandle}
                   entityMap={entityMap}
+                  activeNovelData={activeNovelData}
                   statusTierLabelSet={statusTierLabelSet}
                   globalLinkRegex={globalLinkRegex}
                   onNavigate={handleNavigate}
@@ -1009,6 +1070,21 @@ export function AppCollectionSection({
                   memberNotesEditTarget={memberNotesEditTarget}
                   onSaveMemberNotes={handleSaveMemberNotesEdit}
                   onCancelMemberNotesEdit={handleCancelMemberNotesEdit}
+                  listViewConfig={listViewConfig}
+                  listCardAutoViewModel={listCardAutoViewModel}
+                  entitySearch={entitySearch}
+                  setEntitySearch={setEntitySearch}
+                  entitySortMode={entitySortMode}
+                  setEntitySortMode={setEntitySortMode}
+                  onListCardEntitySelect={(entity) => {
+                    if (!entity?.id) return;
+                    handleNavigate({
+                      lonId: activeTabLon,
+                      nhoId: activeTabNho,
+                      entityId: entity.id,
+                    });
+                  }}
+                  setEntityPage={setEntityPage}
                 />
 
                 <AppEntitySummaryBlocks

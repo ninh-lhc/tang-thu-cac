@@ -27,6 +27,7 @@ Cài dependency: repo có **`.npmrc`** (`legacy-peer-deps=true`) vì peer Vite 8
 | CSS/font/theme toàn cục | `src/AppPhongChuVaTheme.jsx` |
 | Nhật ký / áp gợi ý AI vào novel | `src/appNhatKyVaGoiThe.js` |
 | Logic thuần nhỏ | `src/lib/*.js` (vd. `stripWikiBrackets`, `computeRelatedEntities`, `entityCollectionQuery`, `readingProgress`) |
+| TTC-Query (block ghi chép) | `docs/TTC_QUERY.md`, `src/lib/ttcQuery*.js(x)` |
 | Tab Tổng quan (tiến độ/sao) | `src/AppOverviewSection.jsx`, `src/AppOverviewRatingStars.jsx` |
 | Worker / tìm kiếm | `src/deepSearchCore.js`, `deepSearch.worker.js` |
 

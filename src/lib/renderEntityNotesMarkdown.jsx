@@ -21,6 +21,7 @@ import {
   normalizeTableColumnCount,
   tryParseMarkdownTableBlock,
 } from './markdownTable.js';
+import { TtcQueryPreviewBlock } from './ttcQueryRenderer.jsx';
 
 const DIVIDER_RE = /^(?:-{3,}|\*{3,}|_{3,})$/;
 const SECTION_HEADING_RE = /^\*\*(\d+)\.\s(.+?)\*\*$/;
@@ -466,6 +467,7 @@ function renderBlocksFromLines(lines, context, options = {}) {
     }
 
     if (trimmed.startsWith('```')) {
+      const fenceLang = trimmed.slice(3).trim().toLowerCase();
       const fenceLines = [];
       const startIndex = lineIndex;
       lineIndex += 1;
@@ -479,18 +481,32 @@ function renderBlocksFromLines(lines, context, options = {}) {
         lineIndex += 1;
       }
       const jumpProps = buildJumpProps(startIndex + 1);
-      blocks.push(
-        <pre
-          key={`${baseKey}-code-${startIndex}`}
-          {...jumpProps}
-          className={mergeClassName(
-            jumpProps,
-            'my-5 overflow-x-auto rounded-2xl border border-slate-700/60 bg-slate-950/80 px-4 py-3 font-mono text-[0.92rem] leading-relaxed text-slate-300 whitespace-pre-wrap',
-          )}
-        >
-          <code>{fenceLines.join('\n')}</code>
-        </pre>
-      );
+      if (fenceLang === 'ttc-query') {
+        blocks.push(
+          <div key={`${baseKey}-ttc-query-${startIndex}`} {...jumpProps} className={mergeClassName(jumpProps, '')}>
+            <TtcQueryPreviewBlock
+              source={fenceLines.join('\n')}
+              activeNovelData={context.activeNovelData ?? null}
+              tabsConfig={context.tabsConfig ?? null}
+              renderContext={context}
+              baseKey={`${baseKey}-ttc-${startIndex}`}
+            />
+          </div>,
+        );
+      } else {
+        blocks.push(
+          <pre
+            key={`${baseKey}-code-${startIndex}`}
+            {...jumpProps}
+            className={mergeClassName(
+              jumpProps,
+              'my-5 overflow-x-auto rounded-2xl border border-slate-700/60 bg-slate-950/80 px-4 py-3 font-mono text-[0.92rem] leading-relaxed text-slate-300 whitespace-pre-wrap',
+            )}
+          >
+            <code>{fenceLines.join('\n')}</code>
+          </pre>,
+        );
+      }
       continue;
     }
 
@@ -838,7 +854,16 @@ export function buildEntityNotesPreviewModel(
   const wikiLinkOptOuts = Array.isArray(options.wikiLinkOptOuts) ? options.wikiLinkOptOuts : [];
   return renderBlocksFromLines(
     text.split('\n'),
-    { dirHandle, lookup, linkRegex, onNavigate, selfEntityId, wikiLinkOptOuts },
+    {
+      dirHandle,
+      lookup,
+      linkRegex,
+      onNavigate,
+      selfEntityId,
+      wikiLinkOptOuts,
+      activeNovelData: options.activeNovelData ?? null,
+      tabsConfig: options.tabsConfig ?? options.activeNovelData?.tabsConfig ?? null,
+    },
     { baseKey: 'entity-notes', collectToc: true, usedAnchors: new Set(), ...options }
   );
 }
@@ -851,7 +876,10 @@ export const renderEntityNotesMarkdown = (
   onNavigate,
   selfEntityId = null,
   wikiLinkOptOuts = null,
+  previewContext = null,
 ) =>
   buildEntityNotesPreviewModel(text, dirHandle, entityMap, linkRegex, onNavigate, selfEntityId, {
     wikiLinkOptOuts: Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [],
+    activeNovelData: previewContext?.activeNovelData ?? null,
+    tabsConfig: previewContext?.tabsConfig ?? previewContext?.activeNovelData?.tabsConfig ?? null,
   }).blocks;

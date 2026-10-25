@@ -16,7 +16,10 @@ export function safeString(val) {
 
 export function getEntityFieldValue(ent, fieldId) {
   if (!ent || !fieldId) return '';
-  if (ent.dynamicData?.[fieldId]) return safeString(ent.dynamicData[fieldId]);
+  const dyn = ent.dynamicData;
+  if (dyn && typeof dyn === 'object' && Object.prototype.hasOwnProperty.call(dyn, fieldId)) {
+    return safeString(dyn[fieldId]);
+  }
   if (fieldId === 'f_status') return safeString(ent.status || '');
   if (fieldId === 'f_title') return safeString(ent.title || ent.name || '');
   if (fieldId === 'f_desc') return safeString(ent.description || ent.info || '');

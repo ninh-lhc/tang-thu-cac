@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ArrowLeft, BookOpen, Save, Edit3, Eye, ScrollText, Lock, Search, Filter } from 'lucide-react';
+import { ArrowLeft, BookOpen, Save, Edit3, Eye, ScrollText, Lock, Search, Filter, Table2 } from 'lucide-react';
 import { MarkdownToolbar } from './MasterComponents.jsx';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
 import {
@@ -14,6 +14,7 @@ import {
 } from './lib/entityNotesWikiAutocomplete.js';
 import { EntityNotesAiToolsMenu } from './EntityNotesAiToolsMenu.jsx';
 import { EntityNotesFindReplacePanel } from './EntityNotesFindReplacePanel.jsx';
+import { TtcQueryBuilderModal } from './lib/TtcQueryBuilderModal.jsx';
 import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
 import { filterEntityNotesMarkdown, sortMarkdownSectionsAfterFilter } from './lib/entityNotesTabFilter.js';
 import { isListCardEntity } from './lib/collectionListCardSync.js';
@@ -22,6 +23,7 @@ import {
   safeString,
   getEntityNotesToolbarState,
   handleToolbarClick,
+  handleToolbarInsertText,
   resolveEntityNotesLineBreak,
   resolveEntityNotesBackspace,
   resolveEntityNotesTabIndent,
@@ -84,12 +86,14 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   debouncedMarkdownPreview,
   currentContextDirHandle,
   entityMap,
+  activeNovelData = null,
   statusTierLabelSet = null,
   globalLinkRegex,
   onNavigate,
   selfEntityId,
   entityNotesSubject,
   entityTemplateHint,
+  activeTabNho = '',
   onOpenAutoSyncGuide,
   onOpenEntityNotesGuide,
   editingContext = null,
@@ -116,6 +120,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   // không re-render và ghi đè value cũ giữa lúc compose ⇒ tránh rớt/lặp ký tự.
   const isComposingRef = useRef(false);
   const [toolbarState, setToolbarState] = useState(() => getEntityNotesToolbarState(s0, 0, 0));
+  const [queryBuilderOpen, setQueryBuilderOpen] = useState(false);
   const [editorCaret, setEditorCaret] = useState(0);
   const [wikiAcSelectedIndex, setWikiAcSelectedIndex] = useState(0);
   const [wikiAcSuppressedAt, setWikiAcSuppressedAt] = useState(null);
@@ -767,6 +772,14 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           />
           <button
             type="button"
+            onClick={() => setQueryBuilderOpen(true)}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 transition-colors flex items-center gap-1.5 bg-violet-950/40 text-violet-200 border border-violet-700/40 hover:bg-violet-900/40"
+            title="Chèn bảng dữ liệu động (ttc-query)"
+          >
+            <Table2 size={12} /> Tạo bảng
+          </button>
+          <button
+            type="button"
             onClick={() => {
               setLivePreviewText(notesEdit.text);
               setDebouncedMarkdownPreview(notesEdit.text);
@@ -781,6 +794,19 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             <Eye size={12} /> Preview
           </button>
         </div>
+        {queryBuilderOpen && (
+          <TtcQueryBuilderModal
+            activeNovelData={activeNovelData}
+            initialLonId={activeTabLon}
+            initialNhoId={activeTabNho}
+            onClose={() => setQueryBuilderOpen(false)}
+            onInsert={(markdown) => {
+              handleToolbarInsertText(`${markdown}\n\n`, 'entity-info-editor', onEditorContentChange);
+              setQueryBuilderOpen(false);
+              setIsSplitPreview(true);
+            }}
+          />
+        )}
         <div
           className={`flex min-h-0 gap-4 overflow-hidden ${ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS} ${isSplitPreview ? 'flex-row' : 'flex-col'}`}
         >
@@ -829,6 +855,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               text={debouncedMarkdownPreview}
               dirHandle={currentContextDirHandle}
               entityMap={entityMap}
+              activeNovelData={activeNovelData}
               linkRegex={globalLinkRegex}
               onNavigate={onNavigate}
               selfEntityId={selfEntityId}
@@ -873,6 +900,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   debouncedMarkdownPreview,
   currentContextDirHandle,
   entityMap,
+  activeNovelData = null,
   statusTierLabelSet = null,
   globalLinkRegex,
   onNavigate,
@@ -891,6 +919,14 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   memberNotesEditTarget = null,
   onSaveMemberNotes = null,
   onCancelMemberNotesEdit = null,
+  listViewConfig = null,
+  listCardAutoViewModel = null,
+  entitySearch: collectionEntitySearch = '',
+  setEntitySearch: setCollectionEntitySearch = null,
+  entitySortMode: collectionEntitySortMode = 'name_asc',
+  setEntitySortMode: setCollectionEntitySortMode = null,
+  onListCardEntitySelect = null,
+  setEntityPage: setCollectionEntityPage = null,
 }) {
   const autoSyncControls = useMemo(() => {
     if (!selectedEntity || !currentTabConfig) return [];
@@ -975,16 +1011,32 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
     setNotesAdvFieldId('none');
     setNotesNotesSortMode('none');
     setNotesViewFieldFilters({});
-  }, []);
+    setCollectionEntitySearch?.('');
+    setCollectionEntitySortMode?.('name_asc');
+  }, [setCollectionEntitySearch, setCollectionEntitySortMode]);
 
   const hasFieldFilterApplied =
     !isListCardEntity(selectedEntity) && Object.keys(notesViewFieldFilters).length > 0;
-  const hasTextSearch = isListCardEntity(selectedEntity)
-    ? safeString(listCatalogQuery).trim()
-    : safeString(notesViewQuery).trim();
+  const listCardUsesCollectionQuery =
+    isListCardEntity(selectedEntity) &&
+    listCardAutoViewModel &&
+    typeof setCollectionEntitySearch === 'function';
+  const hasTextSearch = listCardUsesCollectionQuery
+    ? safeString(collectionEntitySearch).trim()
+    : isListCardEntity(selectedEntity)
+      ? safeString(listCatalogQuery).trim()
+      : safeString(notesViewQuery).trim();
+  const listCardSortMode = listCardUsesCollectionQuery
+    ? safeString(collectionEntitySortMode) || 'name_asc'
+    : notesNotesSortMode;
   const isNotesFilterActive = Boolean(
-    hasFieldFilterApplied || hasTextSearch || notesNotesSortMode !== 'none'
+    hasFieldFilterApplied ||
+      hasTextSearch ||
+      (listCardUsesCollectionQuery
+        ? collectionEntitySortMode !== 'name_asc'
+        : notesNotesSortMode !== 'none')
   );
+  const listViewMode = listViewConfig?.mode === 'table' ? 'table' : 'list';
 
   const appliedFieldEntry = hasFieldFilterApplied ? Object.entries(notesViewFieldFilters)[0] : null;
   const appliedFieldLabel =
@@ -1161,7 +1213,12 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
           {hasTextSearch && (
             <span className="px-2.5 py-1 rounded-full border border-amber-700/50 bg-amber-950/30 text-amber-200">
               Tìm: &quot;
-              {(isListCardEntity(selectedEntity) ? listCatalogQuery : notesViewQuery).trim()}&quot;
+              {(listCardUsesCollectionQuery
+                ? collectionEntitySearch
+                : isListCardEntity(selectedEntity)
+                  ? listCatalogQuery
+                  : notesViewQuery
+              ).trim()}&quot;
             </span>
           )}
         </div>
@@ -1181,12 +1238,19 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             />
             <input
               type="search"
-              value={isListCardEntity(selectedEntity) ? listCatalogQuery : notesViewQuery}
-              onChange={(e) =>
-                isListCardEntity(selectedEntity)
-                  ? setListCatalogQuery(e.target.value)
-                  : setNotesViewQuery(e.target.value)
+              value={
+                listCardUsesCollectionQuery
+                  ? collectionEntitySearch
+                  : isListCardEntity(selectedEntity)
+                    ? listCatalogQuery
+                    : notesViewQuery
               }
+              onChange={(e) => {
+                const v = e.target.value;
+                if (listCardUsesCollectionQuery) setCollectionEntitySearch(v);
+                else if (isListCardEntity(selectedEntity)) setListCatalogQuery(v);
+                else setNotesViewQuery(v);
+              }}
               placeholder={
                 isListCardEntity(selectedEntity)
                   ? 'Gõ để lọc dòng: tên thẻ, chuỗi hiển thị…'
@@ -1204,17 +1268,24 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
           {isListCardEntity(selectedEntity) ? (
             <div className="grid grid-cols-1 gap-2.5 overflow-visible sm:grid-cols-2">
               <select
-                value={notesNotesSortMode}
-                onChange={(e) => setNotesNotesSortMode(e.target.value)}
+                value={listCardSortMode}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (listCardUsesCollectionQuery) {
+                    setCollectionEntitySortMode?.(v === 'name_desc' ? 'name_desc' : 'name_asc');
+                  } else setNotesNotesSortMode(v);
+                }}
                 className="tt-kbd-focus h-9 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-[12px] font-serif outline-none focus:border-amber-600/50 text-slate-200"
                 aria-label="Sắp xếp dòng danh mục"
               >
-                <option value="none">Thứ tự gốc</option>
+                {!listCardUsesCollectionQuery ? <option value="none">Thứ tự gốc</option> : null}
                 <option value="name_asc">A-Z (dòng)</option>
                 <option value="name_desc">Z-A (dòng)</option>
               </select>
               <p className="text-[11px] text-slate-500 font-serif leading-relaxed self-center">
-                Gõ vào ô tìm → chỉ còn các dòng danh mục khớp (không phân biệt dấu).
+                {listCardUsesCollectionQuery
+                  ? 'Tìm/lọc/sắp xếp dùng chung với lưới Danh sách phía trên.'
+                  : 'Gõ vào ô tìm → chỉ còn các dòng danh mục khớp (không phân biệt dấu).'}
               </p>
             </div>
           ) : (
@@ -1398,6 +1469,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
           <EntityNotesEditSession
             key={editSessionKey}
             activeTabLon={activeTabLon}
+            activeTabNho={activeTabNho}
             initialInfo={editSessionInfo}
             savedInfo={editSessionInfo}
             wikiLinkOptOuts={editSessionWikiLinkOptOuts}
@@ -1419,6 +1491,7 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             debouncedMarkdownPreview={debouncedMarkdownPreview}
             currentContextDirHandle={currentContextDirHandle}
             entityMap={entityMap}
+            activeNovelData={activeNovelData}
             statusTierLabelSet={statusTierLabelSet}
             globalLinkRegex={globalLinkRegex}
             onNavigate={onNavigate}
@@ -1440,15 +1513,24 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
             {selectedEntity && isListCardEntity(selectedEntity) ? (
               <AppListCardInfoSearch
                 info={detailNotesMarkdown}
-                searchQuery={listCatalogQuery}
-                onSearchQueryChange={setListCatalogQuery}
+                searchQuery={
+                  listCardUsesCollectionQuery ? collectionEntitySearch : listCatalogQuery
+                }
+                onSearchQueryChange={
+                  listCardUsesCollectionQuery ? setCollectionEntitySearch : setListCatalogQuery
+                }
                 hideSearchBar
-                sortMode={notesNotesSortMode}
+                sortMode={listCardSortMode}
                 dirHandle={currentContextDirHandle}
                 entityMap={entityMap}
                 linkRegex={globalLinkRegex}
                 onNavigate={onNavigate}
                 selfEntityId={selectedEntity.id}
+                activeNovelData={activeNovelData}
+                listViewMode={listViewMode}
+                collectionViewModel={listCardUsesCollectionQuery ? listCardAutoViewModel : null}
+                onEntitySelect={onListCardEntitySelect}
+                setEntityPage={listCardUsesCollectionQuery ? setCollectionEntityPage : null}
               />
             ) : filteredNotesRead.emptyMatch ? (
               <p className="text-sm text-slate-500 font-serif">
@@ -1463,7 +1545,8 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
                   globalLinkRegex,
                   onNavigate,
                   selectedEntity?.id,
-                  readWikiLinkOptOuts(selectedEntity)
+                  readWikiLinkOptOuts(selectedEntity),
+                  { activeNovelData },
                 )}
               </div>
             )}

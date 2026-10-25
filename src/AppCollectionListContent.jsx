@@ -1,8 +1,12 @@
 import React, { memo } from 'react';
 import { EntityCard } from './MasterComponents.jsx';
+import { AppCollectionTableContent } from './AppCollectionTableContent.jsx';
 
 export const AppCollectionListContent = memo(function AppCollectionListContent({
   collectionSubTab,
+  listViewMode = 'list',
+  collectionViewModel,
+  wikiContext,
   entitiesList,
   entityPage,
   setEntityPage,
@@ -78,6 +82,46 @@ export const AppCollectionListContent = memo(function AppCollectionListContent({
 
   if (collectionSubTab !== 'list') return null;
 
+  const renderPagination = (totalItems, page, pageSize) => {
+    const totalPages = Math.ceil(totalItems / pageSize);
+    if (totalPages <= 1) return null;
+    return (
+      <div className="flex items-center justify-center gap-2 mt-6 pt-4 border-t border-slate-800">
+        <button type="button" onClick={() => setEntityPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors">← Trước</button>
+        <div className="flex gap-1">
+          {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+            const p = totalPages <= 7 ? i + 1 : page <= 4 ? i + 1 : page >= totalPages - 3 ? totalPages - 6 + i : page - 3 + i;
+            return (
+              <button type="button" key={p} onClick={() => setEntityPage(p)} className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${p === page ? 'bg-amber-700 text-white' : 'bg-slate-900 border border-slate-800 text-slate-500 hover:text-slate-200'}`}>{p}</button>
+            );
+          })}
+        </div>
+        <button type="button" onClick={() => setEntityPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors">Sau →</button>
+      </div>
+    );
+  };
+
+  if (listViewMode === 'table') {
+    if (entityGroupBy !== 'none') {
+      return (
+        <p className="text-sm text-slate-500 font-serif italic py-6 text-center">
+          Chế độ bảng dùng khi «Nhóm theo trường» đang tắt (Nâng cao).
+        </p>
+      );
+    }
+    const vm = collectionViewModel;
+    return (
+      <>
+        <AppCollectionTableContent
+          viewModel={vm}
+          wikiContext={wikiContext}
+          onEntitySelect={(ent) => onEntityCardSelect?.(ent)}
+        />
+        {renderPagination(vm?.filteredCount || 0, vm?.page || entityPage, vm?.pageSize || entityPageSize)}
+      </>
+    );
+  }
+
   const renderGrid = (list) => (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 content-start">
       {list.map((ent) => (
@@ -97,23 +141,14 @@ export const AppCollectionListContent = memo(function AppCollectionListContent({
     </div>
   );
 
-  const totalPages = Math.ceil(entitiesList.length / entityPageSize);
-  const pagination =
-    totalPages <= 1 ? null : (
-      <div className="flex items-center justify-center gap-2 mt-6 pt-4 border-t border-slate-800">
-        <button type="button" onClick={() => setEntityPage((p) => Math.max(1, p - 1))} disabled={entityPage === 1} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors">← Trước</button>
-        <div className="flex gap-1">
-          {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-            const p = totalPages <= 7 ? i + 1 : entityPage <= 4 ? i + 1 : entityPage >= totalPages - 3 ? totalPages - 6 + i : entityPage - 3 + i;
-            return (
-              <button type="button" key={p} onClick={() => setEntityPage(p)} className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${p === entityPage ? 'bg-amber-700 text-white' : 'bg-slate-900 border border-slate-800 text-slate-500 hover:text-slate-200'}`}>{p}</button>
-            );
-          })}
-        </div>
-        <button type="button" onClick={() => setEntityPage((p) => Math.min(totalPages, p + 1))} disabled={entityPage === totalPages} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors">Sau →</button>
-        <span className="text-xs text-slate-600 font-serif ml-2">{entitiesList.length} thực thể</span>
-      </div>
-    );
+  const pagination = (
+    <>
+      {renderPagination(entitiesList.length, entityPage, entityPageSize)}
+      {entitiesList.length > 0 && (
+        <p className="text-center text-xs text-slate-600 font-serif mt-2">{entitiesList.length} thực thể</p>
+      )}
+    </>
+  );
 
   if (entityGroupBy === 'none') {
     if (shouldVirtualize) {

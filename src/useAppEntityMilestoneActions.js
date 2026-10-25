@@ -54,7 +54,10 @@ import {
   formatEntityRenameCollisionMessage,
   milestoneHasAppliedRename,
   MILESTONE_RENAME_LOCKED_MESSAGE,
+  RENAME_CHAPTER_ORDER_BLOCK_MESSAGE,
   validateEntityRename,
+  validateMilestoneChapterEdit,
+  validateTimelineRenameChapter,
 } from './lib/entityRename.js';
 import {
   hasBaselineArchiveAtChapterZero,
@@ -383,13 +386,12 @@ export function useAppEntityMilestoneActions({
             const renameResult = applyEntityRename(entRef, {
               newName: normalizedEntityName,
               aliasAccess: buildEntityAliasAccess(),
+              reason: 'direct-form',
             });
             if (renameResult.renamed) {
               const side = syncRenameSideEffects(nov, entRef, renameResult.oldName, renameResult.newName);
               ownerMilestoneRenameSynced = side.ownerMilestoneRenameSynced;
               mapHierarchyRenameSynced = side.mapHierarchyRenameSynced;
-            } else if (normalizedEntityName !== safeString(entRef.name).trim()) {
-              entRef.name = normalizedEntityName;
             }
             applyAutoRelationNotesForEntity(nov, {
               sourceEntity: entRef,
@@ -749,14 +751,21 @@ export function useAppEntityMilestoneActions({
 
       if (formData.id && previewEnt) {
         const existingMs = (previewEnt.milestones || []).find((m) => m.id === formData.id);
-        if (existingMs && milestoneHasAppliedRename(previewEnt, existingMs)) {
-          const oldNext = safeString(existingMs.nextEntityName).trim();
-          const newNext = safeString(formData.nextEntityName).trim();
-          const oldNorm = oldNext ? toDisplayTitleCase(oldNext) : '';
-          const newNorm = newNext ? toDisplayTitleCase(newNext) : '';
-          if (oldNorm !== newNorm) {
-            showToast(MILESTONE_RENAME_LOCKED_MESSAGE, 'warning');
+        if (existingMs) {
+          const chapterEdit = validateMilestoneChapterEdit(previewEnt, existingMs, formData.chapter);
+          if (!chapterEdit.ok) {
+            showToast(chapterEdit.message, 'warning');
             return;
+          }
+          if (milestoneHasAppliedRename(previewEnt, existingMs)) {
+            const oldNext = safeString(existingMs.nextEntityName).trim();
+            const newNext = safeString(formData.nextEntityName).trim();
+            const oldNorm = oldNext ? toDisplayTitleCase(oldNext) : '';
+            const newNorm = newNext ? toDisplayTitleCase(newNext) : '';
+            if (oldNorm !== newNorm) {
+              showToast(MILESTONE_RENAME_LOCKED_MESSAGE, 'warning');
+              return;
+            }
           }
         }
       }
@@ -773,6 +782,13 @@ export function useAppEntityMilestoneActions({
           } else if (validation.message) {
             showToast(validation.message, 'warning');
           }
+          return;
+        }
+        const retro = validateTimelineRenameChapter(previewEnt, formData.chapter, {
+          excludeTimelineEventId: formData.id || null,
+        });
+        if (!retro.ok) {
+          showToast(retro.message || RENAME_CHAPTER_ORDER_BLOCK_MESSAGE, 'warning');
           return;
         }
       }
@@ -819,6 +835,7 @@ export function useAppEntityMilestoneActions({
               newName: renameTarget,
               timelineEventId: formData.id || milestoneId,
               chapter: parseInt(formData.chapter, 10),
+              reason: 'timeline',
               aliasAccess: buildEntityAliasAccess(),
             });
             if (renameResult.renamed) {
@@ -864,7 +881,6 @@ export function useAppEntityMilestoneActions({
       updateActiveNovelData,
       activeTabLon,
       activeTabNho,
-      currentTabConfig,
       selectedEntityId,
       buildEntityAliasAccess,
       syncRenameSideEffects,
@@ -872,7 +888,6 @@ export function useAppEntityMilestoneActions({
       setActiveNovelData,
       syncNovelRef,
       dirHandleRef,
-      activeNovelData,
     ]
   );
 

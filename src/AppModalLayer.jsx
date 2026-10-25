@@ -52,6 +52,7 @@ export function AppModalLayer({
   setIsEntityNotesGuideOpen,
   handleSaveMilestone,
   editingMilestoneData,
+  lockMilestoneChapterAfterRename = false,
   activeNovelData,
   entityMap,
   statusTierLabelSet,
@@ -264,6 +265,7 @@ export function AppModalLayer({
         onOpenAutoSyncGuide={setIsAutoSyncGuideOpen ? () => setIsAutoSyncGuideOpen(true) : undefined}
         onSave={handleSaveMilestone}
         initialData={editingMilestoneData}
+        lockChapterAfterRename={lockMilestoneChapterAfterRename}
         defaultChapterWhenNew={
           editingMilestoneData
             ? undefined

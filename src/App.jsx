@@ -50,6 +50,9 @@ import { AdvancedFieldSelect } from './AppAdvancedFieldSelect.jsx';
 import { AppLibrarySidebar } from './AppLibrarySidebar.jsx';
 import { getEntityFieldValue } from './lib/entityFieldValue.js';
 import { buildEntitySearchIndexMap, applyEntityCollectionFilters } from './lib/entityCollectionQuery.js';
+import { buildEntityCollectionViewModel } from './lib/buildEntityCollectionViewModel.js';
+import { listEntityCollectionFieldOptions } from './lib/entityCollectionFieldCatalog.js';
+import { normalizeListViewConfig } from './lib/listViewConfig.js';
 import {
   MAX_QUICK_ENTRY_SLOTS,
   applyEntityQuickEntryToNho,
@@ -92,6 +95,7 @@ import {
 } from './lib/entityTransfer.js';
 import {
   ensureCollectionListCardsForNovel,
+  isListCardEntity,
   syncAllCollectionListCards,
 } from './lib/collectionListCardSync.js';
 import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
@@ -119,6 +123,7 @@ import { resolveXrefTargetCollectionTab } from './lib/xrefChonMucThuThap.js';
 import { buildWikiLinkMatcher } from './lib/wikiLinkMatcher.js';
 import { buildStatusTierLabelSet } from './lib/wikiHierarchyLinkGuard.js';
 import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIdentity.js';
+import { milestoneHasAppliedRename } from './lib/entityRename.js';
 import { exportEntityProfilePdf } from './entityProfilePrint.js';
 import { isMapCollectionScope, syncAllMapHierarchyAutoBlocks } from './lib/mapHierarchySync.js';
 import {
@@ -530,6 +535,12 @@ export default function App() {
     return { ...tab, _parentLabel: parent?.label || '' };
   }, [sortedTabs, activeTabLon, activeTabNho]);
 
+  const listViewConfig = useMemo(
+    () => normalizeListViewConfig(currentTabConfig?.listViewConfig),
+    [currentTabConfig?.listViewConfig],
+  );
+  const effectiveEntityPageSize = listViewConfig.pageSize || ENTITY_PAGE_SIZE;
+
   const currentStandardData = useMemo(() => {
     if (!activeNovelData || !activeTabLon || !activeTabNho) return '';
     let data;
@@ -701,17 +712,25 @@ export default function App() {
     ]
   );
   const pagedEntitiesList = useMemo(
-    () => entitiesList.slice((entityPage - 1) * ENTITY_PAGE_SIZE, entityPage * ENTITY_PAGE_SIZE),
-    [entitiesList, entityPage, ENTITY_PAGE_SIZE]
+    () =>
+      entitiesList.slice(
+        (entityPage - 1) * effectiveEntityPageSize,
+        entityPage * effectiveEntityPageSize,
+      ),
+    [entitiesList, entityPage, effectiveEntityPageSize],
   );
   useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(entitiesList.length / ENTITY_PAGE_SIZE));
+    const maxPage = Math.max(1, Math.ceil(entitiesList.length / effectiveEntityPageSize));
     setEntityPage((p) => (p > maxPage ? maxPage : p));
-  }, [entitiesList.length, ENTITY_PAGE_SIZE, setEntityPage]);
+  }, [entitiesList.length, effectiveEntityPageSize, setEntityPage]);
   useEffect(() => {
     if (entityGroupBy !== 'none') return;
     if (currentTabConfig?.viewType !== 'collection-track') return;
-    const targetPage = resolveEntityPageForSelection(entitiesList, selectedEntityId, ENTITY_PAGE_SIZE);
+    const targetPage = resolveEntityPageForSelection(
+      entitiesList,
+      selectedEntityId,
+      effectiveEntityPageSize,
+    );
     if (!targetPage) return;
     setEntityPage((currentPage) => (currentPage === targetPage ? currentPage : targetPage));
   }, [
@@ -719,9 +738,84 @@ export default function App() {
     entitiesList,
     entityGroupBy,
     selectedEntityId,
-    ENTITY_PAGE_SIZE,
+    effectiveEntityPageSize,
     setEntityPage,
   ]);
+  const collectionFieldOptions = useMemo(() => {
+    if (!activeNovelData || !activeTabLon || !activeTabNho) return [];
+    return listEntityCollectionFieldOptions(activeNovelData, {
+      kind: 'nho',
+      lonId: activeTabLon,
+      nhoId: activeTabNho,
+      tabLabel: safeString(currentTabConfig?.label),
+    });
+  }, [activeNovelData, activeTabLon, activeTabNho, currentTabConfig?.label]);
+  const collectionFieldMetaById = useMemo(() => {
+    const map = new Map();
+    collectionFieldOptions.forEach((field) => map.set(field.id, field));
+    return map;
+  }, [collectionFieldOptions]);
+  const collectionViewModel = useMemo(
+    () =>
+      buildEntityCollectionViewModel({
+        allEntities: mapBranchScopedEntities,
+        filteredEntities: entitiesList,
+        columns: listViewConfig.columns,
+        columnMetaById: collectionFieldMetaById,
+        page: entityPage,
+        pageSize: effectiveEntityPageSize,
+      }),
+    [
+      mapBranchScopedEntities,
+      entitiesList,
+      listViewConfig.columns,
+      collectionFieldMetaById,
+      entityPage,
+      effectiveEntityPageSize,
+    ],
+  );
+  const listCardAutoCatalogAll = useMemo(
+    () => mapBranchScopedEntities.filter((ent) => !isListCardEntity(ent)),
+    [mapBranchScopedEntities],
+  );
+  const listCardAutoCatalogFiltered = useMemo(
+    () => entitiesList.filter((ent) => !isListCardEntity(ent)),
+    [entitiesList],
+  );
+  const listCardAutoViewModel = useMemo(
+    () =>
+      buildEntityCollectionViewModel({
+        allEntities: listCardAutoCatalogAll,
+        filteredEntities: listCardAutoCatalogFiltered,
+        columns: listViewConfig.columns,
+        columnMetaById: collectionFieldMetaById,
+        page: entityPage,
+        pageSize: effectiveEntityPageSize,
+      }),
+    [
+      listCardAutoCatalogAll,
+      listCardAutoCatalogFiltered,
+      listViewConfig.columns,
+      collectionFieldMetaById,
+      entityPage,
+      effectiveEntityPageSize,
+    ],
+  );
+  const handleUpdateListViewConfig = useCallback(
+    (patch) => {
+      if (!activeTabLon || !activeTabNho) return;
+      setActiveNovelData((prev) => {
+        if (!prev?.tabsConfig) return prev;
+        const nov = structuredClone(prev);
+        const lon = nov.tabsConfig.find((t) => t.id === activeTabLon);
+        const nho = lon?.subTabs?.find((s) => s.id === activeTabNho);
+        if (!nho) return prev;
+        nho.listViewConfig = { ...(nho.listViewConfig || {}), ...patch };
+        return nov;
+      });
+    },
+    [activeTabLon, activeTabNho, setActiveNovelData],
+  );
   const groupedEntitiesList = useMemo(() => {
     if (entityGroupBy === 'none') return [];
     const groups = {};
@@ -3957,7 +4051,12 @@ export default function App() {
     groupedEntitiesList,
     groupVisibleCount,
     setGroupVisibleCount,
-    entityPageSize: ENTITY_PAGE_SIZE,
+    entityPageSize: effectiveEntityPageSize,
+    listViewConfig,
+    collectionViewModel,
+    listCardAutoViewModel,
+    collectionFieldOptions,
+    onUpdateListViewConfig: handleUpdateListViewConfig,
     handleAddEntityImage: handleAddImageToSelectedEntity,
     handleRemoveEntityImage: handleRemoveImageFromSelectedEntity,
     onEntityCardSelect,
@@ -4067,6 +4166,13 @@ export default function App() {
     safeString,
   });
 
+  const lockMilestoneChapterAfterRename = useMemo(() => {
+    const msId = safeString(editingMilestoneData?.id).trim();
+    if (!msId || !selectedEntity?.milestones) return false;
+    const ms = selectedEntity.milestones.find((m) => safeString(m?.id) === msId);
+    return ms ? milestoneHasAppliedRename(selectedEntity, ms) : false;
+  }, [editingMilestoneData, selectedEntity]);
+
   const modalLayerProps = {
     isEntityModalOpen,
     setIsEntityModalOpen,
@@ -4082,6 +4188,7 @@ export default function App() {
     aiMode,
     isMilestoneModalOpen,
     setIsMilestoneModalOpen,
+    lockMilestoneChapterAfterRename,
     isDescriptionModalOpen,
     setIsDescriptionModalOpen,
     handleSaveDescription,
