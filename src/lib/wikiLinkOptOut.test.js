@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyMergedOptOutsToAutoWrappedText,
   applyWikiLinkOptOutsForSave,
   buildWikiLinkOptOutFromUnwrap,
   countNewWikiLinkOptOuts,
@@ -58,6 +59,32 @@ describe('wikiLinkOptOut', () => {
     const text = 'Gap Hồng Lâu Mộng hom qua.';
     const wrapped = autoWrapWikiLinksByEntityMapWithCount(text, map);
     expect(wrapped.text).toBe('Gap [[Hồng Lâu Mộng]] hom qua.');
+  });
+
+  it('applyMergedOptOutsToAutoWrappedText matches full opt-out autoWrap', () => {
+    const cases = [
+      {
+        text: 'The gioi Hồng Lâu Mộng.',
+        entityMap: map,
+        optOuts: [{ anchor: 'Hồng Lâu', before: 'The gioi ', after: ' Mộng.' }],
+      },
+      {
+        text: 'Vao Kiến trúc roi den Hồng Lâu Mộng.',
+        entityMap: [{ name: 'Kiến trúc' }, ...map],
+        optOuts: [{ anchor: 'Hồng Lâu', before: 'den ', after: ' Mộng.' }],
+      },
+      {
+        text: 'Gap Hồng Lâu Mộng hom qua.',
+        entityMap: map,
+        optOuts: [{ anchor: 'Hồng Lâu Mộng', before: 'Gap ', after: ' hom' }],
+      },
+    ];
+    for (const { text, entityMap, optOuts } of cases) {
+      const noOpt = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, { optOuts: [] });
+      const withOpt = autoWrapWikiLinksByEntityMapWithCount(text, entityMap, { optOuts });
+      const stripped = applyMergedOptOutsToAutoWrappedText(text, noOpt.text, optOuts);
+      expect(stripped).toBe(withOpt.text);
+    }
   });
 
   it('prunes opt-outs that no longer appear in the text', () => {

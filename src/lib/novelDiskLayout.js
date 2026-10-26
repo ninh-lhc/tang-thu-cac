@@ -83,14 +83,22 @@ export function buildShardWritePlan(data, previousHashes, dirtyKeys) {
   const writes = [];
   const nextHashes = new Map();
   const expected = new Set();
+  let skipped = 0;
   const useDirty = dirtyKeys instanceof Set && dirtyKeys.size > 0;
+  const cacheWarm = previousHashes instanceof Map && previousHashes.size > 0;
   for (const { lonId, nhoId } of keys) {
     const rel = shardKeyPath(lonId, nhoId);
+    const dirtyKey = `${lonId}\x00${nhoId}`;
     expected.add(rel);
-    if (useDirty && !dirtyKeys.has(`${lonId}\x00${nhoId}`)) {
+    if (useDirty && !dirtyKeys.has(dirtyKey)) {
       const prev = previousHashes.get(rel);
       if (prev !== undefined) {
         nextHashes.set(rel, prev);
+        skipped += 1;
+        continue;
+      }
+      if (!cacheWarm) {
+        skipped += 1;
         continue;
       }
     }
@@ -104,7 +112,7 @@ export function buildShardWritePlan(data, previousHashes, dirtyKeys) {
   for (const rel of previousHashes.keys()) {
     if (!expected.has(rel)) removed.push(rel);
   }
-  return { writes, removed, nextHashes, expected };
+  return { writes, removed, nextHashes, expected, skipped };
 }
 
 /**

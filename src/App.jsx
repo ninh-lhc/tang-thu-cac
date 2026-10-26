@@ -1683,6 +1683,7 @@ export default function App() {
       syncNovel,
     ]
   );
+
   useEffect(() => {
     if (!isActiveMapCollection || !activeTabLon) return;
     const tabData = activeNovelDataRef.current?.data?.[activeTabLon]?.[activeTabNho || 'default'];

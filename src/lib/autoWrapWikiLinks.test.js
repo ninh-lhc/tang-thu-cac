@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { autoWrapWikiLinksByEntityMap, autoWrapWikiLinksByEntityMapWithCount } from './autoWrapWikiLinks.js';
+import { applyWikiLinkOptOutsForSave } from './wikiLinkOptOut.js';
 
 describe('autoWrapWikiLinksByEntityMap', () => {
   it('wraps plain matching entity names', () => {
@@ -158,5 +159,74 @@ describe('autoWrapWikiLinksByEntityMap', () => {
       },
     ];
     expect(autoWrapWikiLinksByEntityMap(text, map)).toBe(text);
+  });
+
+  describe('save-path wrap scenarios (regression)', () => {
+    it('1 — text without entity names stays unchanged', () => {
+      const text = 'Chi la doan van thuong, khong co ten thuc the.';
+      const map = [{ name: 'Vo Gia' }, { name: 'Lam An' }];
+      expect(
+        applyWikiLinkOptOutsForSave({
+          preparedText: text,
+          entityMap: map,
+          autoWrapWikiLinksByEntityMapWithCount,
+          autoWrapOnSave: true,
+        }).text
+      ).toBe(text);
+    });
+
+    it('2 — wraps three plain entity names when auto-wrap on save', () => {
+      const text = 'Gap Vo Gia, Lam An va Huyen Mon.';
+      const map = [{ name: 'Vo Gia' }, { name: 'Lam An' }, { name: 'Huyen Mon' }];
+      expect(
+        applyWikiLinkOptOutsForSave({
+          preparedText: text,
+          entityMap: map,
+          autoWrapWikiLinksByEntityMapWithCount,
+          autoWrapOnSave: true,
+        }).text
+      ).toBe('Gap [[Vo Gia]], [[Lam An]] va [[Huyen Mon]].');
+    });
+
+    it('3 — respects opt-out and does not wrap opted anchor', () => {
+      const text = 'The gioi Hồng Lâu Mộng.';
+      const map = [{ name: 'Hồng Lâu' }, { name: 'Hồng Lâu Mộng' }];
+      const optOuts = [{ anchor: 'Hồng Lâu', before: 'The gioi ', after: ' Mộng.' }];
+      expect(
+        applyWikiLinkOptOutsForSave({
+          preparedText: text,
+          wikiLinkOptOuts: optOuts,
+          entityMap: map,
+          autoWrapWikiLinksByEntityMapWithCount,
+          autoWrapOnSave: true,
+        }).text
+      ).toBe(text);
+    });
+
+    it('4 — does not double-wrap inside existing wiki brackets', () => {
+      const text = 'Da co [[Vo Gia]] roi.';
+      const map = [{ name: 'Vo Gia' }];
+      expect(
+        applyWikiLinkOptOutsForSave({
+          preparedText: text,
+          entityMap: map,
+          autoWrapWikiLinksByEntityMapWithCount,
+          autoWrapOnSave: true,
+        }).text
+      ).toBe(text);
+    });
+
+    it('5 — prefers longer name when one is substring of another', () => {
+      const text = 'Linh Gioi Chau xuat hien.';
+      const map = [{ name: 'Linh Gioi' }, { name: 'Linh Gioi Chau' }];
+      expect(
+        applyWikiLinkOptOutsForSave({
+          preparedText: text,
+          entityMap: map,
+          autoWrapWikiLinksByEntityMapWithCount,
+          autoWrapOnSave: true,
+        }).text
+      ).toBe('[[Linh Gioi Chau]] xuat hien.');
+    });
   });
 });

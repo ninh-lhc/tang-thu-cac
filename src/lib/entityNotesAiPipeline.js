@@ -24,10 +24,19 @@ const STEP_LABELS = {
   format: 'dàn khung AI',
 };
 
-function yieldToMain() {
+export function yieldToMain() {
   return new Promise((resolve) => {
     requestAnimationFrame(() => {
       setTimeout(resolve, 0);
+    });
+  });
+}
+
+/** Hai frame — đợi React commit + browser paint (spinner/disabled). */
+export function nextPaint() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(resolve);
     });
   });
 }

@@ -36,7 +36,7 @@ import {
   isTransientFsWriteError,
   withFsWriteRetry,
 } from './lib/novelDiskWritePolicy.js';
-import { consumeDirtyShards } from './lib/dirtyShardTracker.js';
+import { consumeDirtyShards, restoreDirtyShards } from './lib/dirtyShardTracker.js';
 
 /** migrateNovel luôn xóa storageLayout; khi novel đang lưu dạng shard trên đĩa thì phải gắn lại để lazy-load + sync an toàn. */
 function restoreShardedLayoutIfNeeded(parsedBeforeMigrate, migrated) {
@@ -458,6 +458,11 @@ export function useAppPersistence({
         }
         const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
         const dirtyKeys = consumeDirtyShards();
+        /** Một điểm restore: dirty đã consume; merge snapshot khi sync thất bại (giữ dirty phát sinh trong lúc ghi). */
+        const failAfterDirtyConsume = (result) => {
+          restoreDirtyShards(dirtyKeys);
+          return result;
+        };
         const shardPlan = buildShardWritePlan(
           novelToWrite.data || {},
           getShardState(novelDir).hashes,
@@ -542,7 +547,12 @@ export function useAppPersistence({
             setTimeout(() => {
               showDirectoryWritePermissionToast(payloadNovel);
             }, 0);
-            return { ok: false, mode: 'directory', reason: 'permission_denied_write', error: e2 };
+            return failAfterDirtyConsume({
+              ok: false,
+              mode: 'directory',
+              reason: 'permission_denied_write',
+              error: e2,
+            });
           }
           if (isFsPermissionWriteError(e2)) {
             const retryPerm = await ensureDirectoryWritePermission(rootDir);
@@ -550,7 +560,12 @@ export function useAppPersistence({
               setTimeout(() => {
                 showDirectoryWritePermissionToast(payloadNovel);
               }, 0);
-              return { ok: false, mode: 'directory', reason: 'permission_denied_after_retry', error: e2 };
+              return failAfterDirtyConsume({
+                ok: false,
+                mode: 'directory',
+                reason: 'permission_denied_after_retry',
+                error: e2,
+              });
             }
             try {
               await writeInPlace();
@@ -560,7 +575,12 @@ export function useAppPersistence({
               setTimeout(() => {
                 showDirectoryWritePermissionToast(payloadNovel);
               }, 0);
-              return { ok: false, mode: 'directory', reason: 'permission_denied_write', error: e3 };
+              return failAfterDirtyConsume({
+                ok: false,
+                mode: 'directory',
+                reason: 'permission_denied_write',
+                error: e3,
+              });
             }
           }
           setTimeout(() => {
@@ -576,7 +596,12 @@ export function useAppPersistence({
               }
             );
           }, 0);
-          return { ok: false, mode: 'directory', reason: 'write_failed', error: e2 };
+          return failAfterDirtyConsume({
+            ok: false,
+            mode: 'directory',
+            reason: 'write_failed',
+            error: e2,
+          });
         }
       };
 

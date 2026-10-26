@@ -108,6 +108,19 @@ describe('novelDiskLayout', () => {
     expect(planAfterEdit.writes.length).toBe(1);
   });
 
+  it('dirty key with changed memory produces write even when warm hash cache exists', () => {
+    const prev = new Map([['L/A.json', JSON.stringify({ overview: 'old' }, null, 2)]]);
+    const data = {
+      L: {
+        A: { overview: 'new' },
+      },
+    };
+    const plan = buildShardWritePlan(data, prev, new Set(['L\x00A']));
+    expect(plan.writes.length).toBe(1);
+    expect(plan.writes[0].rel).toBe('L/A.json');
+    expect(plan.writes[0].jsonStr).toContain('new');
+  });
+
   it('skips stringify for shards that are not dirty when a previous hash exists', () => {
     const prev = new Map([
       ['L/A.json', JSON.stringify({ overview: 'old-a' }, null, 2)],
@@ -151,5 +164,35 @@ describe('novelDiskLayout', () => {
     const plan = buildShardWritePlan(data, prev, new Set(['L\x00A']));
     expect(plan.writes.map((w) => w.rel)).toEqual(['L/C.json']);
     expect(plan.nextHashes.get('L/A.json')).toBe(prev.get('L/A.json'));
+  });
+
+  it('with cold hash cache and one dirty shard only writes that shard', () => {
+    const prev = new Map();
+    const data = {
+      L: {
+        A: { overview: 'changed-a' },
+        B: { overview: 'untouched-b' },
+        C: { overview: 'untouched-c' },
+      },
+    };
+    const plan = buildShardWritePlan(data, prev, new Set(['L\x00A']));
+    expect(plan.writes.map((w) => w.rel)).toEqual(['L/A.json']);
+    expect(plan.skipped).toBe(2);
+  });
+
+  it('reports skipped count when dirty filter skips cached shards', () => {
+    const prev = new Map([
+      ['L/A.json', JSON.stringify({ overview: 'old-a' }, null, 2)],
+      ['L/B.json', JSON.stringify({ overview: 'old-b' }, null, 2)],
+    ]);
+    const data = {
+      L: {
+        A: { overview: 'new-a' },
+        B: { overview: 'changed-but-not-dirty' },
+      },
+    };
+    const plan = buildShardWritePlan(data, prev, new Set(['L\x00A']));
+    expect(plan.writes.map((w) => w.rel)).toEqual(['L/A.json']);
+    expect(plan.skipped).toBe(1);
   });
 });

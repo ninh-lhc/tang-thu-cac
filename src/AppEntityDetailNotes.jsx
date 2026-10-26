@@ -28,9 +28,9 @@ import {
   resolveEntityNotesBackspace,
   resolveEntityNotesTabIndent,
 } from './MasterUtils.jsx';
-import { autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
+import { autoWrapWikiLinksForSave } from './lib/autoWrapWikiLinksAsync.js';
 import {
-  applyWikiLinkOptOutsForSave,
+  applyWikiLinkOptOutsForSaveAsync,
   detectWikiLinkOptOuts,
   mergeWikiLinkOptOuts,
   readWikiLinkOptOuts,
@@ -47,7 +47,7 @@ import {
   subscribeEntityNotesPrefs,
 } from './lib/entityNotesPrefs.js';
 import { resolveEntityNotesTemplateProfile } from './lib/entityNotesSemantics.js';
-import { runNotesAiPipeline } from './lib/entityNotesAiPipeline.js';
+import { nextPaint, runNotesAiPipeline, yieldToMain } from './lib/entityNotesAiPipeline.js';
 import { getEffectiveAutoSyncRole, getAutoSyncRoleLabel } from './lib/tabAutoSyncRole.js';
 import {
   getAutoSyncEngineDescription,
@@ -661,7 +661,13 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         <button
           id="save-entity-btn"
           type="button"
+          disabled={isAiPipelineRunning}
           onClick={async () => {
+            setIsAiPipelineRunning(true);
+            setAiPipelineStep(null);
+            await yieldToMain();
+            await nextPaint();
+
             const latestNotesPrefs = getEntityNotesPrefs();
             const rawDraft = notesEdit.text;
             const savedBaseline = safeString(savedInfo ?? initialInfo);
@@ -671,90 +677,100 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             );
             const savePipelineSteps = [];
             if (latestNotesPrefs.autoCleanOnSave) savePipelineSteps.push('clean');
-            if (latestNotesPrefs.autoWrapWikiOnSave) savePipelineSteps.push('link');
+            // Bọc [[link]] khi lưu: chỉ applyWikiLinkOptOutsForSave (tránh autoWrap trùng với bước link).
             if (latestNotesPrefs.autoAnalysisOnSave) savePipelineSteps.push('format');
             const hasDraftChanges = rawDraft !== savedBaseline;
 
-            let pipelineText = rawDraft;
-            if (savePipelineSteps.length > 0 && hasDraftChanges) {
-              setIsAiPipelineRunning(true);
-              setAiPipelineStep(null);
-              if (savePipelineSteps.includes('format')) {
-                setIsExtractingAI(true);
+            try {
+              let pipelineText = rawDraft;
+              if (savePipelineSteps.length > 0 && hasDraftChanges) {
+                if (savePipelineSteps.includes('format')) {
+                  setIsExtractingAI(true);
+                  setIsFormattingStructure(true);
+                }
+                await yieldToMain();
+                const wikiLinkOptOutsAtSave = resolveDraftWikiLinkOptOuts(rawDraft);
+                const pipelineResult = await runNotesAiPipeline(rawDraft, {
+                  steps: savePipelineSteps,
+                  entityMap,
+                  geminiApiKeys,
+                  aiMode,
+                  wikiLinkOptOuts: wikiLinkOptOutsAtSave,
+                  tierLabelSet: statusTierLabelSet,
+                  subject: entityNotesSubject,
+                  skipAi: true,
+                  onProgress: ({ step, phase, text }) => {
+                    if (phase === 'start') {
+                      setAiPipelineStep(step);
+                      return;
+                    }
+                    setAiPipelineStep(null);
+                    syncDraftAndPreview(text);
+                  },
+                });
+                pipelineText = pipelineResult.text;
+                if (!pipelineResult.ok) {
+                  showToast(
+                    pipelineResult.error || 'Một bước chuẩn hoá bị lỗi, tiếp tục lưu phần đã xử lý.',
+                    'warning'
+                  );
+                } else if (savePipelineSteps.length > 1) {
+                  showToast(`Đã chạy tuần tự: ${savePipelineSteps.join(' → ')} trước khi lưu.`);
+                }
+                if (savePipelineSteps.includes('format')) {
+                  setIsExtractingAI(false);
+                  setIsFormattingStructure(false);
+                }
               }
-              if (savePipelineSteps.includes('format')) {
-                setIsFormattingStructure(true);
+
+              await yieldToMain();
+              const cleanedText = latestNotesPrefs.autoCleanOnSave
+                ? prepareEntityNotesForSave(pipelineText)
+                : pipelineText;
+              const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
+              const preparedText = formatSync.text;
+              if (preparedText !== notesEdit.text) {
+                syncDraftAndPreview(preparedText);
+                if (cleanedText !== notesEdit.text && formatSync.propagatedCount > 0) {
+                  showToast('Đã tự chuẩn hoá ghi chú và đồng bộ định dạng cho các từ/cụm trùng trước khi lưu.');
+                } else if (formatSync.propagatedCount > 0) {
+                  showToast(`Đã đồng bộ định dạng cho ${formatSync.propagatedCount} từ/cụm trùng trước khi lưu.`);
+                } else {
+                  showToast('Đã tự chuẩn hoá ghi chú trước khi lưu.');
+                }
               }
-              const wikiLinkOptOutsAtSave = resolveDraftWikiLinkOptOuts(rawDraft);
-              const pipelineResult = await runNotesAiPipeline(rawDraft, {
-                steps: savePipelineSteps,
+
+              await yieldToMain();
+              const saveResult = await applyWikiLinkOptOutsForSaveAsync({
+                savedInfo: savedBaseline,
+                preparedText,
+                wikiLinkOptOuts: initialWikiLinkOptOuts,
                 entityMap,
-                geminiApiKeys,
-                aiMode,
-                wikiLinkOptOuts: wikiLinkOptOutsAtSave,
+                autoWrapWikiLinksByEntityMapWithCount: autoWrapWikiLinksForSave,
+                autoWrapOnSave: latestNotesPrefs.autoWrapWikiOnSave,
+                preDetectedOptOuts,
                 tierLabelSet: statusTierLabelSet,
-                subject: entityNotesSubject,
-                skipAi: true,
-                onProgress: ({ step, phase, text }) => {
-                  if (phase === 'start') {
-                    setAiPipelineStep(step);
-                    return;
-                  }
-                  setAiPipelineStep(null);
-                  syncDraftAndPreview(text);
-                },
               });
-              pipelineText = pipelineResult.text;
-              if (!pipelineResult.ok) {
+              if (saveResult.detectedCount > 0) {
                 showToast(
-                  pipelineResult.error || 'Một bước chuẩn hoá bị lỗi, tiếp tục lưu phần đã xử lý.',
-                  'warning'
+                  `Đã ghi nhớ ${saveResult.detectedCount} chỗ bạn gỡ link — app sẽ không tự bọc lại cùng vị trí.`,
+                  'success'
                 );
-              } else if (savePipelineSteps.length > 1) {
-                showToast(`Đã chạy tuần tự: ${savePipelineSteps.join(' → ')} trước khi lưu.`);
               }
+
+              await yieldToMain();
+              await nextPaint();
+              handleUpdateEntityInfo(saveResult.text, { wikiLinkOptOuts: saveResult.wikiLinkOptOuts });
+              setIsSplitPreview(false);
+              setIsEntityEditing(false);
+            } finally {
               setIsAiPipelineRunning(false);
               setAiPipelineStep(null);
-              if (savePipelineSteps.includes('format')) setIsExtractingAI(false);
+              setIsExtractingAI(false);
               setIsFormattingStructure(false);
             }
-
-            const cleanedText = latestNotesPrefs.autoCleanOnSave
-              ? prepareEntityNotesForSave(pipelineText)
-              : pipelineText;
-            const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
-            const preparedText = formatSync.text;
-            if (preparedText !== notesEdit.text) {
-              syncDraftAndPreview(preparedText);
-              if (cleanedText !== notesEdit.text && formatSync.propagatedCount > 0) {
-                showToast('Đã tự chuẩn hoá ghi chú và đồng bộ định dạng cho các từ/cụm trùng trước khi lưu.');
-              } else if (formatSync.propagatedCount > 0) {
-                showToast(`Đã đồng bộ định dạng cho ${formatSync.propagatedCount} từ/cụm trùng trước khi lưu.`);
-              } else {
-                showToast('Đã tự chuẩn hoá ghi chú trước khi lưu.');
-              }
-            }
-            const saveResult = applyWikiLinkOptOutsForSave({
-              savedInfo: savedBaseline,
-              preparedText,
-              wikiLinkOptOuts: initialWikiLinkOptOuts,
-              entityMap,
-              autoWrapWikiLinksByEntityMapWithCount,
-              autoWrapOnSave: latestNotesPrefs.autoWrapWikiOnSave,
-              preDetectedOptOuts,
-              tierLabelSet: statusTierLabelSet,
-            });
-            if (saveResult.detectedCount > 0) {
-              showToast(
-                `Đã ghi nhớ ${saveResult.detectedCount} chỗ bạn gỡ link — app sẽ không tự bọc lại cùng vị trí.`,
-                'success'
-              );
-            }
-            handleUpdateEntityInfo(saveResult.text, { wikiLinkOptOuts: saveResult.wikiLinkOptOuts });
-            setIsSplitPreview(false);
-            setIsEntityEditing(false);
           }}
-          className="px-5 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white"
+          className="px-5 py-2.5 rounded-[40px] text-xs font-bold transition-all shadow-md flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-60 disabled:pointer-events-none"
         >
           <Save size={16} /> {saveButtonLabel}
         </button>
