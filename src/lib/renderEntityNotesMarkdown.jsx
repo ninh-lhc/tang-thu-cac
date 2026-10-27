@@ -273,21 +273,44 @@ const TABLE_ALIGN_CLASS = {
   right: 'text-right',
 };
 
-const renderEntityNotesTableBlock = (tableBlock, context, baseKey, startIndex, buildJumpProps, mergeClassName) => {
+const renderTableCellInline = (cellText, context, renderInlineFn) => {
+  const raw = safeString(cellText);
+  const parts = raw.split(/<br\s*\/?>/gi);
+  if (parts.length <= 1) return renderInlineFn(raw);
+  return parts.map((part, pi) => (
+    <React.Fragment key={`br-${pi}`}>
+      {pi > 0 && <br />}
+      {renderInlineFn(part)}
+    </React.Fragment>
+  ));
+};
+
+const renderEntityNotesTableBlock = (
+  tableBlock,
+  context,
+  baseKey,
+  startIndex,
+  buildJumpProps,
+  mergeClassName,
+  tableIndex,
+  onEditMarkdownTable,
+) => {
   const { dirHandle, lookup, linkRegex, onNavigate, selfEntityId } = context;
   const normalized = normalizeTableColumnCount(tableBlock.header, tableBlock.aligns, tableBlock.rows);
   const lineNo = startIndex + 1;
   const jumpProps = buildJumpProps(lineNo);
 
   const renderCell = (cellText) =>
-    processInline(
-      safeString(cellText),
-      dirHandle,
-      lookup,
-      linkRegex,
-      onNavigate,
-      selfEntityId,
-      inlineOptsForContext(context, { wikiLinkWrap: true }),
+    renderTableCellInline(cellText, context, (segment) =>
+      processInline(
+        safeString(segment),
+        dirHandle,
+        lookup,
+        linkRegex,
+        onNavigate,
+        selfEntityId,
+        inlineOptsForContext(context, { wikiLinkWrap: true }),
+      ),
     );
 
   const tableMinWidthRem = Math.max(normalized.colCount * 6.5, 12);
@@ -298,9 +321,25 @@ const renderEntityNotesTableBlock = (tableBlock, context, baseKey, startIndex, b
       {...jumpProps}
       className={mergeClassName(
         jumpProps,
-        'entity-notes-md-table-wrap custom-scrollbar my-5 max-w-full overflow-x-auto rounded-xl border border-slate-700/50 bg-slate-950/40',
+        'group entity-notes-md-table-wrap custom-scrollbar my-5 max-w-full overflow-x-auto rounded-xl border border-slate-700/50 bg-slate-950/40',
       )}
     >
+      {typeof onEditMarkdownTable === 'function' && (
+        <div className="flex justify-end px-2 pt-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <button
+            type="button"
+            data-testid={`edit-md-table-${tableIndex}`}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onEditMarkdownTable(tableIndex);
+            }}
+            className="rounded-lg border border-amber-700/40 bg-amber-950/40 px-2.5 py-1 text-[11px] font-bold text-amber-200 hover:bg-amber-900/50"
+          >
+            Chỉnh sửa bảng
+          </button>
+        </div>
+      )}
       <table
         className="entity-notes-md-table w-full border-collapse text-[1.02rem] leading-relaxed"
         data-wide={normalized.colCount > 8 ? 'true' : undefined}
@@ -350,9 +389,11 @@ function renderBlocksFromLines(lines, context, options = {}) {
     usedAnchors = new Set(),
     compact = false,
     onJumpToLine = null,
+    onEditMarkdownTable = null,
     skipHeadingCountScan = false,
     headingCountsByLine: headingCountsInjected = null,
   } = options;
+  let markdownTableIndex = 0;
   const { dirHandle, lookup, linkRegex, onNavigate, selfEntityId } = context;
   const headingCountsByLine =
     headingCountsInjected || (skipHeadingCountScan ? null : computeEntityNotesHeadingSectionCounts(lines));
@@ -512,6 +553,8 @@ function renderBlocksFromLines(lines, context, options = {}) {
 
     const tableBlock = tryParseMarkdownTableBlock(lines, lineIndex);
     if (tableBlock) {
+      const currentTableIndex = markdownTableIndex;
+      markdownTableIndex += 1;
       blocks.push(
         renderEntityNotesTableBlock(
           tableBlock,
@@ -520,6 +563,8 @@ function renderBlocksFromLines(lines, context, options = {}) {
           lineIndex,
           buildJumpProps,
           mergeClassName,
+          currentTableIndex,
+          onEditMarkdownTable,
         ),
       );
       lineIndex = tableBlock.endLine;

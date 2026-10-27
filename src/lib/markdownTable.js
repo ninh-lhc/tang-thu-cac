@@ -303,9 +303,8 @@ function sanitizeTableCellContent(cell) {
     .trim();
 }
 
-function escapePipeInTableCell(cell) {
+function escapePipesInCellString(s) {
   let out = '';
-  const s = sanitizeTableCellContent(cell);
   for (let i = 0; i < s.length; i += 1) {
     if (s[i] === '\\' && s[i + 1] === '|') {
       out += '\\|';
@@ -321,6 +320,29 @@ function escapePipeInTableCell(cell) {
   return out;
 }
 
+/** Chuẩn bị nội dung ô trước khi ghi GFM — giữ wiki/inline, newline → <br>. */
+export function serializeTableCellForMarkdown(cell) {
+  const raw = String(cell ?? '').replace(/\r\n?/g, '\n').replace(/[\u00a0\u202f]/g, ' ');
+  const segments = raw.split(/\n|<br\s*\/?>/gi).map((part) => part.replace(/\s+/g, ' ').trim());
+  const nonEmpty = [];
+  for (const seg of segments) {
+    if (!seg) continue;
+    if (nonEmpty.length && nonEmpty[nonEmpty.length - 1] === '' && !seg) continue;
+    nonEmpty.push(seg);
+  }
+  const joined = nonEmpty.join('<br>');
+  return escapePipesInCellString(joined);
+}
+
+function escapePipeInTableCell(cell) {
+  return serializeTableCellForMarkdown(cell);
+}
+
+/** Dùng khi paste/chuẩn hoá — gộp xuống dòng thành khoảng trắng. */
+export function escapePipeInTableCellCollapsed(cell) {
+  return escapePipesInCellString(sanitizeTableCellContent(cell));
+}
+
 function alignmentToSeparatorCell(align) {
   if (align === 'center') return ':---:';
   if (align === 'right') return '---:';
@@ -328,11 +350,12 @@ function alignmentToSeparatorCell(align) {
 }
 
 /** Serialize khối bảng đã parse — cùng định dạng GFM mà preview/editor dùng. */
-export function formatMarkdownTableBlock(block) {
+export function formatMarkdownTableBlock(block, options = {}) {
   if (!block) return '';
+  const collapseMultiline = options.collapseMultiline === true;
+  const cellOut = collapseMultiline ? escapePipeInTableCellCollapsed : escapePipeInTableCell;
   const normalized = normalizeTableColumnCount(block.header, block.aligns, block.rows);
-  const rowLine = (cells) =>
-    `| ${cells.map((c) => escapePipeInTableCell(c)).join(' | ')} |`;
+  const rowLine = (cells) => `| ${cells.map((c) => cellOut(c)).join(' | ')} |`;
   const sepLine = `| ${normalized.aligns.map(alignmentToSeparatorCell).join(' | ')} |`;
   return [rowLine(normalized.header), sepLine, ...normalized.rows.map(rowLine)].join('\n');
 }
@@ -373,7 +396,7 @@ export function replaceMarkdownTableBlocksInText(value) {
 
     const block = tryParseMarkdownTableBlock(lines, i);
     if (block) {
-      out.push(...formatMarkdownTableBlock(block).split('\n'));
+      out.push(...formatMarkdownTableBlock(block, { collapseMultiline: true }).split('\n'));
       i = block.endLine;
       continue;
     }

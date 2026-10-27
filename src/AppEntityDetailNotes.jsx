@@ -15,7 +15,12 @@ import {
 import { EntityNotesAiToolsMenu } from './EntityNotesAiToolsMenu.jsx';
 import { EntityNotesFindReplacePanel } from './EntityNotesFindReplacePanel.jsx';
 import { TtcQueryBuilderModal } from './lib/TtcQueryBuilderModal.jsx';
-import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
+import { buildEntityNotesPreviewModel, renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
+import { EntityNotesMarkdownTableEditModal } from './EntityNotesMarkdownTableEditModal.jsx';
+import {
+  getMarkdownTableBlockByIndex,
+  replaceMarkdownTableBlockByIndex,
+} from './lib/markdownTableEditor.js';
 import { filterEntityNotesMarkdown, sortMarkdownSectionsAfterFilter } from './lib/entityNotesTabFilter.js';
 import { isListCardEntity } from './lib/collectionListCardSync.js';
 import { AppListCardInfoSearch } from './AppListCardInfoSearch.jsx';
@@ -112,6 +117,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   const [isAiPipelineRunning, setIsAiPipelineRunning] = useState(false);
   const [aiPipelineStep, setAiPipelineStep] = useState(null);
   const [pendingWikiLinkOptOuts, setPendingWikiLinkOptOuts] = useState([]);
+  const [tableEditIndex, setTableEditIndex] = useState(null);
   const notesTypo = useSyncExternalStore(subscribeEntityNotesPrefs, getEntityNotesPrefs, getEntityNotesPrefs);
   const textareaRef = useRef(null);
   const previewScrollRef = useRef(null);
@@ -388,6 +394,19 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
       }
     },
     [isSplitPreview, recordAndSetDraft, setDebouncedMarkdownPreview, setLivePreviewText]
+  );
+  const tableEditBlock = useMemo(() => {
+    if (tableEditIndex == null) return null;
+    return getMarkdownTableBlockByIndex(notesEdit.text, tableEditIndex)?.block ?? null;
+  }, [notesEdit.text, tableEditIndex]);
+  const handleApplyMarkdownTableEdit = useCallback(
+    (replacementMarkdown) => {
+      if (tableEditIndex == null) return;
+      const next = replaceMarkdownTableBlockByIndex(notesEdit.text, tableEditIndex, replacementMarkdown);
+      syncDraftAndPreview(next);
+      setTableEditIndex(null);
+    },
+    [notesEdit.text, syncDraftAndPreview, tableEditIndex]
   );
   const handleRunAiPipeline = useCallback(
     async (pipelineSteps) => {
@@ -905,11 +924,18 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               onScroll={handlePreviewScroll}
               onJumpToAnchor={(item) => jumpToEditorLine(item.line)}
               onJumpToLine={jumpToEditorLine}
+              onEditMarkdownTable={setTableEditIndex}
               className="h-full min-h-0 w-1/2 overflow-y-auto overscroll-contain custom-scrollbar border-l border-slate-700 pl-4 font-serif"
             />
           )}
         </div>
       </div>
+      <EntityNotesMarkdownTableEditModal
+        isOpen={tableEditIndex != null && tableEditBlock != null}
+        tableBlock={tableEditBlock}
+        onClose={() => setTableEditIndex(null)}
+        onApply={handleApplyMarkdownTableEdit}
+      />
     </>
   );
 });
@@ -1006,6 +1032,8 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   const [notesViewFieldFilters, setNotesViewFieldFilters] = useState(() => ({}));
   const notesAdvToggleRef = useRef(null);
   const notesAdvPanelRef = useRef(null);
+  const [readTableEditIndex, setReadTableEditIndex] = useState(null);
+  const [editInfoBootstrap, setEditInfoBootstrap] = useState(null);
 
   const notesFilterOptions = useMemo(
     () => [
@@ -1092,6 +1120,67 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   }, [isCurrentTimelineMode, isEntityEditing, setIsEntityEditing]);
 
   useEffect(() => {
+    if (!isEntityEditing) setEditInfoBootstrap(null);
+  }, [isEntityEditing]);
+
+  const readMarkdownTableBlock = useMemo(() => {
+    if (readTableEditIndex == null || isEntityEditing) return null;
+    return getMarkdownTableBlockByIndex(safeString(detailNotesMarkdown), readTableEditIndex)?.block ?? null;
+  }, [detailNotesMarkdown, isEntityEditing, readTableEditIndex]);
+
+  const handleReadModeTableApply = useCallback(
+    (replacementMarkdown) => {
+      if (readTableEditIndex == null) return;
+      const next = replaceMarkdownTableBlockByIndex(
+        safeString(detailNotesMarkdown),
+        readTableEditIndex,
+        replacementMarkdown,
+      );
+      setEditInfoBootstrap(next);
+      setReadTableEditIndex(null);
+      setLivePreviewText(next);
+      setDebouncedMarkdownPreview(next);
+      setIsEntityEditing(true);
+    },
+    [
+      detailNotesMarkdown,
+      readTableEditIndex,
+      setDebouncedMarkdownPreview,
+      setIsEntityEditing,
+      setLivePreviewText,
+    ],
+  );
+
+  const readModeNotesPreviewBlocks = useMemo(() => {
+    if (!selectedEntity || filteredNotesRead.emptyMatch || isListCardEntity(selectedEntity)) return null;
+    const canEditTable = !isEntityEditing && !isNotesFilterActive;
+    return buildEntityNotesPreviewModel(
+      filteredNotesRead.text,
+      currentContextDirHandle,
+      entityMap,
+      globalLinkRegex,
+      onNavigate,
+      selectedEntity.id,
+      {
+        wikiLinkOptOuts: readWikiLinkOptOuts(selectedEntity),
+        activeNovelData,
+        onEditMarkdownTable: canEditTable ? setReadTableEditIndex : null,
+      },
+    ).blocks;
+  }, [
+    activeNovelData,
+    currentContextDirHandle,
+    entityMap,
+    filteredNotesRead.emptyMatch,
+    filteredNotesRead.text,
+    globalLinkRegex,
+    isEntityEditing,
+    isNotesFilterActive,
+    onNavigate,
+    selectedEntity,
+  ]);
+
+  useEffect(() => {
     if (!showNotesAdvancedPanel) return undefined;
     const onMouseDown = (e) => {
       const t = e.target;
@@ -1104,12 +1193,12 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
   }, [showNotesAdvancedPanel]);
 
   const editSessionTarget = isMemberNotesEditing ? memberNotesEditTarget : selectedEntity;
-  const editSessionInfo = safeString(editSessionTarget?.info);
+  const editSessionInfo = safeString(editInfoBootstrap ?? editSessionTarget?.info);
   const editSessionSubject = isMemberNotesEditing ? memberNotesName : safeString(selectedEntity?.name);
   const editSessionWikiLinkOptOuts = readWikiLinkOptOuts(editSessionTarget);
   const editSessionKey = isMemberNotesEditing
     ? `${selectedEntity?.id || 'entity'}:member:${memberNotesEditTarget?.id || 'none'}`
-    : `${selectedEntity?.id || 'entity'}:${detailProfileMode}`;
+    : `${selectedEntity?.id || 'entity'}:${detailProfileMode}${editInfoBootstrap ? ':table-edit' : ''}`;
   const handleEditSessionSave = isMemberNotesEditing
     ? (text, meta) => onSaveMemberNotes?.(text, meta)
     : handleUpdateEntityInfo;
@@ -1577,22 +1666,17 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
                 Không có mục nào trong ghi chép khớp bộ lọc hiện tại.
               </p>
             ) : (
-              <div className="font-serif max-w-none min-h-[200px]">
-                {renderEntityNotesMarkdown(
-                  filteredNotesRead.text,
-                  currentContextDirHandle,
-                  entityMap,
-                  globalLinkRegex,
-                  onNavigate,
-                  selectedEntity?.id,
-                  readWikiLinkOptOuts(selectedEntity),
-                  { activeNovelData },
-                )}
-              </div>
+              <div className="font-serif max-w-none min-h-[200px]">{readModeNotesPreviewBlocks}</div>
             )}
           </div>
         )}
       </div>
+      <EntityNotesMarkdownTableEditModal
+        isOpen={readTableEditIndex != null && readMarkdownTableBlock != null && !isEntityEditing}
+        tableBlock={readMarkdownTableBlock}
+        onClose={() => setReadTableEditIndex(null)}
+        onApply={handleReadModeTableApply}
+      />
     </div>
   );
 });

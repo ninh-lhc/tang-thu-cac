@@ -18,6 +18,7 @@ export const MarkdownPreviewPane = memo(function MarkdownPreviewPane({
   onScroll = null,
   onJumpToAnchor = null,
   onJumpToLine = null,
+  onEditMarkdownTable = null,
 }) {
   const previewRef = useRef(null);
   const entityNotesModel = useMemo(
@@ -25,12 +26,25 @@ export const MarkdownPreviewPane = memo(function MarkdownPreviewPane({
       variant === 'entityNotes'
         ? buildEntityNotesPreviewModel(text || '', dirHandle, entityMap, linkRegex, onNavigate, selfEntityId, {
             onJumpToLine,
+            onEditMarkdownTable,
             wikiLinkOptOuts: Array.isArray(wikiLinkOptOuts) ? wikiLinkOptOuts : [],
             activeNovelData,
             tabsConfig: activeNovelData?.tabsConfig ?? null,
           })
         : null,
-    [activeNovelData, dirHandle, entityMap, linkRegex, onJumpToLine, onNavigate, selfEntityId, text, variant, wikiLinkOptOuts]
+    [
+      activeNovelData,
+      dirHandle,
+      entityMap,
+      linkRegex,
+      onEditMarkdownTable,
+      onJumpToLine,
+      onNavigate,
+      selfEntityId,
+      text,
+      variant,
+      wikiLinkOptOuts,
+    ]
   );
   const renderer = variant === 'entityNotes' ? renderEntityNotesMarkdown : renderMarkdown;
 

@@ -54,6 +54,11 @@ import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
 import { autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
 import { MILESTONE_LABELS } from './lib/milestoneLabels.js';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
+import { EntityNotesMarkdownTableEditModal } from './EntityNotesMarkdownTableEditModal.jsx';
+import {
+  getMarkdownTableBlockByIndex,
+  replaceMarkdownTableBlockByIndex,
+} from './lib/markdownTableEditor.js';
 import {
   EntityNotesHighlightedEditor,
   ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS,
@@ -3576,6 +3581,7 @@ export const ModalMilestone = ({
   const [eventAiPipelineStep, setEventAiPipelineStep] = useState(null);
   const [isFormattingStructure, setIsFormattingStructure] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [tableEditIndex, setTableEditIndex] = useState(null);
   const eventTextareaRef = useRef(null);
   // Đang ghép chữ IME (tiếng Việt): chặn setState đồng bộ toolbar/caret để tránh
   // React re-render ghi đè value cũ giữa lúc compose ⇒ tránh rớt/lặp ký tự.
@@ -3661,6 +3667,19 @@ export const ModalMilestone = ({
       return { text: next, history: nextHistory, hIndex: nextIndex };
     });
   };
+  const tableEditBlock = useMemo(() => {
+    if (tableEditIndex == null) return null;
+    return getMarkdownTableBlockByIndex(eventText, tableEditIndex)?.block ?? null;
+  }, [eventText, tableEditIndex]);
+  const handleApplyMarkdownTableEdit = useCallback(
+    (replacementMarkdown) => {
+      if (tableEditIndex == null) return;
+      const next = replaceMarkdownTableBlockByIndex(eventText, tableEditIndex, replacementMarkdown);
+      recordAndSetEventDraft(next);
+      setTableEditIndex(null);
+    },
+    [eventText, tableEditIndex],
+  );
   const undo = () => {
     setEventEdit((state) => {
       if (state.hIndex <= 0) return state;
@@ -3737,6 +3756,7 @@ export const ModalMilestone = ({
     }
     setEventEdit({ text: nextEvent, history: [nextEvent], hIndex: 0 });
     setToolbarState(getEntityNotesToolbarState(nextEvent, 0, 0));
+    setTableEditIndex(null);
   }, [isOpen, initialData, defaultChapterWhenNew]);
 
   useEffect(() => {
@@ -4493,6 +4513,7 @@ export const ModalMilestone = ({
                       onScroll={handlePreviewScroll}
                       onJumpToAnchor={(item) => jumpToEditorLine(item.line)}
                       onJumpToLine={jumpToEditorLine}
+                      onEditMarkdownTable={setTableEditIndex}
                       className="h-full min-h-0 w-1/2 overflow-y-auto overscroll-contain border-l border-slate-700 pl-4 font-serif custom-scrollbar"
                     />
                   )}
@@ -4605,6 +4626,12 @@ export const ModalMilestone = ({
           </button>
         </div>
       </div>
+      <EntityNotesMarkdownTableEditModal
+        isOpen={tableEditIndex != null && tableEditBlock != null}
+        tableBlock={tableEditBlock}
+        onClose={() => setTableEditIndex(null)}
+        onApply={handleApplyMarkdownTableEdit}
+      />
     </div>
   );
 };
