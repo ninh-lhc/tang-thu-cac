@@ -8,6 +8,7 @@ import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { ModalEntity, ModalMilestone } from './MasterComponents.jsx';
+import { buildFullSixRowNotebookTablePaste } from './lib/notebookTablePasteFixture.js';
 
 function dispatchSaveShortcut() {
   window.dispatchEvent(new CustomEvent('ttc-save', { cancelable: true }));
@@ -371,6 +372,61 @@ describe('modal ttc-save scope', () => {
         f_alias: 'Tiểu Nam',
       },
     });
+  });
+
+  it('keeps pasted milestone table previewable after save and reopen', async () => {
+    localStorage.setItem('tangthu_entity_notes_auto_wrap_wiki_on_save_v1', '0');
+    const pastePlain = buildFullSixRowNotebookTablePaste();
+    const onMilestoneSave = vi.fn();
+    const { getByTestId, getByRole, unmount } = render(
+      <ModalMilestone {...milestoneProps({ onSave: onMilestoneSave, entityMap: [] })} />
+    );
+
+    const milestoneRoot = getByTestId('modal-milestone-root');
+    const eventTextarea = milestoneRoot.querySelector('textarea#milestone-event-editor');
+    expect(eventTextarea).toBeTruthy();
+
+    fireEvent.click(getByRole('button', { name: /^Preview$/i }));
+    fireEvent.paste(eventTextarea, {
+      clipboardData: {
+        getData: (type) => (type === 'text/plain' ? pastePlain : ''),
+        files: [],
+      },
+    });
+
+    await waitFor(() => {
+      expect(milestoneRoot.querySelector('.entity-notes-md-table')).not.toBeNull();
+    });
+
+    fireEvent.click(getByRole('button', { name: /Lưu cập nhật/i }));
+    expect(onMilestoneSave).toHaveBeenCalledTimes(1);
+    const savedEvent = onMilestoneSave.mock.calls[0][0].event;
+    expect(savedEvent).toContain('[[Bách Khoa Tu Tiên]]');
+    expect(savedEvent).not.toMatch(/\[\[\[\[/);
+    unmount();
+
+    const { getByTestId: getRoot2, getByRole: getRole2 } = render(
+      <ModalMilestone
+        {...milestoneProps({
+          entityMap: [],
+          initialData: {
+            id: 'ms-1',
+            chapter: '77',
+            title: 'Milestone Focus',
+            event: savedEvent,
+            snapshot: { avatar: '', dynamicData: {} },
+          },
+        })}
+      />
+    );
+
+    const milestoneRoot2 = getRoot2('modal-milestone-root');
+    fireEvent.click(getRole2('button', { name: /^Preview$/i }));
+    await waitFor(() => {
+      expect(milestoneRoot2.querySelector('.entity-notes-md-table')).not.toBeNull();
+    });
+    expect(milestoneRoot2.textContent).toMatch(/Bách Khoa|Triệu Hồi/);
+    expect(milestoneRoot2.textContent).not.toMatch(/\|\s*:---/);
   });
 
   it('pulls focus back into modal when external element is focused', async () => {

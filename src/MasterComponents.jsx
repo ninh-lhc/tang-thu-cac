@@ -117,6 +117,7 @@ import {
   resolveEntityNotesTemplateProfile,
 } from './lib/entityNotesSemantics.js';
 import { cleanupEntityNotesText } from './lib/entityNotesTextCleanup.js';
+import { prepareEntityNotesPasteText } from './lib/entityNotesEditorPaste.js';
 import {
   fixAllEntityNotesDiagnostics,
   fixEntityNotesStructureOnly,
@@ -3898,9 +3899,10 @@ export const ModalMilestone = ({
   };
   const handleEditorPaste = (event) => {
     const clipboardText = event.clipboardData?.getData?.('text/plain') || '';
-    if (!clipboardText || event.clipboardData?.files?.length) return;
+    const clipboardHtml = event.clipboardData?.getData?.('text/html') || '';
+    if ((!clipboardText && !clipboardHtml) || event.clipboardData?.files?.length) return;
     const textarea = event.currentTarget;
-    const cleaned = cleanupEntityNotesText(clipboardText);
+    const cleaned = prepareEntityNotesPasteText({ plain: clipboardText, html: clipboardHtml });
     if (!cleaned) {
       event.preventDefault();
       return;

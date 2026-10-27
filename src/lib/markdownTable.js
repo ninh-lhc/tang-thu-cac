@@ -83,28 +83,205 @@ export function parseTableSeparatorAlignments(line) {
  * Đọc khối bảng GFM: header + separator + body.
  * @returns {{ header: string[], aligns: string[], rows: string[][], startLine: number, endLine: number } | null}
  */
+/** Thêm | đầu/cuối cho hàng bảng NotebookLM (thiếu viền). */
+export function normalizeMarkdownTableRowLine(line) {
+  const trimmed = String(line ?? '').replace(/\r\n?/g, '\n').trim();
+  if (!trimmed.includes('|')) return trimmed;
+  let s = trimmed;
+  if (!s.startsWith('|')) s = `| ${s}`;
+  if (!s.endsWith('|')) s = `${s} |`;
+  return s;
+}
+
+function isLikelyTableHeaderBeforeSeparator(headerLine, sepLine) {
+  const h = String(headerLine ?? '').trim();
+  const s = String(sepLine ?? '').trim();
+  if (!h || !s || h.startsWith('#') || h.startsWith('>')) return false;
+  const sepOk =
+    isTableSeparatorRow(s) || isTableSeparatorRow(normalizeMarkdownTableRowLine(s));
+  if (!sepOk) return false;
+  if (isTableSeparatorRow(h)) return false;
+  return h.includes('|');
+}
+
+function normalizeTableRowForParse(line) {
+  const raw = String(line ?? '');
+  if (isMarkdownTableRowLine(raw)) return raw;
+  const normalized = normalizeMarkdownTableRowLine(raw);
+  return isMarkdownTableRowLine(normalized) ? normalized : raw;
+}
+
+function stripCarriageReturn(line) {
+  return String(line ?? '').replace(/\r$/, '');
+}
+
+/** Dòng có thể là phần tiếp nối của hàng bảng (không phải heading/list/code). */
+function isTableBodyContinuationLine(line) {
+  const trimmed = stripCarriageReturn(line).trim();
+  if (!trimmed) return false;
+  const left = trimmed.trimStart();
+  if (left.startsWith('#') || left.startsWith('>')) return false;
+  if (/^[-*]\s/.test(left)) return false;
+  if (left.startsWith('```')) return false;
+  return true;
+}
+
+function mergeTableRowFragments(current, fragment) {
+  const a = String(current ?? '').trimEnd();
+  const b = String(fragment ?? '').trim();
+  if (!a) return b;
+  if (!b) return a;
+  return `${a} ${b}`;
+}
+
+function rowCellCount(line) {
+  const normalized = normalizeMarkdownTableRowLine(stripCarriageReturn(line));
+  return splitTableRowCells(normalized).length;
+}
+
+/**
+ * Gộp nhiều dòng vật lý thành hàng logic (NotebookLM hay tách <br> thành newline trong ô).
+ * @returns {string[] | null} null nếu cấu trúc không chắc chắn — caller fallback.
+ */
+export function joinPhysicalLinesIntoLogicalTableRows(physicalLines, expectedColCount) {
+  const expected = Math.max(1, Number(expectedColCount) || 1);
+  if (!Array.isArray(physicalLines) || physicalLines.length === 0) return [];
+
+  const logical = [];
+  let current = null;
+
+  const flush = () => {
+    if (current != null && String(current).trim()) {
+      logical.push(normalizeMarkdownTableRowLine(current));
+    }
+    current = null;
+  };
+
+  for (const rawLine of physicalLines) {
+    const trimmed = stripCarriageReturn(rawLine).trim();
+    if (!trimmed) break;
+    if (isTableSeparatorRow(trimmed)) break;
+
+    const startsWithPipe = trimmed.startsWith('|');
+
+    if (current === null) {
+      if (!startsWithPipe && countUnescapedPipes(trimmed) < 1) return null;
+      current = startsWithPipe ? trimmed : normalizeMarkdownTableRowLine(trimmed);
+      continue;
+    }
+
+    const complete = rowCellCount(current) >= expected;
+
+    if (!complete || !startsWithPipe) {
+      if (!isTableBodyContinuationLine(rawLine)) return null;
+      current = mergeTableRowFragments(current, trimmed);
+      continue;
+    }
+
+    flush();
+    current = trimmed;
+  }
+  flush();
+
+  for (const row of logical) {
+    const n = rowCellCount(row);
+    if (n > expected + 1) return null;
+  }
+
+  return logical;
+}
+
+function collectPhysicalTableBodyLines(lines, startIndex, expectedColCount) {
+  const physical = [];
+  let idx = startIndex;
+
+  while (idx < lines.length) {
+    const rowLine = stripCarriageReturn(lines[idx]);
+    const trimmed = rowLine.trim();
+    if (!trimmed) break;
+    if (isTableSeparatorRow(trimmed)) break;
+
+    if (physical.length === 0) {
+      if (!isMarkdownTableRowLine(rowLine)) {
+        const normalized = normalizeMarkdownTableRowLine(rowLine);
+        if (!isMarkdownTableRowLine(normalized)) break;
+      }
+      physical.push(rowLine);
+      idx += 1;
+      continue;
+    }
+
+    if (isMarkdownTableRowLine(rowLine) || isTableBodyContinuationLine(rowLine)) {
+      physical.push(rowLine);
+      idx += 1;
+      continue;
+    }
+    break;
+  }
+
+  return { physical, endLine: idx };
+}
+
+function parseTableBodyRowsStrict(lines, startIndex) {
+  const rows = [];
+  let idx = startIndex;
+  while (idx < lines.length) {
+    let rowLine = String(lines[idx] ?? '');
+    if (!rowLine.trim()) break;
+    if (isTableSeparatorRow(rowLine.trim())) break;
+    if (!isMarkdownTableRowLine(rowLine)) {
+      const normalized = normalizeMarkdownTableRowLine(rowLine);
+      if (isMarkdownTableRowLine(normalized)) rowLine = normalized;
+      else break;
+    }
+    rows.push(splitTableRowCells(rowLine));
+    idx += 1;
+  }
+  return { rows, endLine: idx };
+}
+
 export function tryParseMarkdownTableBlock(lines, startIndex) {
   if (!Array.isArray(lines) || startIndex < 0 || startIndex >= lines.length) return null;
-
-  const headerLine = String(lines[startIndex] ?? '');
-  if (!isMarkdownTableRowLine(headerLine) || isTableSeparatorRow(headerLine.trim())) return null;
   if (startIndex + 1 >= lines.length) return null;
 
-  const sepLine = String(lines[startIndex + 1] ?? '');
-  if (!isTableSeparatorRow(sepLine)) return null;
+  let headerLine = String(lines[startIndex] ?? '');
+  let sepLine = String(lines[startIndex + 1] ?? '');
+
+  if (isTableSeparatorRow(headerLine.trim())) return null;
+
+  if (!isMarkdownTableRowLine(headerLine)) {
+    if (!isLikelyTableHeaderBeforeSeparator(headerLine, sepLine)) return null;
+    headerLine = normalizeMarkdownTableRowLine(headerLine);
+  }
+
+  if (!isTableSeparatorRow(sepLine)) {
+    const normSep = normalizeMarkdownTableRowLine(sepLine);
+    if (!isTableSeparatorRow(normSep)) return null;
+    sepLine = normSep;
+  }
 
   const header = splitTableRowCells(headerLine);
   const aligns = parseTableSeparatorAlignments(sepLine);
-  const rows = [];
-  let idx = startIndex + 2;
+  const expectedColCount = header.length;
 
-  while (idx < lines.length) {
-    const rowLine = String(lines[idx] ?? '');
-    if (!rowLine.trim()) break;
-    if (!isMarkdownTableRowLine(rowLine)) break;
-    if (isTableSeparatorRow(rowLine.trim())) break;
-    rows.push(splitTableRowCells(rowLine));
-    idx += 1;
+  const { physical, endLine: bodyEnd } = collectPhysicalTableBodyLines(
+    lines,
+    startIndex + 2,
+    expectedColCount,
+  );
+
+  let rows;
+  let endLine = bodyEnd;
+
+  const logical = joinPhysicalLinesIntoLogicalTableRows(physical, expectedColCount);
+  if (logical !== null && logical.length > 0) {
+    rows = logical.map((line) => splitTableRowCells(line));
+  } else if (logical !== null && logical.length === 0) {
+    rows = [];
+  } else {
+    const strict = parseTableBodyRowsStrict(lines, startIndex + 2);
+    rows = strict.rows;
+    endLine = strict.endLine;
   }
 
   return {
@@ -112,8 +289,100 @@ export function tryParseMarkdownTableBlock(lines, startIndex) {
     aligns,
     rows,
     startLine: startIndex,
-    endLine: idx,
+    endLine,
   };
+}
+
+function sanitizeTableCellContent(cell) {
+  return String(cell ?? '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/\r\n?/g, ' ')
+    .replace(/\n+/g, ' ')
+    .replace(/[\u00a0\u202f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function escapePipeInTableCell(cell) {
+  let out = '';
+  const s = sanitizeTableCellContent(cell);
+  for (let i = 0; i < s.length; i += 1) {
+    if (s[i] === '\\' && s[i + 1] === '|') {
+      out += '\\|';
+      i += 1;
+      continue;
+    }
+    if (s[i] === '|') {
+      out += '\\|';
+      continue;
+    }
+    out += s[i];
+  }
+  return out;
+}
+
+function alignmentToSeparatorCell(align) {
+  if (align === 'center') return ':---:';
+  if (align === 'right') return '---:';
+  return '---';
+}
+
+/** Serialize khối bảng đã parse — cùng định dạng GFM mà preview/editor dùng. */
+export function formatMarkdownTableBlock(block) {
+  if (!block) return '';
+  const normalized = normalizeTableColumnCount(block.header, block.aligns, block.rows);
+  const rowLine = (cells) =>
+    `| ${cells.map((c) => escapePipeInTableCell(c)).join(' | ')} |`;
+  const sepLine = `| ${normalized.aligns.map(alignmentToSeparatorCell).join(' | ')} |`;
+  return [rowLine(normalized.header), sepLine, ...normalized.rows.map(rowLine)].join('\n');
+}
+
+export function textContainsMarkdownTable(value) {
+  const lines = String(value ?? '').replace(/\r\n?/g, '\n').split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    if (tryParseMarkdownTableBlock(lines, i)) return true;
+  }
+  return false;
+}
+
+/** Chuẩn hóa mọi khối bảng GFM hợp lệ; bỏ qua nội dung trong code fence. */
+export function replaceMarkdownTableBlocksInText(value) {
+  const src = String(value ?? '').replace(/\r\n?/g, '\n');
+  if (!src.trim()) return src;
+
+  const lines = src.split('\n');
+  const out = [];
+  let inCodeFence = false;
+  let i = 0;
+
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+
+    if (!inCodeFence && trimmed.startsWith('```')) {
+      inCodeFence = true;
+      out.push(lines[i]);
+      i += 1;
+      continue;
+    }
+    if (inCodeFence) {
+      out.push(lines[i]);
+      if (trimmed.startsWith('```')) inCodeFence = false;
+      i += 1;
+      continue;
+    }
+
+    const block = tryParseMarkdownTableBlock(lines, i);
+    if (block) {
+      out.push(...formatMarkdownTableBlock(block).split('\n'));
+      i = block.endLine;
+      continue;
+    }
+
+    out.push(lines[i]);
+    i += 1;
+  }
+
+  return out.join('\n');
 }
 
 export function normalizeTableColumnCount(header, aligns, rows) {

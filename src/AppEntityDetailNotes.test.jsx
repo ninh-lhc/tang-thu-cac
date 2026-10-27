@@ -2,6 +2,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { AppEntityDetailNotes } from './AppEntityDetailNotes.jsx';
+import { buildFullSixRowNotebookTablePaste } from './lib/notebookTablePasteFixture.js';
 
 function createProps(overrides = {}) {
   return {
@@ -219,6 +220,80 @@ describe('AppEntityDetailNotes', () => {
     expect(screen.getByRole('textbox').value).toBe('**Khai quat va dinh vi**');
   });
 
+  it('pastes multiline cell table and preview renders HTML table', async () => {
+    function NotesWithPreview() {
+      const [preview, setPreview] = React.useState('');
+      return (
+        <AppEntityDetailNotes
+          {...createProps({
+            isSplitPreview: true,
+            selectedEntity: { id: 'entity-1', name: 'Test', info: '' },
+            debouncedMarkdownPreview: preview,
+            setDebouncedMarkdownPreview: setPreview,
+          })}
+        />
+      );
+    }
+    render(<NotesWithPreview />);
+
+    const tablePaste = [
+      '| Giai đoạn | Cấp độ | Kỹ năng |',
+      '|---|---|---|',
+      '| Hắc Thiết | Cấp 1–9:',
+      '[[Linh Gioi Chau]] | Nội dung |',
+    ].join('\n');
+
+    const textbox = screen.getByRole('textbox');
+    fireEvent.paste(textbox, {
+      clipboardData: {
+        getData: (type) => (type === 'text/plain' ? tablePaste : ''),
+        files: [],
+      },
+    });
+
+    expect(textbox.value).toContain('[[Linh Gioi Chau]]');
+    await vi.waitFor(() => {
+      expect(document.querySelector('.entity-notes-md-table')).not.toBeNull();
+    });
+  });
+
+  it('pastes markdown tables as canonical GFM for preview rendering', async () => {
+    function NotesWithPreview() {
+      const [preview, setPreview] = React.useState('');
+      return (
+        <AppEntityDetailNotes
+          {...createProps({
+            isSplitPreview: true,
+            selectedEntity: { id: 'entity-1', name: 'Test', info: '' },
+            debouncedMarkdownPreview: preview,
+            setDebouncedMarkdownPreview: setPreview,
+          })}
+        />
+      );
+    }
+    render(<NotesWithPreview />);
+
+    const tablePaste = [
+      '| Giai đoạn | Kỹ năng |',
+      '|---|---|',
+      '| Cấp 1 | [[Linh Gioi Chau]] |',
+    ].join('\n');
+
+    const textbox = screen.getByRole('textbox');
+    fireEvent.paste(textbox, {
+      clipboardData: {
+        getData: (type) => (type === 'text/plain' ? tablePaste : ''),
+        files: [],
+      },
+    });
+
+    expect(textbox.value).toContain('[[Linh Gioi Chau]]');
+    expect(textbox.value).toMatch(/^\| Giai đoạn \| Kỹ năng \|/m);
+    await vi.waitFor(() => {
+      expect(document.querySelector('.entity-notes-md-table')).not.toBeNull();
+    });
+  });
+
   it('cleans pasted text before inserting it into the editor', () => {
     const props = createProps({
       selectedEntity: {
@@ -258,6 +333,80 @@ describe('AppEntityDetailNotes', () => {
     await vi.waitFor(() => {
       expect(props.showToast).toHaveBeenCalled();
     });
+  });
+
+  it('keeps full pasted table in preview after save and reopen', async () => {
+    localStorage.setItem('tangthu_entity_notes_auto_wrap_wiki_on_save_v1', '0');
+    const pastePlain = buildFullSixRowNotebookTablePaste();
+    const savedRef = { text: '' };
+
+    function EditSession({ info, preview, setPreview, onSave }) {
+      return (
+        <AppEntityDetailNotes
+          {...createProps({
+            isSplitPreview: true,
+            selectedEntity: { id: 'entity-1', name: 'Test', info },
+            debouncedMarkdownPreview: preview,
+            setDebouncedMarkdownPreview: setPreview,
+            handleUpdateEntityInfo: onSave,
+          })}
+        />
+      );
+    }
+
+    function PasteAndSave() {
+      const [preview, setPreview] = React.useState('');
+      return (
+        <EditSession
+          info=""
+          preview={preview}
+          setPreview={setPreview}
+          onSave={(text) => {
+            savedRef.text = text;
+          }}
+        />
+      );
+    }
+
+    const { unmount } = render(<PasteAndSave />);
+    const textbox = screen.getByRole('textbox');
+    fireEvent.paste(textbox, {
+      clipboardData: {
+        getData: (type) => (type === 'text/plain' ? pastePlain : ''),
+        files: [],
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('.entity-notes-md-table')).not.toBeNull();
+    });
+    expect(screen.getByRole('textbox').value).toContain('[[Bách Khoa Tu Tiên]]');
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => expect(savedRef.text.length).toBeGreaterThan(0));
+    expect(savedRef.text).toContain('# Bảng kỹ năng');
+    expect(savedRef.text).not.toMatch(/\[\[\[\[/);
+    unmount();
+
+    function ReopenPreview() {
+      const [preview, setPreview] = React.useState(savedRef.text);
+      return (
+        <EditSession
+          info={savedRef.text}
+          preview={preview}
+          setPreview={setPreview}
+          onSave={vi.fn()}
+        />
+      );
+    }
+
+    render(<ReopenPreview />);
+    await vi.waitFor(() => {
+      expect(document.querySelector('.entity-notes-md-table')).not.toBeNull();
+    });
+    const previewRoot = document.querySelector('.entity-notes-md-table')?.closest('[class*="overflow"]') ?? document.body;
+    expect(previewRoot.textContent).not.toMatch(/\|\s*:---/);
+    expect(document.body.textContent).toMatch(/Bách Khoa Tu Tiên|Triệu Hồi/);
   });
 
   it('auto-wraps matching entity names into wiki links when saving', () => {
