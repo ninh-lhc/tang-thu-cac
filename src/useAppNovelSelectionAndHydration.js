@@ -12,7 +12,7 @@ import {
 import { buildNovelSearchIndex, countEntitiesInNovel } from './deepSearchCore.js';
 import { cleanupAutoRelationLegacyInfoForNovel } from './lib/autoRelationDetailNote.js';
 import { syncAllCollectionListCardsDetailed } from './lib/collectionListCardSync.js';
-import { markAllShardsDirty, markShardDirty } from './lib/dirtyShardTracker.js';
+import { markAllShardsDirty } from './lib/dirtyShardTracker.js';
 import { buildAutoSyncPlanFromTabsConfig, runNovelAutoSyncPlan } from './lib/autoSyncManager.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 
@@ -220,7 +220,7 @@ export function useAppNovelSelectionAndHydration({
         });
         const partial = partialLoaded?.novel;
         if (partial?.data?.[lonId]?.[nhoId]) {
-          markShardDirty(lonId, nhoId);
+          // Chỉ merge shard đã đọc vào memory — không coi là chỉnh sửa cần ghi đĩa (AUD-003).
           setActiveNovelData((prev) => {
             if (!prev || prev.id !== activeNovelData.id) return prev;
             const next = structuredClone(prev);
