@@ -226,6 +226,24 @@ describe('EntityNotesMarkdownTableEdit', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('sets body flag while open so global toast can avoid modal footer', () => {
+    const { unmount } = render(
+      <EntityNotesMarkdownTableEditModal
+        isOpen
+        tableBlock={{
+          header: ['A'],
+          aligns: ['left'],
+          rows: [['1']],
+        }}
+        onApply={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(document.body.getAttribute('data-entity-notes-table-edit-open')).toBe('');
+    unmount();
+    expect(document.body.hasAttribute('data-entity-notes-table-edit-open')).toBe(false);
+  });
+
   it('modal panel uses flex column with bounded height for long grids', () => {
     const rows = Array.from({ length: 24 }, (_, i) => [`row-${i}`, 'b']);
     render(

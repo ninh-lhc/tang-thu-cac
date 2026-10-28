@@ -58,9 +58,11 @@ export function EntityNotesMarkdownTableEditModal({
     const prevHtmlOverflowX = document.documentElement.style.overflowX;
     document.body.style.overflow = 'hidden';
     document.documentElement.style.overflowX = 'hidden';
+    document.body.setAttribute('data-entity-notes-table-edit-open', '');
     return () => {
       document.body.style.overflow = prevBodyOverflow;
       document.documentElement.style.overflowX = prevHtmlOverflowX;
+      document.body.removeAttribute('data-entity-notes-table-edit-open');
     };
   }, [isOpen]);
 

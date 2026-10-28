@@ -5,6 +5,7 @@
  * Không chứa routing hay state nghiệp vụ — chỉ nhận props từ App.jsx.
  */
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { X, Sparkles } from 'lucide-react';
 import { AsyncLocalImage, safeString } from './MasterUtils.jsx';
 import { FALLBACK_IMG } from './MasterEngines.js';
@@ -173,60 +174,76 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
         </div>
       )}
 
-      {toastMessage && (
-        <div
-          data-testid="app-shell-toast"
-          role="alert"
-          aria-live="polite"
-          aria-atomic="true"
-          className={`fixed bottom-6 z-[300] animate-fade-fast px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border max-w-[min(96vw,520px)] [right:max(1rem,env(safe-area-inset-right,0px))] sm:[right:max(1.5rem,env(safe-area-inset-right,0px))] ${
-            toastMessage.type === 'error'
-              ? 'bg-rose-950 border-rose-700 text-rose-100'
-              : toastMessage.type === 'warning'
-                ? 'bg-amber-950 border-amber-700 text-amber-100'
-                : 'bg-slate-800 border-slate-700 text-slate-100'
-          }`}
-        >
-          <Sparkles
-            size={18}
-            className={`flex-shrink-0 animate-pulse ${
-              toastMessage.type === 'error' ? 'text-rose-400' : toastMessage.type === 'warning' ? 'text-amber-400' : 'text-emerald-400'
-            }`}
-          />
-          <span className="font-serif text-sm flex-1 min-w-0">{safeString(toastMessage.msg)}</span>
-          {toastMessage.onUndo && (
-            <button
-              type="button"
-              onClick={() => {
-                const fn = toastMessage.onUndo;
-                if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-                setToastMessage(null);
-                toastTimerRef.current = null;
-                try {
-                  fn();
-                } catch {
-                  /* ignore */
-                }
-              }}
-              className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-bold font-serif border border-indigo-500/50"
-            >
-              {safeString(toastMessage.undoLabel || 'Hoàn tác')}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => {
-              if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-              setToastMessage(null);
-              toastTimerRef.current = null;
-            }}
-            className="flex-shrink-0 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-            aria-label="Đóng thông báo"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      )}
+      {toastMessage &&
+        (typeof document !== 'undefined'
+          ? createPortal(
+              <div
+                data-testid="app-shell-toast-host"
+                data-toast-stack="viewport-bottom-center"
+                className="app-shell-toast-host global-toast-stack"
+              >
+                <div
+                  data-testid="app-shell-toast"
+                  role="alert"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  className={`app-shell-toast-item pointer-events-auto box-border min-w-0 animate-fade-fast rounded-2xl border px-4 py-2.5 shadow-2xl gap-2.5 ${
+                    toastMessage.type === 'error'
+                      ? 'bg-rose-950 border-rose-700 text-rose-100'
+                      : toastMessage.type === 'warning'
+                        ? 'bg-amber-950 border-amber-700 text-amber-100'
+                        : 'bg-slate-800 border-slate-700 text-slate-100'
+                  }`}
+                >
+                  <Sparkles
+                    size={18}
+                    className={`mt-0.5 flex-shrink-0 animate-pulse ${
+                      toastMessage.type === 'error'
+                        ? 'text-rose-400'
+                        : toastMessage.type === 'warning'
+                          ? 'text-amber-400'
+                          : 'text-emerald-400'
+                    }`}
+                  />
+                  <span className="app-shell-toast-item__message font-serif text-sm">
+                    {safeString(toastMessage.msg)}
+                  </span>
+                  {toastMessage.onUndo && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const fn = toastMessage.onUndo;
+                        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+                        setToastMessage(null);
+                        toastTimerRef.current = null;
+                        try {
+                          fn();
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                      className="flex-shrink-0 rounded-lg border border-indigo-500/50 bg-indigo-700 px-3 py-1.5 text-xs font-bold font-serif text-white hover:bg-indigo-600"
+                    >
+                      {safeString(toastMessage.undoLabel || 'Hoàn tác')}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+                      setToastMessage(null);
+                      toastTimerRef.current = null;
+                    }}
+                    className="app-shell-toast-item__close flex shrink-0 items-center justify-center rounded-lg p-1 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+                    aria-label="Đóng thông báo"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null)}
 
       {isUploading && (
         <div className="fixed inset-0 z-[400] bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-fast">

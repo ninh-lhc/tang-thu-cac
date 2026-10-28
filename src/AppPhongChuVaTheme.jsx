@@ -53,6 +53,9 @@ const APP_GLOBAL_CSS = `
           --tt-shadow-card : 0 4px 20px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.03) inset;
           --tt-shadow-panel: 0 8px 40px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.04) inset;
           --tt-prose-max   : 65rem;
+          --tt-toast-max-w : 42rem;
+          --tt-toast-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+          --tt-toast-z     : 300;
         }
 
         /* Desktop / laptop: vòng focus bàn phím thống nhất (gắn class tt-kbd-focus) */
@@ -131,6 +134,51 @@ const APP_GLOBAL_CSS = `
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.3); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.6); }
+
+        /* Toast stack — portal trên document.body, căn giữa viewport (không theo dashboard/sidebar) */
+        .app-shell-toast-host.global-toast-stack {
+          position: fixed;
+          left: 50%;
+          right: auto;
+          bottom: var(--tt-toast-bottom);
+          transform: translateX(-50%);
+          z-index: var(--tt-toast-z);
+          box-sizing: border-box;
+          width: fit-content;
+          max-width: min(var(--tt-toast-max-w), calc(100vw - 2rem));
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.75rem;
+          pointer-events: none;
+        }
+        .app-shell-toast-item {
+          position: relative;
+          display: flex;
+          align-items: flex-start;
+          width: fit-content;
+          max-width: min(var(--tt-toast-max-w), calc(100vw - 2rem));
+          flex: 0 1 auto;
+          min-width: 0;
+          box-sizing: border-box;
+        }
+        .app-shell-toast-item__message {
+          flex: 1 1 auto;
+          min-width: 0;
+          white-space: normal;
+          line-height: 1.45;
+          overflow-wrap: break-word;
+          word-break: normal;
+        }
+        .app-shell-toast-item__message:where(:lang(vi), :lang(en)) {
+          hyphens: auto;
+        }
+        .app-shell-toast-item__close {
+          flex: 0 0 auto;
+          min-width: 2rem;
+          min-height: 2rem;
+        }
+
         /* MOTION: vẫn mượt nhưng “đẹp” hơn (độ rơi rõ ràng hơn) */
         @keyframes fadeIn { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fadeIn 0.34s cubic-bezier(0.22, 1, 0.36, 1) forwards; will-change: opacity, transform; }
