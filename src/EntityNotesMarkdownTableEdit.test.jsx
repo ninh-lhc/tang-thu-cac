@@ -2,6 +2,7 @@ import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AppEntityDetailNotes } from './AppEntityDetailNotes.jsx';
+import { EntityNotesMarkdownTableEditModal } from './EntityNotesMarkdownTableEditModal.jsx';
 import { ModalMilestone } from './MasterComponents.jsx';
 import { buildFullSixRowNotebookTablePaste } from './lib/notebookTablePasteFixture.js';
 
@@ -52,6 +53,33 @@ function entityNotesProps(overrides = {}) {
 afterEach(() => cleanup());
 
 describe('EntityNotesMarkdownTableEdit', () => {
+  it('renders wide modal shell, grid scroll region, and sticky footer for five columns', () => {
+    render(
+      <EntityNotesMarkdownTableEditModal
+        isOpen
+        tableBlock={{
+          header: ['C1', 'C2', 'C3', 'C4', 'C5'],
+          aligns: ['left', 'left', 'left', 'left', 'left'],
+          rows: [['a', 'b', 'c', 'd', 'e']],
+        }}
+        onApply={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const panel = screen.getByTestId('entity-notes-table-edit-modal-panel');
+    expect(panel.className).toContain('1880px');
+    expect(panel.className).toMatch(/92vh/);
+    expect(screen.getByTestId('entity-notes-table-edit-grid-scroll')).toBeTruthy();
+    const footer = screen.getByTestId('entity-notes-table-edit-footer');
+    expect(footer.contains(screen.getByRole('button', { name: 'Hủy' }))).toBe(true);
+    expect(footer.contains(screen.getByRole('button', { name: 'Áp dụng' }))).toBe(true);
+    expect(screen.getAllByLabelText(/Tiêu đề cột/i)).toHaveLength(5);
+    expect(screen.getAllByLabelText(/Ô hàng/i)).toHaveLength(5);
+    const table = panel.querySelector('table');
+    expect(table?.style.minWidth).toMatch(/70rem/);
+  });
+
   it('opens grid, cancels without changing source', async () => {
     const table = ['| A | B |', '|---|---|', '| 1 | 2 |'].join('\n');
     function Harness() {
