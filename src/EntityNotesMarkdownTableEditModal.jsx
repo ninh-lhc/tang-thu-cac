@@ -4,6 +4,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, Table2, Trash2, X } from 'lucide-react';
 import { useFocusTrap } from './lib/useFocusTrap.js';
 import {
@@ -14,16 +15,19 @@ import {
   removeEditGridRow,
   tableBlockToEditGrid,
 } from './lib/markdownTableEditor.js';
+import { EntityNotesTableCellHighlightTextarea } from './EntityNotesTableCellHighlightTextarea.jsx';
 
 /** Chiều rộng tối thiểu mỗi cột (rem) — bảng 5+ cột scroll ngang trong grid. */
 const COL_MIN_WIDTH_REM = 14;
 
-const CELL_TEXTAREA_CLASS =
-  'block w-full min-h-[6.75rem] max-h-[18rem] min-w-0 resize-y overflow-x-hidden overflow-y-auto bg-transparent px-3 py-2.5 font-serif text-[0.9375rem] leading-relaxed outline-none focus:bg-slate-950/55';
-
-const HEADER_TEXTAREA_CLASS = `${CELL_TEXTAREA_CLASS} font-bold text-amber-100/95 focus:bg-slate-950/70`;
-
-export function EntityNotesMarkdownTableEditModal({ isOpen, tableBlock, onApply, onClose }) {
+export function EntityNotesMarkdownTableEditModal({
+  isOpen,
+  tableBlock,
+  onApply,
+  onClose,
+  entityMap = null,
+  selfEntityId = null,
+}) {
   const trapRef = useFocusTrap(isOpen);
   const [grid, setGrid] = useState(null);
 
@@ -37,10 +41,13 @@ export function EntityNotesMarkdownTableEditModal({ isOpen, tableBlock, onApply,
 
   useEffect(() => {
     if (!isOpen) return undefined;
-    const prevOverflow = document.body.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflowX = document.documentElement.style.overflowX;
     document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflowX = 'hidden';
     return () => {
-      document.body.style.overflow = prevOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflowX = prevHtmlOverflowX;
     };
   }, [isOpen]);
 
@@ -77,9 +84,10 @@ export function EntityNotesMarkdownTableEditModal({ isOpen, tableBlock, onApply,
 
   if (!isOpen || !grid) return null;
 
-  return (
+  const dialog = (
     <div
-      className="fixed inset-0 z-[260] flex items-center justify-center bg-slate-950/85 p-3 sm:p-4 backdrop-blur-sm animate-fade-in"
+      data-testid="entity-notes-table-edit-modal-overlay"
+      className="fixed inset-0 z-[260] box-border flex h-dvh max-h-dvh w-full items-center justify-center overflow-x-hidden overflow-y-auto bg-slate-950/85 p-3 backdrop-blur-sm sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Chỉnh sửa bảng Markdown"
@@ -87,12 +95,15 @@ export function EntityNotesMarkdownTableEditModal({ isOpen, tableBlock, onApply,
       <div
         ref={trapRef}
         data-testid="entity-notes-table-edit-modal-panel"
-        className="flex h-[min(92vh,940px)] max-h-[92vh] w-[min(96vw,1880px)] max-w-[1880px] flex-col overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 shadow-2xl"
+        className="box-border flex h-[min(92dvh,940px,calc(100dvh-1.5rem))] max-h-[min(92dvh,940px,calc(100dvh-1.5rem))] min-h-0 w-full min-w-0 max-w-[min(96vw,1880px)] flex-col overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 shadow-2xl animate-fade-in"
       >
-        <div className="flex flex-shrink-0 items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 sm:px-5 sm:py-4">
-          <div className="flex items-center gap-2 text-slate-100">
-            <Table2 size={18} className="text-amber-400" aria-hidden />
-            <h2 className="text-lg font-heading font-bold">Chỉnh sửa bảng</h2>
+        <div
+          data-testid="entity-notes-table-edit-header"
+          className="flex w-full min-w-0 shrink-0 items-center justify-between gap-3 overflow-hidden border-b border-slate-800 px-4 py-3 sm:px-5 sm:py-4"
+        >
+          <div className="flex min-w-0 items-center gap-2 text-slate-100">
+            <Table2 size={18} className="shrink-0 text-amber-400" aria-hidden />
+            <h2 className="truncate text-lg font-heading font-bold">Chỉnh sửa bảng</h2>
           </div>
           <button
             type="button"
@@ -106,12 +117,12 @@ export function EntityNotesMarkdownTableEditModal({ isOpen, tableBlock, onApply,
 
         <div
           data-testid="entity-notes-table-edit-grid-scroll"
-          className="min-h-0 flex-1 overflow-auto overscroll-contain custom-scrollbar px-3 py-3 sm:px-5 sm:py-4"
+          className="entity-notes-table-edit-grid-scroll relative isolate min-h-0 min-w-0 w-full max-w-full flex-1 overflow-x-auto overflow-y-auto overscroll-contain custom-scrollbar px-3 pb-3 pt-0 sm:px-5 sm:pb-4 sm:pt-0"
         >
-          <div className="w-full min-w-0 overflow-x-auto rounded-xl border border-slate-700/60 custom-scrollbar">
+          <div className="inline-block min-w-full align-top rounded-xl border border-slate-700/60">
             <table
               data-testid="entity-notes-table-edit-grid-table"
-              className="w-full border-collapse text-[0.9375rem]"
+              className="entity-notes-table-edit-grid w-full border-separate border-spacing-0 text-[0.9375rem]"
               style={{ minWidth: `${tableMinWidthRem}rem` }}
             >
               <colgroup>
@@ -125,33 +136,42 @@ export function EntityNotesMarkdownTableEditModal({ isOpen, tableBlock, onApply,
                   />
                 ))}
               </colgroup>
-              <thead className="sticky top-0 z-[1]">
-                <tr className="bg-slate-950/95 backdrop-blur-sm shadow-[0_1px_0_0_rgba(51,65,85,0.65)]">
+              <thead data-testid="entity-notes-table-edit-thead" className="[position:static]">
+                <tr>
                   {grid.header.map((cell, ci) => (
-                    <th key={`th-${ci}`} className="border border-slate-700/50 p-0 align-top">
-                      <textarea
+                    <th
+                      key={`th-${ci}`}
+                      className="entity-notes-table-edit-th sticky top-0 z-30 border border-slate-700/50 bg-slate-950 p-0 align-top [background-clip:padding-box] shadow-[0_1px_0_0_rgba(51,65,85,0.75)] [&_.markdown-table-cell-highlight]:bg-slate-950"
+                    >
+                      <EntityNotesTableCellHighlightTextarea
                         value={cell}
                         onChange={(e) => patchHeader(ci, e.target.value)}
                         rows={2}
-                        className={HEADER_TEXTAREA_CLASS}
-                        aria-label={`Tiêu đề cột ${ci + 1}`}
+                        headerCell
+                        ariaLabel={`Tiêu đề cột ${ci + 1}`}
+                        entityMap={entityMap}
+                        selfEntityId={selfEntityId}
                       />
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="relative z-0">
                 {grid.rows.map((row, ri) => (
                   <tr key={`tr-${ri}`} className="bg-slate-900/40">
                     {row.map((cell, ci) => (
-                      <td key={`td-${ri}-${ci}`} className="border border-slate-700/40 p-0 align-top">
-                        <textarea
+                      <td
+                        key={`td-${ri}-${ci}`}
+                        className="entity-notes-table-edit-td isolate border border-slate-700/40 bg-slate-900/40 p-0 align-top [z-index:0]"
+                      >
+                        <EntityNotesTableCellHighlightTextarea
                           value={cell}
                           onChange={(e) => patchCell(ri, ci, e.target.value)}
                           rows={4}
-                          className={`${CELL_TEXTAREA_CLASS} text-slate-200`}
-                          aria-label={`Ô hàng ${ri + 1} cột ${ci + 1}`}
+                          ariaLabel={`Ô hàng ${ri + 1} cột ${ci + 1}`}
                           placeholder="Wiki [[Tên]], **bold**, xuống dòng…"
+                          entityMap={entityMap}
+                          selfEntityId={selfEntityId}
                         />
                       </td>
                     ))}
@@ -164,7 +184,7 @@ export function EntityNotesMarkdownTableEditModal({ isOpen, tableBlock, onApply,
 
         <footer
           data-testid="entity-notes-table-edit-footer"
-          className="flex flex-shrink-0 flex-col gap-3 border-t border-slate-800 bg-slate-900/95 px-4 py-3 backdrop-blur-sm sm:px-5 sm:py-4"
+          className="relative z-[2] flex w-full min-w-0 shrink-0 flex-col gap-3 overflow-hidden border-t border-slate-800 bg-slate-900/95 px-4 py-3 backdrop-blur-sm sm:px-5 sm:py-4"
         >
           <p className="text-[11px] leading-relaxed text-slate-500">
             Xuống dòng trong ô sẽ lưu thành <code className="text-slate-400">&lt;br&gt;</code> trong Markdown. Giữ nguyên{' '}
@@ -226,4 +246,7 @@ export function EntityNotesMarkdownTableEditModal({ isOpen, tableBlock, onApply,
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') return dialog;
+  return createPortal(dialog, document.body);
 }

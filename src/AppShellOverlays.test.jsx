@@ -25,7 +25,7 @@ describe('AppShellOverlays toast', () => {
 
     const toast = screen.getByTestId('app-shell-toast');
     expect(toast.className).toMatch(/bottom-6/);
-    expect(toast.className).toMatch(/right-/);
+    expect(toast.className).toMatch(/\[right:max\(/);
     expect(toast.className).not.toMatch(/left-1\/2/);
     expect(toast.className).not.toMatch(/-translate-x-1\/2/);
   });

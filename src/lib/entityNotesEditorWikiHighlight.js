@@ -26,11 +26,18 @@ function resolveWikiToneClass(inner, { selfEntityId = null, lookup = null } = {}
     : 'text-violet-300';
 }
 
-function wrapWikiSpan(full, toneClass) {
-  return `<span class="${toneClass}">${escapeHtml(full)}</span>`;
+/** Class bổ sung khi highlight trong modal grid (nền + gạch dưới, không đổi nội dung textarea). */
+/** Chỉ màu/nền/gạch chân — không border/padding/margin (tránh lệch wrap/caret với textarea). */
+export const MARKDOWN_TABLE_WIKI_LINK_CLASS =
+  'markdown-table-wiki-link bg-violet-500/12 underline decoration-violet-400/55 decoration-1 underline-offset-[2px]';
+
+function wrapWikiSpan(full, toneClass, variant) {
+  const extra = variant === 'tableCell' ? ` ${MARKDOWN_TABLE_WIKI_LINK_CLASS}` : '';
+  return `<span class="${toneClass}${extra}">${escapeHtml(full)}</span>`;
 }
 
 function highlightWikiOnLine(line, options) {
+  const variant = options?.variant;
   const source = safeString(line);
   let html = '';
   let cursor = 0;
@@ -53,7 +60,7 @@ function highlightWikiOnLine(line, options) {
 
     const full = source.slice(open, close + 2);
     const inner = source.slice(open + 2, close);
-    html += wrapWikiSpan(full, resolveWikiToneClass(inner, options));
+    html += wrapWikiSpan(full, resolveWikiToneClass(inner, options), variant);
     cursor = close + 2;
   }
 
@@ -62,14 +69,15 @@ function highlightWikiOnLine(line, options) {
 
 /**
  * HTML cho lớp highlight — chỉ bọc [[...]] trên cùng dòng, phần còn lại giữ màu chữ thường.
+ * @param {{ selfEntityId?: string, entityMap?: array, variant?: 'tableCell' }} options
  */
-export function buildEntityNotesEditorHighlightHtml(text, { selfEntityId = null, entityMap = null } = {}) {
+export function buildEntityNotesEditorHighlightHtml(text, { selfEntityId = null, entityMap = null, variant = null } = {}) {
   const source = safeString(text);
   if (!source) return '';
 
   const lookup =
     Array.isArray(entityMap) && entityMap.length > 0 ? buildEntityNameLookup(entityMap) : null;
-  const options = { selfEntityId, lookup };
+  const options = { selfEntityId, lookup, variant };
   const parts = source.split('\n');
   const lines = parts.map((line, index) => {
     const highlighted = highlightWikiOnLine(line, options);

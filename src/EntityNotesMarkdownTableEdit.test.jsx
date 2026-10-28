@@ -67,18 +67,67 @@ describe('EntityNotesMarkdownTableEdit', () => {
       />,
     );
 
+    expect(document.body.querySelector('[data-testid="entity-notes-table-edit-modal-overlay"]')).not.toBeNull();
     const panel = screen.getByTestId('entity-notes-table-edit-modal-panel');
     expect(panel.className).toContain('1880px');
-    expect(panel.className).toMatch(/92vh/);
-    expect(screen.getByTestId('entity-notes-table-edit-grid-scroll')).toBeTruthy();
+    expect(panel.className).toMatch(/92dvh|92vh/);
+    expect(panel.className).toContain('min-w-0');
+    const header = screen.getByTestId('entity-notes-table-edit-header');
+    const gridScroll = screen.getByTestId('entity-notes-table-edit-grid-scroll');
+    expect(panel.contains(header)).toBe(true);
+    expect(header.contains(gridScroll)).toBe(false);
+    expect(gridScroll.className).toContain('min-h-0');
+    expect(gridScroll.className).toContain('min-w-0');
+    expect(gridScroll.className).toContain('overflow-x-auto');
+    expect(gridScroll.className).toContain('overflow-y-auto');
+    expect(gridScroll.className).toContain('isolate');
+    expect(gridScroll.className).toMatch(/pt-0/);
+    expect(gridScroll.className).not.toMatch(/\bpy-3\b/);
     const footer = screen.getByTestId('entity-notes-table-edit-footer');
+    expect(gridScroll.contains(footer)).toBe(false);
+    expect(panel.contains(gridScroll)).toBe(true);
+    expect(panel.contains(footer)).toBe(true);
+    expect(screen.getByTestId('entity-notes-table-edit-modal-overlay').className).toContain('overflow-x-hidden');
+    expect(footer.className).toMatch(/shrink-0/);
     expect(footer.contains(screen.getByRole('button', { name: 'Hủy' }))).toBe(true);
     expect(footer.contains(screen.getByRole('button', { name: 'Áp dụng' }))).toBe(true);
     expect(screen.getAllByLabelText(/Tiêu đề cột/i)).toHaveLength(5);
     expect(screen.getAllByLabelText(/Ô hàng/i)).toHaveLength(5);
+    expect(document.querySelector('.markdown-table-wiki-overlay')).toBeTruthy();
     const table = screen.getByTestId('entity-notes-table-edit-grid-table');
     expect(table.style.minWidth).toMatch(/70rem/);
     expect(table.className).toContain('w-full');
+    const th = document.querySelector('.entity-notes-table-edit-th');
+    expect(th?.className).toContain('sticky');
+    expect(th?.className).toContain('top-0');
+    expect(th?.className).toContain('z-30');
+    expect(document.querySelector('thead[data-testid="entity-notes-table-edit-thead"]')?.className).toContain(
+      '[position:static]',
+    );
+    expect(document.querySelector('.entity-notes-table-edit-td')?.className).toContain('isolate');
+    expect(th?.className).toContain('bg-slate-950');
+    expect(th?.className).not.toContain('backdrop-blur');
+    expect(document.querySelector('thead[data-testid="entity-notes-table-edit-thead"]')).not.toBeNull();
+  });
+
+  it('modal panel uses flex column with bounded height for long grids', () => {
+    const rows = Array.from({ length: 24 }, (_, i) => [`row-${i}`, 'b']);
+    render(
+      <EntityNotesMarkdownTableEditModal
+        isOpen
+        tableBlock={{
+          header: ['A', 'B'],
+          aligns: ['left', 'left'],
+          rows,
+        }}
+        onApply={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const panel = screen.getByTestId('entity-notes-table-edit-modal-panel');
+    expect(panel.className).toContain('flex-col');
+    expect(panel.className).toContain('overflow-hidden');
+    expect(screen.getByTestId('entity-notes-table-edit-footer')).toBeTruthy();
   });
 
   it('allows horizontal scroll for many-column tables via min-width', () => {
@@ -97,7 +146,7 @@ describe('EntityNotesMarkdownTableEdit', () => {
     );
     const table = screen.getByTestId('entity-notes-table-edit-grid-table');
     expect(table.style.minWidth).toMatch(/140rem/);
-    expect(screen.getByTestId('entity-notes-table-edit-grid-scroll').className).toMatch(/overflow-auto/);
+    expect(screen.getByTestId('entity-notes-table-edit-grid-scroll').className).toMatch(/overflow-x-auto/);
   });
 
   it('opens grid, cancels without changing source', async () => {
@@ -120,6 +169,28 @@ describe('EntityNotesMarkdownTableEdit', () => {
     fireEvent.change(screen.getByLabelText('Ô hàng 1 cột 1'), { target: { value: '9' } });
     fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
     expect(screen.getByRole('textbox').value).toBe(table);
+  });
+
+  it('shows wiki highlight in modal cell while editing', async () => {
+    const table = ['| Giai đoạn | Kỹ năng |', '|---|---|', '| Hắc | [[Triệu Hồi]] |'].join('\n');
+    function Harness() {
+      const [preview, setPreview] = React.useState(table);
+      return (
+        <AppEntityDetailNotes
+          {...entityNotesProps({
+            selectedEntity: { id: 'e1', name: 'T', info: table },
+            debouncedMarkdownPreview: preview,
+            setDebouncedMarkdownPreview: setPreview,
+          })}
+        />
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId('edit-md-table-0'));
+    await vi.waitFor(() => {
+      expect(document.querySelector('.markdown-table-wiki-link')).toBeTruthy();
+    });
+    expect(screen.getByLabelText('Ô hàng 1 cột 2').value.trim()).toBe('[[Triệu Hồi]]');
   });
 
   it('applies cell edit with multiline br and supports undo', async () => {

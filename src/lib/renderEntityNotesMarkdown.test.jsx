@@ -646,4 +646,74 @@ describe('renderEntityNotesMarkdown', () => {
     expect(container.querySelector('[data-entity-wiki-link]')).not.toBeNull();
     expect(container.textContent).toContain('9');
   });
+
+  it('renders edit-table control when onEditMarkdownTable is provided', () => {
+    const md = ['| A | B |', '|---|---|', '| 1 | [[Wiki]] |'].join('\n');
+    const onEdit = vi.fn();
+    const model = buildEntityNotesPreviewModel(md, null, [], null, vi.fn(), null, {
+      onEditMarkdownTable: onEdit,
+    });
+    const { container } = render(<div>{model.blocks}</div>);
+    const btn = container.querySelector('[data-testid="edit-md-table-0"]');
+    expect(btn).not.toBeNull();
+    expect(btn?.getAttribute('aria-label')).toBe('Chỉnh sửa bảng');
+    const toolbar = container.querySelector('.entity-notes-md-table-edit-toolbar');
+    expect(toolbar).not.toBeNull();
+    expect(toolbar?.contains(btn)).toBe(true);
+    expect(container.querySelector('thead')?.contains(btn)).toBe(false);
+    expect(container.querySelector('.entity-notes-md-table-scroll')?.contains(container.querySelector('table'))).toBe(
+      true,
+    );
+    fireEvent.click(btn);
+    expect(onEdit).toHaveBeenCalledWith(0);
+  });
+
+  it('omits edit-table control when callback is missing', () => {
+    const md = ['| A |', '|---|', '| 1 |'].join('\n');
+    const model = buildEntityNotesPreviewModel(md, null, [], null, vi.fn());
+    const { container } = render(<div>{model.blocks}</div>);
+    expect(container.querySelector('[data-testid^="edit-md-table-"]')).toBeNull();
+  });
+
+  it('assigns distinct edit-table test ids for multiple GFM tables', () => {
+    const md = ['| T1 |', '|---|', '| a |', '', '| T2 |', '|---|', '| b |'].join('\n');
+    const onEdit = vi.fn();
+    const model = buildEntityNotesPreviewModel(md, null, [], null, vi.fn(), null, {
+      onEditMarkdownTable: onEdit,
+    });
+    const { container } = render(<div>{model.blocks}</div>);
+    fireEvent.click(container.querySelector('[data-testid="edit-md-table-0"]'));
+    expect(onEdit).toHaveBeenLastCalledWith(0);
+    fireEvent.click(container.querySelector('[data-testid="edit-md-table-1"]'));
+    expect(onEdit).toHaveBeenLastCalledWith(1);
+  });
+
+  it('does not add edit-table control for ttc-query table blocks', () => {
+    const novel = {
+      data: {
+        tab: { sub: { entities: [{ id: 'e1', name: 'A', dynamicData: { f_x: '1' } }] } },
+      },
+    };
+    const md = ['```ttc-query', 'VIEW TABLE', 'FROM entity', 'SELECT entity, f_x', '```'].join('\n');
+    const model = buildEntityNotesPreviewModel(md, null, [], null, vi.fn(), null, {
+      activeNovelData: novel,
+      onEditMarkdownTable: vi.fn(),
+    });
+    const { container } = render(<div>{model.blocks}</div>);
+    expect(container.querySelector('[data-testid^="edit-md-table-"]')).toBeNull();
+  });
+
+  it('keeps edit-table button focusable for keyboard users', () => {
+    const md = ['| A |', '|---|', '| 1 |'].join('\n');
+    const model = buildEntityNotesPreviewModel(md, null, [], null, vi.fn(), null, {
+      onEditMarkdownTable: vi.fn(),
+    });
+    const { container } = render(<div>{model.blocks}</div>);
+    const btn = container.querySelector('[data-testid="edit-md-table-0"]');
+    btn?.focus();
+    expect(document.activeElement).toBe(btn);
+    expect(container.querySelector('.entity-notes-md-table-edit-toolbar')?.className).toContain(
+      'group-focus-within:opacity-100',
+    );
+  });
 });

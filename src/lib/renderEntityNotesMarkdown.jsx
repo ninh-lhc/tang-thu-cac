@@ -321,25 +321,27 @@ const renderEntityNotesTableBlock = (
       {...jumpProps}
       className={mergeClassName(
         jumpProps,
-        'group entity-notes-md-table-wrap custom-scrollbar my-5 max-w-full overflow-x-auto rounded-xl border border-slate-700/50 bg-slate-950/40',
+        'group entity-notes-md-table-wrap box-border my-5 flex w-full min-w-0 max-w-full flex-col rounded-xl border border-slate-700/50 bg-slate-950/40',
       )}
     >
       {typeof onEditMarkdownTable === 'function' && (
-        <div className="flex justify-end px-2 pt-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        <div className="entity-notes-md-table-edit-toolbar flex min-h-[2.25rem] shrink-0 items-center justify-end border-b border-slate-800/50 px-2 py-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
           <button
             type="button"
             data-testid={`edit-md-table-${tableIndex}`}
+            aria-label="Chỉnh sửa bảng"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
               onEditMarkdownTable(tableIndex);
             }}
-            className="rounded-lg border border-amber-700/40 bg-amber-950/40 px-2.5 py-1 text-[11px] font-bold text-amber-200 hover:bg-amber-900/50"
+            className="tt-kbd-focus rounded-lg border border-amber-600/55 bg-amber-950/85 px-2.5 py-1 text-[11px] font-bold text-amber-100 shadow-md shadow-black/30 hover:border-amber-500/70 hover:bg-amber-900/90"
           >
             Chỉnh sửa bảng
           </button>
         </div>
       )}
+      <div className="entity-notes-md-table-scroll box-border min-w-0 max-w-full overflow-x-auto custom-scrollbar">
       <table
         className="entity-notes-md-table w-full border-collapse text-[1.02rem] leading-relaxed"
         data-wide={normalized.colCount > 8 ? 'true' : undefined}
@@ -378,6 +380,7 @@ const renderEntityNotesTableBlock = (
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 };

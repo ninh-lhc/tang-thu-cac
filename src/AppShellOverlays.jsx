@@ -179,7 +179,7 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
           role="alert"
           aria-live="polite"
           aria-atomic="true"
-          className={`fixed bottom-6 right-4 sm:right-6 z-[300] animate-fade-fast px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border max-w-[min(96vw,520px)] ${
+          className={`fixed bottom-6 z-[300] animate-fade-fast px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border max-w-[min(96vw,520px)] [right:max(1rem,env(safe-area-inset-right,0px))] sm:[right:max(1.5rem,env(safe-area-inset-right,0px))] ${
             toastMessage.type === 'error'
               ? 'bg-rose-950 border-rose-700 text-rose-100'
               : toastMessage.type === 'warning'

@@ -63,7 +63,15 @@ const APP_GLOBAL_CSS = `
 
         /* Ghi chép chi tiết — Markdown table (preview only) */
         .theme-wrapper .entity-notes-md-table-wrap {
+          box-sizing: border-box;
+          min-width: 0;
+          max-width: 100%;
           -webkit-overflow-scrolling: touch;
+        }
+        .theme-wrapper .entity-notes-md-table-scroll {
+          box-sizing: border-box;
+          min-width: 0;
+          max-width: 100%;
         }
         .theme-wrapper .entity-notes-md-table {
           border-collapse: separate;

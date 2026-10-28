@@ -45,4 +45,17 @@ describe('buildEntityNotesEditorHighlightHtml', () => {
     expect(html).not.toMatch(/\[\[Chí Cao<\/span>/);
     expect(html).toContain('<span class="text-amber-300">[[Hư Không]]</span>');
   });
+
+  it('tableCell variant adds markdown-table-wiki-link styling without altering brackets', () => {
+    const html = buildEntityNotesEditorHighlightHtml('A [[Wiki 中文]] B', { variant: 'tableCell' });
+    expect(html).toContain('markdown-table-wiki-link');
+    expect(html).toContain('[[Wiki 中文]]');
+    expect(html).toContain('A ');
+    expect(html).toContain(' B');
+  });
+
+  it('highlights multiple wiki links on separate lines for table cells', () => {
+    const html = buildEntityNotesEditorHighlightHtml('[[One]]\nplain\n[[Two]]', { variant: 'tableCell' });
+    expect(html.match(/markdown-table-wiki-link/g)?.length).toBe(2);
+  });
 });

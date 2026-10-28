@@ -4631,6 +4631,7 @@ export const ModalMilestone = ({
         tableBlock={tableEditBlock}
         onClose={() => setTableEditIndex(null)}
         onApply={handleApplyMarkdownTableEdit}
+        entityMap={entityMap}
       />
     </div>
   );

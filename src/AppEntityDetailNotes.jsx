@@ -935,6 +935,8 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         tableBlock={tableEditBlock}
         onClose={() => setTableEditIndex(null)}
         onApply={handleApplyMarkdownTableEdit}
+        entityMap={entityMap}
+        selfEntityId={selfEntityId}
       />
     </>
   );
@@ -1676,6 +1678,8 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
         tableBlock={readMarkdownTableBlock}
         onClose={() => setReadTableEditIndex(null)}
         onApply={handleReadModeTableApply}
+        entityMap={entityMap}
+        selfEntityId={selectedEntity?.id ?? null}
       />
     </div>
   );
