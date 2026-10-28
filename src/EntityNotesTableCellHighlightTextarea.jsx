@@ -29,15 +29,17 @@ function buildSurfaceStyle() {
 export function EntityNotesTableCellHighlightTextarea({
   value,
   onChange,
+  onKeyDown,
   ariaLabel,
   placeholder,
   rows = 4,
-  minHeightClass = 'min-h-[6.75rem]',
-  maxHeightClass = 'max-h-[18rem]',
+  minHeightClass = 'min-h-[5.75rem]',
+  maxHeightClass = 'max-h-[20rem]',
   toneClass = 'text-slate-200',
   entityMap = null,
   selfEntityId = null,
   headerCell = false,
+  tableEditCellId = null,
 }) {
   const textareaRef = useRef(null);
   const highlightRef = useRef(null);
@@ -76,13 +78,14 @@ export function EntityNotesTableCellHighlightTextarea({
   }, [syncHighlightScroll]);
 
   const headerMin = headerCell ? 'min-h-[3.25rem]' : minHeightClass;
+  const focusGrow = isFocused && !headerCell ? 'min-h-[7rem]' : '';
   const fontWeight = headerCell ? 'font-bold text-amber-100/95' : toneClass;
   const showOverlay = !isFocused;
 
   return (
     <div
       data-testid="markdown-table-cell-highlight"
-      className={`markdown-table-cell-highlight relative box-border min-w-0 max-w-full ${headerMin} ${maxHeightClass} w-full overflow-hidden`}
+      className={`markdown-table-cell-highlight relative box-border min-w-0 max-w-full ${headerMin} ${focusGrow} ${maxHeightClass} w-full overflow-hidden transition-[min-height] duration-150`}
       data-has-wiki={/\[\[[^\]]+\]\]/.test(value || '') ? 'true' : 'false'}
       data-cell-focused={isFocused ? 'true' : 'false'}
     >
@@ -100,6 +103,8 @@ export function EntityNotesTableCellHighlightTextarea({
         ref={textareaRef}
         value={value}
         onChange={onChange}
+        onKeyDown={onKeyDown}
+        data-table-edit-cell={tableEditCellId || undefined}
         onScroll={syncHighlightScroll}
         onFocus={() => {
           setIsFocused(true);
@@ -110,9 +115,11 @@ export function EntityNotesTableCellHighlightTextarea({
         aria-label={ariaLabel}
         placeholder={placeholder}
         spellCheck={false}
-        className={`relative z-10 ${SURFACE_CLASS} ${headerMin} ${maxHeightClass} resize-y overflow-x-hidden overflow-y-scroll bg-transparent outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/25 ${fontWeight} ${
-          isFocused ? 'text-slate-200 caret-slate-100' : 'text-transparent caret-slate-100'
-        }`}
+        className={`relative z-10 ${SURFACE_CLASS} ${headerMin} ${focusGrow} ${maxHeightClass} resize-y overflow-x-hidden overflow-y-scroll bg-transparent outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/25 ${fontWeight} ${
+          isFocused
+            ? 'text-slate-200 caret-slate-100 focus-visible:bg-slate-950/55'
+            : 'text-transparent caret-slate-100'
+        } ${headerCell && isFocused ? 'focus-visible:bg-slate-950/70' : ''}`}
         style={{
           ...surfaceStyle,
           ...(isFocused ? {} : { WebkitTextFillColor: 'transparent' }),
@@ -122,4 +129,4 @@ export function EntityNotesTableCellHighlightTextarea({
     </div>
   );
 }
-
+

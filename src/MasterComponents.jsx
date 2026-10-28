@@ -4629,6 +4629,7 @@ export const ModalMilestone = ({
       <EntityNotesMarkdownTableEditModal
         isOpen={tableEditIndex != null && tableEditBlock != null}
         tableBlock={tableEditBlock}
+        tableIndex={tableEditIndex}
         onClose={() => setTableEditIndex(null)}
         onApply={handleApplyMarkdownTableEdit}
         entityMap={entityMap}

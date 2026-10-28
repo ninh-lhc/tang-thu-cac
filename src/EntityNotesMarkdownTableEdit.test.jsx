@@ -108,6 +108,122 @@ describe('EntityNotesMarkdownTableEdit', () => {
     expect(th?.className).toContain('bg-slate-950');
     expect(th?.className).not.toContain('backdrop-blur');
     expect(document.querySelector('thead[data-testid="entity-notes-table-edit-thead"]')).not.toBeNull();
+    expect(screen.getByTestId('entity-notes-table-edit-meta').textContent).toBe('5 cột · 1 hàng');
+  });
+
+  it('shows table index in modal metadata when tableIndex is provided', () => {
+    render(
+      <EntityNotesMarkdownTableEditModal
+        isOpen
+        tableIndex={1}
+        tableBlock={{
+          header: ['A', 'B'],
+          aligns: ['left', 'left'],
+          rows: [['1', '2']],
+        }}
+        onApply={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('entity-notes-table-edit-meta').textContent).toBe('Bảng 2 · 2 cột · 1 hàng');
+  });
+
+  it('Tab moves focus to the next grid cell', () => {
+    render(
+      <EntityNotesMarkdownTableEditModal
+        isOpen
+        tableBlock={{
+          header: ['A', 'B'],
+          aligns: ['left', 'left'],
+          rows: [['1', '2']],
+        }}
+        onApply={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const first = screen.getByLabelText('Tiêu đề cột 1');
+    first.focus();
+    fireEvent.keyDown(first, { key: 'Tab', code: 'Tab' });
+    expect(document.activeElement).toBe(screen.getByLabelText('Tiêu đề cột 2'));
+    fireEvent.keyDown(document.activeElement, { key: 'Tab', code: 'Tab' });
+    expect(document.activeElement).toBe(screen.getByLabelText('Ô hàng 1 cột 1'));
+  });
+
+  it('Shift+Tab moves focus to the previous grid cell', () => {
+    render(
+      <EntityNotesMarkdownTableEditModal
+        isOpen
+        tableBlock={{
+          header: ['A', 'B'],
+          aligns: ['left', 'left'],
+          rows: [['1', '2']],
+        }}
+        onApply={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const bodyCell = screen.getByLabelText('Ô hàng 1 cột 1');
+    bodyCell.focus();
+    fireEvent.keyDown(bodyCell, { key: 'Tab', shiftKey: true, code: 'Tab' });
+    expect(document.activeElement).toBe(screen.getByLabelText('Tiêu đề cột 2'));
+  });
+
+  it('Ctrl+Enter applies table from a cell', () => {
+    const onApply = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <EntityNotesMarkdownTableEditModal
+        isOpen
+        tableBlock={{
+          header: ['A', 'B'],
+          aligns: ['left', 'left'],
+          rows: [['1', '2']],
+        }}
+        onApply={onApply}
+        onClose={onClose}
+      />,
+    );
+    const cell = screen.getByLabelText('Ô hàng 1 cột 1');
+    fireEvent.change(cell, { target: { value: '9' } });
+    fireEvent.keyDown(cell, { key: 'Enter', ctrlKey: true });
+    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('Enter without modifier still inserts newline in cell', () => {
+    render(
+      <EntityNotesMarkdownTableEditModal
+        isOpen
+        tableBlock={{
+          header: ['A'],
+          aligns: ['left'],
+          rows: [['line']],
+        }}
+        onApply={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const cell = screen.getByLabelText('Ô hàng 1 cột 1');
+    fireEvent.change(cell, { target: { value: 'a\nb' } });
+    expect(cell.value).toBe('a\nb');
+  });
+
+  it('Escape closes modal via cell key handler', () => {
+    const onClose = vi.fn();
+    render(
+      <EntityNotesMarkdownTableEditModal
+        isOpen
+        tableBlock={{
+          header: ['A'],
+          aligns: ['left'],
+          rows: [['1']],
+        }}
+        onApply={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.keyDown(screen.getByLabelText('Ô hàng 1 cột 1'), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('modal panel uses flex column with bounded height for long grids', () => {

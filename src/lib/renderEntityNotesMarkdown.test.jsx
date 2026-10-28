@@ -657,6 +657,8 @@ describe('renderEntityNotesMarkdown', () => {
     const btn = container.querySelector('[data-testid="edit-md-table-0"]');
     expect(btn).not.toBeNull();
     expect(btn?.getAttribute('aria-label')).toBe('Chỉnh sửa bảng');
+    expect(btn?.getAttribute('title')).toBe('Chỉnh sửa bảng Markdown');
+    expect(btn?.textContent).toContain('Chỉnh sửa bảng');
     const toolbar = container.querySelector('.entity-notes-md-table-edit-toolbar');
     expect(toolbar).not.toBeNull();
     expect(toolbar?.contains(btn)).toBe(true);

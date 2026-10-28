@@ -12,6 +12,7 @@ import {
   Lightbulb,
   ScrollText,
   Sparkles,
+  PencilLine,
 } from 'lucide-react';
 import { safeString, processInline } from '../MasterUtils.jsx';
 import { buildEntityNameLookup } from './entityWikiLookup.js';
@@ -325,18 +326,20 @@ const renderEntityNotesTableBlock = (
       )}
     >
       {typeof onEditMarkdownTable === 'function' && (
-        <div className="entity-notes-md-table-edit-toolbar flex min-h-[2.25rem] shrink-0 items-center justify-end border-b border-slate-800/50 px-2 py-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+        <div className="entity-notes-md-table-edit-toolbar flex min-h-[2.5rem] shrink-0 items-center justify-end border-b border-slate-800/50 px-2 py-2 opacity-40 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
           <button
             type="button"
             data-testid={`edit-md-table-${tableIndex}`}
             aria-label="Chỉnh sửa bảng"
+            title="Chỉnh sửa bảng Markdown"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
               onEditMarkdownTable(tableIndex);
             }}
-            className="tt-kbd-focus rounded-lg border border-amber-600/55 bg-amber-950/85 px-2.5 py-1 text-[11px] font-bold text-amber-100 shadow-md shadow-black/30 hover:border-amber-500/70 hover:bg-amber-900/90"
+            className="tt-kbd-focus inline-flex min-h-[2rem] items-center gap-1.5 rounded-lg border border-amber-600/55 bg-amber-950/85 px-3 py-1.5 text-[11px] font-bold text-amber-100 shadow-md shadow-black/30 hover:border-amber-500/70 hover:bg-amber-900/90"
           >
+            <PencilLine size={14} className="shrink-0 opacity-90" aria-hidden />
             Chỉnh sửa bảng
           </button>
         </div>

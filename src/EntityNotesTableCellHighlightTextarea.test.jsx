@@ -63,6 +63,15 @@ describe('EntityNotesTableCellHighlightTextarea', () => {
     expect(MARKDOWN_TABLE_WIKI_LINK_CLASS).not.toContain('border-b');
   });
 
+  it('forwards onKeyDown from textarea', () => {
+    const onKeyDown = vi.fn();
+    render(
+      <EntityNotesTableCellHighlightTextarea value="x" onChange={vi.fn()} onKeyDown={onKeyDown} ariaLabel="cell" />,
+    );
+    fireEvent.keyDown(screen.getByLabelText('cell'), { key: 'Tab' });
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
+  });
+
   it('textarea and overlay share the same padding-right gutter style', () => {
     render(<EntityNotesTableCellHighlightTextarea value="line" onChange={vi.fn()} ariaLabel="cell" />);
     const ta = screen.getByLabelText('cell');

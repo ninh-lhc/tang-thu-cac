@@ -3,10 +3,14 @@
  * Ai dùng: AppEntityDetailNotes (edit/read), MasterComponents ModalMilestone.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Table2, Trash2, X } from 'lucide-react';
 import { useFocusTrap } from './lib/useFocusTrap.js';
+import {
+  stepTableEditGridFocus,
+  tableEditFocusTargetToSelector,
+} from './lib/markdownTableEditGridFocus.js';
 import {
   appendEditGridColumn,
   appendEditGridRow,
@@ -23,12 +27,21 @@ const COL_MIN_WIDTH_REM = 14;
 export function EntityNotesMarkdownTableEditModal({
   isOpen,
   tableBlock,
+  tableIndex = null,
   onApply,
   onClose,
   entityMap = null,
   selfEntityId = null,
 }) {
   const trapRef = useFocusTrap(isOpen);
+  const panelRef = useRef(null);
+  const setTrapRef = useCallback(
+    (node) => {
+      trapRef.current = node;
+      panelRef.current = node;
+    },
+    [trapRef],
+  );
   const [grid, setGrid] = useState(null);
 
   useEffect(() => {
@@ -70,16 +83,78 @@ export function EntityNotesMarkdownTableEditModal({
     });
   }, []);
 
-  const handleApply = () => {
+  const handleApply = useCallback(() => {
     if (!grid) return;
     onApply?.(editGridToMarkdown(grid));
     onClose?.();
-  };
+  }, [grid, onApply, onClose]);
 
   const colCount = grid?.header?.length ?? 0;
+  const rowCount = grid?.rows?.length ?? 0;
   const tableMinWidthRem = useMemo(
     () => Math.max(colCount * COL_MIN_WIDTH_REM, 48),
     [colCount],
+  );
+
+  const tableMetaLabel = useMemo(() => {
+    const size = `${colCount} cột · ${rowCount} hàng`;
+    if (tableIndex != null && Number.isFinite(tableIndex)) {
+      return `Bảng ${tableIndex + 1} · ${size}`;
+    }
+    return size;
+  }, [colCount, rowCount, tableIndex]);
+
+  const focusTableEditCell = useCallback((target) => {
+    const root = panelRef.current;
+    if (!root || !target) return;
+    const selector = tableEditFocusTargetToSelector(target);
+    if (!selector) return;
+    const el = root.querySelector(selector);
+    if (el instanceof HTMLElement) el.focus();
+  }, []);
+
+  const handleCellKeyDown = useCallback(
+    (coords) => (event) => {
+      const isModEnter = event.key === 'Enter' && (event.ctrlKey || event.metaKey);
+      if (isModEnter) {
+        event.preventDefault();
+        handleApply();
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose?.();
+        return;
+      }
+      if (event.key !== 'Tab' || event.altKey) return;
+      event.preventDefault();
+      const direction = event.shiftKey ? 'prev' : 'next';
+      const next = stepTableEditGridFocus({
+        colCount,
+        rowCount,
+        kind: coords.kind,
+        col: coords.col,
+        row: coords.row,
+        direction,
+      });
+      if (direction === 'prev' && next == null) {
+        panelRef.current?.querySelector('[data-testid="entity-notes-table-edit-close"]')?.focus?.();
+        return;
+      }
+      focusTableEditCell(next);
+    },
+    [colCount, rowCount, focusTableEditCell, onClose, handleApply],
+  );
+
+  const handlePanelKeyDown = useCallback(
+    (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose?.();
+      }
+    },
+    [onClose],
   );
 
   if (!isOpen || !grid) return null;
@@ -93,20 +168,30 @@ export function EntityNotesMarkdownTableEditModal({
       aria-label="Chỉnh sửa bảng Markdown"
     >
       <div
-        ref={trapRef}
+        ref={setTrapRef}
         data-testid="entity-notes-table-edit-modal-panel"
+        onKeyDown={handlePanelKeyDown}
         className="box-border flex h-[min(92dvh,940px,calc(100dvh-1.5rem))] max-h-[min(92dvh,940px,calc(100dvh-1.5rem))] min-h-0 w-full min-w-0 max-w-[min(96vw,1880px)] flex-col overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 shadow-2xl animate-fade-in"
       >
         <div
           data-testid="entity-notes-table-edit-header"
           className="flex w-full min-w-0 shrink-0 items-center justify-between gap-3 overflow-hidden border-b border-slate-800 px-4 py-3 sm:px-5 sm:py-4"
         >
-          <div className="flex min-w-0 items-center gap-2 text-slate-100">
-            <Table2 size={18} className="shrink-0 text-amber-400" aria-hidden />
-            <h2 className="truncate text-lg font-heading font-bold">Chỉnh sửa bảng</h2>
+          <div className="flex min-w-0 flex-col gap-0.5 text-slate-100">
+            <div className="flex min-w-0 items-center gap-2">
+              <Table2 size={18} className="shrink-0 text-amber-400" aria-hidden />
+              <h2 className="truncate text-lg font-heading font-bold">Chỉnh sửa bảng</h2>
+            </div>
+            <p
+              data-testid="entity-notes-table-edit-meta"
+              className="truncate pl-[26px] text-[11px] font-normal leading-snug text-slate-500"
+            >
+              {tableMetaLabel}
+            </p>
           </div>
           <button
             type="button"
+            data-testid="entity-notes-table-edit-close"
             onClick={onClose}
             className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
             aria-label="Đóng"
@@ -122,7 +207,7 @@ export function EntityNotesMarkdownTableEditModal({
           <div className="inline-block min-w-full align-top rounded-xl border border-slate-700/60">
             <table
               data-testid="entity-notes-table-edit-grid-table"
-              className="entity-notes-table-edit-grid w-full border-separate border-spacing-0 text-[0.9375rem]"
+              className="entity-notes-table-edit-grid w-full border-separate border-spacing-0 text-[0.9375rem] leading-relaxed"
               style={{ minWidth: `${tableMinWidthRem}rem` }}
             >
               <colgroup>
@@ -146,6 +231,8 @@ export function EntityNotesMarkdownTableEditModal({
                       <EntityNotesTableCellHighlightTextarea
                         value={cell}
                         onChange={(e) => patchHeader(ci, e.target.value)}
+                        onKeyDown={handleCellKeyDown({ kind: 'header', col: ci })}
+                        tableEditCellId={`header-${ci}`}
                         rows={2}
                         headerCell
                         ariaLabel={`Tiêu đề cột ${ci + 1}`}
@@ -158,7 +245,7 @@ export function EntityNotesMarkdownTableEditModal({
               </thead>
               <tbody className="relative z-0">
                 {grid.rows.map((row, ri) => (
-                  <tr key={`tr-${ri}`} className="bg-slate-900/40">
+                  <tr key={`tr-${ri}`} className={ri % 2 === 1 ? 'bg-slate-900/55' : 'bg-slate-900/40'}>
                     {row.map((cell, ci) => (
                       <td
                         key={`td-${ri}-${ci}`}
@@ -167,6 +254,8 @@ export function EntityNotesMarkdownTableEditModal({
                         <EntityNotesTableCellHighlightTextarea
                           value={cell}
                           onChange={(e) => patchCell(ri, ci, e.target.value)}
+                          onKeyDown={handleCellKeyDown({ kind: 'body', row: ri, col: ci })}
+                          tableEditCellId={`body-${ri}-${ci}`}
                           rows={4}
                           ariaLabel={`Ô hàng ${ri + 1} cột ${ci + 1}`}
                           placeholder="Wiki [[Tên]], **bold**, xuống dòng…"
@@ -235,6 +324,7 @@ export function EntityNotesMarkdownTableEditModal({
               </button>
               <button
                 type="button"
+                data-testid="entity-notes-table-edit-apply"
                 onClick={handleApply}
                 className="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-500"
               >
