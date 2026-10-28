@@ -108,14 +108,21 @@ export function EntityNotesMarkdownTableEditModal({ isOpen, tableBlock, onApply,
           data-testid="entity-notes-table-edit-grid-scroll"
           className="min-h-0 flex-1 overflow-auto overscroll-contain custom-scrollbar px-3 py-3 sm:px-5 sm:py-4"
         >
-          <div className="overflow-x-auto rounded-xl border border-slate-700/60 custom-scrollbar">
+          <div className="w-full min-w-0 overflow-x-auto rounded-xl border border-slate-700/60 custom-scrollbar">
             <table
-              className="w-max border-collapse text-[0.9375rem]"
+              data-testid="entity-notes-table-edit-grid-table"
+              className="w-full border-collapse text-[0.9375rem]"
               style={{ minWidth: `${tableMinWidthRem}rem` }}
             >
               <colgroup>
                 {grid.header.map((_, ci) => (
-                  <col key={`col-${ci}`} style={{ minWidth: `${COL_MIN_WIDTH_REM}rem` }} />
+                  <col
+                    key={`col-${ci}`}
+                    style={{
+                      minWidth: `${COL_MIN_WIDTH_REM}rem`,
+                      width: `${100 / Math.max(colCount, 1)}%`,
+                    }}
+                  />
                 ))}
               </colgroup>
               <thead className="sticky top-0 z-[1]">

@@ -76,8 +76,28 @@ describe('EntityNotesMarkdownTableEdit', () => {
     expect(footer.contains(screen.getByRole('button', { name: 'Áp dụng' }))).toBe(true);
     expect(screen.getAllByLabelText(/Tiêu đề cột/i)).toHaveLength(5);
     expect(screen.getAllByLabelText(/Ô hàng/i)).toHaveLength(5);
-    const table = panel.querySelector('table');
-    expect(table?.style.minWidth).toMatch(/70rem/);
+    const table = screen.getByTestId('entity-notes-table-edit-grid-table');
+    expect(table.style.minWidth).toMatch(/70rem/);
+    expect(table.className).toContain('w-full');
+  });
+
+  it('allows horizontal scroll for many-column tables via min-width', () => {
+    const headers = Array.from({ length: 10 }, (_, i) => `C${i + 1}`);
+    render(
+      <EntityNotesMarkdownTableEditModal
+        isOpen
+        tableBlock={{
+          header: headers,
+          aligns: headers.map(() => 'left'),
+          rows: [headers.map((h) => h.toLowerCase())],
+        }}
+        onApply={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const table = screen.getByTestId('entity-notes-table-edit-grid-table');
+    expect(table.style.minWidth).toMatch(/140rem/);
+    expect(screen.getByTestId('entity-notes-table-edit-grid-scroll').className).toMatch(/overflow-auto/);
   });
 
   it('opens grid, cancels without changing source', async () => {
