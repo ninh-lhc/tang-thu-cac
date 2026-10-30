@@ -10,7 +10,7 @@ import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIden
 import { applyAutoRelationNotesForEntity, isAutoRelationScopeLonId, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
 import { isListCardEntity, syncAllCollectionListCards, syncAllCollectionListCardsDetailed } from './lib/collectionListCardSync.js';
 import { markAllShardsDirty } from './lib/dirtyShardTracker.js';
-import { awaitNovelUpdateSync } from './lib/patchNovelData.js';
+import { awaitNovelUpdateSync, awaitSyncNovelResult } from './lib/patchNovelData.js';
 import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
 import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
@@ -219,14 +219,14 @@ export function useAppEntityMilestoneActions({
   );
 
   const handleSetSelectedEntityAutoSyncState = useCallback(
-    (engineId, kind, enabled) => {
+    async (engineId, kind, enabled) => {
       if (!selectedEntityId || !activeTabLon) return;
       let prefsChanged = false;
       let forceWarning = '';
       const entityName = safeString(selectedEntity?.name).trim() || 'Thẻ đang chọn';
       const engineLabel = getAutoSyncEngineLabel(engineId);
 
-      updateActiveNovelData((nov) => {
+      const saveOutcome = updateActiveNovelData((nov) => {
         const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
         const ent = tabData?.entities?.find((item) => item.id === selectedEntityId);
         if (!ent) return;
@@ -245,6 +245,8 @@ export function useAppEntityMilestoneActions({
       });
 
       if (!prefsChanged) return;
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
       const actionLabel = kind === 'locked' ? 'khóa' : 'tắt riêng';
       showToast(
         enabled
@@ -662,15 +664,17 @@ export function useAppEntityMilestoneActions({
   ]);
 
   const handleRemoveImageFromSelectedEntity = useCallback(
-    (imageIndex) => {
+    async (imageIndex) => {
       if (!selectedEntityId) return;
-      updateActiveNovelData((nov) => {
+      const saveOutcome = updateActiveNovelData((nov) => {
         if (!nov.data?.[activeTabLon]) return;
         const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
         const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
         if (!ent || !Array.isArray(ent.images)) return;
         ent.images = ent.images.filter((_, idx) => idx !== imageIndex);
       });
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
       showToast('Đã xóa ảnh khỏi BST thẻ.');
     },
     [selectedEntityId, updateActiveNovelData, activeTabLon, activeTabNho, showToast]
@@ -928,15 +932,18 @@ export function useAppEntityMilestoneActions({
         title: 'Xóa Kỷ Nguyên',
         message: 'Xóa mốc thời gian này? Có thể hoàn tác ngay sau khi xóa.',
         onConfirm: () => {
+          void (async () => {
           const prev = activeNovelData ? structuredClone(activeNovelData) : null;
           const prevMilestoneId = selectedMilestoneId;
-          updateActiveNovelData((nov) => {
+          const saveOutcome = updateActiveNovelData((nov) => {
             if (!nov.data?.[activeTabLon]) return;
             const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
             const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
             if (ent && ent.milestones) ent.milestones = ent.milestones.filter((m) => m.id !== msId);
           });
           setSelectedMilestoneId(null);
+          const syncResult = await awaitNovelUpdateSync(saveOutcome);
+          if (!syncResult.ok) return;
           if (prev) {
             showToast('Đã xóa mốc.', 'success', {
               undoLabel: 'Hoàn tác xóa',
@@ -948,6 +955,7 @@ export function useAppEntityMilestoneActions({
               },
             });
           }
+          })();
         },
       });
     },
@@ -1039,9 +1047,10 @@ export function useAppEntityMilestoneActions({
         title: 'Xóa Miêu Tả',
         message: 'Xóa miêu tả này? Có thể hoàn tác ngay sau khi xóa.',
         onConfirm: () => {
+          void (async () => {
           const prev = activeNovelData ? structuredClone(activeNovelData) : null;
           const prevDescId = selectedDescriptionId;
-          updateActiveNovelData((nov) => {
+          const saveOutcome = updateActiveNovelData((nov) => {
             if (!nov.data?.[activeTabLon]) return;
             const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
             const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
@@ -1050,6 +1059,8 @@ export function useAppEntityMilestoneActions({
             }
           });
           setSelectedDescriptionId?.(null);
+          const syncResult = await awaitNovelUpdateSync(saveOutcome);
+          if (!syncResult.ok) return;
           if (prev) {
             showToast('Đã xóa miêu tả.', 'success', {
               undoLabel: 'Hoàn tác xóa',
@@ -1061,6 +1072,7 @@ export function useAppEntityMilestoneActions({
               },
             });
           }
+          })();
         },
       });
     },
@@ -1081,11 +1093,11 @@ export function useAppEntityMilestoneActions({
   );
 
   const handleReplaceMilestones = useCallback(
-    (nextMilestones, toastMessage = 'Đã cập nhật mốc.') => {
+    async (nextMilestones, toastMessage = 'Đã cập nhật mốc.') => {
       const prev = activeNovelData ? structuredClone(activeNovelData) : null;
       const nextArr = Array.isArray(nextMilestones) ? nextMilestones : [];
 
-      updateActiveNovelData((nov) => {
+      const saveOutcome = updateActiveNovelData((nov) => {
         if (!nov.data?.[activeTabLon]) return;
         const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
         const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
@@ -1096,6 +1108,9 @@ export function useAppEntityMilestoneActions({
       if (selectedMilestoneId && !nextArr.some((m) => m?.id === selectedMilestoneId)) {
         setSelectedMilestoneId(null);
       }
+
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
 
       if (toastMessage && typeof showToast === 'function') {
         showToast(
@@ -1133,7 +1148,7 @@ export function useAppEntityMilestoneActions({
     (id) => {
       const entityIdToDelete = id;
       const prevSelectedId = selectedEntityId;
-      confirmDeleteEntityRef.current = () => {
+      confirmDeleteEntityRef.current = async () => {
         const data = activeNovelDataRef.current;
         if (!data?.data) return;
         const prev = structuredClone(data);
@@ -1218,26 +1233,30 @@ export function useAppEntityMilestoneActions({
             syncAllMainCharacterRelationBlocks(updated) || mainCharacterRelationResynced;
           mapHierarchyResynced = syncAllMapHierarchyAutoBlocks(updated) || mapHierarchyResynced;
           const listCardSyncResult = syncAllCollectionListCardsDetailed(updated);
-          if (listCardSyncResult.recreatedCount > 0) {
-            const firstTab = listCardSyncResult.recreatedTabs[0] || {};
-            const firstPath = [safeString(firstTab.lonLabel).trim(), safeString(firstTab.nhoLabel).trim()]
-              .filter(Boolean)
-              .join(' > ');
-            const remainingCount = Math.max(0, listCardSyncResult.recreatedCount - 1);
-            const tabHint = firstPath
-              ? ` (${firstPath}${remainingCount > 0 ? ` +${remainingCount} tab khác` : ''})`
-              : '';
-            showToast(
-              `Đã tự tạo lại ${listCardSyncResult.recreatedCount} thẻ Danh Sách${tabHint} để AUTO bậc 2 tiếp tục hoạt động.`,
-              'success'
-            );
-          }
+          const listCardToast =
+            listCardSyncResult.recreatedCount > 0
+              ? (() => {
+                  const firstTab = listCardSyncResult.recreatedTabs[0] || {};
+                  const firstPath = [safeString(firstTab.lonLabel).trim(), safeString(firstTab.nhoLabel).trim()]
+                    .filter(Boolean)
+                    .join(' > ');
+                  const remainingCount = Math.max(0, listCardSyncResult.recreatedCount - 1);
+                  const tabHint = firstPath
+                    ? ` (${firstPath}${remainingCount > 0 ? ` +${remainingCount} tab khác` : ''})`
+                    : '';
+                  return `Đã tự tạo lại ${listCardSyncResult.recreatedCount} thẻ Danh Sách${tabHint} để AUTO bậc 2 tiếp tục hoạt động.`;
+                })()
+              : null;
           const nextStats = { ...novelStatsByIdRef.current, [updated.id]: countEntitiesInNovel(updated) };
           novelStatsByIdRef.current = nextStats;
           setNovelStatsById(nextStats);
           markAllShardsDirty(updated?.data);
           setActiveNovelData(updated);
-          syncNovelRef.current?.(updated, dirHandleRef.current);
+          const syncOk = await awaitSyncNovelResult(
+            syncNovelRef.current?.(updated, dirHandleRef.current, { immediate: true })
+          );
+          if (!syncOk) return;
+          if (listCardToast) showToast(listCardToast, 'success');
           if (prevSelectedId === entityIdToDelete) setSelectedEntityId(null);
           const deleteMsg =
             removedAutoMsCount > 0
@@ -1282,7 +1301,7 @@ export function useAppEntityMilestoneActions({
         message: 'Xóa vĩnh viễn hồ sơ này khỏi Tàng Thư Các?',
         onConfirm: () => {
           if (typeof confirmDeleteEntityRef.current === 'function') {
-            confirmDeleteEntityRef.current();
+            void confirmDeleteEntityRef.current();
           }
         },
       });

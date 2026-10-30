@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { awaitNovelUpdateSync } from './patchNovelData.js';
+import { awaitNovelUpdateSync, awaitSyncNovelResult, isNovelUpdatePersisted } from './patchNovelData.js';
 
 describe('awaitNovelUpdateSync', () => {
   it('returns no_novel when outcome is false', async () => {
@@ -44,5 +44,22 @@ describe('awaitNovelUpdateSync', () => {
     const result = await awaitNovelUpdateSync(Promise.reject(new Error('disk')));
     expect(result.ok).toBe(false);
     expect(result.reason).toBe('sync_rejected');
+  });
+});
+
+describe('awaitSyncNovelResult', () => {
+  it('returns true when sync resolves ok', async () => {
+    expect(await awaitSyncNovelResult(Promise.resolve({ ok: true }))).toBe(true);
+  });
+
+  it('returns false when sync resolves not ok', async () => {
+    expect(await awaitSyncNovelResult(Promise.resolve({ ok: false }))).toBe(false);
+  });
+});
+
+describe('isNovelUpdatePersisted', () => {
+  it('mirrors awaitNovelUpdateSync ok flag', async () => {
+    expect(await isNovelUpdatePersisted(false)).toBe(false);
+    expect(await isNovelUpdatePersisted(Promise.resolve({ ok: true }))).toBe(true);
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clearDirtyShardKeys,
   consumeDirtyShards,
+  hasAnyDirtyShards,
   isShardDirty,
   markAllShardsDirty,
   markShardDirty,
@@ -100,6 +101,15 @@ describe('dirtyShardTracker', () => {
     markShardDirty('lon', 'other');
     expect(snap.size).toBe(1);
     expect(isShardDirty('lon', 'other')).toBe(true);
+  });
+
+  it('hasAnyDirtyShards reflects active set', () => {
+    consumeDirtyShards();
+    expect(hasAnyDirtyShards()).toBe(false);
+    markShardDirty('h', 'a');
+    expect(hasAnyDirtyShards()).toBe(true);
+    consumeDirtyShards();
+    expect(hasAnyDirtyShards()).toBe(false);
   });
 
   it('clearDirtyShardKeys removes only flushed keys', () => {

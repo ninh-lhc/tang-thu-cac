@@ -108,6 +108,7 @@ import {
   savePersistedDeepSearchIndex,
 } from './lib/deepSearchCacheStore.js';
 import { useAppPersistence } from './useAppPersistence.js';
+import { useAppNovelUnloadGuard } from './useAppNovelUnloadGuard.js';
 import { useAppShellState } from './useAppShellState.js';
 import { AppShellOverlays } from './AppShellOverlays.jsx';
 import { useAppLibrarySidebarState } from './useAppLibrarySidebarState.js';
@@ -372,7 +373,15 @@ export default function App() {
     clearHoveredNovel,
   } = useAppLibrarySidebarState({ novelsMetadata });
 
-  const { syncIndex, syncNovel, awaitNovelDiskIdle, cleanupLegacyIndexFiles, loadNovelData, syncNovelRef } = useAppPersistence({
+  const {
+    syncIndex,
+    syncNovel,
+    awaitNovelDiskIdle,
+    hasPendingNovelDiskWrite,
+    cleanupLegacyIndexFiles,
+    loadNovelData,
+    syncNovelRef,
+  } = useAppPersistence({
     novelStatsByIdRef,
     genreTabsTemplatesRef,
     novelsMetadataRef,
@@ -381,6 +390,11 @@ export default function App() {
     activeNovelDataRef,
     setNovelStatsById,
     showToast,
+  });
+
+  useAppNovelUnloadGuard({
+    hasPendingDiskWrite: hasPendingNovelDiskWrite,
+    flushPendingDiskWrites: awaitNovelDiskIdle,
   });
 
   useEffect(() => {
@@ -1804,7 +1818,7 @@ export default function App() {
     });
   }, [entityMemberQuickView, navigateToEntity]);
 
-  const handleConfirmQuickCreate = (name, path) => {
+  const handleConfirmQuickCreate = async (name, path) => {
       const [lonId, nhoId] = path.split('|');
       const lon = activeTabs.find((tab) => tab.id === lonId);
       const nho = lon?.subTabs?.find((sub) => sub.id === nhoId);
@@ -1813,7 +1827,7 @@ export default function App() {
       if (!quickName) return;
       const newEntityId = generateId('ent');
       let targetExistingId = null;
-      updateActiveNovelData(nov => {
+      const saveOutcome = updateActiveNovelData(nov => {
           if (!nov.data) nov.data = {}; if (!nov.data[lonId]) nov.data[lonId] = {};
           let tabData = nov.data[lonId][nhoId];
           if (!tabData || typeof tabData === 'string') tabData = { overview: '', entities: [] };
@@ -1848,10 +1862,14 @@ export default function App() {
           syncAllCollectionListCards(nov);
       });
       if (targetExistingId) {
+        const syncResult = await awaitNovelUpdateSync(saveOutcome);
+        if (!syncResult.ok) return;
         showToast(`"${quickName}" đã trùng thẻ có sẵn - đã thêm vào bí danh và liên kết về thẻ cũ.`, 'warning');
         handleNavigate({ lonId, nhoId, entityId: targetExistingId });
         return;
       }
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
       showToast(`Đã ngưng tụ thành công ${quickName}!`);
       handleNavigate({ lonId, nhoId, entityId: newEntityId });
   };
@@ -2247,10 +2265,10 @@ export default function App() {
   );
 
   const handleMoveEntityMember = useCallback(
-    (memberId, newParentId, options = {}) => {
+    async (memberId, newParentId, options = {}) => {
       if (!selectedEntityId || !activeTabLon) return { ok: false, reason: 'no-entity' };
       let result = { ok: false, reason: 'unknown' };
-      const ok = updateActiveNovelData({
+      const saveOutcome = updateActiveNovelData({
         lonId: activeTabLon,
         nhoId: activeTabNho || 'default',
         entityId: selectedEntityId,
@@ -2278,7 +2296,9 @@ export default function App() {
           return { ...ent, members };
         },
       });
-      if (ok === false) return { ok: false, reason: 'no-novel' };
+      if (saveOutcome === false) return { ok: false, reason: 'no-novel' };
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return { ...result, ok: false, reason: 'sync-failed' };
       if (result.ok) {
         showToast('Đã cập nhật cây thẻ con.', 'success');
       } else if (result.reason === 'cycle') {
@@ -2290,11 +2310,11 @@ export default function App() {
   );
 
   const handleReorderEntityMember = useCallback(
-    (memberId, direction) => {
+    async (memberId, direction) => {
       if (!selectedEntityId || !activeTabLon) return;
       const dir = direction === 'up' ? -1 : 1;
       let moved = false;
-      updateActiveNovelData({
+      const saveOutcome = updateActiveNovelData({
         lonId: activeTabLon,
         nhoId: activeTabNho || 'default',
         entityId: selectedEntityId,
@@ -2327,20 +2347,23 @@ export default function App() {
           return { ...ent, members };
         },
       });
-      if (moved) showToast('Đã đổi thứ tự hiển thị.', 'success');
+      if (!moved) return;
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
+      showToast('Đã đổi thứ tự hiển thị.', 'success');
     },
     [activeTabLon, activeTabNho, selectedEntityId, updateActiveNovelData, showToast]
   );
 
   const handleSaveEntityMemberFieldMeta = useCallback(
-    (meta) => {
+    async (meta) => {
       if (!selectedEntityId || !activeTabLon) {
         showToast('Hãy chọn một thẻ cha trước khi đổi nhãn.', 'warning');
         return;
       }
       const nextLabels = normalizeMemberFieldLabels(meta?.memberFieldLabels);
       const nextTitle = safeString(meta?.memberPanelTitle).trim();
-      const ok = updateActiveNovelData({
+      const saveOutcome = updateActiveNovelData({
         lonId: activeTabLon,
         nhoId: activeTabNho || 'default',
         entityId: selectedEntityId,
@@ -2352,10 +2375,12 @@ export default function App() {
           return next;
         },
       });
-      if (ok === false) {
+      if (saveOutcome === false) {
         showToast('Không lưu được nhãn thẻ con vì chưa có truyện đang mở.', 'error');
         return;
       }
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
       showToast('Đã cập nhật nhãn trường thẻ con.', 'success');
     },
     [activeTabLon, activeTabNho, selectedEntityId, updateActiveNovelData, showToast]
@@ -2371,25 +2396,29 @@ export default function App() {
         title: 'Xóa thẻ con',
         message: `Xóa hồ sơ "${memberName}" khỏi thẻ cha? Các thẻ con bên dưới sẽ được đẩy lên cùng cấp. Wiki link sẽ không còn mở hồ sơ này.`,
         onConfirm: () => {
-          updateActiveNovelData({
-            lonId: activeTabLon,
-            nhoId: activeTabNho || 'default',
-            entityId: selectedEntityId,
-            updater: (ent) => {
-              if (!ent || !Array.isArray(ent.members)) return ent;
-              const members = ent.members.map((member) => ({ ...member }));
-              reparentMemberChildrenOnDelete(members, memberId);
-              return {
-                ...ent,
-                members: members.filter((member) => safeString(member?.id) !== memberId),
-              };
-            },
-          });
-          setEntityMemberQuickViewDest((prev) => {
-            if (safeString(prev?.memberId || prev?.childId) === memberId) return null;
-            return prev;
-          });
-          showToast(`Đã xóa hồ sơ ${memberName}.`, 'success');
+          void (async () => {
+            const saveOutcome = updateActiveNovelData({
+              lonId: activeTabLon,
+              nhoId: activeTabNho || 'default',
+              entityId: selectedEntityId,
+              updater: (ent) => {
+                if (!ent || !Array.isArray(ent.members)) return ent;
+                const members = ent.members.map((member) => ({ ...member }));
+                reparentMemberChildrenOnDelete(members, memberId);
+                return {
+                  ...ent,
+                  members: members.filter((member) => safeString(member?.id) !== memberId),
+                };
+              },
+            });
+            setEntityMemberQuickViewDest((prev) => {
+              if (safeString(prev?.memberId || prev?.childId) === memberId) return null;
+              return prev;
+            });
+            const syncResult = await awaitNovelUpdateSync(saveOutcome);
+            if (!syncResult.ok) return;
+            showToast(`Đã xóa hồ sơ ${memberName}.`, 'success');
+          })();
         },
       });
     },
@@ -2404,11 +2433,11 @@ export default function App() {
   );
 
   const handleTransferEntityToTab = useCallback(
-    (entityId, destination) => {
+    async (entityId, destination) => {
       const id = safeString(entityId).trim();
       if (!id || !activeTabLon || !destination?.lonId) return false;
       let result = { ok: false, reason: 'unknown' };
-      const ok = updateActiveNovelData((nov) => {
+      const saveOutcome = updateActiveNovelData((nov) => {
         result = moveEntityAcrossCollectionTabs(
           nov,
           { lonId: activeTabLon, nhoId: activeTabNho || 'default' },
@@ -2419,10 +2448,12 @@ export default function App() {
         syncAllMapHierarchyAutoBlocks(nov);
         syncAllCollectionListCards(nov);
       });
-      if (ok === false || !result.ok) {
+      if (saveOutcome === false || !result.ok) {
         showToast(result.reason === 'same-tab' ? 'Thẻ đã nằm trong tab này.' : 'Không thể di chuyển thẻ sang tab đã chọn.', 'error');
         return false;
       }
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return false;
       showToast(`Đã chuyển ${safeString(result.entity?.name) || 'thẻ'} sang tab mới.`, 'success');
       handleNavigate({ lonId: destination.lonId, nhoId: destination.nhoId, entityId: id });
       return true;
@@ -2431,10 +2462,10 @@ export default function App() {
   );
 
   const handlePromoteEntityMember = useCallback(
-    (memberId, destination) => {
+    async (memberId, destination) => {
       if (!selectedEntityId || !activeTabLon || !destination?.lonId) return false;
       let result = { ok: false, reason: 'unknown' };
-      const ok = updateActiveNovelData((nov) => {
+      const saveOutcome = updateActiveNovelData((nov) => {
         result = promoteEntityMemberToCollectionCard(
           nov,
           { lonId: activeTabLon, nhoId: activeTabNho || 'default' },
@@ -2448,10 +2479,12 @@ export default function App() {
         syncAllMapHierarchyAutoBlocks(nov);
         syncAllCollectionListCards(nov);
       });
-      if (ok === false || !result.ok) {
+      if (saveOutcome === false || !result.ok) {
         showToast('Không thể chuyển thẻ con thành thẻ thật.', 'error');
         return false;
       }
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return false;
       showToast(
         result.movedDescendantCount > 0
           ? `Đã tạo thẻ thật và chuyển theo ${result.movedDescendantCount} thẻ con trong nhánh.`
@@ -2469,10 +2502,10 @@ export default function App() {
   );
 
   const handleMoveMapEntity = useCallback(
-    (nodeId, newParentId) => {
+    async (nodeId, newParentId) => {
       if (!activeTabLon) return;
       let moveResult = { ok: false, reason: 'unknown' };
-      const ok = updateActiveNovelData((nov) => {
+      const saveOutcome = updateActiveNovelData((nov) => {
         const tabData = nov.data?.[activeTabLon]?.[activeTabNho || 'default'];
         if (!Array.isArray(tabData?.entities)) return;
         moveResult = applyMapMove(tabData.entities, nodeId, newParentId);
@@ -2492,7 +2525,7 @@ export default function App() {
           syncAllMapHierarchyAutoBlocks(nov);
         }
       });
-      if (ok === false) {
+      if (saveOutcome === false) {
         showToast('Không cập nhật được cây thư mục vì chưa có truyện đang mở.', 'error');
         return;
       }
@@ -2506,13 +2539,15 @@ export default function App() {
         showToast(reasonLabel, 'warning');
         return;
       }
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
       showToast(newParentId ? 'Đã gắn thẻ vào cấp cha mới.' : 'Đã gỡ thẻ về gốc / chưa gắn.', 'success');
     },
     [activeTabLon, activeTabNho, updateActiveNovelData, showToast]
   );
 
   const handleCreateMapChildEntity = useCallback(
-    ({ name, parentId } = {}) => {
+    async ({ name, parentId } = {}) => {
       if (!activeTabLon) {
         showToast('Hãy chọn một tab sưu tập trước khi tạo thẻ con trong cây.', 'warning');
         return null;
@@ -2525,7 +2560,7 @@ export default function App() {
       const newEntityId = generateId('ent');
       let created = false;
       let targetExistingId = null;
-      const ok = updateActiveNovelData((nov) => {
+      const saveOutcome = updateActiveNovelData((nov) => {
         if (!nov.data) nov.data = {};
         if (!nov.data[activeTabLon]) nov.data[activeTabLon] = {};
         let tabData = nov.data[activeTabLon][activeTabNho || 'default'];
@@ -2580,10 +2615,12 @@ export default function App() {
         }
         syncAllCollectionListCards(nov);
       });
-      if (ok === false) {
+      if (saveOutcome === false) {
         showToast('Không tạo được địa danh con vì chưa có truyện đang mở.', 'error');
         return null;
       }
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return null;
       if (targetExistingId) {
         showToast(`"${childName}" đã trùng thẻ có sẵn — đã gắn vào cây nếu chọn được cha.`, 'warning');
         handleNavigate({ lonId: activeTabLon, nhoId: activeTabNho, entityId: targetExistingId });
@@ -2722,7 +2759,7 @@ export default function App() {
     ) => {
       let forceWarning = '';
       if (activeNovelData) {
-        updateActiveNovelData((nov) => {
+        const saveOutcome = updateActiveNovelData((nov) => {
           nov.tabsConfig = newTabs;
           if (typeof mutateNovelData === 'function') mutateNovelData(nov);
           if (resyncAuto) {
@@ -2739,10 +2776,11 @@ export default function App() {
           }
         });
         if (forceWarning) showToast(forceWarning, 'warning');
-        return;
+        return saveOutcome;
       }
       setGlobalTabsConfig(newTabs);
       syncIndex(novelsMetadata, newTabs, dirHandle);
+      return true;
     },
     [
       activeNovelData,
@@ -2755,11 +2793,19 @@ export default function App() {
     ]
   );
 
-  const handleResyncAutoTabs = useCallback(() => {
+  const setTabsConfigAndAwaitSync = useCallback(
+    async (newTabs, config = {}) => {
+      const outcome = setTabsConfig(newTabs, config);
+      return await awaitNovelUpdateSync(outcome);
+    },
+    [setTabsConfig]
+  );
+
+  const handleResyncAutoTabs = useCallback(async () => {
     if (!activeNovelData) return;
     let changed = false;
     let forceWarning = '';
-    updateActiveNovelData((nov) => {
+    const saveOutcome = updateActiveNovelData((nov) => {
       const autoSyncResult = runNovelAutoSyncPlan(nov, buildFullAutoSyncPlan(), {
         recordLog: true,
         reason: 'manual_resync',
@@ -2768,6 +2814,8 @@ export default function App() {
       changed = autoSyncResult.changed;
       forceWarning = autoSyncResult.forceWarning || '';
     });
+    const syncResult = await awaitNovelUpdateSync(saveOutcome);
+    if (!syncResult.ok) return;
     showToast(
       changed
         ? 'Đã quét lại toàn bộ AUTO theo cây thư mục.'
@@ -2776,7 +2824,7 @@ export default function App() {
     );
     if (forceWarning) showToast(forceWarning, 'warning');
   }, [activeNovelData, updateActiveNovelData, showToast]);
-  const handleApplySuggestedAutoSyncSetup = () => {
+  const handleApplySuggestedAutoSyncSetup = async () => {
     const currentTabs = structuredClone(getTabsToUpdate());
     const hydrated = hydrateTabsAutoSyncConfigs(currentTabs);
     const linkHydrated = hydrateTabsAutoSyncLinkTargets(hydrated.tabsConfig);
@@ -2784,12 +2832,14 @@ export default function App() {
       showToast('Cấu hình AUTO hiện đã khớp với gợi ý từ cây thư mục.', 'success');
       return;
     }
-    setTabsConfig(linkHydrated.tabsConfig, {
+    const saveOutcome = setTabsConfig(linkHydrated.tabsConfig, {
       resyncAuto: true,
       autoSyncPlan: buildFullAutoSyncPlan(),
       autoSyncReason: 'wizard_setup',
       autoSyncScopeLabel: 'Thiết lập nhanh AUTO',
     });
+    const syncResult = await awaitNovelUpdateSync(saveOutcome);
+    if (!syncResult.ok) return;
     showToast('Đã áp dụng gợi ý vai trò và ánh xạ AUTO theo cây thư mục.', 'success');
   };
   /** Chỉ lưu khi người dùng chủ động — không tự ghi mẫu khi chỉnh AUTO/tab (tránh ghi đè mẫu thể loại). */
@@ -2820,7 +2870,7 @@ export default function App() {
     }
     showToast(`Đã lưu cây mẫu cho: ${genres.join(', ')} (kèm quy chuẩn nhóm và cấu hình tab).`, 'success');
   }, [activeNovelData, showToast]);
-  const handleResetNovelSuggestionLists = useCallback(() => {
+  const handleResetNovelSuggestionLists = useCallback(async () => {
     if (!activeNovelData) {
       showToast('Cần mở truyện trước khi reset list gợi ý.', 'warning');
       return;
@@ -2840,9 +2890,10 @@ export default function App() {
       });
     const currentTabs = Array.isArray(activeNovelData.tabsConfig) ? activeNovelData.tabsConfig : [];
     const strippedTabs = stripSuggestionConfigFromTabs(structuredClone(currentTabs));
-    setTabsConfig(strippedTabs, { resyncAuto: false });
+    const syncResult = await setTabsConfigAndAwaitSync(strippedTabs, { resyncAuto: false });
+    if (!syncResult.ok) return;
     showToast('Đã reset toàn bộ list gợi ý của truyện hiện tại.', 'success');
-  }, [activeNovelData, showToast, setTabsConfig]);
+  }, [activeNovelData, showToast, setTabsConfigAndAwaitSync]);
   const buildAutoSyncContext = (lonId, nhoId, nho, parentLabel = '') => ({
     activeTabLon: lonId,
     activeTabNho: nhoId,
@@ -3189,7 +3240,7 @@ export default function App() {
 
   /** Đặt vai trò AUTO «tắt» cho mọi tab sưu tập trong phạm vi; lonIdFilter=null là toàn cây. */
   const handleBulkDisableTabAutoSync = useCallback(
-    (lonIdFilter = null) => {
+    async (lonIdFilter = null) => {
       const current = structuredClone(getTabsToUpdate());
       const lons = lonIdFilter ? current.filter((t) => t && t.id === lonIdFilter) : current;
       if (lonIdFilter && lons.length === 0) {
@@ -3233,12 +3284,13 @@ export default function App() {
       const scopeLabel = lonIdFilter
         ? buildTabScopeLabel(lonIdFilter, null, current)
         : 'Cây thư mục';
-      setTabsConfig(current, {
+      const syncResult = await setTabsConfigAndAwaitSync(current, {
         resyncAuto: true,
         autoSyncPlan: buildFullAutoSyncPlan(),
         autoSyncReason: 'bulk_disable_auto',
         autoSyncScopeLabel: scopeLabel,
       });
+      if (!syncResult.ok) return;
       showToast(
         lonIdFilter
           ? `Đã tắt AUTO cho mọi tab sưu tập trong «${safeString(lons[0]?.label || lonIdFilter)}».`
@@ -3246,7 +3298,7 @@ export default function App() {
         'success'
       );
     },
-    [getTabsToUpdate, setTabsConfig, showToast, buildTabScopeLabel]
+    [getTabsToUpdate, setTabsConfigAndAwaitSync, showToast, buildTabScopeLabel]
   );
 
   const handleSetTabAutoSyncFieldMap = (lonId, nhoId, fieldKey, nextFieldIdValue) => {
@@ -3432,7 +3484,7 @@ export default function App() {
     return true;
   }, [normalizeMapParentTierSchema]);
   const performPropagateMapParentTierSchemaToLon = useCallback(
-    (lonId, schema) => {
+    async (lonId, schema) => {
       const current = structuredClone(getTabsToUpdate());
       const lon = current.find((t) => t.id === lonId);
       if (!lon || !Array.isArray(lon.subTabs)) return;
@@ -3444,11 +3496,12 @@ export default function App() {
         showToast('Không có tab phù hợp để áp rule phân tầng.', 'warning');
         return;
       }
-      setTabsConfig(current, { resyncAuto: false });
+      const syncResult = await setTabsConfigAndAwaitSync(current, { resyncAuto: false });
+      if (!syncResult.ok) return;
       const lab = safeString(lon?.label).trim() || 'tab lớn';
       showToast(`Đã áp rule phân tầng «Trực thuộc» cho ${count} tab trong «${lab}».`, 'success');
     },
-    [applyMapParentTierSchemaToNho, getTabsToUpdate, setTabsConfig, showToast]
+    [applyMapParentTierSchemaToNho, getTabsToUpdate, setTabsConfigAndAwaitSync, showToast]
   );
   const requestPropagateMapParentTierSchemaToLon = useCallback(
     (lonId, schema) => {
@@ -3482,7 +3535,7 @@ export default function App() {
     return true;
   }, [normalizeMapParentTierFieldMap]);
   const performPropagateMapParentTierFieldMapToLon = useCallback(
-    (lonId, fieldMap) => {
+    async (lonId, fieldMap) => {
       const current = structuredClone(getTabsToUpdate());
       const lon = current.find((t) => t.id === lonId);
       if (!lon || !Array.isArray(lon.subTabs)) return;
@@ -3494,11 +3547,12 @@ export default function App() {
         showToast('Không có tab phù hợp để áp cặp trường.', 'warning');
         return;
       }
-      setTabsConfig(current, { resyncAuto: false });
+      const syncResult = await setTabsConfigAndAwaitSync(current, { resyncAuto: false });
+      if (!syncResult.ok) return;
       const lab = safeString(lon?.label).trim() || 'tab lớn';
       showToast(`Đã áp cặp trường phân tầng cho ${count} tab trong «${lab}».`, 'success');
     },
-    [applyMapParentTierFieldMapToNho, getTabsToUpdate, setTabsConfig, showToast]
+    [applyMapParentTierFieldMapToNho, getTabsToUpdate, setTabsConfigAndAwaitSync, showToast]
   );
   const requestPropagateMapParentTierFieldMapToLon = useCallback(
     (lonId, fieldMap) => {
@@ -3559,7 +3613,7 @@ export default function App() {
     return [...stored.filter((f) => f && f.id !== fid), { ...hit }];
   };
 
-  const handleAddTabTemplateField = (lonId, nhoId, label, options = {}) => {
+  const handleAddTabTemplateField = async (lonId, nhoId, label, options = {}) => {
     const propagate = Boolean(options?.propagateWithinLon);
     const L = safeString(label).trim();
     if (!L) return;
@@ -3580,13 +3634,13 @@ export default function App() {
         idx === -1 ? [...fields, newField] : [...fields.slice(0, idx), newField, ...fields.slice(idx)];
       sub.fieldsTemplate = nextFields;
     });
-    setTabsConfig(current, {
+    const syncResult = await setTabsConfigAndAwaitSync(current, {
       resyncAuto: true,
       autoSyncPlan: propagate ? buildFullAutoSyncPlan() : buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
       autoSyncReason: propagate ? 'tab_propagate_add_field' : 'tab_add_field',
       autoSyncScopeLabel: propagate ? safeString(lon?.label || lonId) : buildTabScopeLabel(lonId, nhoId, current),
     });
-    if (propagate) {
+    if (propagate && syncResult.ok) {
       showToast(`Đã thêm trường vào mọi tab thu thập trong «${safeString(lon?.label || lonId)}».`, 'success');
     }
   };
@@ -3638,7 +3692,7 @@ export default function App() {
     });
   };
 
-  const handleRemoveTabTemplateField = (lonId, nhoId, fieldId, options = {}) => {
+  const handleRemoveTabTemplateField = async (lonId, nhoId, fieldId, options = {}) => {
     const propagate = Boolean(options?.propagateWithinLon);
     const fid = safeString(fieldId).trim();
     if (!fid) return;
@@ -3672,18 +3726,18 @@ export default function App() {
         else sub.fieldSource = nextSource;
       }
     });
-    setTabsConfig(current, {
+    const syncResult = await setTabsConfigAndAwaitSync(current, {
       resyncAuto: true,
       autoSyncPlan: propagate ? buildFullAutoSyncPlan() : buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
       autoSyncReason: propagate ? 'tab_propagate_remove_field' : 'tab_remove_field',
       autoSyncScopeLabel: propagate ? safeString(lon?.label || lonId) : buildTabScopeLabel(lonId, nhoId, current),
     });
-    if (propagate) {
+    if (propagate && syncResult.ok) {
       showToast(`Đã xóa trường khỏi mọi tab thu thập trong «${safeString(lon?.label || lonId)}».`, 'success');
     }
   };
 
-  const handleRenameTabTemplateFieldLabel = (lonId, nhoId, fieldId, nextLabel, options = {}) => {
+  const handleRenameTabTemplateFieldLabel = async (lonId, nhoId, fieldId, nextLabel, options = {}) => {
     const propagate = Boolean(options?.propagateWithinLon);
     const fid = safeString(fieldId).trim();
     if (!fid) return;
@@ -3703,13 +3757,13 @@ export default function App() {
       if (!nextFields.some((f) => f.id === fid)) return;
       sub.fieldsTemplate = ensureWikiAliasInFieldsTemplateForTab(nextFields, sub);
     });
-    setTabsConfig(current, {
+    const syncResult = await setTabsConfigAndAwaitSync(current, {
       resyncAuto: true,
       autoSyncPlan: propagate ? buildFullAutoSyncPlan() : buildAutoSyncPlanFromTabContext(buildAutoSyncContext(lonId, nhoId, nho, lon?.label || '')),
       autoSyncReason: propagate ? 'tab_propagate_rename_field' : 'tab_rename_field',
       autoSyncScopeLabel: propagate ? safeString(lon?.label || lonId) : buildTabScopeLabel(lonId, nhoId, current),
     });
-    if (propagate) {
+    if (propagate && syncResult.ok) {
       showToast(`Đã đổi nhãn trường trên mọi tab thu thập trong «${safeString(lon?.label || lonId)}».`, 'success');
     }
   };
@@ -3747,7 +3801,7 @@ export default function App() {
     });
   };
 
-  const handleSetTabFieldSource = (lonId, nhoId, fieldId, nextSource, options = {}) => {
+  const handleSetTabFieldSource = async (lonId, nhoId, fieldId, nextSource, options = {}) => {
     if (!activeNovelData) {
       showToast('Cần mở truyện để lưu nguồn giá trị của trường.', 'warning');
       return;
@@ -3784,8 +3838,8 @@ export default function App() {
       if (Object.keys(sanitized).length === 0) delete sub.fieldSource;
       else sub.fieldSource = sanitized;
     });
-    setTabsConfig(current, { resyncAuto: false });
-    if (propagate) {
+    const syncResult = await setTabsConfigAndAwaitSync(current, { resyncAuto: false });
+    if (propagate && syncResult.ok) {
       showToast(`Đã đặt nguồn giá trị cho mọi tab thu thập trong «${safeString(lon?.label || lonId)}».`, 'success');
     }
   };
@@ -3886,7 +3940,7 @@ export default function App() {
   };
 
   const performPropagateFieldSuggestionDependenciesToLon = useCallback(
-    (lonId, dependencies) => {
+    async (lonId, dependencies) => {
       const current = structuredClone(getTabsToUpdate());
       const lon = current.find((t) => t.id === lonId);
       if (!lon || !Array.isArray(lon.subTabs)) return;
@@ -3898,11 +3952,12 @@ export default function App() {
         showToast('Không có tab sưu tập nào dưới tab lớn này.', 'warning');
         return;
       }
-      setTabsConfig(current, { resyncAuto: false });
+      const syncResult = await setTabsConfigAndAwaitSync(current, { resyncAuto: false });
+      if (!syncResult.ok) return;
       const lab = safeString(lon?.label).trim() || 'tab lớn';
       showToast(`Đã lưu phụ thuộc gợi ý cho ${count} tab trong «${lab}».`, 'success');
     },
-    [applyFieldSuggestionDependenciesToNho, getTabsToUpdate, setTabsConfig, showToast]
+    [applyFieldSuggestionDependenciesToNho, getTabsToUpdate, setTabsConfigAndAwaitSync, showToast]
   );
 
   const requestPropagateFieldSuggestionDependenciesToLon = useCallback(
@@ -3921,7 +3976,7 @@ export default function App() {
   );
 
   const performPropagateEntityQuickEntryToLon = useCallback(
-    (lonId, slotFields, slotLabels, options = {}) => {
+    async (lonId, slotFields, slotLabels, options = {}) => {
       const current = structuredClone(getTabsToUpdate());
       const lon = current.find((t) => t.id === lonId);
       if (!lon || !Array.isArray(lon.subTabs)) return;
@@ -3934,15 +3989,16 @@ export default function App() {
         showToast('Không có tab sưu tập nào dưới tab lớn này.', 'warning');
         return;
       }
-      setTabsConfig(current, { resyncAuto: false });
+      const syncResult = await setTabsConfigAndAwaitSync(current, { resyncAuto: false });
+      if (!syncResult.ok) return;
       const lab = safeString(lon?.label).trim() || 'tab lớn';
       showToast(`Đã áp cấu hình ô gợi ý nhanh cho ${count} tab sưu tập dưới «${lab}».`, 'success');
     },
-    [getTabsToUpdate, setTabsConfig, showToast]
+    [getTabsToUpdate, setTabsConfigAndAwaitSync, showToast]
   );
 
   const performPropagateEntityQuickEntryToAllLons = useCallback(
-    (slotFields, slotLabels, options = {}) => {
+    async (slotFields, slotLabels, options = {}) => {
       const current = structuredClone(getTabsToUpdate());
       if (!Array.isArray(current) || current.length === 0) return;
       let count = 0;
@@ -3957,10 +4013,11 @@ export default function App() {
         showToast('Chưa có tab sưu tập nào trong cấu hình mục.', 'warning');
         return;
       }
-      setTabsConfig(current, { resyncAuto: false });
+      const syncResult = await setTabsConfigAndAwaitSync(current, { resyncAuto: false });
+      if (!syncResult.ok) return;
       showToast(`Đã áp cấu hình ô gợi ý nhanh cho ${count} tab sưu tập (mọi mục lớn).`, 'success');
     },
-    [getTabsToUpdate, setTabsConfig, showToast]
+    [getTabsToUpdate, setTabsConfigAndAwaitSync, showToast]
   );
 
   const requestPropagateEntityQuickEntryToLon = useCallback(

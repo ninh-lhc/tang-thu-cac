@@ -89,3 +89,21 @@ export async function awaitNovelUpdateSync(outcome) {
   }
   return { ok: true, reason: 'unknown_outcome' };
 }
+
+/** true khi updateActiveNovelData đã flush (hoặc không cần sync). */
+export async function isNovelUpdatePersisted(outcome) {
+  if (outcome === false) return false;
+  const result = await awaitNovelUpdateSync(outcome);
+  return Boolean(result.ok);
+}
+
+/** Chờ syncNovel trả về từ ref/direct call. */
+export async function awaitSyncNovelResult(syncPromise) {
+  if (!syncPromise || typeof syncPromise.then !== 'function') return true;
+  try {
+    const result = await syncPromise;
+    return Boolean(result?.ok);
+  } catch {
+    return false;
+  }
+}

@@ -7,6 +7,7 @@
  * Phụ thuộc: MasterEngines (resolveFieldsTemplate), MasterUtils (AI), appNhatKyVaGoiThe (mutate).
  */
 import { useCallback } from 'react';
+import { awaitNovelUpdateSync } from './lib/patchNovelData.js';
 import { DEFAULT_ENTITY_FIELDS, lockFieldsTemplateIfFirstEntity, resolveFieldsTemplate } from './MasterEngines.js';
 import {
   analyzeTextWithAI,
@@ -136,7 +137,7 @@ export function useAppMotCuaCapNhat({
     setHubCreatePreview,
   ]);
 
-  const hubSaveCreateEntity = useCallback(() => {
+  const hubSaveCreateEntity = useCallback(async () => {
     if (!hubCreatePreview || !hubCreatePath.includes('|')) return;
     const [lonId, nhoId] = hubCreatePath.split('|');
     const lon = activeTabs.find((tab) => tab.id === lonId);
@@ -157,7 +158,7 @@ export function useAppMotCuaCapNhat({
       allowExactNameMatch: false,
     });
     if (matched?.entity) {
-      updateActiveNovelData((nov) => {
+      const saveOutcome = updateActiveNovelData((nov) => {
         const tab = nov.data?.[lonId]?.[nhoId];
         const list = tab?.entities || [];
         const target = list.find((e) => e.id === matched.entity.id);
@@ -174,6 +175,8 @@ export function useAppMotCuaCapNhat({
           }
         }
       });
+      const dupSync = await awaitNovelUpdateSync(saveOutcome);
+      if (!dupSync.ok) return;
       showToast('Tên vừa nhập trùng thẻ có sẵn — đã nối vào bí danh, chuyển sang tab Cập nhật.', 'warning');
       setOverviewHubTab('update');
       setHubUpdateText((t) => (safeString(t).trim() ? t : `Cập nhật về «${safeString(matched.entity.name)}»: `));
@@ -181,7 +184,7 @@ export function useAppMotCuaCapNhat({
     }
     let forceMapAutoApplied = false;
     let forceMapWarning = '';
-    updateActiveNovelData((nov) => {
+    const saveOutcome = updateActiveNovelData((nov) => {
       if (!nov.data) nov.data = {};
       if (!nov.data[lonId]) nov.data[lonId] = {};
       let td = nov.data[lonId][nhoId];
@@ -238,6 +241,8 @@ export function useAppMotCuaCapNhat({
       }
       syncAllCollectionListCards(nov);
     });
+    const syncResult = await awaitNovelUpdateSync(saveOutcome);
+    if (!syncResult.ok) return;
     showToast(`Đã tạo «${name}». Ảnh avatar: mở đúng mục → thẻ để thêm.`, 'success');
     if (forceMapAutoApplied) {
       showToast('Đã đồng bộ quan hệ Thế Lực ↔ Bản đồ (AUTO).', 'success');
@@ -322,7 +327,7 @@ export function useAppMotCuaCapNhat({
     }
   }, [hubUpdateText, hubUpdateChapter, activeNovelData, geminiApiKeys, showToast, setHubUpdatePanel]);
 
-  const applyHubUpdateSelected = useCallback(() => {
+  const applyHubUpdateSelected = useCallback(async () => {
     if (!hubUpdatePanel?.suggestions?.length) return;
     if (!hubUpdatePanel.selectedKeys?.size) {
       showToast('Chọn ít nhất một dòng gợi ý.', 'warning');
@@ -338,7 +343,7 @@ export function useAppMotCuaCapNhat({
     let forceMapAutoApplied = false;
     let forceMapWarning = '';
     let mapHierarchyAutoApplied = false;
-    updateActiveNovelData((nov) => {
+    const saveOutcome = updateActiveNovelData((nov) => {
       const r = mutateNovelJournalSelections(nov, panel);
       ok = r.ok;
       fails = r.fails;
@@ -370,6 +375,8 @@ export function useAppMotCuaCapNhat({
     setHubUpdatePanel(null);
     setHubUpdateText('');
     if (ok > 0) {
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
       showToast(`Đã áp dụng ${ok} thao tác (cập nhật).${fails.length ? ` (${fails.length} bỏ qua)` : ''}`, 'success', {
         onUndo:
           prevNovel

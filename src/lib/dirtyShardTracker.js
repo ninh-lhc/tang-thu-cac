@@ -41,6 +41,10 @@ export function isShardDirty(lonId, nhoId) {
   return dirtyShards.has(`${lonId}\x00${nhoId}`);
 }
 
+export function hasAnyDirtyShards() {
+  return dirtyShards.size > 0;
+}
+
 export function markAllShardsDirty(data) {
   if (!data || typeof data !== 'object') return;
   for (const lonId of Object.keys(data)) {

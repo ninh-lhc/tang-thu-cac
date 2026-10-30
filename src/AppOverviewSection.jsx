@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { safeString, generateReviewWithAI, mapGeminiErrorToUserMessage, AsyncLocalImage, generateId } from './MasterUtils.jsx';
 import { FALLBACK_IMG } from './MasterEngines.js';
+import { awaitNovelUpdateSync } from './lib/patchNovelData.js';
 import { StatCard, SectionCard, ActionBtn } from './AppSharedUI.jsx';
 
 export function AppOverviewSection({
@@ -426,7 +427,12 @@ export function AppOverviewSection({
               setIsGeneratingReview(true);
               try {
                 const text = await generateReviewWithAI(activeNovelData, geminiApiKeys);
-                if (text) { patchOverviewForm({ review: text }); updateActiveNovelData((n) => { n.review = text; }); showToast('Đã lĩnh ngộ thành công!'); }
+                if (text) {
+                  patchOverviewForm({ review: text });
+                  const saveOutcome = updateActiveNovelData((n) => { n.review = text; });
+                  const syncResult = await awaitNovelUpdateSync(saveOutcome);
+                  if (syncResult.ok) showToast('Đã lĩnh ngộ thành công!');
+                }
                 else showToast('AI không trả về nội dung.', 'warning');
               } catch (e) { showToast(mapGeminiErrorToUserMessage(e), 'error'); }
               setIsGeneratingReview(false);

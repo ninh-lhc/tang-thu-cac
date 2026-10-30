@@ -164,6 +164,8 @@ export function useAppPersistence({
   const novelDiskWriteChainRef = useRef(Promise.resolve());
   /** Debounce/coalesce theo id truyện trước khi ghi đĩa. */
   const pendingNovelDiskByIdRef = useRef(new Map());
+  /** Số folder sync đang chạy (debounced flush hoặc chain). */
+  const novelFolderSyncInFlightRef = useRef(0);
   /** Cache JSON cuối cùng để bỏ qua ghi index khi nội dung không đổi. */
   const lastIndexJsonByDirRef = useRef(new WeakMap());
   /** Cache JSON manifest cuối cùng theo id truyện để bỏ qua ghi đĩa khi không đổi. */
@@ -372,6 +374,8 @@ export function useAppPersistence({
       void saveNovelShadow(novelData);
 
       const runFolderSync = async (payloadNovel, writeOpts = {}) => {
+        novelFolderSyncInFlightRef.current += 1;
+        try {
         const forceBackupWrite = Boolean(writeOpts.forceBackup);
         await saveNovelShadow(payloadNovel);
 
@@ -601,6 +605,9 @@ export function useAppPersistence({
             error: e2,
           };
         }
+        } finally {
+          novelFolderSyncInFlightRef.current = Math.max(0, novelFolderSyncInFlightRef.current - 1);
+        }
       };
 
       const enqueueFolderSync = (payloadNovel, writeOpts = {}) => {
@@ -666,6 +673,12 @@ export function useAppPersistence({
   useEffect(() => {
     syncNovelRef.current = syncNovel;
   }, [syncNovel]);
+
+  const hasPendingNovelDiskWrite = useCallback(() => {
+    return (
+      pendingNovelDiskByIdRef.current.size > 0 || novelFolderSyncInFlightRef.current > 0
+    );
+  }, []);
 
   const awaitNovelDiskIdle = useCallback(async () => {
     const pendingEntries = [...pendingNovelDiskByIdRef.current.entries()];
@@ -844,6 +857,7 @@ export function useAppPersistence({
     syncIndex,
     syncNovel,
     awaitNovelDiskIdle,
+    hasPendingNovelDiskWrite,
     cleanupLegacyIndexFiles,
     loadNovelData,
     queuePersistNovelStatsToIndex,
