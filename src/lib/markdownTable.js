@@ -23,19 +23,42 @@ export function isMarkdownTableRowLine(rawLine) {
   return unescapedPipes >= 2;
 }
 
+/** 0 = normal, 1 = in [[…]], 2 = in `…` */
 function countUnescapedPipes(text) {
   let n = 0;
+  let state = 0;
   for (let i = 0; i < text.length; i += 1) {
-    if (text[i] === '\\' && text[i + 1] === '|') {
+    const ch = text[i];
+    const next = text[i + 1];
+    if (ch === '\\' && next === '|') {
       i += 1;
       continue;
     }
-    if (text[i] === '|') n += 1;
+    if (state === 0) {
+      if (ch === '[' && next === '[') {
+        state = 1;
+        i += 1;
+        continue;
+      }
+      if (ch === '`') {
+        state = 2;
+        continue;
+      }
+      if (ch === '|') n += 1;
+    } else if (state === 1) {
+      if (ch === ']' && next === ']') {
+        state = 0;
+        i += 1;
+        continue;
+      }
+    } else if (state === 2) {
+      if (ch === '`') state = 0;
+    }
   }
   return n;
 }
 
-/** Tách ô; hỗ trợ \\| trong cell. */
+/** Tách ô; hỗ trợ \\| trong cell, bảo vệ | trong [[...]] và `...`. */
 export function splitTableRowCells(line) {
   let s = String(line ?? '').trim();
   if (s.startsWith('|')) s = s.slice(1);
@@ -43,18 +66,50 @@ export function splitTableRowCells(line) {
 
   const cells = [];
   let buf = '';
+  let state = 0;
+
   for (let i = 0; i < s.length; i += 1) {
     const ch = s[i];
-    if (ch === '\\' && s[i + 1] === '|') {
+    const next = s[i + 1];
+
+    if (ch === '\\' && next === '|') {
       buf += '|';
       i += 1;
       continue;
     }
-    if (ch === '|') {
-      cells.push(buf);
-      buf = '';
-      continue;
+
+    if (state === 0) {
+      if (ch === '[' && next === '[') {
+        state = 1;
+        buf += '[[';
+        i += 1;
+        continue;
+      }
+      if (ch === '`') {
+        state = 2;
+        buf += '`';
+        continue;
+      }
+      if (ch === '|') {
+        cells.push(buf);
+        buf = '';
+        continue;
+      }
+    } else if (state === 1) {
+      if (ch === ']' && next === ']') {
+        state = 0;
+        buf += ']]';
+        i += 1;
+        continue;
+      }
+    } else if (state === 2) {
+      if (ch === '`') {
+        state = 0;
+        buf += '`';
+        continue;
+      }
     }
+
     buf += ch;
   }
   cells.push(buf);
@@ -305,17 +360,46 @@ function sanitizeTableCellContent(cell) {
 
 function escapePipesInCellString(s) {
   let out = '';
+  let state = 0;
   for (let i = 0; i < s.length; i += 1) {
-    if (s[i] === '\\' && s[i + 1] === '|') {
+    const ch = s[i];
+    const next = s[i + 1];
+    if (ch === '\\' && next === '|') {
       out += '\\|';
       i += 1;
       continue;
     }
-    if (s[i] === '|') {
-      out += '\\|';
-      continue;
+    if (state === 0) {
+      if (ch === '[' && next === '[') {
+        state = 1;
+        out += '[[';
+        i += 1;
+        continue;
+      }
+      if (ch === '`') {
+        state = 2;
+        out += '`';
+        continue;
+      }
+      if (ch === '|') {
+        out += '\\|';
+        continue;
+      }
+    } else if (state === 1) {
+      if (ch === ']' && next === ']') {
+        state = 0;
+        out += ']]';
+        i += 1;
+        continue;
+      }
+    } else if (state === 2) {
+      if (ch === '`') {
+        state = 0;
+        out += '`';
+        continue;
+      }
     }
-    out += s[i];
+    out += ch;
   }
   return out;
 }

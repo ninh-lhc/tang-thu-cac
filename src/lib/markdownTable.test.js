@@ -140,4 +140,79 @@ describe('markdownTable', () => {
     );
     expect(block?.rows[0][1]).toContain('[[Triệu Hồi Khô Lâu Chiến Sĩ]]');
   });
+
+  describe('splitTableRowCells — wiki-link and inline-code pipe protection (F-005/F-006)', () => {
+    it('wiki-link [[Page|Display]] stays in one cell', () => {
+      const cells = splitTableRowCells('| [[Nhân Vật|Tên Hiển Thị]] |');
+      expect(cells).toHaveLength(1);
+      expect(cells[0].trim()).toBe('[[Nhân Vật|Tên Hiển Thị]]');
+    });
+
+    it('wiki-link with pipe in multi-column row', () => {
+      const cells = splitTableRowCells('| Alice | [[Nhân Vật|Tên Hiển Thị]] |');
+      expect(cells.map((c) => c.trim())).toEqual(['Alice', '[[Nhân Vật|Tên Hiển Thị]]']);
+    });
+
+    it('multiple wiki-links with pipes in one cell', () => {
+      const cells = splitTableRowCells('| [[A|B]] và [[C|D]] |');
+      expect(cells).toHaveLength(1);
+      expect(cells[0].trim()).toBe('[[A|B]] và [[C|D]]');
+    });
+
+    it('wiki-link without pipe is unaffected', () => {
+      expect(splitTableRowCells('| [[Simple Link]] |')[0].trim()).toBe('[[Simple Link]]');
+    });
+
+    it('wiki-link with empty display [[Page|]]', () => {
+      expect(splitTableRowCells('| [[Page|]] |')[0].trim()).toBe('[[Page|]]');
+    });
+
+    it('inline code `a|b` stays in one cell', () => {
+      expect(splitTableRowCells('| `a|b|c` |')[0].trim()).toBe('`a|b|c`');
+    });
+
+    it('wiki-link and inline code in separate columns', () => {
+      expect(splitTableRowCells('| [[X|Y]] | `m|n` |').map((c) => c.trim())).toEqual([
+        '[[X|Y]]',
+        '`m|n`',
+      ]);
+    });
+
+    it('code containing wiki-link syntax `[[A|B]]`', () => {
+      expect(splitTableRowCells('| `[[A|B]]` |')[0].trim()).toBe('`[[A|B]]`');
+    });
+
+    it('escaped pipe still works (regression)', () => {
+      expect(splitTableRowCells('| a\\|b |')[0].trim()).toBe('a|b');
+    });
+
+    it('unclosed wiki-link: pipe after [[ is not split', () => {
+      expect(splitTableRowCells('| [[Broken|Link |')[0].trim()).toBe('[[Broken|Link');
+    });
+
+    it('unclosed backtick: pipe after ` is not split', () => {
+      expect(splitTableRowCells('| `broken|code |')[0].trim()).toBe('`broken|code');
+    });
+  });
+
+  describe('table row pipe detection — wiki-link and inline-code protection', () => {
+    it('recognizes bordered row with wiki display pipe as table line', () => {
+      expect(isMarkdownTableRowLine('| [[A|B]] |')).toBe(true);
+    });
+
+    it('recognizes bordered row with inline code pipe as table line', () => {
+      expect(isMarkdownTableRowLine('| `a|b` |')).toBe(true);
+    });
+
+    it('parses full block with wiki display pipe in cell', () => {
+      const lines = [
+        '| Name | Link |',
+        '|------|------|',
+        '| Alice | [[Nhân Vật|Tên Hiển Thị]] |',
+      ];
+      const block = tryParseMarkdownTableBlock(lines, 0);
+      expect(block).not.toBeNull();
+      expect(block.rows[0].map((c) => c.trim())).toEqual(['Alice', '[[Nhân Vật|Tên Hiển Thị]]']);
+    });
+  });
 });
