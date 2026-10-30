@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clearDirtyShardKeys,
   consumeDirtyShards,
   isShardDirty,
   markAllShardsDirty,
   markShardDirty,
   restoreDirtyShards,
+  snapshotDirtyShards,
 } from './dirtyShardTracker.js';
 
 describe('dirtyShardTracker', () => {
@@ -87,5 +89,29 @@ describe('dirtyShardTracker', () => {
     restoreDirtyShards(consumed);
     const snap = consumeDirtyShards();
     expect(snap.size).toBe(1);
+  });
+
+  it('snapshotDirtyShards copies without clearing active set', () => {
+    consumeDirtyShards();
+    markShardDirty('lon', 'nho');
+    const snap = snapshotDirtyShards();
+    expect(snap.has('lon\x00nho')).toBe(true);
+    expect(isShardDirty('lon', 'nho')).toBe(true);
+    markShardDirty('lon', 'other');
+    expect(snap.size).toBe(1);
+    expect(isShardDirty('lon', 'other')).toBe(true);
+  });
+
+  it('clearDirtyShardKeys removes only flushed keys', () => {
+    consumeDirtyShards();
+    markShardDirty('L', 'A');
+    markShardDirty('L', 'B');
+    const snap = snapshotDirtyShards();
+    clearDirtyShardKeys(snap);
+    expect(isShardDirty('L', 'A')).toBe(false);
+    expect(isShardDirty('L', 'B')).toBe(false);
+    markShardDirty('L', 'C');
+    clearDirtyShardKeys(snap);
+    expect(isShardDirty('L', 'C')).toBe(true);
   });
 });

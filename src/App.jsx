@@ -100,7 +100,7 @@ import {
   syncAllCollectionListCards,
 } from './lib/collectionListCardSync.js';
 import { markAllShardsDirty, markShardDirty } from './lib/dirtyShardTracker.js';
-import { commitNovelUpdate } from './lib/patchNovelData.js';
+import { awaitNovelUpdateSync, commitNovelUpdate } from './lib/patchNovelData.js';
 import { buildCurrentContextDirHandle } from './lib/buildCurrentContextDirHandle.js';
 import {
   getDeepSearchCacheNamespace,
@@ -1991,13 +1991,14 @@ export default function App() {
     showToast,
   });
 
-  const handleSaveStandardEditor = () => {
+  const handleSaveStandardEditor = async () => {
     const content = document.getElementById('standard-editor').value;
     const lonId = activeTabLon;
     const nhoId = activeTabNho || 'default';
     const bucket = activeNovelDataRef.current?.data?.[lonId]?.[nhoId];
+    let saveOutcome = false;
     if (bucket == null) {
-      updateActiveNovelData((n) => {
+      saveOutcome = updateActiveNovelData((n) => {
         if (!n.data) n.data = {};
         if (!n.data[lonId]) n.data[lonId] = {};
         if (activeTabCon) {
@@ -2008,7 +2009,7 @@ export default function App() {
         }
       });
     } else {
-      updateActiveNovelData({
+      saveOutcome = updateActiveNovelData({
         lonId,
         nhoId,
         updater: (nho) => {
@@ -2021,7 +2022,15 @@ export default function App() {
         },
       });
     }
-    setIsEditingMode(false); setIsSplitPreview(false); showToast('Khắc ấn đại đạo thành công!');
+    if (saveOutcome !== false) {
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
+    } else {
+      return;
+    }
+    setIsEditingMode(false);
+    setIsSplitPreview(false);
+    showToast('Khắc ấn đại đạo thành công!');
   };
 
   const {
@@ -2082,7 +2091,7 @@ export default function App() {
   };
 
   const onEntityCardTogglePin = useCallback(
-    (ent) => {
+    async (ent) => {
       const entityId = safeString(ent?.id).trim();
       if (!entityId || !activeTabLon) return;
       const lonId = activeTabLon;
@@ -2109,16 +2118,18 @@ export default function App() {
         showToast('Không ghim được thẻ này.', 'error');
         return;
       }
-      const ok = updateActiveNovelData({
+      const saveOutcome = updateActiveNovelData({
         lonId,
         nhoId,
         entityId,
         updater: () => scratch[index],
       });
-      if (ok === false) {
+      if (saveOutcome === false) {
         showToast('Không ghim được vì chưa có truyện đang mở.', 'error');
         return;
       }
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
       showToast(
         result.pinned ? 'Đã ghim thẻ — các thẻ ghim xếp theo tên A→Z.' : 'Đã bỏ ghim thẻ.',
         'success'
@@ -2159,7 +2170,7 @@ export default function App() {
   };
 
   const handleSaveEntityMember = useCallback(
-    (memberDraft, options = {}) => {
+    async (memberDraft, options = {}) => {
       if (!selectedEntityId || !activeTabLon) {
         showToast('Hãy chọn một thẻ cha trước khi lưu thẻ con.', 'warning');
         return;
@@ -2179,7 +2190,7 @@ export default function App() {
         updatedAt: Date.now(),
       };
 
-      const ok = updateActiveNovelData({
+      const saveOutcome = updateActiveNovelData({
         lonId: activeTabLon,
         nhoId: activeTabNho || 'default',
         entityId: selectedEntityId,
@@ -2219,10 +2230,12 @@ export default function App() {
           return { ...ent, members };
         },
       });
-      if (ok === false) {
+      if (saveOutcome === false) {
         showToast('Không lưu được thẻ con vì chưa có truyện đang mở.', 'error');
         return;
       }
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
       showToast(
         savedMode === 'update'
           ? `Đã cập nhật hồ sơ ${memberName}.`

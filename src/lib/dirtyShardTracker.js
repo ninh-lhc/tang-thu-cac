@@ -1,12 +1,26 @@
 /**
  * Shard key "lonId\\0nhoId" đã sửa kể từ lần sync gần nhất.
- * consumeDirtyShards xóa tập để lần sync sau không stringify lại shard sạch.
+ * snapshotDirtyShards + clearDirtyShardKeys sau khi ghi đĩa OK (F-001).
+ * consumeDirtyShards giữ cho test / legacy — sync folder không consume trước write.
  */
 let dirtyShards = new Set();
 
 export function markShardDirty(lonId, nhoId) {
   if (lonId == null || nhoId == null) return;
   dirtyShards.add(`${lonId}\x00${nhoId}`);
+}
+
+/** Snapshot in-flight dirty keys — không xóa active set (edits trong lúc ghi vẫn giữ). */
+export function snapshotDirtyShards() {
+  return new Set(dirtyShards);
+}
+
+/** Xóa các key đã flush xuống đĩa thành công. */
+export function clearDirtyShardKeys(keys) {
+  if (!keys) return;
+  for (const key of keys) {
+    if (key != null && key !== '') dirtyShards.delete(key);
+  }
 }
 
 export function consumeDirtyShards() {

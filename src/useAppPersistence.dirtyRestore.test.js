@@ -1,5 +1,5 @@
 /**
- * AUD-001: dirty snapshot restore when folder sync fails after consumeDirtyShards.
+ * F-001: dirty snapshot — giữ active set khi write fail; clear sau flush OK.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
@@ -117,7 +117,7 @@ describe('useAppPersistence dirty restore (AUD-001)', () => {
     writeShardTreeMock.mockResolvedValue(undefined);
   });
 
-  it('restores dirty keys when writeShardTree throws', async () => {
+  it('keeps dirty keys in active set when writeShardTree throws (no pre-consume)', async () => {
     writeShardTreeMock.mockRejectedValue(new Error('shard write failed'));
     const { rootDir } = makeMockRootDir();
     const { result } = renderPersistenceHook();
@@ -197,7 +197,7 @@ describe('useAppPersistence dirty restore (AUD-001)', () => {
     expect(isShardDirty('L', 'B')).toBe(true);
   });
 
-  it('does not consume dirty keys when manifest build fails before consume', async () => {
+  it('does not clear dirty keys when manifest build fails before write', async () => {
     const buildSpy = vi.spyOn(novelDiskLayout, 'buildDiskManifest').mockImplementation(() => {
       throw new Error('manifest build failed');
     });
@@ -213,7 +213,7 @@ describe('useAppPersistence dirty restore (AUD-001)', () => {
     buildSpy.mockRestore();
   });
 
-  it('restores dirty keys when manifest write fails after shard write', async () => {
+  it('keeps dirty keys when manifest write fails after shard write', async () => {
     const { rootDir } = makeMockRootDir({ manifestWriteFails: true });
     const { result } = renderPersistenceHook();
     markShardDirty('L', 'S');
@@ -225,5 +225,26 @@ describe('useAppPersistence dirty restore (AUD-001)', () => {
     expect(syncResult.ok).toBe(false);
     expect(writeShardTreeMock).toHaveBeenCalled();
     expect(isShardDirty('L', 'S')).toBe(true);
+  });
+
+  it('clears dirty keys only after successful folder sync', async () => {
+    const { rootDir } = makeMockRootDir();
+    const { result } = renderPersistenceHook();
+    markShardDirty('L', 'S');
+
+    const syncResult = await result.current.syncNovel(makeNovel('flushed'), rootDir, {
+      immediate: true,
+    });
+
+    expect(syncResult.ok).toBe(true);
+    expect(isShardDirty('L', 'S')).toBe(false);
+  });
+
+  it('syncNovel localStorage mode resolves ok without shard dirty tracker', async () => {
+    const { result } = renderPersistenceHook();
+    const novel = makeNovel('local');
+    const syncResult = await result.current.syncNovel(novel, 'LOCAL_STORAGE');
+    expect(syncResult.ok).toBe(true);
+    expect(syncResult.mode).toBe('local');
   });
 });

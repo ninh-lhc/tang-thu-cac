@@ -68,3 +68,24 @@ export function commitNovelUpdate(novel, input) {
   }
   return { novel, dirty: 'none' };
 }
+
+/**
+ * Chờ syncNovel từ updateActiveNovelData (false | true | Promise).
+ * Dùng trước toast “đã lưu” (F-002).
+ */
+export async function awaitNovelUpdateSync(outcome) {
+  if (outcome === false) return { ok: false, reason: 'no_novel' };
+  if (outcome === true) return { ok: true, reason: 'no_sync_needed' };
+  if (outcome != null && typeof outcome.then === 'function') {
+    try {
+      const result = await outcome;
+      if (result && typeof result === 'object') {
+        return { ok: Boolean(result.ok), ...result };
+      }
+      return { ok: Boolean(result) };
+    } catch (error) {
+      return { ok: false, reason: 'sync_rejected', error };
+    }
+  }
+  return { ok: true, reason: 'unknown_outcome' };
+}

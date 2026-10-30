@@ -10,6 +10,7 @@ import { findEquivalentEntityByName, mergeAliasText } from './lib/entityNameIden
 import { applyAutoRelationNotesForEntity, isAutoRelationScopeLonId, syncAllAutoRelationNotesForNovel } from './lib/autoRelationDetailNote.js';
 import { isListCardEntity, syncAllCollectionListCards, syncAllCollectionListCardsDetailed } from './lib/collectionListCardSync.js';
 import { markAllShardsDirty } from './lib/dirtyShardTracker.js';
+import { awaitNovelUpdateSync } from './lib/patchNovelData.js';
 import { isCultivationRelationScope, syncAllCultivationRelationBlocks } from './lib/cultivationRelationSync.js';
 import { isMainCharacterRelationScope, syncAllMainCharacterRelationBlocks } from './lib/mainCharacterRelationSync.js';
 import { buildScopedEntityImageStemParts } from './lib/imageFilename.js';
@@ -266,7 +267,7 @@ export function useAppEntityMilestoneActions({
   );
 
   const handleSaveEntity = useCallback(
-    (formData, dynamicData, opts = null) => {
+    async (formData, dynamicData, opts = null) => {
       const copyRawToInfo = Boolean(opts && opts.copyRawToInfo);
       const normalizedEntityName = toDisplayTitleCase(formData?.name);
       if (!normalizedEntityName) {
@@ -330,9 +331,9 @@ export function useAppEntityMilestoneActions({
         }
       }
 
-      let saveOk = false;
+      let saveOutcome = false;
       try {
-        saveOk = updateActiveNovelData((nov) => {
+        saveOutcome = updateActiveNovelData((nov) => {
         if (!nov.data) nov.data = {};
         if (!nov.data[activeTabLon]) nov.data[activeTabLon] = {};
         let tabData = nov.data[activeTabLon][activeTabNho || 'default'];
@@ -533,10 +534,12 @@ export function useAppEntityMilestoneActions({
         );
         return;
       }
-      if (saveOk === false) {
+      if (saveOutcome === false) {
         showToast('Không lưu được — chưa có dữ liệu truyện đang mở.', 'error');
         return;
       }
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
 
       // UX: tạo thẻ xong thì tự vào tab Hồ Sơ + bật chế độ ghi chép chi tiết.
       if (isCreate && createTargetEntityId) {
@@ -674,7 +677,7 @@ export function useAppEntityMilestoneActions({
   );
 
   const handleUpdateEntityInfo = useCallback(
-    (content, opts = {}) => {
+    async (content, opts = {}) => {
       const ownerTimelineHintDetail =
         activeTabLon !== 'nhan-vat'
           ? parseOwnerTimelineHintDetailed({
@@ -687,8 +690,9 @@ export function useAppEntityMilestoneActions({
       let ownerMilestoneAutoApplied = false;
       let ownerMilestoneApplyWarning = '';
 
+      let saveOutcome = false;
       if (ownerTimelineHint) {
-        updateActiveNovelData((nov) => {
+        saveOutcome = updateActiveNovelData((nov) => {
           if (!nov.data?.[activeTabLon]) return;
           const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
           const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
@@ -709,7 +713,7 @@ export function useAppEntityMilestoneActions({
           syncAllCollectionListCards(nov);
         });
       } else {
-        updateActiveNovelData({
+        saveOutcome = updateActiveNovelData({
           lonId: activeTabLon,
           nhoId: activeTabNho || 'default',
           entityId: selectedEntityId,
@@ -720,6 +724,9 @@ export function useAppEntityMilestoneActions({
           },
         });
       }
+      if (saveOutcome === false) return;
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
 
       showToast(
         ownerMilestoneAutoApplied
@@ -744,7 +751,7 @@ export function useAppEntityMilestoneActions({
   );
 
   const handleSaveMilestone = useCallback(
-    (formData, snapshot) => {
+    async (formData, snapshot) => {
       const prev = activeNovelData ? structuredClone(activeNovelData) : null;
       let timelineNameUpdated = false;
       let ownerMilestoneRenameSynced = 0;
@@ -805,7 +812,7 @@ export function useAppEntityMilestoneActions({
         }
       }
 
-      updateActiveNovelData((nov) => {
+      const saveOutcome = updateActiveNovelData((nov) => {
         if (!nov.data?.[activeTabLon]) return;
         const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
         const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
@@ -859,6 +866,9 @@ export function useAppEntityMilestoneActions({
           }
         }
       });
+      if (saveOutcome === false) return;
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
       showToast(
         formData.id ? 'Đã tu bổ Kỷ Nguyên!' : 'Đã khắc ghi Kỷ Nguyên mới!',
         'success',
@@ -958,14 +968,14 @@ export function useAppEntityMilestoneActions({
   );
 
   const handleSaveDescription = useCallback(
-    (formData) => {
+    async (formData) => {
       if (!selectedEntityId) {
         showToast?.('Hãy chọn một thẻ trước khi ghi miêu tả.', 'warning');
         return;
       }
       const prev = activeNovelData ? structuredClone(activeNovelData) : null;
       let savedId = formData?.id || null;
-      updateActiveNovelData((nov) => {
+      const saveOutcome = updateActiveNovelData((nov) => {
         if (!nov.data?.[activeTabLon]) return;
         const tabData = nov.data[activeTabLon][activeTabNho || 'default'];
         const ent = tabData?.entities?.find((e) => e.id === selectedEntityId);
@@ -989,6 +999,9 @@ export function useAppEntityMilestoneActions({
         }
         ent.descriptions.sort((a, b) => (a.chapter || 0) - (b.chapter || 0));
       });
+      if (saveOutcome === false) return;
+      const syncResult = await awaitNovelUpdateSync(saveOutcome);
+      if (!syncResult.ok) return;
       if (savedId && setSelectedDescriptionId) setSelectedDescriptionId(savedId);
       showToast(
         formData.id ? 'Đã tu bổ Miêu Tả!' : 'Đã khắc ghi Miêu Tả mới!',

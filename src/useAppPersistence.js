@@ -36,7 +36,7 @@ import {
   isTransientFsWriteError,
   withFsWriteRetry,
 } from './lib/novelDiskWritePolicy.js';
-import { consumeDirtyShards, restoreDirtyShards } from './lib/dirtyShardTracker.js';
+import { clearDirtyShardKeys, snapshotDirtyShards } from './lib/dirtyShardTracker.js';
 
 /** migrateNovel luôn xóa storageLayout; khi novel đang lưu dạng shard trên đĩa thì phải gắn lại để lazy-load + sync an toàn. */
 function restoreShardedLayoutIfNeeded(parsedBeforeMigrate, migrated) {
@@ -457,12 +457,8 @@ export function useAppPersistence({
           return { ok: false, mode: 'directory', reason: 'manifest_build_failed', error: e };
         }
         const novelDir = await rootDir.getDirectoryHandle(folderName, { create: true });
-        const dirtyKeys = consumeDirtyShards();
-        /** Một điểm restore: dirty đã consume; merge snapshot khi sync thất bại (giữ dirty phát sinh trong lúc ghi). */
-        const failAfterDirtyConsume = (result) => {
-          restoreDirtyShards(dirtyKeys);
-          return result;
-        };
+        /** Snapshot dirty cho batch ghi — active set giữ key mới phát sinh trong lúc write (F-001). */
+        const dirtyKeys = snapshotDirtyShards();
         const shardPlan = buildShardWritePlan(
           novelToWrite.data || {},
           getShardState(novelDir).hashes,
@@ -495,6 +491,7 @@ export function useAppPersistence({
           lastNovelManifestJsonByIdRef.current.set(novelToWrite.id, jsonStr);
           bumpNovelStatsAfterWrite(novelToWrite);
           await clearNovelShadow(novelToWrite.id);
+          clearDirtyShardKeys(dirtyKeys);
         };
         // Ưu tiên ghi đè in-place — ít tạo/xóa file hơn tmp+rename (OneDrive).
         const writeInPlace = async () => {
@@ -513,6 +510,7 @@ export function useAppPersistence({
           shardPlan.writes.length === 0 &&
           shardPlan.removed.length === 0
         ) {
+          clearDirtyShardKeys(dirtyKeys);
           await clearNovelShadow(novelToWrite.id);
           return { ok: true, mode: 'directory', skipped: 'unchanged' };
         }
@@ -547,12 +545,12 @@ export function useAppPersistence({
             setTimeout(() => {
               showDirectoryWritePermissionToast(payloadNovel);
             }, 0);
-            return failAfterDirtyConsume({
+            return {
               ok: false,
               mode: 'directory',
               reason: 'permission_denied_write',
               error: e2,
-            });
+            };
           }
           if (isFsPermissionWriteError(e2)) {
             const retryPerm = await ensureDirectoryWritePermission(rootDir);
@@ -560,12 +558,12 @@ export function useAppPersistence({
               setTimeout(() => {
                 showDirectoryWritePermissionToast(payloadNovel);
               }, 0);
-              return failAfterDirtyConsume({
+              return {
                 ok: false,
                 mode: 'directory',
                 reason: 'permission_denied_after_retry',
                 error: e2,
-              });
+              };
             }
             try {
               await writeInPlace();
@@ -575,12 +573,12 @@ export function useAppPersistence({
               setTimeout(() => {
                 showDirectoryWritePermissionToast(payloadNovel);
               }, 0);
-              return failAfterDirtyConsume({
+              return {
                 ok: false,
                 mode: 'directory',
                 reason: 'permission_denied_write',
                 error: e3,
-              });
+              };
             }
           }
           setTimeout(() => {
@@ -596,12 +594,12 @@ export function useAppPersistence({
               }
             );
           }, 0);
-          return failAfterDirtyConsume({
+          return {
             ok: false,
             mode: 'directory',
             reason: 'write_failed',
             error: e2,
-          });
+          };
         }
       };
 
