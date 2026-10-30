@@ -96,7 +96,7 @@ export function useAppNovelSelectionAndHydration({
         const loaded = await loadNovelData(meta, dirHandle, loadNovelOpts);
         if (loaded?.novel) {
           const data = loaded.novel;
-          cleanupAutoRelationLegacyInfoForNovel(data);
+          const cleanupTouched = cleanupAutoRelationLegacyInfoForNovel(data);
           const recoveredFromBackup = Boolean(data.__recoveredFromBackup);
           const recoveredFromShadow = Boolean(data.__recoveredFromShadow);
           if (recoveredFromBackup) delete data.__recoveredFromBackup;
@@ -112,7 +112,16 @@ export function useAppNovelSelectionAndHydration({
             ? runNovelAutoSyncPlan(data, buildAutoSyncPlanFromTabsConfig(data.tabsConfig || []), { recordLog: false })
             : { changed: partialListCardSync.changed, forceWarning: '' };
           const migrated = migrateTabsFieldTemplates(data);
-          markAllShardsDirty(migrated?.data);
+          const dataChanged =
+            cleanupTouched > 0 ||
+            autoSyncResult?.changed ||
+            recoveredFromBackup ||
+            recoveredFromShadow ||
+            repairedEmptyTabsConfig ||
+            migrated !== data;
+          if (dataChanged) {
+            markAllShardsDirty(migrated?.data);
+          }
           setActiveNovelData(migrated);
           if (autoSyncResult.forceWarning) {
             showToast(autoSyncResult.forceWarning, 'warning');
@@ -257,7 +266,7 @@ export function useAppNovelSelectionAndHydration({
         const fullLoaded = await loadNovelData(activeNovelData, dirHandle);
         const fullData = fullLoaded?.novel;
         if (fullData && !fullData.__partialData) {
-          cleanupAutoRelationLegacyInfoForNovel(fullData);
+          const cleanupTouched = cleanupAutoRelationLegacyInfoForNovel(fullData);
           const recoveredFromBackup = Boolean(fullData.__recoveredFromBackup);
           const recoveredFromShadow = Boolean(fullData.__recoveredFromShadow);
           if (recoveredFromBackup) delete fullData.__recoveredFromBackup;
@@ -269,7 +278,15 @@ export function useAppNovelSelectionAndHydration({
             buildAutoSyncPlanFromTabsConfig(fullData.tabsConfig || []),
             { recordLog: false }
           );
-          markAllShardsDirty(fullData?.data);
+          const dataChanged =
+            cleanupTouched > 0 ||
+            autoSyncResult?.changed ||
+            missingTabsConfig ||
+            recoveredFromBackup ||
+            recoveredFromShadow;
+          if (dataChanged) {
+            markAllShardsDirty(fullData?.data);
+          }
           setActiveNovelData((prev) => {
             if (!prev || prev.id !== key) return prev;
             return fullData;

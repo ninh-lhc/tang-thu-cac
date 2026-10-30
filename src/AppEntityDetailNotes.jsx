@@ -126,6 +126,8 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   // Đang ghép chữ IME (tiếng Việt): chặn mọi setState đồng bộ toolbar/caret để React
   // không re-render và ghi đè value cũ giữa lúc compose ⇒ tránh rớt/lặp ký tự.
   const isComposingRef = useRef(false);
+  const aiPipelineMountedRef = useRef(true);
+  const aiPipelineGenerationRef = useRef(0);
   const [toolbarState, setToolbarState] = useState(() => getEntityNotesToolbarState(s0, 0, 0));
   const [queryBuilderOpen, setQueryBuilderOpen] = useState(false);
   const [editorCaret, setEditorCaret] = useState(0);
@@ -158,6 +160,13 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     Boolean(wikiAcSession) &&
     wikiAcItems.length > 0 &&
     wikiAcSuppressedAt !== wikiAcSession?.queryEnd;
+
+  useEffect(() => {
+    aiPipelineMountedRef.current = true;
+    return () => {
+      aiPipelineMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     setWikiAcSelectedIndex(0);
@@ -415,6 +424,9 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         showToast('Chưa có nội dung để chuẩn hoá.', 'warning');
         return;
       }
+      const generationId = ++aiPipelineGenerationRef.current;
+      const isStale = () =>
+        !aiPipelineMountedRef.current || generationId !== aiPipelineGenerationRef.current;
       const wantsAi = pipelineSteps.includes('link') || pipelineSteps.includes('format');
       setIsAiPipelineRunning(true);
       setAiPipelineStep(null);
@@ -432,6 +444,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           tierLabelSet: statusTierLabelSet,
           subject: entityNotesSubject,
           onProgress: ({ step, phase, text }) => {
+            if (isStale()) return;
             if (phase === 'start') {
               setAiPipelineStep(step);
               return;
@@ -440,11 +453,13 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             syncDraftAndPreview(text);
           },
         });
+        if (isStale()) return;
         if (result.text !== currentText) {
           syncDraftAndPreview(result.text);
           const caret = result.text.length;
           setEditorCaret(caret);
           requestAnimationFrame(() => {
+            if (isStale()) return;
             const ta = textareaRef.current || document.getElementById('entity-info-editor');
             if (!ta) return;
             ta.focus();
@@ -455,7 +470,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           if (result.reason === 'empty') {
             showToast('Chưa có nội dung để chuẩn hoá.', 'warning');
           } else {
-            showToast(result.error || 'Lỗi khi chạy chuẩn hoá.', 'error');
+            showToast(result.error || 'Lỗi khi chuẩn hoá.', 'error');
           }
           return;
         }
@@ -469,10 +484,12 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           showToast('Nội dung đã ổn, không cần chỉnh thêm.', 'success');
         }
       } finally {
-        setIsAiPipelineRunning(false);
-        setAiPipelineStep(null);
-        setIsExtractingAI(false);
-        setIsFormattingStructure(false);
+        if (generationId === aiPipelineGenerationRef.current) {
+          setIsAiPipelineRunning(false);
+          setAiPipelineStep(null);
+          setIsExtractingAI(false);
+          setIsFormattingStructure(false);
+        }
       }
     },
     [

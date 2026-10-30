@@ -4,6 +4,7 @@
 import React, { useRef, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
+import * as dirtyShardTracker from './lib/dirtyShardTracker.js';
 import {
   consumeDirtyShards,
   isShardDirty,
@@ -155,5 +156,85 @@ describe('useAppNovelSelectionAndHydration lazy shard load (AUD-003)', () => {
       markShardDirty('L', 'S');
     });
     expect(isShardDirty('L', 'S')).toBe(true);
+  });
+});
+
+function FullHydrateHarness({ loadNovelData, initialNovel }) {
+  const [activeNovelData, setActiveNovelData] = useState(initialNovel);
+  const lazyTabLoadInFlightRef = useRef(new Set());
+  const lazyFullHydrateInFlightRef = useRef(new Set());
+  const novelsMetadataRef = useRef([]);
+  const globalTabsConfigRef = useRef([{ id: 'tong-quan', label: 'Tổng quan', subTabs: [] }]);
+  const novelStatsByIdRef = useRef({});
+  const deepSearchIndexByNovelIdRef = useRef(new Map());
+
+  useAppNovelSelectionAndHydration({
+    dirHandle: mockDir,
+    activeNovelData,
+    activeTabLon: 'tong-quan',
+    activeTabNho: null,
+    globalTabsConfig: globalTabsConfigRef.current,
+    loadNovelData,
+    syncNovel: noop,
+    syncIndex: noop,
+    showToast: noop,
+    setMenu1Visible: noop,
+    setSelectedEntityId: noop,
+    setNavHistory: noop,
+    setActiveTabLon: noop,
+    setActiveTabNho: noop,
+    setActiveTabCon: noop,
+    setCollectionSubTab: noop,
+    setIsEditingMode: noop,
+    setIsEntityEditing: noop,
+    setIsUploading: noop,
+    setActiveNovelData,
+    setActiveNovelDirHandle: noop,
+    novelsMetadataRef,
+    globalTabsConfigRef,
+    novelStatsByIdRef,
+    setNovelStatsById: noop,
+    lazyTabLoadInFlightRef,
+    lazyFullHydrateInFlightRef,
+    deepSearchIndexByNovelIdRef,
+  });
+
+  return null;
+}
+
+describe('useAppNovelSelectionAndHydration full hydrate (F-007)', () => {
+  beforeEach(() => {
+    consumeDirtyShards();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it('does not mark all shards dirty on read-only full hydrate', async () => {
+    const markSpy = vi.spyOn(dirtyShardTracker, 'markAllShardsDirty');
+    const tabsConfig = [{ id: 'tong-quan', label: 'Tổng quan', subTabs: [] }];
+    const partial = {
+      id: 'novel-f007',
+      title: 'T',
+      storageLayout: 'sharded',
+      tabsConfig,
+      data: { L: { S: { entities: [] } } },
+      __partialData: true,
+    };
+    const loadNovelData = vi.fn(async () => ({
+      novel: {
+        ...partial,
+        data: { L: { S: { entities: [{ id: 'e1', name: 'A' }] } } },
+        __partialData: undefined,
+      },
+      novelDir: null,
+    }));
+
+    render(<FullHydrateHarness loadNovelData={loadNovelData} initialNovel={partial} />);
+
+    await waitFor(() => expect(loadNovelData).toHaveBeenCalled());
+    await waitFor(() => expect(markSpy).not.toHaveBeenCalled());
   });
 });

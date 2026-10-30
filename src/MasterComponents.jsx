@@ -3583,6 +3583,8 @@ export const ModalMilestone = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [tableEditIndex, setTableEditIndex] = useState(null);
   const eventTextareaRef = useRef(null);
+  const eventAiPipelineMountedRef = useRef(true);
+  const eventAiPipelineGenerationRef = useRef(0);
   // Đang ghép chữ IME (tiếng Việt): chặn setState đồng bộ toolbar/caret để tránh
   // React re-render ghi đè value cũ giữa lúc compose ⇒ tránh rớt/lặp ký tự.
   const isComposingRef = useRef(false);
@@ -3760,6 +3762,13 @@ export const ModalMilestone = ({
   }, [isOpen, initialData, defaultChapterWhenNew]);
 
   useEffect(() => {
+    eventAiPipelineMountedRef.current = true;
+    return () => {
+      eventAiPipelineMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const textarea = eventTextareaRef.current;
     if (!textarea) return;
     setToolbarState(
@@ -3853,6 +3862,7 @@ export const ModalMilestone = ({
     trapRefMs,
     notesTypo.autoCleanOnSave,
     prepareSnapshotPayload,
+    wikiWrapOptions,
   ]);
 
   const undoDisabled = eventEdit.hIndex <= 0;
@@ -4118,6 +4128,9 @@ export const ModalMilestone = ({
       toast('Chưa có nội dung để chuẩn hoá.', 'warning');
       return;
     }
+    const generationId = ++eventAiPipelineGenerationRef.current;
+    const isStale = () =>
+      !eventAiPipelineMountedRef.current || generationId !== eventAiPipelineGenerationRef.current;
     const wantsAi = pipelineSteps.includes('link') || pipelineSteps.includes('format');
     setIsAiPipelineRunning(true);
     setEventAiPipelineStep(null);
@@ -4134,6 +4147,7 @@ export const ModalMilestone = ({
         tierLabelSet: statusTierLabelSet,
         subject: milestoneSubject,
         onProgress: ({ step, phase, text }) => {
+          if (isStale()) return;
           if (phase === 'start') {
             setEventAiPipelineStep(step);
             return;
@@ -4142,11 +4156,13 @@ export const ModalMilestone = ({
           recordAndSetEventDraft(text);
         },
       });
+      if (isStale()) return;
       if (result.text !== eventText) {
         recordAndSetEventDraft(result.text);
         const caret = result.text.length;
         setEventEditorCaret(caret);
         requestAnimationFrame(() => {
+          if (isStale()) return;
           const ta = eventTextareaRef.current;
           if (!ta) return;
           ta.focus();
@@ -4178,10 +4194,12 @@ export const ModalMilestone = ({
         toast(`Nội dung đã ổn, không cần chỉnh thêm.${hint}`, result.remainingWarningCount > 0 ? 'warning' : 'success');
       }
     } finally {
-      setIsAiPipelineRunning(false);
-      setEventAiPipelineStep(null);
-      setIsLinkingAi(false);
-      setIsFormattingStructure(false);
+      if (generationId === eventAiPipelineGenerationRef.current) {
+        setIsAiPipelineRunning(false);
+        setEventAiPipelineStep(null);
+        setIsLinkingAi(false);
+        setIsFormattingStructure(false);
+      }
     }
   };
   const handleInsertImageByUrl = () => {
