@@ -1,10 +1,10 @@
 # 📊 AUDIT LẦN 2 — TÀNG THƯ CÁC — BÁO CÁO CUỐI CÙNG
 
 > **Audit baseline:** `c9dc964` · `main` · 929/929 test pass · build pass
-> **Final state:** `3ab752f` · `main` · 1004/1004 test pass · build pass
+> **Final state:** `02cd006` · `main` · 1009/1009 test pass · build pass · ESLint 0e/0w
 > **Kiến trúc:** SPA Vite 8 + React 19 (File System Access API + localStorage + IndexedDB)
 > **Phạm vi:** Architecture, persistence, data integrity, async lifecycle, markdown parsing
-> **Ngày hoàn tất:** 2026-10-31 (commit `3ab752f`, 2026-10-31 08:40 +0700)
+> **Ngày hoàn tất:** 2026-10-31 (commit `02cd006`, 2026-10-31 09:56 +0700)
 
 ---
 
@@ -22,6 +22,11 @@
 | F-008 | Medium | Stale `wikiWrapOptions` closure trong ttc-save effect | RISK | ✅ FIXED | Phase 3 | `9d79224` | Thêm `wikiWrapOptions` vào dependency array |
 | F-009 | Medium | AI pipeline không có guard khi unmount hoặc superseded request | RISK | ✅ FIXED | Phase 3 | `9d79224` | `generationRef` + `mountedRef` trong `AppEntityDetailNotes` và `MasterComponents` |
 | F-010 | Medium | Collection list không virtual | SMELL | 🟡 MITIGATED | — | — | Pagination 12/page + IntersectionObserver windowing >200 entities đã có; defer |
+| F-011 | Low | Toast z-index chồng lên điều khiển modal | UX | ✅ FIXED | Phase 5 | `02cd006` | CSS `--z-*`; toast z=300 trên mọi modal; nút đóng ở góc trên không bị toast đáy che |
+| F-012 | Low | Orphan `useEntityNotesFormatDiagnostics` module | SMELL | ✅ FIXED | Phase 5 | `02cd006` | Xóa file. `entityNotesDiagnostics`, `autoSyncDiagnostics`, `ttcQueryDiagnostics` vẫn được import |
+| F-013 | Low | ESLint 29 errors + 2 warnings (nợ sẵn có) | QUALITY | ✅ FIXED | Phase 5 | `02cd006` | 29e+2w → 0e+0w. Hai regression (cây bản đồ, nhãn thẻ con) đã khôi phục |
+| F-014 | Low | Không có global unhandled rejection handler | RISK | ✅ FIXED | Phase 5 | `02cd006` | `globalErrorHandler.js` trước `createRoot`; 5 tests |
+| F-015 | Info | Mô tả kiến trúc ghi Electron | DOCS | ✅ FIXED | Phase 5 | `02cd006` | `package.json` và comment `index.html` mô tả SPA Vite 8 + React 19 |
 
 ---
 
@@ -142,28 +147,45 @@
 
 **Tests:** 982 → 1004 (+22 tests, +1 test file; suite 131 → 132 files)
 
+### Phase 5 (Commit `02cd006`)
+
+**Subject:** Phase 5: fix F-011 through F-015 — LOW/INFO polish
+
+**Scope:** F-011, F-012, F-013, F-014, F-015
+
+**Files changed:** `git show --stat 02cd006` → 50 files (+289 / −613). Ba file mới: `globalErrorHandler.js`, `globalErrorHandler.test.js`, `entityCollectionPagination.js`. Xóa `useEntityNotesFormatDiagnostics.js`.
+
+**Thay đổi chính:**
+
+- **F-011:** Thang z-index bằng CSS custom properties trong `:root` của `AppPhongChuVaTheme.jsx`. Toast `--z-toast: 300`. Modal nén dưới 300 (`--z-modal-backdrop` 200, `--z-modal-content` 210, tới `--z-modal-system` 298). Không còn `z-index` ghi số cứng trong `src/`. Toast căn đáy giữa; nút đóng modal ở góc trên không bị che.
+- **F-012:** Xóa `useEntityNotesFormatDiagnostics.js` (orphan hai vòng audit). Ba module diagnostics còn lại đều có import.
+- **F-013:** ESLint 29 errors + 2 warnings → 0/0. Xóa biến và import không dùng. Hai regression từ setState lúc render đã khôi phục: cây bản đồ trở lại `useEffect` với deps `[entities, selectedId]`; nhãn thẻ con reset ngay trong handler Hủy. Hai dòng `eslint-disable-next-line react-hooks/set-state-in-effect` có lý do (mở tổ tiên khi đổi thẻ; reset bộ lọc loại khi đổi thẻ cha). Khối lớn: `collectionListCardSync.js` −302, `MasterComponents.jsx` −147 dòng ròng.
+- **F-014:** `installGlobalErrorHandlers()` trong `main.jsx`, trước `createRoot`. `unhandledrejection` log `[TTC] Unhandled promise rejection:`, không `preventDefault`. `error` log `[TTC] Uncaught error:`, bỏ qua ResizeObserver loop. Gọi hai lần chỉ gắn một lần. Xóa helper `unhandledRejection` cũ. 5 test mới.
+- **F-015:** `package.json` description và comment đầu `index.html` mô tả SPA Vite 8 + React 19, File System Access API + localStorage + IndexedDB. Từ Electron trong `.md` chỉ còn `docs/audits/`. `package-lock.json` vẫn có gói trung gian `electron-to-chromium`.
+
+**Tests:** 1004 → 1009 (+5 tests, +1 test file; suite 132 → 133 files)
+
 ---
 
 ## Phần 4 — Metrics tổng hợp
 
-| Metric | Trước Audit | Sau Phase 3 | Sau Phase 4B (Final) | Delta |
-|--------|-------------|-------------|----------------------|-------|
-| Tests passing | 929 | 968 | 1004 | +75 |
-| Test files | 126 | 129 | 132 | +6 |
-| Findings total | 10 | 10 | 10 | — |
-| Findings fixed | 0 | 7 | 9 | +9 |
-| Findings mitigated | 0 | 1 | 1 | +1 |
-| Findings unresolved | 10 | 2 | 0 | −10 |
-| Phases completed | 0 | 4 | 6 | +6 |
-| Commits | 0 | 4 | 6 | +6 |
-| Build | Pass | Pass | Pass | ✅ |
-| ESLint regressions | — | 0 | 0 | ✅ |
+| Metric | Trước Audit | Sau Phase 3 | Sau Phase 4B | Sau Phase 5 (Final) | Delta tổng |
+|--------|-------------|-------------|----------------|---------------------|------------|
+| Tests passing | 929 | 968 | 1004 | 1009 | +80 |
+| Test files | 126 | 129 | 132 | 133 | +7 |
+| Findings total | 10 | 10 | 10 | 15 | +5 (LOW/INFO) |
+| Findings fixed | 0 | 7 | 9 | 14 | +14 |
+| Findings mitigated | 0 | 1 | 1 | 1 | +1 |
+| Findings unresolved | 10 | 2 | 0 | 0 | −10 |
+| ESLint errors | 29 | 29 | 29 | 0 | −29 |
+| ESLint warnings | 2 | 2 | 2 | 0 | −2 |
+| Build | Pass | Pass | Pass | Pass | ✅ |
 
 ---
 
 ## Phần 5 — Các finding còn lại
 
-> F-003 và F-004 đã được fix trong Phase 4A/4B. Chỉ còn F-010 (mitigated).
+> ✅ F-003 và F-004 đã được fix trong Phase 4A và 4B — xem Phần 3 chi tiết. Chỉ còn F-010 (mitigated).
 
 ### 🟡 F-010 — Collection list không virtual [MEDIUM — MITIGATED]
 
@@ -189,7 +211,7 @@ Nguyên văn từ mục **Clean bill** trong tổng kết audit lần 2 (read-on
 - Wiki highlight overlay **escape HTML**.
 - Deep search worker **reqId** chống stale.
 
-> Tất cả items trong Clean Bill đã được re-verified qua 968/968 tests passing và build pass tại commit `9d79224`.
+> Tất cả items trong Clean Bill đã được re-verified qua 1009/1009 tests passing, build pass, và ESLint 0 errors / 0 warnings tại commit `02cd006` (Phase 5).
 
 ---
 
@@ -197,24 +219,30 @@ Nguyên văn từ mục **Clean bill** trong tổng kết audit lần 2 (read-on
 
 Audit lần 1: `docs/audits/architecture-audit-report.md` (không sửa trong báo cáo này).
 
-| Audit lần 1 | Audit lần 2 | Kết quả sau 6 phases |
+| Audit lần 1 | Audit lần 2 | Kết quả sau 7 phases |
 |-------------|-------------|----------------------|
 | AUD-001 (P1) — dirty set consumed trước khi ghi đĩa xong | F-001 | Confirmed + ✅ FIXED (`67bbf9d`) |
 | AUD-002 (P2) — toast thành công trước khi persistence xong | F-002 | Confirmed + ✅ FIXED (`67bbf9d`, `d85b4e0`) |
-| — | F-003 | Mới — ✅ FIXED (manifest shardCommit integrity) |
-| — | F-004 | Mới — ✅ FIXED (Web Locks session lock + BroadcastChannel) |
-| — | F-005 | Mới — ✅ FIXED (wiki-link pipe trong bảng) |
-| — | F-006 | Mới — ✅ FIXED (inline-code pipe trong bảng) |
-| — | F-007 | Mới — ✅ FIXED (`markAllShardsDirty` read-only) |
-| — | F-008 | Mới — ✅ FIXED (stale `wikiWrapOptions`) |
-| — | F-009 | Mới — ✅ FIXED (AI pipeline unmount / superseded) |
-| — | F-010 | Mới — 🟡 MITIGATED (pagination + IO windowing) |
+| — | F-003 | ✅ FIXED (`3ab752f`) — shardCommit FNV-1a |
+| — | F-004 | ✅ FIXED (`bfec68f`) — Web Locks session lock |
+| — | F-005 | ✅ FIXED (`07ec224`) |
+| — | F-006 | ✅ FIXED (`07ec224`) |
+| — | F-007 | ✅ FIXED (`9d79224`) |
+| — | F-008 | ✅ FIXED (`9d79224`) |
+| — | F-009 | ✅ FIXED (`9d79224`) |
+| — | F-010 | 🟡 MITIGATED |
+| — | F-011 | ✅ FIXED (`02cd006`) |
+| — | F-012 | ✅ FIXED (`02cd006`) |
+| — | F-013 | ✅ FIXED (`02cd006`) |
+| — | F-014 | ✅ FIXED (`02cd006`) |
+| — | F-015 | ✅ FIXED (`02cd006`) |
 
 ---
 
 ## Phần 8 — Git log
 
 ```
+02cd006 Phase 5: fix F-011 through F-015 — LOW/INFO polish
 3ab752f Phase 4B: shard integrity verification — F-003 fix
 bfec68f Phase 4A: multi-tab session lock — F-004 fix
 9d79224 Phase 3: fix F-007, F-008, F-009 — conditional dirty marking, stale closure fix, AI pipeline guards
@@ -224,27 +252,31 @@ d85b4e0 Phase 1B: await sync trước toast lưu + guard đóng tab
 c9dc964 (baseline — audit start)
 ```
 
+Báo cáo trung gian sau Phase 4B là `3e9f3da` (chỉ file này, 2026-10-31 08:56 +0700). Không tính là phase code.
+
 ---
 
 ## Phần 9 — Kết luận
 
-Audit lần 2 đã phát hiện 10 findings (1 Critical, 3 High, 6 Medium).
-Qua 6 commits trong 6 phases:
+Audit lần 2 gồm 15 findings:
+- 10 findings chính (1 Critical, 3 High, 6 Medium)
+- 5 findings phụ (4 Low, 1 Info)
 
-- **9/10** findings đã được **fix** hoàn toàn với test coverage
-- **1/10** đã được xác nhận **mitigated** bởi cơ chế có sẵn (F-010)
-- **0/10** còn unresolved
+Qua 7 phases, tất cả đã commit. Phase 5 là `02cd006` (2026-10-31 09:56 +0700):
 
-Test suite tăng từ 929 → 1004 (+75 tests, +6 test files), không regression.
-Build và ESLint ổn định xuyên suốt 6 commits.
+- **14/15** findings đã được **fix** hoàn toàn với test coverage
+- **1/15** đã được xác nhận **mitigated** bởi cơ chế có sẵn (F-010 pagination)
+- **0 finding còn mở**
 
-Tổng hợp fix theo severity:
+Cải thiện đo được:
+- Test suite: 929 → 1009 (+80 tests, +7 test files)
+- ESLint: 29 errors + 2 warnings → 0 errors + 0 warnings
+- Persistence: session lock (Web Locks) + integrity verification (shardCommit FNV-1a)
+- Z-index: CSS custom properties, toast ở 300
+- Error handling: global unhandled rejection và uncaught error
+- Documentation: mô tả kiến trúc là SPA Vite 8 + React 19
 
-| Severity | Total | Fixed | Mitigated |
-|----------|-------|-------|-----------|
-| Critical | 1 | 1 | — |
-| High | 3 | 3 | — |
-| Medium | 6 | 5 | 1 |
-| **Total** | **10** | **9** | **1** |
+Build ổn định xuyên suốt các phase.
 
-Đánh giá tổng thể: **A** (tất cả Critical và High đã fix, remaining risk chỉ là F-010 MEDIUM đã mitigated).
+Đánh giá tổng thể: **A**
+Không còn finding chưa xử lý. F-010 giữ trạng thái mitigated.
