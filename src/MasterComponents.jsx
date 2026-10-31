@@ -39,18 +39,15 @@ import {
   handleToolbarApplyColor,
   handleToolbarToggleLinePrefix,
   analyzeTextWithAI,
-  callGeminiAPIText,
   getEntityNotesToolbarState,
   resolveEntityNotesBackspace,
   resolveEntityNotesLineBreak,
   resolveEntityNotesTabIndent,
-  suggestWikiLinkSpotsWithAI,
   truncateForAI,
   mapGeminiErrorToUserMessage,
   toDisplayTitleCase,
 } from './MasterUtils.jsx';
 import { findQuickCreateEquivalentInTab } from './lib/entityNotesWikiLinkUi.js';
-import { applyWikiLinkSpots } from './lib/applyWikiLinkSpots.js';
 import { autoWrapWikiLinksByEntityMapWithCount } from './lib/autoWrapWikiLinks.js';
 import { MILESTONE_LABELS } from './lib/milestoneLabels.js';
 import { MarkdownPreviewPane } from './MarkdownPreviewPane.jsx';
@@ -121,15 +118,12 @@ import {
   buildEntityNotesCalloutBlock,
   resolveEntityNotesTemplateProfile,
 } from './lib/entityNotesSemantics.js';
-import { cleanupEntityNotesText } from './lib/entityNotesTextCleanup.js';
 import { prepareEntityNotesPasteText } from './lib/entityNotesEditorPaste.js';
 import {
   fixAllEntityNotesDiagnostics,
-  fixEntityNotesStructureOnly,
   prepareEntityNotesForSave,
 } from './lib/entityNotesDiagnostics.js';
 import { focusEntityNotesTextarea } from './lib/entityNotesEditorSelection.js';
-import { ENTITY_NOTES_AI_STRUCTURE_SYSTEM_PROMPT } from './lib/entityNotesAiStructurePrompt.js';
 import { runNotesAiPipeline } from './lib/entityNotesAiPipeline.js';
 import { syncEntityNotesDuplicateWordFormatting } from './lib/entityNotesDuplicateWordFormatting.js';
 
@@ -723,7 +717,7 @@ export const AppHeader = ({
   performanceMode,
   setPerformanceMode,
 }) => (
-  <header className="h-16 bg-slate-950 border-b border-slate-900 flex items-center justify-between px-5 z-30 relative shadow-md">
+  <header className="h-16 bg-slate-950 border-b border-slate-900 flex items-center justify-between px-5 z-[var(--z-local-30)] relative shadow-md">
     <div className="flex items-center gap-5">
       {!menu1Visible && <button onClick={() => setMenu1Visible(true)} className="p-2 hover:bg-slate-800 rounded-lg text-amber-500 transition-colors"><Menu size={24} /></button>}
       <div className="flex items-center gap-3 cursor-pointer group" onClick={handleGoHome}>
@@ -1011,7 +1005,7 @@ export const DashboardScreen = memo(({ novelsMetadata, stats, isLoading, onSelec
 
 export const LandingScreen = memo(({ setIsAddNovelOpen, setIsManageTabsOpen }) => (
   <div className="flex-1 flex flex-col items-center justify-center text-slate-200 relative w-full h-full bg-slate-950 overflow-hidden">
-    <div className="z-10 flex flex-col items-center text-center max-w-3xl px-6 animate-fade-fast">
+    <div className="z-[var(--z-local-10)] flex flex-col items-center text-center max-w-3xl px-6 animate-fade-fast">
       <div className="w-40 h-40 border-2 border-amber-700/30 rounded-full flex items-center justify-center mb-8 relative shadow-[0_0_50px_rgba(217,119,6,0.05)] group">
          <div className="absolute inset-2 border border-amber-500/10 rounded-full animate-spin-slow"></div>
          <Library size={48} className="text-amber-500/80 group-hover:text-amber-400 transition-colors duration-500" />
@@ -1207,7 +1201,7 @@ export const EntityCard = memo(({ entity, onSelect, onDelete, onAddMilestone, on
         isPinned ? 'border-amber-500/55 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]' : 'border-slate-800'
       }`}
     >
-      <div className="absolute top-3 right-3 z-10 flex items-center gap-1">
+      <div className="absolute top-3 right-3 z-[var(--z-local-10)] flex items-center gap-1">
         {canTogglePin ? (
           <button
             type="button"
@@ -2723,7 +2717,7 @@ export const ModalEntity = ({
   if (!isOpen) return null;
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
+      className="fixed inset-0 z-[var(--z-modal-content)] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-label={initialData ? `Tu bổ ${terms.entity}` : `Khởi tạo ${terms.entity}`}
@@ -3576,10 +3570,10 @@ export const ModalMilestone = ({
   const [, setEventEditorCaret] = useState(0);
   const [isSplitPreview, setIsSplitPreview] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isLinkingAi, setIsLinkingAi] = useState(false);
+  const [, setIsLinkingAi] = useState(false);
   const [isAiPipelineRunning, setIsAiPipelineRunning] = useState(false);
   const [eventAiPipelineStep, setEventAiPipelineStep] = useState(null);
-  const [isFormattingStructure, setIsFormattingStructure] = useState(false);
+  const [, setIsFormattingStructure] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [tableEditIndex, setTableEditIndex] = useState(null);
   const eventTextareaRef = useRef(null);
@@ -4016,113 +4010,6 @@ export const ModalMilestone = ({
       setIsAnalyzing(false);
     }
   };
-  const handleLinkWithAi = async () => {
-    if (!eventText.trim()) {
-      toast('Chưa có nội dung để AI tạo link.', 'warning');
-      return;
-    }
-    const cleanedEarly = normalizeEventDraft(eventText);
-    const workingText = cleanedEarly.text;
-    const localWrapEarly = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap, wikiWrapOptions);
-    if (localWrapEarly.count > 0 && localWrapEarly.text !== workingText) {
-      recordAndSetEventDraft(localWrapEarly.text);
-      toast(`Đã tự bọc ${localWrapEarly.count} [[liên kết]] theo thẻ có sẵn. Bấm lại AI nếu muốn gợi ý thêm cho khó.`);
-      return;
-    }
-    if (geminiKeys.length === 0) {
-      toast('Vui lòng thiết lập API Key để dùng AI.', 'warning');
-      return;
-    }
-    const { wasTruncated } = truncateForAI(workingText);
-    if (wasTruncated) {
-      toast('Đoạn quá dài - chỉ gửi khoảng 12.000 ký tự đầu cho AI.', 'warning');
-    }
-    setIsLinkingAi(true);
-    try {
-      const res = await suggestWikiLinkSpotsWithAI(workingText, geminiKeys, geminiMode);
-      const spots = Array.isArray(res?.linkSpots) ? res.linkSpots : [];
-      const aiNext = applyWikiLinkSpots(workingText, spots);
-      const fallbackWrap = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap, wikiWrapOptions);
-      const nextText = aiNext !== workingText ? aiNext : fallbackWrap.text;
-      if (nextText !== workingText) {
-        recordAndSetEventDraft(nextText);
-        if (aiNext !== workingText) {
-          toast('Đã thêm [[liên kết]] bằng AI, giữ nguyên nội dung bạn đã nhập.');
-        } else {
-          toast('AI chưa định vị được spot rõ ràng, đã tự bọc link theo danh sách thẻ có sẵn.');
-        }
-      } else if (spots.length > 0) {
-        toast('AI gợi ý link nhưng không khớp văn bản hiện tại, thử lại sau khi rút gọn đoạn.', 'warning');
-      } else {
-        toast('Không có chỗ mới cần bọc link, hoặc nội dung đã có [[...]].');
-      }
-    } catch (error) {
-      const msg = mapGeminiErrorToUserMessage(error);
-      const rateLimited = /429|503|rate_limit|qua tai api/i.test(String(error?.message || ''));
-      const fallbackWrap = autoWrapWikiLinksByEntityMapWithCount(workingText, entityMap, wikiWrapOptions);
-      if (rateLimited && fallbackWrap.text !== workingText) {
-        recordAndSetEventDraft(fallbackWrap.text);
-        toast('AI đang quá tải (429/503), đã tự bọc link theo danh sách thẻ có sẵn.', 'warning');
-      } else {
-        toast(msg, rateLimited ? 'warning' : 'error');
-      }
-    } finally {
-      setIsLinkingAi(false);
-    }
-  };
-  const formatNotesStructureWithAI = async () => {
-    if (!eventText.trim()) {
-      toast('Chưa có nội dung để AI dàn khung.', 'warning');
-      return;
-    }
-    if (geminiKeys.length === 0) {
-      toast('Vui lòng thiết lập API Key để dùng AI dàn khung.', 'warning');
-      return;
-    }
-    const normalized = normalizeEventDraft(eventText).text;
-    const { text: truncated } = truncateForAI(normalized, geminiMode === 'quick' ? 7000 : undefined);
-    const payload = {
-      contents: [
-        {
-          parts: [
-            {
-              text: `Chủ thể ghi chú: ${milestoneSubject}\n\nVăn bản gốc:\n${truncated}`,
-            },
-          ],
-        },
-      ],
-      systemInstruction: {
-        parts: [{ text: ENTITY_NOTES_AI_STRUCTURE_SYSTEM_PROMPT }],
-      },
-    };
-    setIsFormattingStructure(true);
-    try {
-      const raw = await callGeminiAPIText(payload, geminiKeys, { timeoutMs: 45000 });
-      const formatted = safeString(raw)
-        .replace(/^```(?:markdown|md)?\s*/i, '')
-        .replace(/\s*```$/, '')
-        .trim();
-      if (!formatted) {
-        toast('AI chưa trả về bản dàn khung hợp lệ.', 'warning');
-        return;
-      }
-      if (formatted.length < normalized.length * 0.45) {
-        toast('AI trả về bản quá ngắn nên mình chưa áp dụng để tránh mất ý.', 'warning');
-        return;
-      }
-      const finalText = fixEntityNotesStructureOnly(formatted);
-      if (finalText === eventText) {
-        toast('AI chưa đề xuất bố cục mới rõ ràng.');
-        return;
-      }
-      recordAndSetEventDraft(finalText);
-      toast('AI đã dàn lại bố cục ghi chú sự kiện.');
-    } catch (error) {
-      toast(mapGeminiErrorToUserMessage(error), 'warning');
-    } finally {
-      setIsFormattingStructure(false);
-    }
-  };
   const handleRunEventAiPipeline = async (pipelineSteps) => {
     if (!eventText.trim()) {
       toast('Chưa có nội dung để chuẩn hoá.', 'warning');
@@ -4255,7 +4142,7 @@ export const ModalMilestone = ({
   if (!isOpen) return null;
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
+      className="fixed inset-0 z-[var(--z-modal-content)] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-label="Ghi chép mệnh số"
@@ -4665,7 +4552,7 @@ export const ModalQuickCreate = ({
   activeTabs,
   activeNovelData = null,
   onOpenExisting = null,
-  normalizeQuickCreateName = null,
+  normalizeQuickCreateName: _normalizeQuickCreateName = null,
 }) => {
     const [selectedPath, setSelectedPath] = useState('');
     
@@ -4694,7 +4581,7 @@ export const ModalQuickCreate = ({
     if (!isOpen) return null;
     return (
         <div
-          className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast"
+          className="fixed inset-0 z-[var(--z-modal-critical)] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast"
           role="dialog"
           aria-modal="true"
           aria-label="Ngưng tụ ý niệm"
@@ -4818,7 +4705,7 @@ export const ModalSettings = ({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
+      className="fixed inset-0 z-[var(--z-modal-backdrop)] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-label="Ấn ký và lưu trữ"
@@ -5089,7 +4976,7 @@ export const ModalConfirm = ({ isOpen, onClose, title, message, onConfirm }) => 
   if (!isOpen) return null;
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast"
+      className="fixed inset-0 z-[var(--z-modal-content)] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast"
       role="dialog"
       aria-modal="true"
       aria-label={safeString(title) || 'Xác nhận'}
@@ -5112,7 +4999,7 @@ export const ModalInsertImage = ({ isOpen, onClose, imageForm, setImageForm, han
   if (!isOpen) return null;
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast"
+      className="fixed inset-0 z-[var(--z-modal-content)] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast"
       role="dialog"
       aria-modal="true"
       aria-label="Pháp trận lưu ảnh"
@@ -5154,7 +5041,7 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
+      className="fixed inset-0 z-[var(--z-modal-content)] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-label={mode === "create" ? 'Khai sinh thư tịch' : 'Tu bổ thư tịch'}
@@ -5165,7 +5052,7 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
        >
           <div className="w-full md:w-2/5 bg-slate-950 p-8 flex flex-col items-center justify-center border-r border-slate-800 relative overflow-hidden">
              <div
-                className="w-full rounded-2xl border-2 border-dashed border-slate-700/80 flex flex-col items-center justify-center text-slate-500 relative overflow-hidden group bg-slate-900/50 z-10 shadow-2xl cursor-pointer hover:border-amber-600/50 transition-colors min-h-[180px]"
+                className="w-full rounded-2xl border-2 border-dashed border-slate-700/80 flex flex-col items-center justify-center text-slate-500 relative overflow-hidden group bg-slate-900/50 z-[var(--z-local-10)] shadow-2xl cursor-pointer hover:border-amber-600/50 transition-colors min-h-[180px]"
                 onClick={() => handlePickLocalImage && handlePickLocalImage((url) => patchFormData({ cover: url }), null, 'cover')}
                 title="Nhấp để chọn ảnh bìa từ máy tính"
              >
@@ -5196,7 +5083,7 @@ export const ModalAddNovel = ({ isOpen, onClose, formData, setFormData, onSave, 
              </div>
           </div>
 
-          <div className="w-full md:w-3/5 p-8 md:p-10 flex flex-col relative z-10">
+          <div className="w-full md:w-3/5 p-8 md:p-10 flex flex-col relative z-[var(--z-local-10)]">
              <h2 className="text-3xl font-heading font-bold text-amber-500 mb-2 flex items-center gap-3">
                <BookOpen size={28}/> {mode === "create" ? "Khai Sinh Thư Tịch" : "Tu Bổ Thư Tịch"}
              </h2>
@@ -5401,7 +5288,7 @@ export const ModalDeepSearch = ({ isOpen, onClose, novelsMetadata, performDeepSe
   if (!isOpen) return null;
   return (
     <div
-      className="fixed inset-0 z-[300] flex items-start justify-center bg-slate-950/95 backdrop-blur-md pt-[8vh] px-4 animate-fade-in"
+      className="fixed inset-0 z-[var(--z-modal-critical)] flex items-start justify-center bg-slate-950/95 backdrop-blur-md pt-[8vh] px-4 animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-label="Tra cứu toàn thư viện"
@@ -5543,7 +5430,7 @@ export const ModalInNovelSearch = ({ isOpen, onClose, novel, onSelectResult }) =
   if (!isOpen || !novel) return null;
   return (
     <div
-      className="fixed inset-0 z-[295] flex items-start justify-center bg-slate-950/95 backdrop-blur-md pt-[8vh] px-4 animate-fade-in"
+      className="fixed inset-0 z-[var(--z-modal-sheet)] flex items-start justify-center bg-slate-950/95 backdrop-blur-md pt-[8vh] px-4 animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-label="Tra cứu trong truyện"

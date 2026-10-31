@@ -324,14 +324,14 @@ const RelatedEntitiesNetworkSection = memo(function RelatedEntitiesNetworkSectio
                         <div className={`absolute inset-0 ${tabStyles.itemIconOverlayBg} opacity-0 group-hover:opacity-100 transition-opacity`} />
                       </div>
                       <div className="text-left min-w-0">
-                        <div className={`text-[14px] font-bold text-slate-200 ${tabStyles.itemNameHoverText} font-serif transition-colors truncate leading-tight relative z-10`}>
+                        <div className={`text-[14px] font-bold text-slate-200 ${tabStyles.itemNameHoverText} font-serif transition-colors truncate leading-tight relative z-[var(--z-local-10)]`}>
                           {renderHighlightedText(rel.entity.name, networkSearch)}
                         </div>
                         <div className="mt-2 flex flex-col gap-1 min-w-0">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full ${tabStyles.itemBadgeBg} border ${tabStyles.itemBadgeBorder} ${tabStyles.itemBadgeText} text-[10px] font-bold uppercase tracking-widest w-fit relative z-10`}>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full ${tabStyles.itemBadgeBg} border ${tabStyles.itemBadgeBorder} ${tabStyles.itemBadgeText} text-[10px] font-bold uppercase tracking-widest w-fit relative z-[var(--z-local-10)]`}>
                             {safeString(rel.tabLabel)}
                           </span>
-                          <div className="text-[9px] text-slate-400 font-serif line-clamp-1 leading-relaxed relative z-10">
+                          <div className="text-[9px] text-slate-400 font-serif line-clamp-1 leading-relaxed relative z-[var(--z-local-10)]">
                             {renderHighlightedText(rel.context, networkSearch)}
                           </div>
                         </div>

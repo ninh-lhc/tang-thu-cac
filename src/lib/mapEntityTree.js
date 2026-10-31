@@ -174,10 +174,6 @@ export function inferMapParentIdsFromViTri(entities) {
   return changed;
 }
 
-function sortEntitiesByName(a, b) {
-  return compareMapEntityNames(a, b);
-}
-
 /**
  * @returns {{ roots: object[], unattached: object[], nodesById: Map, childrenByParentId: Map }}
  * roots = có mặt trong rừng (không có cha hợp lệ trong tab)

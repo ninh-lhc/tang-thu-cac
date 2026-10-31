@@ -115,7 +115,7 @@ export function EntityNotesTableCellHighlightTextarea({
         aria-label={ariaLabel}
         placeholder={placeholder}
         spellCheck={false}
-        className={`relative z-10 ${SURFACE_CLASS} ${headerMin} ${focusGrow} ${maxHeightClass} resize-y overflow-x-hidden overflow-y-scroll bg-transparent outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/25 ${fontWeight} ${
+        className={`relative z-[var(--z-local-10)] ${SURFACE_CLASS} ${headerMin} ${focusGrow} ${maxHeightClass} resize-y overflow-x-hidden overflow-y-scroll bg-transparent outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/25 ${fontWeight} ${
           isFocused
             ? 'text-slate-200 caret-slate-100 focus-visible:bg-slate-950/55'
             : 'text-transparent caret-slate-100'

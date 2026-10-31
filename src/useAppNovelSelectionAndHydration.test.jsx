@@ -159,12 +159,14 @@ describe('useAppNovelSelectionAndHydration lazy shard load (AUD-003)', () => {
   });
 });
 
+const HARNESS_TABS = [{ id: 'tong-quan', label: 'Tổng quan', subTabs: [] }];
+
 function FullHydrateHarness({ loadNovelData, initialNovel }) {
   const [activeNovelData, setActiveNovelData] = useState(initialNovel);
   const lazyTabLoadInFlightRef = useRef(new Set());
   const lazyFullHydrateInFlightRef = useRef(new Set());
   const novelsMetadataRef = useRef([]);
-  const globalTabsConfigRef = useRef([{ id: 'tong-quan', label: 'Tổng quan', subTabs: [] }]);
+  const globalTabsConfigRef = useRef(HARNESS_TABS);
   const novelStatsByIdRef = useRef({});
   const deepSearchIndexByNovelIdRef = useRef(new Map());
 
@@ -173,7 +175,7 @@ function FullHydrateHarness({ loadNovelData, initialNovel }) {
     activeNovelData,
     activeTabLon: 'tong-quan',
     activeTabNho: null,
-    globalTabsConfig: globalTabsConfigRef.current,
+    globalTabsConfig: HARNESS_TABS,
     loadNovelData,
     syncNovel: noop,
     syncIndex: noop,

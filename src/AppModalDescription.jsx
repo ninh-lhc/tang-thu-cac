@@ -76,7 +76,7 @@ export const ModalDescription = ({
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast"
+      className="fixed inset-0 z-[var(--z-modal-content)] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-fast"
       role="dialog"
       aria-modal="true"
       aria-label="Khắc ghi miêu tả theo chương"

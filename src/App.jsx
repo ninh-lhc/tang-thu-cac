@@ -1776,7 +1776,7 @@ export default function App() {
         return { ...nho, entities };
       },
     });
-  }, [isActiveMapCollection, activeTabLon, activeTabNho, updateActiveNovelData]);
+  }, [isActiveMapCollection, activeTabLon, activeTabNho, updateActiveNovelData, activeNovelDataRef]);
   useEffect(() => {
     if (!activeNovelData?.id) return;
     updateActiveNovelData((nov) => {
@@ -2209,7 +2209,7 @@ export default function App() {
         'success'
       );
     },
-    [activeTabLon, activeTabNho, updateActiveNovelData, showToast]
+    [activeTabLon, activeTabNho, updateActiveNovelData, showToast, activeNovelDataRef]
   );
 
   const onEntityCardAddMilestone = useCallback((ent) => {

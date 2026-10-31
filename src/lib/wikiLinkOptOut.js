@@ -339,7 +339,6 @@ export function applyMergedOptOutsToAutoWrappedText(preparedText, wrappedText, o
     const wikiEnd = wikiStart + match[0].length;
     out += wrapped.slice(cursor, wikiStart);
     const anchor = safeString(match[1]).trim();
-    const wikiInner = match[1];
     const plainStart = plainIndexAtWrappedIndex(prepared, wrapped, wikiStart);
     const plainEnd = plainIndexAtWrappedIndex(prepared, wrapped, wikiEnd);
     let replacement = match[0];

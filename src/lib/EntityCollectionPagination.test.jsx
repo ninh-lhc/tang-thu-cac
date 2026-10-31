@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
-import { EntityCollectionPagination, buildPageNumbers } from './EntityCollectionPagination.jsx';
+import { buildPageNumbers } from './entityCollectionPagination.js';
+import { EntityCollectionPagination } from './EntityCollectionPagination.jsx';
 
 afterEach(() => {
   cleanup();

@@ -185,7 +185,7 @@ export const EntityNotesHighlightedEditor = forwardRef(function EntityNotesHighl
         onCompositionEnd={onCompositionEnd}
         spellCheck={spellCheck}
         placeholder={placeholder}
-        className={`relative z-10 block size-full min-h-0 flex-1 resize-none overflow-y-scroll overflow-x-hidden bg-transparent text-transparent caret-slate-100 outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/25 ${EDITOR_SURFACE_CLASS}`}
+        className={`relative z-[var(--z-local-10)] block size-full min-h-0 flex-1 resize-none overflow-y-scroll overflow-x-hidden bg-transparent text-transparent caret-slate-100 outline-none placeholder:text-slate-500 custom-scrollbar selection:bg-violet-500/25 ${EDITOR_SURFACE_CLASS}`}
         style={{
           ...surfaceStyle,
           WebkitTextFillColor: 'transparent',

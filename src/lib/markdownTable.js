@@ -159,13 +159,6 @@ function isLikelyTableHeaderBeforeSeparator(headerLine, sepLine) {
   return h.includes('|');
 }
 
-function normalizeTableRowForParse(line) {
-  const raw = String(line ?? '');
-  if (isMarkdownTableRowLine(raw)) return raw;
-  const normalized = normalizeMarkdownTableRowLine(raw);
-  return isMarkdownTableRowLine(normalized) ? normalized : raw;
-}
-
 function stripCarriageReturn(line) {
   return String(line ?? '').replace(/\r$/, '');
 }
@@ -246,7 +239,7 @@ export function joinPhysicalLinesIntoLogicalTableRows(physicalLines, expectedCol
   return logical;
 }
 
-function collectPhysicalTableBodyLines(lines, startIndex, expectedColCount) {
+function collectPhysicalTableBodyLines(lines, startIndex, _expectedColCount) {
   const physical = [];
   let idx = startIndex;
 

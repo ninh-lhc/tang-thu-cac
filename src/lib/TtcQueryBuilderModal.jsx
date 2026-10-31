@@ -171,7 +171,7 @@ export function TtcQueryBuilderModal({
 
   const dialog = (
     <div
-      className="fixed inset-0 z-[1000] flex items-stretch justify-center bg-slate-950/70 p-[4vh_4vw]"
+      className="fixed inset-0 z-[var(--z-modal-system)] flex items-stretch justify-center bg-slate-950/70 p-[4vh_4vw]"
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();

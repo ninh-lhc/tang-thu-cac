@@ -137,7 +137,7 @@ export function AppNovelTocRail({
 
   return (
     <div
-      className={`bg-slate-900 border-r border-slate-800 transition-[width] duration-200 ease-out flex flex-col z-20 flex-shrink-0 h-full ${
+      className={`bg-slate-900 border-r border-slate-800 transition-[width] duration-200 ease-out flex flex-col z-[var(--z-local-20)] flex-shrink-0 h-full ${
         menu2Expanded ? 'w-max min-w-48' : 'w-12'
       }`}
       onMouseEnter={handleMenu2MouseEnter}

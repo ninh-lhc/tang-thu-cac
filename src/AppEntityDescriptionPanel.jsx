@@ -114,7 +114,7 @@ export const AppEntityDescriptionPanel = memo(function AppEntityDescriptionPanel
           <div className="animate-fade-in">
             <div className="relative bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-[40px] p-8 shadow-2xl overflow-hidden group">
               <div className="absolute top-0 right-0 w-40 h-40 bg-amber-600/5 rounded-bl-[40px] pointer-events-none transition-transform duration-700 group-hover:scale-110" />
-              <div className="flex justify-end gap-2 mb-4 relative z-10">
+              <div className="flex justify-end gap-2 mb-4 relative z-[var(--z-local-10)]">
                 <button
                   type="button"
                   onClick={handleEditSelected}
@@ -132,7 +132,7 @@ export const AppEntityDescriptionPanel = memo(function AppEntityDescriptionPanel
                   <Trash2 size={18} />
                 </button>
               </div>
-              <div className="prose prose-invert max-w-none relative z-10 text-[17px] text-slate-200 font-serif leading-loose whitespace-pre-wrap">
+              <div className="prose prose-invert max-w-none relative z-[var(--z-local-10)] text-[17px] text-slate-200 font-serif leading-loose whitespace-pre-wrap">
                 {renderMarkdown(
                   safeString(selected.content),
                   currentContextDirHandle,

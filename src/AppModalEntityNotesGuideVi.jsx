@@ -28,7 +28,7 @@ export function AppModalEntityNotesGuide({ isOpen, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[230] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
+      className="fixed inset-0 z-[var(--z-modal-guide)] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-label="Hướng dẫn ghi chép chi tiết"

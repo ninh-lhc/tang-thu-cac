@@ -389,11 +389,15 @@ export const AppMapEntityTreePanel = memo(function AppMapEntityTreePanel({
     if (hintTimerRef.current) window.clearTimeout(hintTimerRef.current);
   }, []);
 
+  // Chỉ khi đổi thẻ đang chọn hoặc danh sách. Thu gọn tay sau đó phải giữ nguyên.
   useEffect(() => {
     if (!selectedId) return;
-    const ancestors = buildMapBreadcrumb(entities, selectedId, { includeSelf: false });
-    const ancestorIds = ancestors.map((item) => safeString(item?.id)).filter(Boolean);
+    const ancestorIds = buildMapBreadcrumb(entities, selectedId, { includeSelf: false })
+      .map((item) => safeString(item?.id))
+      .filter(Boolean);
     if (ancestorIds.length === 0) return;
+    // Mở tổ tiên một lần khi đổi thẻ hoặc danh sách. setState lúc render sẽ bung lại mỗi frame.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deps chỉ selectedId và entities; functional update giữ nguyên prev nếu không còn tổ tiên đang thu
     setCollapsedIds((prev) => {
       let changed = false;
       const next = new Set(prev);

@@ -5,7 +5,7 @@
 // Notes: violet = hồ sơ nhúng; emerald = thẻ thật cùng tab. Cả hai có ẩn/hiện.
 // ==========================================
 
-import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useMemo, useState } from 'react';
 import { Columns2, ChevronDown, ChevronUp, Eye, EyeOff, FolderTree, LayoutPanelTop, Users } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
 import { AppEntityMembersPanel } from './AppEntityMembersPanel.jsx';
@@ -91,7 +91,6 @@ export const AppEntityStructureHub = memo(function AppEntityStructureHub({
   );
   // Mỗi lần mở/chuyển thẻ đều bắt đầu thu gọn; người dùng chủ động mở khi cần.
   const [hubOpen, setHubOpen] = useState(false);
-  const previousScopeKeyRef = useRef(scopeKey);
   const [mode, setMode] = useState(() =>
     readHubMode(
       scopeKey,
@@ -101,10 +100,10 @@ export const AppEntityStructureHub = memo(function AppEntityStructureHub({
       })
     )
   );
-
-  useEffect(() => {
-    const openedAnotherEntity = previousScopeKeyRef.current !== scopeKey;
-    previousScopeKeyRef.current = scopeKey;
+  const [appliedScope, setAppliedScope] = useState({ scopeKey, treeFeatureOn });
+  if (appliedScope.scopeKey !== scopeKey || appliedScope.treeFeatureOn !== treeFeatureOn) {
+    const openedAnotherEntity = appliedScope.scopeKey !== scopeKey;
+    setAppliedScope({ scopeKey, treeFeatureOn });
     setMembersFeatureOn(readMembersFeatureOn(scopeKey, true));
     if (openedAnotherEntity) setHubOpen(false);
     setMode(
@@ -116,22 +115,13 @@ export const AppEntityStructureHub = memo(function AppEntityStructureHub({
         })
       )
     );
-  }, [scopeKey, treeFeatureOn]);
-
-  useEffect(() => {
-    if (!membersFeatureOn && mode === 'members') {
-      setMode(treeFeatureOn ? 'tree' : 'members');
-    }
-    if (!membersFeatureOn && mode === 'split') {
-      setMode(treeFeatureOn ? 'tree' : 'members');
-    }
-    if (!treeFeatureOn && mode === 'tree') {
-      setMode(membersFeatureOn ? 'members' : 'members');
-    }
-    if (!treeFeatureOn && mode === 'split') {
-      setMode(membersFeatureOn ? 'members' : 'members');
-    }
-  }, [membersFeatureOn, treeFeatureOn, mode]);
+  }
+  if (!membersFeatureOn && (mode === 'members' || mode === 'split')) {
+    setMode(treeFeatureOn ? 'tree' : 'members');
+  }
+  if (!treeFeatureOn && (mode === 'tree' || mode === 'split')) {
+    setMode('members');
+  }
 
   const setHubMode = (next) => {
     setMode(next);

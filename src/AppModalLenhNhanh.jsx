@@ -58,7 +58,7 @@ export function AppModalLenhNhanh({
 
   return (
     <div
-      className="fixed inset-0 z-[250] flex items-start justify-center pt-[12vh] px-4 bg-slate-950/85 backdrop-blur-md animate-fade-fast"
+      className="fixed inset-0 z-[var(--z-modal-command)] flex items-start justify-center pt-[12vh] px-4 bg-slate-950/85 backdrop-blur-md animate-fade-fast"
       role="dialog"
       aria-modal="true"
       aria-label="Lệnh nhanh"

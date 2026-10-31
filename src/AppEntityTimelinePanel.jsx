@@ -505,7 +505,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
             <div className="animate-fade-in space-y-6">
               <div className="relative bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-[40px] p-8 shadow-2xl overflow-hidden group">
                 <div className="absolute top-0 right-0 w-40 h-40 bg-amber-600/5 rounded-bl-[40px] pointer-events-none transition-transform duration-700 group-hover:scale-110"></div>
-                <div className="flex justify-between items-start mb-6 relative z-10">
+                <div className="flex justify-between items-start mb-6 relative z-[var(--z-local-10)]">
                   <div className="flex-1 pr-6">
                     <div className="flex items-center gap-2 mb-2 text-amber-600/80">
                       <History size={14}/> <span className="text-[10px] uppercase font-bold tracking-widest">Kỷ Nguyên / Sự kiện</span>
@@ -557,7 +557,7 @@ export const AppEntityTimelinePanel = memo(function AppEntityTimelinePanel({
                     <button onClick={() => handleDeleteMilestone(selectedMs.id)} className="p-2.5 bg-slate-950/50 hover:bg-rose-950 hover:text-rose-400 text-slate-500 rounded-xl transition-all border border-slate-800 hover:border-rose-900/50 shadow-sm" title="Xóa mốc thời gian này"><Trash2 size={18}/></button>
                   </div>
                 </div>
-                <div className="relative z-10 font-serif max-w-none text-slate-200/95">
+                <div className="relative z-[var(--z-local-10)] font-serif max-w-none text-slate-200/95">
                   {renderEntityNotesMarkdown(
                     selectedBody,
                     currentContextDirHandle,

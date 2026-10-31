@@ -100,7 +100,7 @@ describe('EntityNotesMarkdownTableEdit', () => {
     const th = document.querySelector('.entity-notes-table-edit-th');
     expect(th?.className).toContain('sticky');
     expect(th?.className).toContain('top-0');
-    expect(th?.className).toContain('z-30');
+    expect(th?.className).toContain('z-[var(--z-local-30)]');
     expect(document.querySelector('thead[data-testid="entity-notes-table-edit-thead"]')?.className).toContain(
       '[position:static]',
     );

@@ -8,7 +8,6 @@ import { parseTtcQuery, DEFAULT_LIMIT, MAX_LIMIT } from './ttcQueryParser.js';
 import {
   buildTtcEntityRowContext,
   isTtcVirtualField,
-  normalizeTtcTabsList,
   ttcDisplayVirtualValue,
   ttcLonIdMatches,
   ttcNhoIdMatches,

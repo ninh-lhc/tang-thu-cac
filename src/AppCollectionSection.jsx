@@ -192,7 +192,6 @@ export function AppCollectionSection({
   handleDetachMapEntity,
   mapListBranchMode,
   setMapListBranchMode,
-  entityTreeListRootId,
   setEntityTreeListRootId,
   entityTreeListRootName,
   hasEntityTreeLinks,
@@ -488,7 +487,7 @@ export function AppCollectionSection({
     <div className="animate-fade-in flex flex-col h-full">
       {/* ===== HEADER: breadcrumb + tiêu đề + toolbar (một hàng cố định) ===== */}
       <div
-        className="mb-4 border-b border-slate-800 pb-5 relative z-30"
+        className="mb-4 border-b border-slate-800 pb-5 relative z-[var(--z-local-30)]"
         ref={entityAdvancedRef}
       >
         {/* Hàng 1: tiêu đề (trái) + toolbar buttons (phải) — không đổi chiều cao */}
@@ -513,7 +512,7 @@ export function AppCollectionSection({
             </h2>
           </div>
 
-          <div className="relative z-40 flex items-center gap-2.5 flex-shrink-0 flex-wrap justify-end">
+          <div className="relative z-[var(--z-local-40)] flex items-center gap-2.5 flex-shrink-0 flex-wrap justify-end">
             {!activeTabNho && currentTabConfig?.subTabs?.length > 0 ? null : currentTabConfig?.viewType === 'collection-track' ? (<>
               <button
                 type="button"
@@ -786,7 +785,7 @@ export function AppCollectionSection({
         </div>
       ) : currentTabConfig?.viewType === 'collection-track' ? (
         /* Collection-track view */
-        <div className="flex flex-col flex-1 h-full animate-fade-in relative z-0">
+        <div className="flex flex-col flex-1 h-full animate-fade-in relative z-[var(--z-base)]">
           <AppCollectionTrackTabs
             collectionSubTab={collectionSubTab}
             setCollectionSubTab={setCollectionSubTab}
@@ -799,7 +798,7 @@ export function AppCollectionSection({
 
           <div id="collection-scroll-container" className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-10 relative">
             {isCollectionSwitching && (
-              <div className="absolute inset-0 z-10 pointer-events-none bg-slate-950/20 backdrop-blur-[1px] animate-fade-in" />
+              <div className="absolute inset-0 z-[var(--z-local-10)] pointer-events-none bg-slate-950/20 backdrop-blur-[1px] animate-fade-in" />
             )}
             <AppGalleryContent
               collectionSubTab={collectionSubTab}

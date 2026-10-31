@@ -39,7 +39,7 @@ export function AppModalMotCua({
 
   return (
     <div
-      className="fixed inset-0 z-[218] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm p-4 animate-fade-in"
+      className="fixed inset-0 z-[var(--z-modal-hub)] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm p-4 animate-fade-in"
       onClick={() => !hubCreateBusy && !hubUpdatePanel?.loading && onClose()}
       role="dialog"
       aria-modal="true"

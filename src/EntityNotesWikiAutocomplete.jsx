@@ -29,7 +29,7 @@ export function EntityNotesWikiAutocomplete({
     <div
       role="listbox"
       aria-label="Gợi ý wiki-link"
-      className="absolute z-30 max-h-56 min-w-[14rem] overflow-y-auto custom-scrollbar rounded-xl border border-slate-700/80 bg-slate-950/95 py-1 shadow-2xl"
+      className="absolute z-[var(--z-local-30)] max-h-56 min-w-[14rem] overflow-y-auto custom-scrollbar rounded-xl border border-slate-700/80 bg-slate-950/95 py-1 shadow-2xl"
       style={style || undefined}
     >
       {items.map((item, idx) => {

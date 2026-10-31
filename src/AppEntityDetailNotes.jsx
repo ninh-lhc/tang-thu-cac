@@ -15,7 +15,7 @@ import {
 import { EntityNotesAiToolsMenu } from './EntityNotesAiToolsMenu.jsx';
 import { EntityNotesFindReplacePanel } from './EntityNotesFindReplacePanel.jsx';
 import { TtcQueryBuilderModal } from './lib/TtcQueryBuilderModal.jsx';
-import { buildEntityNotesPreviewModel, renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
+import { buildEntityNotesPreviewModel } from './lib/renderEntityNotesMarkdown.jsx';
 import { EntityNotesMarkdownTableEditModal } from './EntityNotesMarkdownTableEditModal.jsx';
 import {
   getMarkdownTableBlockByIndex,
@@ -41,7 +41,6 @@ import {
   readWikiLinkOptOuts,
   resolveEffectiveWikiLinkOptOuts,
 } from './lib/wikiLinkOptOut.js';
-import { cleanupEntityNotesText } from './lib/entityNotesTextCleanup.js';
 import { prepareEntityNotesPasteText } from './lib/entityNotesEditorPaste.js';
 import { prepareEntityNotesForSave } from './lib/entityNotesDiagnostics.js';
 import { focusEntityNotesTextarea } from './lib/entityNotesEditorSelection.js';
@@ -1139,9 +1138,9 @@ export const AppEntityDetailNotes = memo(function AppEntityDetailNotes({
     }
   }, [isCurrentTimelineMode, isEntityEditing, setIsEntityEditing]);
 
-  useEffect(() => {
-    if (!isEntityEditing) setEditInfoBootstrap(null);
-  }, [isEntityEditing]);
+  if (!isEntityEditing && editInfoBootstrap != null) {
+    setEditInfoBootstrap(null);
+  }
 
   const readMarkdownTableBlock = useMemo(() => {
     if (readTableEditIndex == null || isEntityEditing) return null;

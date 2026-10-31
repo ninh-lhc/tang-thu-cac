@@ -38,7 +38,7 @@ export function AppModalEntityTransfer({ request, tabsConfig, source, onClose, o
   const isPromote = request.mode === 'promote';
 
   return (
-    <div className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[var(--z-modal-transfer)] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onMouseDown={onClose}>
       <div className="w-full max-w-lg rounded-2xl border border-cyan-800/50 bg-slate-950 p-5 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-4">
           <div>

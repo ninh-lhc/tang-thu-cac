@@ -48,7 +48,7 @@ import {
   readMemberKind,
   resolveMemberKindDef,
 } from './lib/entityMemberKind.js';
-import { getMemberKindIcon } from './lib/entityMemberKindIcons.jsx';
+import { MemberKindIcon } from './lib/entityMemberKindIcons.jsx';
 import {
   buildMemberForest,
   flattenMemberForest,
@@ -220,7 +220,6 @@ function MemberTreeNode({
   const childCount = children.length;
   const hasParent = Boolean(readMemberParentId(member));
   const kindDef = resolveMemberKindDef(member?.kind);
-  const KindIcon = getMemberKindIcon(member?.kind);
   const roleLine = formatMemberRoleLine(member);
   const rankStyle = resolveMemberRankStyle({
     role: member?.role,
@@ -373,7 +372,7 @@ function MemberTreeNode({
             className={`inline-flex shrink-0 items-center gap-0.5 rounded-md border px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${kindDef.chip}`}
             title={kindDef.label}
           >
-            <KindIcon size={10} className="shrink-0 opacity-90" />
+            <MemberKindIcon kind={member?.kind} size={10} className="shrink-0 opacity-90" />
             <span className="hidden sm:inline">{kindDef.shortLabel}</span>
           </span>
           {roleLine ? (
@@ -506,12 +505,12 @@ function MemberTreeNode({
         </div>
 
         {isDropTarget && dropPos === 'before' && (
-          <span className="pointer-events-none absolute inset-x-1 top-0 z-10 h-0.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.7)]">
+          <span className="pointer-events-none absolute inset-x-1 top-0 z-[var(--z-local-10)] h-0.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.7)]">
             <span className="absolute -left-0.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-cyan-300" />
           </span>
         )}
         {isDropTarget && dropPos === 'after' && (
-          <span className="pointer-events-none absolute inset-x-1 bottom-0 z-10 h-0.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.7)]">
+          <span className="pointer-events-none absolute inset-x-1 bottom-0 z-[var(--z-local-10)] h-0.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.7)]">
             <span className="absolute -left-0.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-cyan-300" />
           </span>
         )}
@@ -576,6 +575,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
 }) {
   const members = useMemo(() => readEntityMembers(selectedEntity), [selectedEntity]);
   const [kindFilter, setKindFilter] = useState(MEMBER_KIND_FILTER_ALL);
+  const selectedMemberEntityId = selectedEntity?.id;
   const kindCounts = useMemo(() => countMembersByKind(members), [members]);
   const membersForView = useMemo(() => {
     const filtered = filterMembersByKind(members, kindFilter);
@@ -611,20 +611,14 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
   const hintTimerRef = useRef(0);
   const rootEnterCountRef = useRef(0);
 
-  useEffect(() => {
-    if (!isLabelEditorOpen) {
-      setLabelDraft({ ...resolvedLabels });
-      setPanelTitleDraft(resolvedPanelTitle);
-    }
-  }, [resolvedLabels, resolvedPanelTitle, isLabelEditorOpen]);
-
-  useEffect(() => {
-    setKindFilter(MEMBER_KIND_FILTER_ALL);
-  }, [selectedEntity?.id]);
-
   useEffect(() => () => {
     if (hintTimerRef.current) window.clearTimeout(hintTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset bộ lọc loại khi đổi thẻ cha; không chạy lại khi chỉ đổi filter
+    setKindFilter(MEMBER_KIND_FILTER_ALL);
+  }, [selectedMemberEntityId]);
 
   const showHint = useCallback((message) => {
     setStatusHint(safeString(message));
@@ -651,6 +645,24 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
     setIsPanelOpen(open);
     writePanelOpen(scopeKey, open);
   };
+  const resetLabelDrafts = () => {
+    setLabelDraft({ ...resolvedLabels });
+    setPanelTitleDraft(resolvedPanelTitle);
+  };
+  const handleCancelLabelEdit = () => {
+    resetLabelDrafts();
+    setIsLabelEditorOpen(false);
+  };
+  const handleToggleLabelEditor = ({ openPanel = false } = {}) => {
+    if (openPanel) setPanelOpen(true);
+    setIsFormOpen(false);
+    if (isLabelEditorOpen) {
+      handleCancelLabelEdit();
+      return;
+    }
+    resetLabelDrafts();
+    setIsLabelEditorOpen(true);
+  };
   const startCreate = (parentMember = null) => {
     setDraft({
       ...EMPTY_MEMBER_DRAFT,
@@ -658,7 +670,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
       parentId: parentMember?.id || null,
     });
     setIsFormOpen(true);
-    setIsLabelEditorOpen(false);
+    handleCancelLabelEdit();
   };
   const startCreateAndOpen = () => {
     setPanelOpen(true);
@@ -668,7 +680,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
     setPanelOpen(true);
     setDraft(toDraft(member));
     setIsFormOpen(true);
-    setIsLabelEditorOpen(false);
+    handleCancelLabelEdit();
   };
 
   const handleSubmit = (event) => {
@@ -833,7 +845,6 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
       {MEMBER_KINDS.map((kind) => {
         const count = kindCounts[kind.id] || 0;
         if (count === 0 && kindFilter !== kind.id) return null;
-        const Icon = getMemberKindIcon(kind.id);
         return (
           <button
             key={kind.id}
@@ -842,7 +853,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
             className={`tt-kbd-focus inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wide transition-colors ${kindFilterBtnClass(kindFilter === kind.id)}`}
             title={kind.label}
           >
-            <Icon size={11} />
+            <MemberKindIcon kind={kind.id} size={11} />
             {kind.shortLabel}
             <span className="tabular-nums opacity-75">{count}</span>
           </button>
@@ -894,11 +905,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
           )}
           <button
             type="button"
-            onClick={() => {
-              setPanelOpen(true);
-              setIsLabelEditorOpen((open) => !open);
-              setIsFormOpen(false);
-            }}
+            onClick={() => handleToggleLabelEditor({ openPanel: true })}
             title="Đổi tiêu đề panel và nhãn 4 trường"
             className={`tt-kbd-focus flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-bold transition-colors ${
               isLabelEditorOpen
@@ -945,10 +952,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
           <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              onClick={() => {
-                setIsLabelEditorOpen((open) => !open);
-                setIsFormOpen(false);
-              }}
+              onClick={() => handleToggleLabelEditor()}
               className={`tt-kbd-focus flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] font-bold ${
                 isLabelEditorOpen
                   ? 'border-violet-600/55 bg-violet-950/30 text-violet-200'
@@ -1051,7 +1055,6 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                       const name = safeString(member.name).trim();
                       const roleLine = [member.role, member.status].map(safeString).filter(Boolean).join(' · ');
                       const kindDef = resolveMemberKindDef(member?.kind);
-                      const KindIcon = getMemberKindIcon(member?.kind);
                       return (
                         <div
                           key={member.id}
@@ -1071,7 +1074,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                               className={`inline-flex shrink-0 items-center gap-0.5 rounded-md border px-1 py-0.5 text-[9px] font-bold uppercase ${kindDef.chip}`}
                               title={kindDef.label}
                             >
-                              <KindIcon size={10} />
+                              <MemberKindIcon kind={member?.kind} size={10} />
                             </span>
                             {roleLine ? (
                               <span
@@ -1166,7 +1169,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsLabelEditorOpen(false)}
+                  onClick={handleCancelLabelEdit}
                   className="tt-kbd-focus flex h-8 items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 px-2.5 text-[11px] font-bold text-slate-300 hover:text-slate-100"
                 >
                   <X size={13} /> Hủy
@@ -1244,7 +1247,6 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                 </legend>
                 <div className="flex flex-wrap gap-1.5">
                   {MEMBER_KINDS.map((kind) => {
-                    const Icon = getMemberKindIcon(kind.id);
                     const active = readMemberKind(draft) === kind.id;
                     return (
                       <button
@@ -1255,7 +1257,7 @@ export const AppEntityMembersPanel = memo(function AppEntityMembersPanel({
                           active ? kind.chip : 'border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-200'
                         }`}
                       >
-                        <Icon size={13} />
+                        <MemberKindIcon kind={kind.id} size={13} />
                         {kind.label}
                       </button>
                     );

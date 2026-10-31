@@ -43,14 +43,12 @@ export function EntityNotesMarkdownTableEditModal({
     [trapRef],
   );
   const [grid, setGrid] = useState(null);
-
-  useEffect(() => {
-    if (!isOpen || !tableBlock) {
-      setGrid(null);
-      return;
-    }
-    setGrid(tableBlockToEditGrid(tableBlock));
-  }, [isOpen, tableBlock]);
+  const [gridBlock, setGridBlock] = useState(undefined);
+  const nextGridBlock = isOpen && tableBlock ? tableBlock : null;
+  if (gridBlock !== nextGridBlock) {
+    setGridBlock(nextGridBlock);
+    setGrid(nextGridBlock ? tableBlockToEditGrid(nextGridBlock) : null);
+  }
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -164,7 +162,7 @@ export function EntityNotesMarkdownTableEditModal({
   const dialog = (
     <div
       data-testid="entity-notes-table-edit-modal-overlay"
-      className="fixed inset-0 z-[260] box-border flex h-dvh max-h-dvh w-full items-center justify-center overflow-x-hidden overflow-y-auto bg-slate-950/85 p-3 backdrop-blur-sm sm:p-4"
+      className="fixed inset-0 z-[var(--z-modal-float)] box-border flex h-dvh max-h-dvh w-full items-center justify-center overflow-x-hidden overflow-y-auto bg-slate-950/85 p-3 backdrop-blur-sm sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Chỉnh sửa bảng Markdown"
@@ -228,7 +226,7 @@ export function EntityNotesMarkdownTableEditModal({
                   {grid.header.map((cell, ci) => (
                     <th
                       key={`th-${ci}`}
-                      className="entity-notes-table-edit-th sticky top-0 z-30 border border-slate-700/50 bg-slate-950 p-0 align-top [background-clip:padding-box] shadow-[0_1px_0_0_rgba(51,65,85,0.75)] [&_.markdown-table-cell-highlight]:bg-slate-950"
+                      className="entity-notes-table-edit-th sticky top-0 z-[var(--z-local-30)] border border-slate-700/50 bg-slate-950 p-0 align-top [background-clip:padding-box] shadow-[0_1px_0_0_rgba(51,65,85,0.75)] [&_.markdown-table-cell-highlight]:bg-slate-950"
                     >
                       <EntityNotesTableCellHighlightTextarea
                         value={cell}
@@ -245,13 +243,13 @@ export function EntityNotesMarkdownTableEditModal({
                   ))}
                 </tr>
               </thead>
-              <tbody className="relative z-0">
+              <tbody className="relative z-[var(--z-base)]">
                 {grid.rows.map((row, ri) => (
                   <tr key={`tr-${ri}`} className={ri % 2 === 1 ? 'bg-slate-900/55' : 'bg-slate-900/40'}>
                     {row.map((cell, ci) => (
                       <td
                         key={`td-${ri}-${ci}`}
-                        className="entity-notes-table-edit-td isolate border border-slate-700/40 bg-slate-900/40 p-0 align-top [z-index:0]"
+                        className="entity-notes-table-edit-td isolate border border-slate-700/40 bg-slate-900/40 p-0 align-top [z-index:var(--z-base)]"
                       >
                         <EntityNotesTableCellHighlightTextarea
                           value={cell}
@@ -275,7 +273,7 @@ export function EntityNotesMarkdownTableEditModal({
 
         <footer
           data-testid="entity-notes-table-edit-footer"
-          className="relative z-[2] flex w-full min-w-0 shrink-0 flex-col gap-3 overflow-hidden border-t border-slate-800 bg-slate-900/95 px-4 py-3 backdrop-blur-sm sm:px-5 sm:py-4"
+          className="relative z-[var(--z-sticky)] flex w-full min-w-0 shrink-0 flex-col gap-3 overflow-hidden border-t border-slate-800 bg-slate-900/95 px-4 py-3 backdrop-blur-sm sm:px-5 sm:py-4"
         >
           <p className="text-[11px] leading-relaxed text-slate-500">
             Xuống dòng trong ô sẽ lưu thành <code className="text-slate-400">&lt;br&gt;</code> trong Markdown. Giữ nguyên{' '}

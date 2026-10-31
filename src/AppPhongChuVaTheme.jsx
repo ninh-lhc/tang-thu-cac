@@ -55,7 +55,31 @@ const APP_GLOBAL_CSS = `
           --tt-prose-max   : 65rem;
           --tt-toast-max-w : 42rem;
           --tt-toast-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
-          --tt-toast-z     : 300;
+          /* Z-index. Toast (300) luôn trên mọi modal.
+             Thứ tự modal giữ nguyên tương đối, nén xuống dưới toast.
+             Toast căn đáy giữa nên không đè nút đóng (góc trên modal). */
+          --z-base: 0;
+          --z-local-10: 10;
+          --z-local-20: 20;
+          --z-local-30: 30;
+          --z-local-40: 40;
+          --z-sticky: 2;
+          --z-dropdown: 100;
+          --z-modal-backdrop: 200;
+          --z-modal-transfer: 206;
+          --z-modal-content: 210;
+          --z-modal-suggest: 216;
+          --z-modal-hub: 222;
+          --z-modal-guide: 230;
+          --z-modal-command: 245;
+          --z-modal-float: 255;
+          --z-modal-sheet: 275;
+          --z-modal-critical: 285;
+          --z-overlay: 290;
+          --z-lightbox: 295;
+          --z-modal-system: 298;
+          --z-toast: 300;
+          --tt-toast-z: var(--z-toast);
         }
 
         /* Desktop / laptop: vòng focus bàn phím thống nhất (gắn class tt-kbd-focus) */
@@ -83,7 +107,7 @@ const APP_GLOBAL_CSS = `
         .theme-wrapper .entity-notes-md-table-th {
           position: sticky;
           top: 0;
-          z-index: 2;
+          z-index: var(--z-sticky);
           vertical-align: top;
           border: 1px solid rgba(51, 65, 85, 0.55);
           padding: 0.625rem 0.75rem;
@@ -142,7 +166,7 @@ const APP_GLOBAL_CSS = `
           right: auto;
           bottom: var(--tt-toast-bottom);
           transform: translateX(-50%);
-          z-index: var(--tt-toast-z);
+          z-index: var(--z-toast);
           box-sizing: border-box;
           width: fit-content;
           max-width: min(var(--tt-toast-max-w), calc(100vw - 2rem));

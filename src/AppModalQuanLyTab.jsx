@@ -138,7 +138,7 @@ export function AppModalQuanLyTab({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
+      className="fixed inset-0 z-[var(--z-modal-backdrop)] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-label="Tran phap cai tao"
@@ -854,7 +854,7 @@ export function AppModalQuanLyTab({
             ))}
           </AppSectionErrorBoundary>
         </div>
-        <div className="p-5 border-t border-slate-800 bg-slate-950 flex justify-between items-center z-10">
+        <div className="p-5 border-t border-slate-800 bg-slate-950 flex justify-between items-center z-[var(--z-local-10)]">
           <span className="text-xs text-slate-500 italic flex items-center gap-2">
             <LayoutGrid size={12} /> Lưới = Chế độ Quản lý Thực Thể
           </span>

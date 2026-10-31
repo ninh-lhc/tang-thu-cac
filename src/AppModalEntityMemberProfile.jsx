@@ -11,7 +11,7 @@ import { ExternalLink, Link2, Shield, X } from 'lucide-react';
 import { safeString } from './MasterUtils.jsx';
 import { DEFAULT_MEMBER_FIELD_LABELS } from './lib/entityMembers.js';
 import { readMemberKind, resolveMemberKindDef } from './lib/entityMemberKind.js';
-import { getMemberKindIcon } from './lib/entityMemberKindIcons.jsx';
+import { MemberKindIcon } from './lib/entityMemberKindIcons.jsx';
 import { renderEntityNotesMarkdown } from './lib/renderEntityNotesMarkdown.jsx';
 import { readWikiLinkOptOuts } from './lib/wikiLinkOptOut.js';
 import { useFocusTrap } from './lib/useFocusTrap.js';
@@ -46,13 +46,12 @@ export function AppModalEntityMemberProfile({
   const role = safeString(member.role).trim();
   const status = safeString(member.status).trim();
   const kindDef = resolveMemberKindDef(readMemberKind(member));
-  const KindIcon = getMemberKindIcon(member?.kind);
   const parentName = safeString(parentEntity?.name || profile.parentLabel).trim();
   const scopeLabel = [profile.lonLabel, profile.tabLabel].map(safeString).filter(Boolean).join(' › ');
 
   return (
     <div
-      className="fixed inset-0 z-[260] flex items-center justify-center bg-slate-950/80 p-3 sm:p-5 backdrop-blur-sm animate-fade-fast"
+      className="fixed inset-0 z-[var(--z-modal-float)] flex items-center justify-center bg-slate-950/80 p-3 sm:p-5 backdrop-blur-sm animate-fade-fast"
       role="dialog"
       aria-modal="true"
       aria-label={`Hồ sơ ${panelTitle.toLowerCase()} ${memberName}`}
@@ -67,7 +66,7 @@ export function AppModalEntityMemberProfile({
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800 bg-slate-900/70 px-5 py-4 sm:px-6">
           <div className="flex min-w-0 items-start gap-3">
             <span className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-violet-600/45 bg-violet-950/35 text-violet-200">
-              <KindIcon size={20} />
+              <MemberKindIcon kind={member?.kind} size={20} />
             </span>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">

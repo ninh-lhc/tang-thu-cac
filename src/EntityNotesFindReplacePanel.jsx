@@ -205,7 +205,7 @@ export const EntityNotesFindReplacePanel = forwardRef(function EntityNotesFindRe
       </button>
 
       {open && (
-        <div className="absolute right-0 bottom-full z-30 mb-2 w-[min(100vw-2rem,360px)] rounded-2xl border border-slate-700/90 bg-slate-950/95 p-3 shadow-2xl backdrop-blur-md">
+        <div className="absolute right-0 bottom-full z-[var(--z-local-30)] mb-2 w-[min(100vw-2rem,360px)] rounded-2xl border border-slate-700/90 bg-slate-950/95 p-3 shadow-2xl backdrop-blur-md">
           <div className="mb-2.5 flex items-center justify-between gap-2">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-widest text-amber-200/90">

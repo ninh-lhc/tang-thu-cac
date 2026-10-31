@@ -1,5 +1,6 @@
 {
   "name": "tang-thu-cac",
+  "description": "Tàng Thư Các — SPA Vite 8 + React 19, chạy trong trình duyệt (Chrome/Edge). Lưu bằng File System Access API, localStorage và IndexedDB.",
   "private": true,
   "version": "0.0.0",
   "type": "module",

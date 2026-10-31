@@ -22,7 +22,7 @@ export function AppModalGoiYNoiTraCuu({
 
   return (
     <div
-      className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-950/85 backdrop-blur-sm p-4 animate-fade-in"
+      className="fixed inset-0 z-[var(--z-modal-suggest)] flex items-center justify-center bg-slate-950/85 backdrop-blur-sm p-4 animate-fade-in"
       onClick={onClose}
       role="dialog"
       aria-modal="true"

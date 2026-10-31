@@ -56,7 +56,7 @@ export const AppLibrarySidebar = memo(function AppLibrarySidebar({
   return (
     <div
       onMouseLeave={() => setMenu1Visible(false)}
-      className={`absolute inset-y-0 left-0 z-40 bg-slate-900 border-r border-slate-800 shadow-2xl flex flex-col transition-transform duration-300 ease-out w-80 ${menu1Visible ? 'translate-x-0' : '-translate-x-full'}`}
+      className={`absolute inset-y-0 left-0 z-[var(--z-local-40)] bg-slate-900 border-r border-slate-800 shadow-2xl flex flex-col transition-transform duration-300 ease-out w-80 ${menu1Visible ? 'translate-x-0' : '-translate-x-full'}`}
     >
       <div className="p-5 border-b border-slate-800 flex flex-col gap-3">
         {/* Search input */}
@@ -140,7 +140,7 @@ export const AppLibrarySidebar = memo(function AppLibrarySidebar({
             <ChevronDown size={16} className={`text-slate-500 transition-transform ${isGenreFilterOpen ? 'rotate-180' : ''}`} />
           </button>
           {isGenreFilterOpen && (
-            <div className="absolute left-0 right-0 top-full mt-2 bg-slate-900 border border-slate-700/80 rounded-lg shadow-2xl z-30 p-2 max-h-56 overflow-y-auto custom-scrollbar animate-slide-down">
+            <div className="absolute left-0 right-0 top-full mt-2 bg-slate-900 border border-slate-700/80 rounded-lg shadow-2xl z-[var(--z-local-30)] p-2 max-h-56 overflow-y-auto custom-scrollbar animate-slide-down">
               {(GENRES || []).map((g) => (
                 <button
                   key={g}

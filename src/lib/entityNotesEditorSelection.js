@@ -5,7 +5,8 @@ export function focusEntityNotesTextarea(textarea, selStart, selEnd, textLength)
   const apply = () => {
     const len = Number.isFinite(textLength) ? textLength : textarea.value.length;
     const start = Math.max(0, Math.min(Number(selStart) || 0, len));
-    const end = Math.max(start, Math.min(Number(selEnd) ?? start, len));
+    const endNum = selEnd == null ? start : Number(selEnd);
+    const end = Math.max(start, Math.min(Number.isFinite(endNum) ? endNum : start, len));
     textarea.focus();
     try {
       textarea.setSelectionRange(start, end);

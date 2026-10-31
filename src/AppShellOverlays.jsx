@@ -45,20 +45,20 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
       {lightboxSrc && (
         <div
           ref={lightboxTrapRef}
-          className="fixed inset-0 z-[500] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-fast cursor-zoom-out"
+          className="fixed inset-0 z-[var(--z-lightbox)] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-fast cursor-zoom-out"
           role="dialog"
           aria-modal="true"
           aria-label="Xem ảnh phóng to"
           onClick={() => setLightboxSrc(null)}
         >
           <button
-            className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-full p-2 transition-colors z-10"
+            className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-full p-2 transition-colors z-[var(--z-local-10)]"
             onClick={() => setLightboxSrc(null)}
             title="Đóng (Esc)"
           >
             <X size={24} />
           </button>
-          <div className="absolute top-4 left-4 z-10 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute top-4 left-4 z-[var(--z-local-10)] flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
               onClick={() => setLightboxZoom((z) => clampZoom(z - 0.1))}
@@ -117,7 +117,7 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
 
       {hoveredNovelData && (
         <div
-          className="fixed z-[500] w-60 bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-3 pointer-events-none animate-fade-fast"
+          className="fixed z-[var(--z-lightbox)] w-60 bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-3 pointer-events-none animate-fade-fast"
           style={{ left: `${tooltipPos.x}px`, top: `${tooltipPos.y}px` }}
         >
           {hoveredNovelData.cover && !hoveredNovelData.cover.startsWith('local_image:') && (
@@ -246,14 +246,14 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
           : null)}
 
       {isUploading && (
-        <div className="fixed inset-0 z-[400] bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-fast">
+        <div className="fixed inset-0 z-[var(--z-overlay)] bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-fast">
           <div className="w-16 h-16 border-4 border-amber-600 border-t-transparent rounded-full animate-spin mb-4 shadow-xl" />
           <p className="text-amber-500 font-heading text-lg animate-pulse">Đang luân chuyển linh ảnh...</p>
         </div>
       )}
 
       {importProgress && (
-        <div className="fixed inset-0 z-[400] bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-fast">
+        <div className="fixed inset-0 z-[var(--z-overlay)] bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-fast">
           <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4 shadow-xl" />
           <p className="text-emerald-400 font-heading text-lg animate-pulse mb-2">{importProgress.stage}</p>
           {importProgress.total > 1 && (
