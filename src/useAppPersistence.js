@@ -156,6 +156,7 @@ export function useAppPersistence({
   activeNovelDataRef,
   setNovelStatsById,
   showToast,
+  novelSessionLockRef = null,
 }) {
   const persistIndexStatsTimerRef = useRef(null);
   const syncNovelRef = useRef(null);
@@ -175,6 +176,22 @@ export function useAppPersistence({
   /** Tránh spam toast cấp quyền / đang chờ sync. */
   const permissionToastCooldownRef = useRef(0);
   const lockWaitToastCooldownRef = useRef(0);
+  const otherTabToastAtRef = useRef(0);
+
+  const otherTabBlocksWrite = useCallback((novelId) => {
+    const lock = novelSessionLockRef?.current;
+    if (!lock?.isLockSupported) return false;
+    const id = String(novelId || '');
+    if (!id) return false;
+    return String(lock.novelId || '') === id && lock.hasLock === false;
+  }, [novelSessionLockRef]);
+
+  const mayClearNovelShadow = useCallback((novelId) => {
+    const lock = novelSessionLockRef?.current;
+    if (!lock?.isLockSupported) return true;
+    const id = String(novelId || '');
+    return lock.hasLock === true && String(lock.novelId || '') === id;
+  }, [novelSessionLockRef]);
 
   const regrantDirectoryWriteAndFlush = useCallback(async () => {
     const dir = dirHandleRef.current;
@@ -371,12 +388,31 @@ export function useAppPersistence({
       const forceBackup = Boolean(options?.forceBackup);
 
       // Checkpoint ngay — debounce chỉ trì hoãn ghi đĩa, không trì hoãn shadow.
-      void saveNovelShadow(novelData);
+      // Tab không giữ session lock thì không ghi đè WAL của tab đang sửa.
+      if (!otherTabBlocksWrite(novelData?.id)) {
+        void saveNovelShadow(novelData);
+      }
 
       const runFolderSync = async (payloadNovel, writeOpts = {}) => {
         novelFolderSyncInFlightRef.current += 1;
         try {
         const forceBackupWrite = Boolean(writeOpts.forceBackup);
+        if (otherTabBlocksWrite(payloadNovel?.id)) {
+          const now = Date.now();
+          if (now - otherTabToastAtRef.current > 8000) {
+            otherTabToastAtRef.current = now;
+            setTimeout(() => {
+              showToast('Truyện đang được mở và chỉnh sửa ở tab khác.', 'warning');
+            }, 0);
+          }
+          return {
+            ok: false,
+            mode: 'directory',
+            reason: 'locked_by_other_tab',
+            message: 'Truyện đang được mở và chỉnh sửa ở tab khác.',
+          };
+        }
+
         await saveNovelShadow(payloadNovel);
 
         const perm = await ensureDirectoryWritePermission(rootDir);
@@ -494,7 +530,9 @@ export function useAppPersistence({
         const markDiskSynced = async () => {
           lastNovelManifestJsonByIdRef.current.set(novelToWrite.id, jsonStr);
           bumpNovelStatsAfterWrite(novelToWrite);
-          await clearNovelShadow(novelToWrite.id);
+          if (mayClearNovelShadow(novelToWrite.id)) {
+            await clearNovelShadow(novelToWrite.id);
+          }
           clearDirtyShardKeys(dirtyKeys);
         };
         // Ưu tiên ghi đè in-place — ít tạo/xóa file hơn tmp+rename (OneDrive).
@@ -515,7 +553,9 @@ export function useAppPersistence({
           shardPlan.removed.length === 0
         ) {
           clearDirtyShardKeys(dirtyKeys);
-          await clearNovelShadow(novelToWrite.id);
+          if (mayClearNovelShadow(novelToWrite.id)) {
+            await clearNovelShadow(novelToWrite.id);
+          }
           return { ok: true, mode: 'directory', skipped: 'unchanged' };
         }
 
@@ -667,7 +707,7 @@ export function useAppPersistence({
         pendingNovelDiskByIdRef.current.set(novelId, entry);
       });
     },
-    [bumpNovelStatsAfterWrite, regrantDirectoryWriteAndFlush, showDirectoryWritePermissionToast, showToast]
+    [bumpNovelStatsAfterWrite, mayClearNovelShadow, otherTabBlocksWrite, regrantDirectoryWriteAndFlush, showDirectoryWritePermissionToast, showToast]
   );
 
   useEffect(() => {

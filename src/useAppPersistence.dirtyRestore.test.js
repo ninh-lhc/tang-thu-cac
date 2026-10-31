@@ -35,6 +35,7 @@ vi.mock('./lib/novelDiskWritePolicy.js', async (importOriginal) => {
 });
 
 import { useAppPersistence } from './useAppPersistence.js';
+import { clearNovelShadow, saveNovelShadow } from './lib/novelShadowStore.js';
 import * as novelDiskLayout from './lib/novelDiskLayout.js';
 
 function makeNovel(overview = 'v1') {
@@ -95,7 +96,7 @@ function makeMockRootDir({ manifestWriteFails = false } = {}) {
   return { rootDir, novelDir, dataDir };
 }
 
-function renderPersistenceHook() {
+function renderPersistenceHook(extra = {}) {
   const refs = {
     novelStatsByIdRef: { current: {} },
     genreTabsTemplatesRef: { current: {} },
@@ -105,6 +106,7 @@ function renderPersistenceHook() {
     activeNovelDataRef: { current: null },
     setNovelStatsById: vi.fn(),
     showToast: vi.fn(),
+    ...extra,
   };
   const hook = renderHook(() => useAppPersistence(refs));
   return { ...hook, refs };
@@ -238,6 +240,33 @@ describe('useAppPersistence dirty restore (AUD-001)', () => {
 
     expect(syncResult.ok).toBe(true);
     expect(isShardDirty('L', 'S')).toBe(false);
+  });
+
+  it('does not write shards or clear shadow when another tab holds the session lock', async () => {
+    saveNovelShadow.mockClear();
+    clearNovelShadow.mockClear();
+    const { rootDir } = makeMockRootDir();
+    const novelSessionLockRef = {
+      current: {
+        novelId: 'novel-dirty-restore',
+        hasLock: false,
+        isLockSupported: true,
+        lockError: 'busy',
+      },
+    };
+    const { result } = renderPersistenceHook({ novelSessionLockRef });
+    markShardDirty('L', 'S');
+
+    const syncResult = await result.current.syncNovel(makeNovel('blocked'), rootDir, {
+      immediate: true,
+    });
+
+    expect(syncResult.ok).toBe(false);
+    expect(syncResult.reason).toBe('locked_by_other_tab');
+    expect(writeShardTreeMock).not.toHaveBeenCalled();
+    expect(saveNovelShadow).not.toHaveBeenCalled();
+    expect(clearNovelShadow).not.toHaveBeenCalled();
+    expect(isShardDirty('L', 'S')).toBe(true);
   });
 
   it('syncNovel localStorage mode resolves ok without shard dirty tracker', async () => {

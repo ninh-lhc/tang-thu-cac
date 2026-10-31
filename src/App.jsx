@@ -13,6 +13,7 @@
 //   lib/stripWikiBrackets.js, lib/computeRelatedEntities.js, lib/entityFieldValue.js, lib/entityCollectionQuery.js
 //   lib/mapEntityTree.js, AppMapEntityTreePanel.jsx - cây thư mục mapParentId (mọi tab sưu tập)
 //   useAppPersistence.js - sync index + file truyện
+  //   useNovelSessionLock.js, useNovelTabWarning.js - khóa phiên đa tab (F-004)
 //   AppAdvancedFieldSelect.jsx - collection filter select UI
 //   AppLibrarySidebar.jsx, useAppLibrarySidebarState.js - library rail UI + state
 //   AppNovelTocRail.jsx, useAppTocRail.js - novel TOC rail UI + navigation state
@@ -108,6 +109,8 @@ import {
   savePersistedDeepSearchIndex,
 } from './lib/deepSearchCacheStore.js';
 import { useAppPersistence } from './useAppPersistence.js';
+import { useNovelSessionLock } from './useNovelSessionLock.js';
+import { useNovelTabWarning } from './useNovelTabWarning.js';
 import { useAppNovelUnloadGuard } from './useAppNovelUnloadGuard.js';
 import { useAppShellState } from './useAppShellState.js';
 import { AppShellOverlays } from './AppShellOverlays.jsx';
@@ -373,6 +376,58 @@ export default function App() {
     clearHoveredNovel,
   } = useAppLibrarySidebarState({ novelsMetadata });
 
+  const novelSessionLockRef = useRef({
+    novelId: null,
+    hasLock: true,
+    isLockSupported: typeof navigator !== 'undefined' && typeof navigator.locks?.request === 'function',
+    lockError: null,
+  });
+  const { hasLock, isLockSupported, novelId: lockedNovelId, retryLock } = useNovelSessionLock(
+    activeNovelData?.id ?? null,
+    dirHandle,
+    novelSessionLockRef
+  );
+  const { otherTabDetected } = useNovelTabWarning(activeNovelData?.id ?? null);
+  const readOnlyWarnedIdRef = useRef(null);
+  const otherTabWarnedIdRef = useRef(null);
+
+  useEffect(() => {
+    const id = lockedNovelId;
+    if (!isLockSupported || hasLock || !id) {
+      if (hasLock) readOnlyWarnedIdRef.current = null;
+      return;
+    }
+    if (readOnlyWarnedIdRef.current === id) return;
+    readOnlyWarnedIdRef.current = id;
+    showToast('Truyện đang mở ở tab khác. Bạn có thể xem nhưng không lưu được.', 'warning', {
+      durationMs: 20000,
+      undoLabel: 'Mở để chỉnh sửa',
+      onUndo: () => {
+        void retryLock().then((ok) => {
+          if (ok) {
+            showToast(
+              'Đã nhận quyền sửa. Dữ liệu tab này có thể cũ — hãy mở lại truyện trước khi lưu.',
+              'warning'
+            );
+          } else {
+            showToast('Tab kia vẫn đang giữ quyền sửa.', 'warning');
+          }
+        });
+      },
+    });
+  }, [hasLock, isLockSupported, lockedNovelId, retryLock, showToast]);
+
+  useEffect(() => {
+    if (isLockSupported || !otherTabDetected) return;
+    const id = String(activeNovelData?.id || '');
+    if (!id || otherTabWarnedIdRef.current === id) return;
+    otherTabWarnedIdRef.current = id;
+    showToast(
+      'Một tab khác cũng đang mở truyện này. Trình duyệt không khóa được phiên — chỉ nên sửa ở một tab.',
+      'warning'
+    );
+  }, [activeNovelData?.id, isLockSupported, otherTabDetected, showToast]);
+
   const {
     syncIndex,
     syncNovel,
@@ -390,6 +445,7 @@ export default function App() {
     activeNovelDataRef,
     setNovelStatsById,
     showToast,
+    novelSessionLockRef,
   });
 
   useAppNovelUnloadGuard({
