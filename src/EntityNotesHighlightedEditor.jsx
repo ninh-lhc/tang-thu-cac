@@ -25,9 +25,17 @@ import {
 
 const HIGHLIGHT_DEBOUNCE_MS = 250;
 
-/** Chiều cao vùng soạn cố định để textarea luôn có scrollport (dùng chung detail notes + modal mốc). */
+/** Chiều cao vùng soạn cố định để textarea luôn có scrollport (ghi chép chi tiết). */
 export const ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS =
   'h-[min(50vh,520px)] min-h-[260px] shrink-0';
+
+/** Modal mốc sự kiện: gần đầy viewport như khung ghi chép chi tiết, không tràn ngang. */
+export const MILESTONE_MODAL_SHELL_CLASS =
+  'flex h-[min(96dvh,calc(100dvh-1.5rem))] w-full min-w-0 max-w-[min(92rem,calc(100vw-1.5rem))] flex-col overflow-hidden overflow-x-hidden';
+
+/** Vùng ghi chú mốc: cao hơn cap 520px của ghi chép chi tiết, vẫn chừa header/footer trong viewport. */
+export const MILESTONE_EVENT_EDITOR_FRAME_CLASS =
+  'h-[min(62vh,760px)] min-h-[min(42vh,320px)] max-h-[calc(100dvh-16rem)] w-full min-w-0 shrink-0';
 
 const EDITOR_SURFACE_CLASS =
   'm-0 whitespace-pre-wrap break-words border-0 border-transparent p-0 font-normal leading-loose [overflow-wrap:anywhere]';

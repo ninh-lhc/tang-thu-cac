@@ -58,7 +58,8 @@ import {
 } from './lib/markdownTableEditor.js';
 import {
   EntityNotesHighlightedEditor,
-  ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS,
+  MILESTONE_EVENT_EDITOR_FRAME_CLASS,
+  MILESTONE_MODAL_SHELL_CLASS,
 } from './EntityNotesHighlightedEditor.jsx';
 import { EntityNotesAiToolsMenu } from './EntityNotesAiToolsMenu.jsx';
 import {
@@ -3784,6 +3785,14 @@ export const ModalMilestone = ({
     if (!isOpen) return;
     const onKeyDown = (event) => {
       if (document.activeElement !== eventTextareaRef.current) return;
+      if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'g') {
+        event.preventDefault();
+        event.stopPropagation();
+        handleToolbarClick('__WIKI_TOGGLE__', '', EVENT_EDITOR_ID, (nextText) => {
+          recordAndSetEventDraft(nextText);
+        });
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
         event.preventDefault();
         undo();
@@ -3818,16 +3827,16 @@ export const ModalMilestone = ({
       const cleanedText = notesTypo.autoCleanOnSave ? prepareEntityNotesForSave(eventText) : eventText;
       const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
       const preparedText = formatSync.text;
-      const eventWrap = autoWrapWikiLinksByEntityMapWithCount(preparedText, entityMap, wikiWrapOptions);
+      // Nội dung mốc giữ nguyên wiki đã có và wiki do Ctrl+G; không tự bọc lại lúc lưu.
       const preparedSnapshot = prepareSnapshotPayload();
       const nextSnapshot = preparedSnapshot.snapshot;
-      const wrappedCount = eventWrap.count + preparedSnapshot.wrappedCount;
+      const wrappedCount = preparedSnapshot.wrappedCount;
       onSave(
         {
           ...formData,
           title: safeString(formData.title).trim(),
           nextEntityName: safeString(formData.nextEntityName).trim(),
-          event: eventWrap.text,
+          event: preparedText,
         },
         preparedSnapshot.hasSnapshot ? nextSnapshot : null
       );
@@ -4110,10 +4119,10 @@ export const ModalMilestone = ({
     const cleanedText = notesTypo.autoCleanOnSave ? prepareEntityNotesForSave(eventText) : eventText;
     const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
     const preparedText = formatSync.text;
-    const eventWrap = autoWrapWikiLinksByEntityMapWithCount(preparedText, entityMap);
+    // Nội dung mốc giữ nguyên wiki đã có và wiki do Ctrl+G; không tự bọc lại lúc lưu.
     const preparedSnapshot = prepareSnapshotPayload();
     const nextSnapshot = preparedSnapshot.snapshot;
-    const wrappedCount = eventWrap.count + preparedSnapshot.wrappedCount;
+    const wrappedCount = preparedSnapshot.wrappedCount;
     if (preparedText !== eventText) {
       recordAndSetEventDraft(preparedText);
       if (cleanedText !== eventText && formatSync.propagatedCount > 0) {
@@ -4132,7 +4141,7 @@ export const ModalMilestone = ({
         ...formData,
         title: safeString(formData.title).trim(),
         nextEntityName: safeString(formData.nextEntityName).trim(),
-        event: eventWrap.text,
+        event: preparedText,
       },
       preparedSnapshot.hasSnapshot ? nextSnapshot : null
     );
@@ -4149,8 +4158,9 @@ export const ModalMilestone = ({
     >
       <div
         data-testid="modal-milestone-root"
+        data-layout="entity-notes-comparable"
         ref={trapRefMs}
-        className="flex h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-[32px] border border-amber-700/50 bg-slate-950 shadow-[0_0_50px_rgba(217,119,6,0.16)]"
+        className={`${MILESTONE_MODAL_SHELL_CLASS} rounded-[32px] border border-amber-700/50 bg-slate-950 shadow-[0_0_50px_rgba(217,119,6,0.16)]`}
       >
         <div className="border-b border-slate-800 px-6 py-5 md:px-8">
           <h2 className="flex items-center gap-2 text-xl font-bold font-heading text-amber-400">
@@ -4339,7 +4349,7 @@ export const ModalMilestone = ({
                 </button>
               </div>
 
-              <div className="flex min-h-0 min-h-[420px] flex-col overflow-hidden">
+              <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
                 <div className="flex items-start justify-between gap-2 flex-wrap">
                   <MarkdownToolbar
                     editorId={EVENT_EDITOR_ID}
@@ -4372,7 +4382,8 @@ export const ModalMilestone = ({
                 </div>
 
                 <div
-                  className={`flex min-h-0 gap-4 overflow-hidden ${ENTITY_NOTES_EDITOR_SCROLL_MAX_CLASS} ${isSplitPreview ? 'flex-row' : 'flex-col'}`}
+                  data-testid="milestone-event-editor-frame"
+                  className={`flex min-h-0 gap-4 overflow-hidden ${MILESTONE_EVENT_EDITOR_FRAME_CLASS} ${isSplitPreview ? 'flex-row' : 'flex-col'}`}
                 >
                   <EntityNotesHighlightedEditor
                     id={EVENT_EDITOR_ID}
