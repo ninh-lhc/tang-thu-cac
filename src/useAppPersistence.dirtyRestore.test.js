@@ -35,7 +35,8 @@ vi.mock('./lib/novelDiskWritePolicy.js', async (importOriginal) => {
 });
 
 import { useAppPersistence } from './useAppPersistence.js';
-import { clearNovelShadow, saveNovelShadow } from './lib/novelShadowStore.js';
+import { clearNovelShadow, loadNovelShadow, resolveNovelWithShadow, saveNovelShadow } from './lib/novelShadowStore.js';
+import { canonicalShardJson, quickHash, shardRelPath } from './shardIntegrity.js';
 import * as novelDiskLayout from './lib/novelDiskLayout.js';
 
 function makeNovel(overview = 'v1') {
@@ -53,18 +54,18 @@ function makeNovel(overview = 'v1') {
   };
 }
 
-function makeWritable({ failOnWrite = false } = {}) {
+function makeWritable({ failOnWrite = false, sink = null, label = '' } = {}) {
   return {
-    write: failOnWrite
-      ? vi.fn(async () => {
-          throw new Error('manifest write failed');
-        })
-      : vi.fn(async () => {}),
+    write: vi.fn(async (text) => {
+      if (failOnWrite) throw new Error('manifest write failed');
+      if (sink) sink.push({ label, text });
+    }),
     close: vi.fn(async () => {}),
   };
 }
 
 function makeMockRootDir({ manifestWriteFails = false } = {}) {
+  const diskWrites = [];
   const imagesDir = { kind: 'directory' };
   const dataDir = {
     kind: 'directory',
@@ -81,10 +82,12 @@ function makeMockRootDir({ manifestWriteFails = false } = {}) {
     }),
     getFileHandle: vi.fn(async (name) => {
       if (name.endsWith('.backup.json')) {
-        return { createWritable: vi.fn(async () => makeWritable()) };
+        return { createWritable: vi.fn(async () => makeWritable({ sink: diskWrites, label: name })) };
       }
       return {
-        createWritable: vi.fn(async () => makeWritable({ failOnWrite: manifestWriteFails })),
+        createWritable: vi.fn(async () =>
+          makeWritable({ failOnWrite: manifestWriteFails, sink: diskWrites, label: name })
+        ),
       };
     }),
   };
@@ -93,7 +96,7 @@ function makeMockRootDir({ manifestWriteFails = false } = {}) {
     requestPermission: vi.fn(async () => 'granted'),
     getDirectoryHandle: vi.fn(async () => novelDir),
   };
-  return { rootDir, novelDir, dataDir };
+  return { rootDir, novelDir, dataDir, diskWrites };
 }
 
 function renderPersistenceHook(extra = {}) {
@@ -267,6 +270,97 @@ describe('useAppPersistence dirty restore (AUD-001)', () => {
     expect(saveNovelShadow).not.toHaveBeenCalled();
     expect(clearNovelShadow).not.toHaveBeenCalled();
     expect(isShardDirty('L', 'S')).toBe(true);
+  });
+
+  it('writes shardCommit on the manifest and bumps generation', async () => {
+    const { rootDir, diskWrites } = makeMockRootDir();
+    const { result } = renderPersistenceHook();
+    markShardDirty('L', 'S');
+
+    const first = await result.current.syncNovel(makeNovel('g1'), rootDir, { immediate: true });
+    expect(first.ok).toBe(true);
+    const firstManifest = JSON.parse(diskWrites.find((w) => w.label === 'RestoreTest.json').text);
+    const tab = { overview: 'g1', entities: [] };
+    const path = shardRelPath('L', 'S');
+    expect(firstManifest.data).toEqual({});
+    expect(firstManifest.shardCommit.generation).toBe(1);
+    expect(firstManifest.shardCommit.shardHashes[path]).toBe(quickHash(canonicalShardJson(tab)));
+
+    markShardDirty('L', 'S');
+    const second = await result.current.syncNovel(makeNovel('g2'), rootDir, { immediate: true });
+    expect(second.ok).toBe(true);
+    const manifests = diskWrites.filter((w) => w.label === 'RestoreTest.json').map((w) => JSON.parse(w.text));
+    expect(manifests.at(-1).shardCommit.generation).toBe(2);
+    expect(manifests.at(-1).shardCommit.shardHashes[path]).toBe(
+      quickHash(canonicalShardJson({ overview: 'g2', entities: [] }))
+    );
+  });
+
+  it('torn load without shadow warns and marks shards dirty', async () => {
+    const readSpy = vi.spyOn(novelDiskLayout, 'readRawNovelPackageFromDir').mockResolvedValue({
+      id: 'novel-dirty-restore',
+      title: 'RestoreTest',
+      folderName: 'RestoreTest',
+      storageLayout: 'sharded',
+      tabsConfig: [],
+      data: { L: { S: { overview: 'torn', entities: [] } } },
+      __integrityStatus: 'torn',
+    });
+    loadNovelShadow.mockResolvedValueOnce(null);
+    const { rootDir } = makeMockRootDir();
+    const { result, refs } = renderPersistenceHook();
+
+    const loaded = await result.current.loadNovelData(
+      { id: 'novel-dirty-restore', title: 'RestoreTest', folderName: 'RestoreTest' },
+      rootDir
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(loaded.novel.data.L.S.overview).toBe('torn');
+    expect(refs.showToast).toHaveBeenCalled();
+    const message = refs.showToast.mock.calls.map((call) => call[0]).join('\n');
+    expect(message).toMatch(/chưa đồng bộ/);
+    expect(isShardDirty('L', 'S')).toBe(true);
+    readSpy.mockRestore();
+  });
+
+  it('torn load with shadow restores the draft without forcing dirty', async () => {
+    const readSpy = vi.spyOn(novelDiskLayout, 'readRawNovelPackageFromDir').mockResolvedValue({
+      id: 'novel-dirty-restore',
+      title: 'RestoreTest',
+      folderName: 'RestoreTest',
+      storageLayout: 'sharded',
+      tabsConfig: [],
+      data: { L: { S: { overview: 'disk', entities: [] } } },
+      __integrityStatus: 'torn',
+    });
+    loadNovelShadow.mockResolvedValueOnce({
+      novel: {
+        id: 'novel-dirty-restore',
+        title: 'RestoreTest',
+        data: { L: { S: { overview: 'shadow', entities: [] } } },
+      },
+      updatedAt: 1,
+    });
+    resolveNovelWithShadow.mockImplementationOnce((disk, shadowRecord) => ({
+      novel: shadowRecord.novel,
+      fromShadow: true,
+    }));
+    const { rootDir } = makeMockRootDir();
+    const { result, refs } = renderPersistenceHook();
+
+    const loaded = await result.current.loadNovelData(
+      { id: 'novel-dirty-restore', title: 'RestoreTest', folderName: 'RestoreTest' },
+      rootDir
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(loaded.novel.data.L.S.overview).toBe('shadow');
+    expect(loaded.novel.__recoveredFromShadow).toBe(true);
+    const message = refs.showToast.mock.calls.map((call) => call[0]).join('\n');
+    expect(message).toMatch(/bản nháp/);
+    expect(isShardDirty('L', 'S')).toBe(false);
+    readSpy.mockRestore();
   });
 
   it('syncNovel localStorage mode resolves ok without shard dirty tracker', async () => {

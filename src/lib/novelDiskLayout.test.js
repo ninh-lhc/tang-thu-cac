@@ -1,14 +1,56 @@
 import { describe, it, expect } from 'vitest';
+import { canonicalShardJson, quickHash, shardRelPath } from '../shardIntegrity.js';
 import {
   encodePathSegment,
   decodePathSegment,
   listShardKeysFromData,
   buildDiskManifest,
   buildShardWritePlan,
+  getShardState,
   NOVEL_STORAGE_SHARDED,
   novelManifestBaseNameCandidates,
   parseManifestIdFromJsonText,
+  readRawNovelPackageFromDir,
 } from './novelDiskLayout.js';
+
+function makeFile(text) {
+  return { kind: 'file', getFile: async () => ({ text: async () => text }) };
+}
+
+function makeDir(children) {
+  return {
+    kind: 'directory',
+    getFileHandle: async (name) => {
+      const child = children[name];
+      if (!child || child.kind !== 'file') throw new Error(`missing file ${name}`);
+      return child;
+    },
+    getDirectoryHandle: async (name) => {
+      const child = children[name];
+      if (!child || child.kind !== 'directory') throw new Error(`missing dir ${name}`);
+      return child;
+    },
+    async *entries() {
+      for (const [name, handle] of Object.entries(children)) yield [name, handle];
+    },
+  };
+}
+
+function shardedNovelDir({ tab, shardCommit }) {
+  const manifest = {
+    id: 'n1',
+    title: 'T',
+    storageLayout: 'sharded',
+    data: {},
+    ...(shardCommit ? { shardCommit } : {}),
+  };
+  return makeDir({
+    'T.json': makeFile(JSON.stringify(manifest)),
+    data: makeDir({
+      L: makeDir({ 'S.json': makeFile(canonicalShardJson(tab)) }),
+    }),
+  });
+}
 
 describe('novelDiskLayout', () => {
   it('encodePathSegment round-trips common ids', () => {
@@ -62,7 +104,76 @@ describe('novelDiskLayout', () => {
     expect(m.data).toEqual({});
     expect(m.storageLayout).toBe(NOVEL_STORAGE_SHARDED);
     expect(m.title).toBe('T');
+    expect(m.shardCommit).toBeUndefined();
     expect(nov.data.L).toBeDefined();
+  });
+
+  it('buildDiskManifest strips a stale shardCommit copied from memory', () => {
+    const m = buildDiskManifest({
+      id: 'n1',
+      title: 'T',
+      data: {},
+      shardCommit: { generation: 4, shardHashes: { 'data/L/S.json': 'abcd' }, timestamp: 1 },
+    });
+    expect(m.shardCommit).toBeUndefined();
+  });
+
+  it('readRawNovelPackageFromDir marks a matching shardCommit as ok and keeps generation', async () => {
+    const tab = { overview: 'ok' };
+    const path = shardRelPath('L', 'S');
+    const novelDir = shardedNovelDir({
+      tab,
+      shardCommit: {
+        generation: 7,
+        shardHashes: { [path]: quickHash(canonicalShardJson(tab)) },
+        timestamp: 1,
+      },
+    });
+    const parsed = await readRawNovelPackageFromDir(novelDir, 'T');
+    expect(parsed.__integrityStatus).toBe('ok');
+    expect(parsed.__integrityMismatches).toBeUndefined();
+    expect(getShardState(novelDir).generation).toBe(7);
+    expect(getShardState(novelDir).previousShardHashes[path]).toBe(quickHash(canonicalShardJson(tab)));
+  });
+
+  it('readRawNovelPackageFromDir treats a manifest without shardCommit as legacy', async () => {
+    const novelDir = shardedNovelDir({ tab: { overview: 'old' } });
+    const parsed = await readRawNovelPackageFromDir(novelDir, 'T');
+    expect(parsed.__integrityStatus).toBe('legacy');
+    expect(getShardState(novelDir).generation).toBe(0);
+  });
+
+  it('readRawNovelPackageFromDir reports torn when the shard hash does not match', async () => {
+    const novelDir = shardedNovelDir({
+      tab: { overview: 'new-on-disk' },
+      shardCommit: {
+        generation: 3,
+        shardHashes: { [shardRelPath('L', 'S')]: 'deadbeef' },
+        timestamp: 1,
+      },
+    });
+    const parsed = await readRawNovelPackageFromDir(novelDir, 'T');
+    expect(parsed.__integrityStatus).toBe('torn');
+    expect(parsed.__integrityMismatches[0].issue).toBe('hash_mismatch');
+    expect(getShardState(novelDir).generation).toBe(3);
+  });
+
+  it('readRawNovelPackageFromDir skips verify on a partial read but still keeps generation', async () => {
+    const tab = { overview: 'part' };
+    const novelDir = shardedNovelDir({
+      tab,
+      shardCommit: {
+        generation: 9,
+        shardHashes: { [shardRelPath('L', 'S')]: quickHash(canonicalShardJson(tab)) },
+        timestamp: 1,
+      },
+    });
+    const parsed = await readRawNovelPackageFromDir(novelDir, 'T', {
+      shardKeys: [{ lonId: 'L', nhoId: 'S' }],
+    });
+    expect(parsed.__integrityStatus).toBe('skipped');
+    expect(parsed.__partialData).toBe(true);
+    expect(getShardState(novelDir).generation).toBe(9);
   });
 
   it('buildShardWritePlan marks only changed shards for write', () => {

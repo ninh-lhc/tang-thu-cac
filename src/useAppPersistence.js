@@ -3,6 +3,7 @@
  * Shadow IndexedDB giữ bản nháp khi ghi thư mục (OneDrive) lỗi — khôi phục sau F5.
  * Debounce ~1s + retry khóa file; ghi in-place; backup.json throttle 60s.
  * Toast «Cho phép ghi lại» gọi requestPermission rồi flush immediate.
+ * shardCommit ghi sau shard, trước manifest (F-003) — không đổi JSON shard.
  */
 import { useCallback, useEffect, useRef } from 'react';
 import { migrateNovel } from './dataMigration.js';
@@ -36,7 +37,8 @@ import {
   isTransientFsWriteError,
   withFsWriteRetry,
 } from './lib/novelDiskWritePolicy.js';
-import { clearDirtyShardKeys, snapshotDirtyShards } from './lib/dirtyShardTracker.js';
+import { clearDirtyShardKeys, markAllShardsDirty, snapshotDirtyShards } from './lib/dirtyShardTracker.js';
+import { buildShardCommit, shardRelPath } from './shardIntegrity.js';
 
 /** migrateNovel luôn xóa storageLayout; khi novel đang lưu dạng shard trên đĩa thì phải gắn lại để lazy-load + sync an toàn. */
 function restoreShardedLayoutIfNeeded(parsedBeforeMigrate, migrated) {
@@ -527,8 +529,14 @@ export function useAppPersistence({
             /* backup is best-effort */
           }
         };
+        let sealedCommit = null;
         const markDiskSynced = async () => {
           lastNovelManifestJsonByIdRef.current.set(novelToWrite.id, jsonStr);
+          if (sealedCommit) {
+            const state = getShardState(novelDir);
+            state.generation = sealedCommit.generation;
+            state.previousShardHashes = sealedCommit.shardHashes;
+          }
           bumpNovelStatsAfterWrite(novelToWrite);
           if (mayClearNovelShadow(novelToWrite.id)) {
             await clearNovelShadow(novelToWrite.id);
@@ -536,12 +544,26 @@ export function useAppPersistence({
           clearDirtyShardKeys(dirtyKeys);
         };
         // Ưu tiên ghi đè in-place — ít tạo/xóa file hơn tmp+rename (OneDrive).
+        // jsonStr (không shardCommit) vẫn là khóa skip. Bytes trên đĩa có shardCommit.
         const writeInPlace = async () => {
           await writeShardTree(novelDir, novelToWrite, dirtyKeys);
+          const state = getShardState(novelDir);
+          const commit = buildShardCommit(novelToWrite.data || {}, {
+            generation: (Number(state.generation) || 0) + 1,
+            previousShardHashes: state.previousShardHashes || {},
+            writes: (shardPlan.writes || []).map((w) => ({
+              relativePath: shardRelPath(w.lonId, w.nhoId),
+              jsonString: w.jsonStr,
+            })),
+          });
+          const manifest = buildDiskManifest(novelToWrite);
+          manifest.shardCommit = commit;
+          const manifestBytes = JSON.stringify(manifest, null, 2);
           const f = await novelDir.getFileHandle(mainFile, { create: true });
           const w = await f.createWritable();
-          await w.write(jsonStr);
+          await w.write(manifestBytes);
           await w.close();
+          sealedCommit = commit;
           await novelDir.getDirectoryHandle('images', { create: true });
           await maybeWriteNovelBackup(novelDir);
         };
@@ -764,23 +786,44 @@ export function useAppPersistence({
         const shadow = await loadNovelShadow(wantId);
         const resolved = resolveNovelWithShadow(loaded?.novel || null, shadow);
         if (!resolved) return loaded;
-        if (!resolved.fromShadow) return loaded;
+        if (!resolved.fromShadow) {
+          if (loaded?.integrityStatus === 'torn') {
+            const tornKey = `torn:${wantId}`;
+            if (!recoveredNovelToastIdsRef.current.has(tornKey)) {
+              recoveredNovelToastIdsRef.current.add(tornKey);
+              setTimeout(() => {
+                showToast(
+                  'Phát hiện dữ liệu chưa đồng bộ. Một số chỉnh sửa gần đây có thể bị thiếu. Kiểm tra nội dung và lưu lại nếu cần.',
+                  'warning',
+                  { durationMs: 10000 }
+                );
+              }, 0);
+            }
+            markAllShardsDirty(loaded?.novel?.data);
+          }
+          return loaded;
+        }
         const novel = finalizeParsed(resolved.novel, `shadow:${wantId}`) || resolved.novel;
         novel.__recoveredFromShadow = true;
-        const toastKey = `shadow:${wantId}`;
+        const tornWithShadow = loaded?.integrityStatus === 'torn';
+        const toastKey = tornWithShadow ? `torn-shadow:${wantId}` : `shadow:${wantId}`;
         if (!recoveredNovelToastIdsRef.current.has(toastKey)) {
           recoveredNovelToastIdsRef.current.add(toastKey);
           setTimeout(() => {
             showToast(
-              'Đã khôi phục bản chưa kịp ghi lên thư mục (sau F5 / lỗi đồng bộ). Đang thử lưu lại…',
+              tornWithShadow
+                ? 'Phát hiện dữ liệu chưa đồng bộ — đang khôi phục từ bản nháp.'
+                : 'Đã khôi phục bản chưa kịp ghi lên thư mục (sau F5 / lỗi đồng bộ). Đang thử lưu lại…',
               'warning',
-              {
-                undoLabel: 'Cho phép ghi lại',
-                durationMs: 25000,
-                onUndo: () => {
-                  void regrantDirectoryWriteAndFlush();
-                },
-              }
+              tornWithShadow
+                ? { durationMs: 10000 }
+                : {
+                    undoLabel: 'Cho phép ghi lại',
+                    durationMs: 25000,
+                    onUndo: () => {
+                      void regrantDirectoryWriteAndFlush();
+                    },
+                  }
             );
           }, 0);
         }
@@ -817,8 +860,12 @@ export function useAppPersistence({
       if (!parsed) return null;
       const pid = String(parsed.id ?? '').trim();
       if (wantId && pid && pid !== wantId) return null;
+      const integrityStatus = parsed.__integrityStatus || 'legacy';
+      delete parsed.__integrityStatus;
+      delete parsed.__integrityMismatches;
+      delete parsed.shardCommit;
       const novel = finalizeParsed(parsed, `${manifestBaseName}.json`);
-      return novel ? { novel, novelDir } : null;
+      return novel ? { novel, novelDir, integrityStatus } : null;
     };
     const tryDirByManifestScan = async (novelDir) => {
       if (!wantId) return null;

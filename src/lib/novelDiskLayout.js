@@ -2,8 +2,11 @@
  * Bố cục lưu truyện trên ổ đĩa: manifest (file .json gốc) + shard theo tab nhỏ data/<lon>/<nho>.json.
  * Shard ghi đè in-place (tránh tmp+rename gây churn OneDrive).
  * localStorage vẫn một blob — chỉ thư mục truyện (File System Access) dùng sharded.
+ * shardCommit trên manifest là field thêm (F-003), không đổi JSON từng shard.
  * Ai gọi: useAppPersistence.js, useAppNovelCrud (xóa thư mục đúng id). Test: novelDiskLayout.test.js
  */
+
+import { shardRelPath, verifyShardIntegrity } from '../shardIntegrity.js';
 
 export const NOVEL_STORAGE_SHARDED = 'sharded';
 export const DATA_DIR_NAME = 'data';
@@ -62,6 +65,9 @@ export function buildDiskManifest(novelData) {
   }
   m.data = {};
   m.storageLayout = NOVEL_STORAGE_SHARDED;
+  delete m.shardCommit;
+  delete m.__integrityStatus;
+  delete m.__integrityMismatches;
   return m;
 }
 
@@ -71,10 +77,26 @@ function shardKeyPath(lonId, nhoId) {
 
 export function getShardState(dirHandle) {
   const cur = shardWriteStateByDir.get(dirHandle);
-  if (cur && cur.hashes instanceof Map) return cur;
-  const next = { hashes: new Map() };
+  if (cur && cur.hashes instanceof Map) {
+    if (!Number.isFinite(cur.generation)) cur.generation = 0;
+    if (!cur.previousShardHashes || typeof cur.previousShardHashes !== 'object') cur.previousShardHashes = {};
+    return cur;
+  }
+  const next = { hashes: new Map(), generation: 0, previousShardHashes: {} };
   shardWriteStateByDir.set(dirHandle, next);
   return next;
+}
+
+/** Giữ generation/hash từ manifest — kể cả đọc một phần tab, để lần ghi sau không reset về 1. */
+function rememberShardCommit(novelDirHandle, shardCommit) {
+  const gen = Number(shardCommit?.generation);
+  if (!Number.isFinite(gen) || gen < 0) return;
+  const state = getShardState(novelDirHandle);
+  state.generation = gen;
+  const hashes = shardCommit?.shardHashes;
+  if (hashes && typeof hashes === 'object' && !Array.isArray(hashes)) {
+    state.previousShardHashes = { ...hashes };
+  }
 }
 
 /** Tính kế hoạch ghi shard dựa trên cache hash nội bộ (skip shard không đổi). */
@@ -273,6 +295,16 @@ export async function readRawNovelPackageFromDir(novelDirHandle, manifestBaseNam
         /* ignore missing/corrupt backup */
       }
     }
+    if (shouldUseShardedRead && !shardKeys && !parsed.__recoveredFromBackup) {
+      const check = verifyShardIntegrity(parsed.shardCommit, parsed.data || {}, shardRelPath);
+      parsed.__integrityStatus = check.status;
+      if (check.mismatches.length > 0) parsed.__integrityMismatches = check.mismatches;
+    } else if (!parsed.shardCommit) {
+      parsed.__integrityStatus = 'legacy';
+    } else {
+      parsed.__integrityStatus = 'skipped';
+    }
+    rememberShardCommit(novelDirHandle, parsed.shardCommit);
     return parsed;
   } catch {
     return null;
