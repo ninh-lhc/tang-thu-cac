@@ -24,22 +24,51 @@ describe('wikiLinkOptOut', () => {
     expect(detected[0].anchor).toBe('Hồng Lâu');
   });
 
-  it('does not auto-wrap an opted-out anchor at the same context on save', () => {
-    const saved = 'The gioi [[Hồng Lâu]] Mộng.';
-    const draft = 'The gioi Hồng Lâu Mộng.';
+  it('rewraps a wiki link removed by an ordinary edit', () => {
+    const saved = '[[Lâm Mặc Ngữ]]';
+    const draft = 'Lâm Mặc Ngữ';
+    const entityMap = [{ name: 'Lâm Mặc Ngữ' }];
     const { text, wikiLinkOptOuts } = applyWikiLinkOptOutsForSave({
       savedInfo: saved,
       preparedText: draft,
       wikiLinkOptOuts: [],
-      entityMap: map,
+      entityMap,
       autoWrapWikiLinksByEntityMapWithCount,
       autoWrapOnSave: true,
     });
-    expect(text).toBe('The gioi Hồng Lâu Mộng.');
-    expect(wikiLinkOptOuts.length).toBeGreaterThan(0);
-    const again = autoWrapWikiLinksByEntityMapWithCount(text, map, { optOuts: wikiLinkOptOuts });
-    expect(again.text).toBe(text);
-    expect(again.count).toBe(0);
+    expect(text).toBe('[[Lâm Mặc Ngữ]]');
+    expect(wikiLinkOptOuts).toEqual([]);
+  });
+
+  it('keeps an explicit unwrap opt-out from being wrapped again', () => {
+    const saved = '[[Lâm Mặc Ngữ]]';
+    const optOut = buildWikiLinkOptOutFromUnwrap(saved, 2, 2 + 'Lâm Mặc Ngữ'.length);
+    const { text, wikiLinkOptOuts } = applyWikiLinkOptOutsForSave({
+      savedInfo: saved,
+      preparedText: 'Lâm Mặc Ngữ',
+      wikiLinkOptOuts: [optOut],
+      entityMap: [{ name: 'Lâm Mặc Ngữ' }],
+      autoWrapWikiLinksByEntityMapWithCount,
+      autoWrapOnSave: true,
+    });
+    expect(text).toBe('Lâm Mặc Ngữ');
+    expect(wikiLinkOptOuts).toEqual([optOut]);
+  });
+
+  it('drops a stale opt-out after the anchor is wrapped again', () => {
+    const saved = '[[Lâm Mặc Ngữ]]';
+    const optOut = buildWikiLinkOptOutFromUnwrap(saved, 0, saved.length);
+    const { text, wikiLinkOptOuts } = applyWikiLinkOptOutsForSave({
+      savedInfo: 'Lâm Mặc Ngữ',
+      preparedText: saved,
+      wikiLinkOptOuts: [optOut],
+      entityMap: [{ name: 'Lâm Mặc Ngữ' }],
+      autoWrapWikiLinksByEntityMapWithCount,
+      autoWrapOnSave: true,
+    });
+    expect(text).toBe('[[Lâm Mặc Ngữ]]');
+    expect(text).not.toContain('[[[[');
+    expect(wikiLinkOptOuts).toEqual([]);
   });
 
   it('still wraps other occurrences without the same opt-out context', () => {
@@ -163,18 +192,26 @@ describe('wikiLinkOptOut', () => {
     expect(wrapped.text).toBe('The gioi Hồng Lâu Mộng.');
   });
 
-  it('resolveEffectiveWikiLinkOptOuts merges stored, pending, and draft diff', () => {
-    const saved = 'The gioi [[Hồng Lâu]] Mộng la mot he.';
-    const draft = 'The gioi Hồng Lâu Mộng la mot he.';
+  it('resolveEffectiveWikiLinkOptOuts keeps explicit opt-outs and ignores accidental diffs', () => {
+    const draft = 'Vao Kiến trúc roi. The gioi Hồng Lâu Mộng la mot he.';
     const pending = [{ anchor: 'Kiến trúc', before: 'Vao ', after: ' roi' }];
     const effective = resolveEffectiveWikiLinkOptOuts({
       stored: [],
       pending,
-      savedBaseline: saved,
+      savedBaseline: 'The gioi [[Hồng Lâu]] Mộng la mot he.',
       draftText: draft,
     });
-    expect(effective.some((o) => o.anchor === 'Hồng Lâu')).toBe(true);
+    expect(effective.some((o) => o.anchor === 'Hồng Lâu')).toBe(false);
     expect(effective.some((o) => o.anchor === 'Kiến trúc')).toBe(true);
+  });
+
+  it('resolveEffectiveWikiLinkOptOuts drops an opt-out once the anchor is wrapped', () => {
+    const effective = resolveEffectiveWikiLinkOptOuts({
+      stored: [{ anchor: 'Lâm Mặc Ngữ', before: '', after: '' }],
+      pending: [],
+      draftText: '[[Lâm Mặc Ngữ]]',
+    });
+    expect(effective).toEqual([]);
   });
 
   it('countNewWikiLinkOptOuts ignores duplicates already stored', () => {

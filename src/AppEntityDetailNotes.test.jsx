@@ -409,6 +409,129 @@ describe('AppEntityDetailNotes', () => {
     expect(document.body.textContent).toMatch(/Bách Khoa Tu Tiên|Triệu Hồi/);
   });
 
+  function pressCtrlG() {
+    fireEvent.keyDown(document, { key: 'g', ctrlKey: true });
+  }
+
+  function detailProps(info, extra = {}) {
+    return createProps({
+      entityMap: [
+        { id: 'lam', name: 'Lâm Mặc Ngữ' },
+        { id: 'tu', name: 'Tử Linh Pháp Sư' },
+      ],
+      selectedEntity: {
+        id: 'entity-1',
+        name: 'Lâm Mặc Ngữ',
+        info,
+        wikiLinkOptOuts: extra.wikiLinkOptOuts || [],
+      },
+      detailNotesMarkdown: info,
+      ...extra.overrides,
+    });
+  }
+
+  it('keeps a Ctrl+G unwrap as plain text after save', async () => {
+    const info = '[[Lâm Mặc Ngữ]]';
+    const props = detailProps(info);
+    render(<AppEntityDetailNotes {...props} />);
+    const textbox = screen.getByRole('textbox');
+    textbox.focus();
+    textbox.setSelectionRange(2, 2 + 'Lâm Mặc Ngữ'.length);
+    pressCtrlG();
+    expect(textbox.value).toBe('Lâm Mặc Ngữ');
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        'Lâm Mặc Ngữ',
+        expect.objectContaining({
+          wikiLinkOptOuts: [expect.objectContaining({ anchor: 'Lâm Mặc Ngữ' })],
+        })
+      );
+    });
+  });
+
+  it('rewraps a wiki link removed by an ordinary edit when auto-wrap is on', async () => {
+    const props = detailProps('[[Lâm Mặc Ngữ]]');
+    render(<AppEntityDetailNotes {...props} />);
+    const textbox = screen.getByRole('textbox');
+    fireEvent.change(textbox, { target: { value: 'Lâm Mặc Ngữ' } });
+    expect(textbox.value).toBe('Lâm Mặc Ngữ');
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        '[[Lâm Mặc Ngữ]]',
+        expect.objectContaining({ wikiLinkOptOuts: [] })
+      );
+    });
+  });
+
+  it('keeps a Ctrl+G wrap after save', async () => {
+    const props = detailProps('Lâm Mặc Ngữ');
+    render(<AppEntityDetailNotes {...props} />);
+    const textbox = screen.getByRole('textbox');
+    textbox.focus();
+    textbox.setSelectionRange(0, textbox.value.length);
+    pressCtrlG();
+    expect(textbox.value).toBe('[[Lâm Mặc Ngữ]]');
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        '[[Lâm Mặc Ngữ]]',
+        expect.objectContaining({ wikiLinkOptOuts: [] })
+      );
+    });
+  });
+
+  it('clears the opt-out when Ctrl+G wraps a link again before save', async () => {
+    const props = detailProps('[[Lâm Mặc Ngữ]]');
+    render(<AppEntityDetailNotes {...props} />);
+    const textbox = screen.getByRole('textbox');
+    textbox.focus();
+    textbox.setSelectionRange(2, 2 + 'Lâm Mặc Ngữ'.length);
+    pressCtrlG();
+    expect(textbox.value).toBe('Lâm Mặc Ngữ');
+    textbox.setSelectionRange(0, textbox.value.length);
+    pressCtrlG();
+    expect(textbox.value).toBe('[[Lâm Mặc Ngữ]]');
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        '[[Lâm Mặc Ngữ]]',
+        expect.objectContaining({ wikiLinkOptOuts: [] })
+      );
+    });
+  });
+
+  it('keeps existing wiki links unchanged on save', async () => {
+    const info = '[[Tử Linh Pháp Sư]] của [[Lâm Mặc Ngữ]]';
+    const props = detailProps(info);
+    render(<AppEntityDetailNotes {...props} />);
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        info,
+        expect.objectContaining({ wikiLinkOptOuts: [] })
+      );
+    });
+  });
+
+  it('does not auto-wrap plain text when the wiki auto-wrap preference is off', async () => {
+    localStorage.setItem('tangthu_entity_notes_auto_wrap_wiki_on_save_v1', '0');
+    const props = detailProps('Lâm Mặc Ngữ');
+    render(<AppEntityDetailNotes {...props} />);
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        'Lâm Mặc Ngữ',
+        expect.objectContaining({ wikiLinkOptOuts: [] })
+      );
+    });
+  });
+
   it('auto-wraps matching entity names into wiki links when saving', () => {
     const props = createProps({
       entityMap: [{ name: 'Linh Gioi Chau', dest: { entityId: 'entity-1' } }],

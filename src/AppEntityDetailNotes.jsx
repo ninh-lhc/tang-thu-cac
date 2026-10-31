@@ -36,9 +36,9 @@ import {
 import { autoWrapWikiLinksForSave } from './lib/autoWrapWikiLinksAsync.js';
 import {
   applyWikiLinkOptOutsForSaveAsync,
-  detectWikiLinkOptOuts,
   mergeWikiLinkOptOuts,
   readWikiLinkOptOuts,
+  removeWikiLinkOptOutsOverlapping,
   resolveEffectiveWikiLinkOptOuts,
 } from './lib/wikiLinkOptOut.js';
 import { prepareEntityNotesPasteText } from './lib/entityNotesEditorPaste.js';
@@ -185,17 +185,14 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     return () => clearTimeout(timer);
   }, [notesEdit.text]);
 
-  const savedBaselineForOptOuts = safeString(savedInfo ?? initialInfo);
-
   const resolveDraftWikiLinkOptOuts = useCallback(
     (draftText) =>
       resolveEffectiveWikiLinkOptOuts({
         stored: initialWikiLinkOptOuts,
         pending: pendingWikiLinkOptOuts,
-        savedBaseline: savedBaselineForOptOuts,
         draftText,
       }),
-    [initialWikiLinkOptOuts, pendingWikiLinkOptOuts, savedBaselineForOptOuts]
+    [initialWikiLinkOptOuts, pendingWikiLinkOptOuts]
   );
 
   const effectiveWikiLinkOptOuts = useMemo(
@@ -243,6 +240,16 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     });
   }, []);
 
+  const applyWikiToggleMeta = useCallback((nextText, meta) => {
+    if (meta?.wikiOptOut) {
+      setPendingWikiLinkOptOuts((prev) => mergeWikiLinkOptOuts(prev, [meta.wikiOptOut]));
+    } else if (meta?.wikiOptOutClearRange) {
+      const { text, start, end } = meta.wikiOptOutClearRange;
+      setPendingWikiLinkOptOuts((prev) => removeWikiLinkOptOutsOverlapping(prev, text, start, end));
+    }
+    recordAndSetDraft(nextText);
+  }, [recordAndSetDraft]);
+
   useEffect(() => {
     const onKey = (e) => {
       // Ctrl+H: mở/đóng tìm & thay (không dùng Cmd+H — trên Mac là Ẩn cửa sổ)
@@ -258,10 +265,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
         e.preventDefault();
         e.stopPropagation();
         handleToolbarClick('__WIKI_TOGGLE__', '', 'entity-info-editor', (nextText, meta) => {
-          if (meta?.wikiOptOut) {
-            setPendingWikiLinkOptOuts((prev) => mergeWikiLinkOptOuts(prev, [meta.wikiOptOut]));
-          }
-          recordAndSetDraft(nextText);
+          applyWikiToggleMeta(nextText, meta);
         });
         return;
       }
@@ -275,7 +279,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, [recordAndSetDraft, undo, redo]);
+  }, [applyWikiToggleMeta, undo, redo]);
 
   useEffect(() => {
     const el = textareaRef.current || document.getElementById('entity-info-editor');
@@ -386,12 +390,9 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
 
   const onEditorContentChange = useCallback(
     (v, meta) => {
-      if (meta?.wikiOptOut) {
-        setPendingWikiLinkOptOuts((prev) => mergeWikiLinkOptOuts(prev, [meta.wikiOptOut]));
-      }
-      recordAndSetDraft(v);
+      applyWikiToggleMeta(v, meta);
     },
-    [recordAndSetDraft]
+    [applyWikiToggleMeta]
   );
   const syncDraftAndPreview = useCallback(
     (next) => {
@@ -708,10 +709,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
             const latestNotesPrefs = getEntityNotesPrefs();
             const rawDraft = notesEdit.text;
             const savedBaseline = safeString(savedInfo ?? initialInfo);
-            const preDetectedOptOuts = mergeWikiLinkOptOuts(
-              pendingWikiLinkOptOuts,
-              detectWikiLinkOptOuts(savedBaseline, rawDraft)
-            );
+            const preDetectedOptOuts = pendingWikiLinkOptOuts;
             const savePipelineSteps = [];
             if (latestNotesPrefs.autoCleanOnSave) savePipelineSteps.push('clean');
             // Bọc [[link]] khi lưu: chỉ applyWikiLinkOptOutsForSave (tránh autoWrap trùng với bước link).

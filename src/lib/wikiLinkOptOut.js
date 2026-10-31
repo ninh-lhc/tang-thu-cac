@@ -114,34 +114,43 @@ function findPlainAnchorWithContext(current, anchor, beforeCtx, afterCtx) {
   return -1;
 }
 
-/** Vùng [[...]] sắp được gỡ bằng toolbar (chọn cả link hoặc con trỏ trong link). */
+/** Vùng [[...]] sắp được gỡ: chọn cả link, chọn phần trong link, hoặc con trỏ trong link. */
 export function resolveWikiUnwrapRange(text, selStart, selEnd) {
   const source = safeString(text);
-  const start = Math.max(0, Number(selStart) || 0);
-  const end = Math.max(start, Number(selEnd) || 0);
+  const start = Math.max(0, Math.min(Number(selStart) || 0, source.length));
+  const end = Math.max(start, Math.min(Number(selEnd) || start, source.length));
 
   if (start < end) {
     const picked = source.slice(start, end);
     if (picked.startsWith('[[') && picked.endsWith(']]') && picked.length >= 4) {
-      return {
-        wikiStart: start,
-        wikiEnd: end,
-        anchor: safeString(picked.slice(2, -2)).trim(),
-      };
+      const anchor = safeString(picked.slice(2, -2)).trim();
+      if (!anchor) return null;
+      return { wikiStart: start, wikiEnd: end, anchor };
     }
-    return null;
   }
 
-  const pos = start;
-  const left = source.lastIndexOf('[[', pos);
-  const right = source.indexOf(']]', pos);
+  const left = source.lastIndexOf('[[', start);
+  const right = source.indexOf(']]', start);
   if (left === -1 || right === -1 || left >= right) return null;
-  if (left + 2 > pos || right < pos) return null;
-  return {
-    wikiStart: left,
-    wikiEnd: right + 2,
-    anchor: safeString(source.slice(left + 2, right)).trim(),
-  };
+  const linkEnd = right + 2;
+  if (end > linkEnd || start < left) return null;
+  if (start < end && (start < left + 2 || end > right)) return null;
+  if (start === end && (start < left + 2 || start > right)) return null;
+  const anchor = safeString(source.slice(left + 2, right)).trim();
+  if (!anchor) return null;
+  return { wikiStart: left, wikiEnd: linkEnd, anchor };
+}
+
+/** Bỏ opt-out trùng vùng chữ vừa được bọc lại bằng Ctrl+G. */
+export function removeWikiLinkOptOutsOverlapping(optOuts, text, start, end) {
+  const rangeStart = Math.max(0, Number(start) || 0);
+  const rangeEnd = Math.max(rangeStart, Number(end) || 0);
+  if (rangeEnd <= rangeStart) return readWikiLinkOptOuts({ wikiLinkOptOuts: optOuts });
+  return readWikiLinkOptOuts({ wikiLinkOptOuts: optOuts }).filter((item) => {
+    const range = resolveOptOutPlainRange(text, item);
+    if (!range) return true;
+    return !(rangeStart < range.end && rangeEnd > range.start);
+  });
 }
 
 /** Opt-out ngay khi bấm «Gỡ Wiki Link» — không cần đợi lưu. */
@@ -204,21 +213,19 @@ function plainIndexAtWrappedIndex(prepared, wrapped, wrappedIndex) {
 }
 
 /**
- * Opt-out khi soạn: đã lưu + gỡ toolbar + chỗ user bỏ [[...]] so với baseline.
- * Không gọi auto-wrap ở đây (quá nặng trên mỗi keystroke); plain-text opt-out chỉ khi lưu.
+ * Opt-out đang hiệu lực: chỉ chỗ Ctrl+G đã gỡ (stored + pending).
+ * Mất [[...]] do gõ/xóa/paste không tạo opt-out. Link được bọc lại thì prune bỏ opt-out cũ.
  */
 export function resolveEffectiveWikiLinkOptOuts({
   stored = [],
   pending = [],
-  savedBaseline = '',
   draftText = '',
 } = {}) {
-  const fromUnwrap = detectWikiLinkOptOuts(savedBaseline, draftText);
-  return mergeWikiLinkOptOuts(stored, pending, fromUnwrap);
+  return pruneWikiLinkOptOuts(draftText, mergeWikiLinkOptOuts(stored, pending));
 }
 
 /**
- * Phát hiện [[anchor]] ở bản đã lưu mà bản nháp hiện để plain text cùng ngữ cảnh.
+ * So sánh bản lưu và bản nháp. Không dùng khi lưu: mất [[...]] do gõ thường không phải opt-out.
  */
 export function detectWikiLinkOptOuts(previousText, currentText) {
   const previous = safeString(previousText);
@@ -355,7 +362,6 @@ export function applyMergedOptOutsToAutoWrappedText(preparedText, wrappedText, o
 }
 
 export function applyWikiLinkOptOutsForSave({
-  savedInfo = '',
   preparedText = '',
   wikiLinkOptOuts = [],
   entityMap = [],
@@ -365,7 +371,6 @@ export function applyWikiLinkOptOutsForSave({
   tierLabelSet = null,
 }) {
   const storedBefore = readWikiLinkOptOuts({ wikiLinkOptOuts });
-  const fromUnwrap = detectWikiLinkOptOuts(savedInfo, preparedText);
   const wrapOpts = {
     tierLabelSet: tierLabelSet instanceof Set ? tierLabelSet : null,
   };
@@ -385,7 +390,7 @@ export function applyWikiLinkOptOutsForSave({
           );
         })()
       : [];
-  const detected = mergeWikiLinkOptOuts(preDetectedOptOuts, fromUnwrap, fromPlain);
+  const detected = mergeWikiLinkOptOuts(preDetectedOptOuts, fromPlain);
   const merged = pruneWikiLinkOptOuts(
     preparedText,
     mergeWikiLinkOptOuts(wikiLinkOptOuts, detected)
@@ -423,13 +428,12 @@ async function resolveAutoWrapResult(maybePromise) {
   return { text: safeString(result), count: 0 };
 }
 
-function hasKnownWikiLinkOptOutsAtSave(storedBefore, preDetectedOptOuts, fromUnwrap) {
-  return storedBefore.length > 0 || preDetectedOptOuts.length > 0 || fromUnwrap.length > 0;
+function hasKnownWikiLinkOptOutsAtSave(storedBefore, preDetectedOptOuts) {
+  return storedBefore.length > 0 || preDetectedOptOuts.length > 0;
 }
 
 /** Save path: auto-wrap có thể chạy async (Web Worker). Chỉ gọi wrap một lần (optOuts: []). */
 export async function applyWikiLinkOptOutsForSaveAsync({
-  savedInfo = '',
   preparedText = '',
   wikiLinkOptOuts = [],
   entityMap = [],
@@ -439,7 +443,6 @@ export async function applyWikiLinkOptOutsForSaveAsync({
   tierLabelSet = null,
 }) {
   const storedBefore = readWikiLinkOptOuts({ wikiLinkOptOuts });
-  const fromUnwrap = detectWikiLinkOptOuts(savedInfo, preparedText);
   const wrapOpts = {
     tierLabelSet: tierLabelSet instanceof Set ? tierLabelSet : null,
   };
@@ -451,7 +454,7 @@ export async function applyWikiLinkOptOutsForSaveAsync({
         optOuts: [],
       })
     );
-    if (!hasKnownWikiLinkOptOutsAtSave(storedBefore, preDetectedOptOuts, fromUnwrap)) {
+    if (!hasKnownWikiLinkOptOutsAtSave(storedBefore, preDetectedOptOuts)) {
       if (wrapNoOptOuts.text === preparedText) {
         return {
           text: preparedText,
@@ -483,7 +486,7 @@ export async function applyWikiLinkOptOutsForSaveAsync({
       wrapNoOptOuts.text
     );
   }
-  const detected = mergeWikiLinkOptOuts(preDetectedOptOuts, fromUnwrap, fromPlain);
+  const detected = mergeWikiLinkOptOuts(preDetectedOptOuts, fromPlain);
   const merged = pruneWikiLinkOptOuts(
     preparedText,
     mergeWikiLinkOptOuts(wikiLinkOptOuts, detected)

@@ -1740,6 +1740,21 @@ export const applyWikiLinkToggle = (text, selStart, selEnd) => {
   return result;
 };
 
+/** Vùng chữ thường vừa được Ctrl+G bọc — dùng để gỡ opt-out cũ cùng chỗ. */
+function plainRangeWrappedByToggle(oldText, selStart, selEnd, result) {
+  const start = Math.max(0, Number(selStart) || 0);
+  const end = Math.max(start, Number(selEnd) || 0);
+  if (start < end) return { text: oldText, start, end };
+  const caret = Number(result?.selStart) || 0;
+  const next = String(result?.newText ?? '');
+  if (next.slice(caret - 2, caret) !== ']]') return null;
+  const open = next.lastIndexOf('[[', caret - 2);
+  if (open < 0) return null;
+  const inner = next.slice(open + 2, caret - 2);
+  if (!inner.trim()) return null;
+  return { text: oldText, start: open, end: open + inner.length };
+}
+
 export const handleToolbarClick = (before, after = '', editorId, onAfterApply) => {
   const textarea = document.getElementById(editorId);
   if (!textarea) return;
@@ -1773,10 +1788,22 @@ export const handleToolbarClick = (before, after = '', editorId, onAfterApply) =
   }
   if (before === '__WIKI_TOGGLE__') {
     const result = applyWikiLinkToggle(text, start, end);
-    const wikiOptOut = result.mode === 'unwrap'
-      ? buildWikiLinkOptOutFromUnwrap(text, result.unwrapStart, result.unwrapEnd)
-      : null;
-    apply(result.newText, result.selStart, result.selEnd, wikiOptOut ? { wikiOptOut } : undefined);
+    if (result.mode === 'unwrap') {
+      const wikiOptOut = buildWikiLinkOptOutFromUnwrap(text, result.unwrapStart, result.unwrapEnd);
+      apply(result.newText, result.selStart, result.selEnd, wikiOptOut ? { wikiOptOut } : undefined);
+      return;
+    }
+    if (result.mode === 'wrap') {
+      const clearRange = plainRangeWrappedByToggle(text, start, end, result);
+      apply(
+        result.newText,
+        result.selStart,
+        result.selEnd,
+        clearRange ? { wikiOptOutClearRange: clearRange } : undefined
+      );
+      return;
+    }
+    apply(result.newText, result.selStart, result.selEnd);
     return;
   }
 
