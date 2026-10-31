@@ -1,10 +1,10 @@
 # 📊 AUDIT LẦN 2 — TÀNG THƯ CÁC — BÁO CÁO CUỐI CÙNG
 
 > **Audit baseline:** `c9dc964` · `main` · 929/929 test pass · build pass
-> **Final state:** `9d79224` · `main` · 968/968 test pass · build pass
+> **Final state:** `3ab752f` · `main` · 1004/1004 test pass · build pass
 > **Kiến trúc:** SPA Vite 8 + React 19 (File System Access API + localStorage + IndexedDB)
 > **Phạm vi:** Architecture, persistence, data integrity, async lifecycle, markdown parsing
-> **Ngày hoàn tất:** 2026-10-31 (commit `9d79224`, 2026-10-31 06:07 +0700)
+> **Ngày hoàn tất:** 2026-10-31 (commit `3ab752f`, 2026-10-31 08:40 +0700)
 
 ---
 
@@ -14,8 +14,8 @@
 |----|----------|-------------|------|--------|-------|--------|---------|
 | F-001 | Critical | Dirty consume trước disk write — crash mất dirty state | BUG/RISK | ✅ FIXED | Phase 1A | `67bbf9d` | `snapshotDirtyShards()` thay `consumeDirtyShards()`; `clearDirtyShardKeys()` chỉ sau write thành công |
 | F-002 | High | Toast "đã lưu" trước disk flush hoàn tất | RISK | ✅ FIXED | Phase 1A + 1B | `67bbf9d`, `d85b4e0` | Await sync trước toast; beforeunload + visibilitychange guard |
-| F-003 | High | Shard + manifest non-atomic write | RISK | 🔸 UNRESOLVED | — | — | Cần journal/WAL hoặc atomic rename — thuộc persistence core redesign |
-| F-004 | High | Không có file lock giữa các tab | RISK | 🔸 UNRESOLVED | — | — | Cần Web Locks API hoặc BroadcastChannel — thuộc persistence core redesign |
+| F-003 | High | Shard + manifest non-atomic write | RISK | ✅ FIXED | Phase 4B | `3ab752f` | Manifest `shardCommit` field (FNV-1a hash + generation) verifies shard integrity on load |
+| F-004 | High | Không có file lock giữa các tab | RISK | ✅ FIXED | Phase 4A | `bfec68f` | Web Locks API session lock + BroadcastChannel heartbeat; read-only fallback |
 | F-005 | Medium | Wiki-link `[[Page\|Display]]` pipe bị tách cột trong table parser | BUG | ✅ FIXED | Phase 2 | `07ec224` | Stateful scanner (NORMAL/IN_WIKI/IN_CODE) trong `splitTableRowCells` |
 | F-006 | Medium | Inline code backtick pipe không được bảo vệ trong table parser | RISK | ✅ FIXED | Phase 2 | `07ec224` | Cùng stateful scanner; 21 test mới |
 | F-007 | Medium | `markAllShardsDirty` gọi thừa khi hydrate/select read-only | SMELL | ✅ FIXED | Phase 3 | `9d79224` | Conditional dirty marking dựa trên `dataChanged` flags |
@@ -107,40 +107,63 @@
 
 **Tests:** 967 → 968 (+1 test)
 
+### Phase 4A (Commit `bfec68f`)
+
+**Subject:** Phase 4A: multi-tab session lock — F-004 fix
+
+**Scope:** F-004 (High)
+
+**Files changed:** 7 files (+551 / −5) — 4 source (`App.jsx`, `useAppPersistence.js`, 2 hook mới) + 3 test (1 sửa, 2 mới)
+
+**Thay đổi chính:**
+
+- `useNovelSessionLock.js` (NEW): Web Locks API — exclusive lock per `novelId` (`ifAvailable: true`, không block). Lock giữ suốt phiên novel mở; release khi đổi novel/unmount. Tab crash → trình duyệt tự nhả lock.
+- `useNovelTabWarning.js` (NEW): BroadcastChannel `ttc-novel-tabs` — heartbeat 10s, timeout 15s. Detect tab khác đang mở cùng novel.
+- `useAppPersistence.js`: Guard trước `saveNovelShadow` và trước `runFolderSync` — tab không giữ lock trả `{ ok: false, reason: 'locked_by_other_tab' }`. `clearNovelShadow` sau flush chỉ chạy khi tab giữ lock.
+- `App.jsx`: Tích hợp hai hook theo `activeNovelData.id`. Toast "Truyện đang mở ở tab khác — chế độ chỉ đọc". Nút "Mở để chỉnh sửa" xin lock lại.
+- Graceful degradation: không có `navigator.locks` → `hasLock = true` (optimistic). Không có `BroadcastChannel` → bỏ qua, không crash.
+
+**Tests:** 968 → 982 (+14 tests, +2 test files; suite 129 → 131 files)
+
+### Phase 4B (Commit `3ab752f`)
+
+**Subject:** Phase 4B: shard integrity verification — F-003 fix
+
+**Scope:** F-003 (High)
+
+**Files changed:** 6 files (+544 / −25) — 3 source + 3 test (2 sửa, 1 mới: `shardIntegrity.js` + `shardIntegrity.test.js`)
+
+**Thay đổi chính:**
+
+- `shardIntegrity.js` (NEW, ~111 lines): `quickHash` (FNV-1a 32-bit, 8-char hex), `computeShardHashes`, `verifyShardIntegrity`. Tear detection, không phải crypto.
+- `novelDiskLayout.js`: `readRawNovelPackageFromDir` trả thêm `integrityStatus` (`ok`/`torn`/`legacy`/`skipped`) + `integrityMismatches`. `buildDiskManifest` strips `shardCommit` (chỉ bytes trên đĩa mới có).
+- `useAppPersistence.js`: Sau `writeShardTree`, trước ghi manifest: `buildShardCommit` gắn `{ generation, shardHashes, timestamp }`. Generation tăng monotonic sau `close()` manifest thành công. Load torn + shadow → restore + toast. Load torn + no shadow → toast warn 10s + load best-effort + `markAllShardsDirty`.
+- Backward compatible: data cũ không có `shardCommit` → `integrityStatus: 'legacy'`, skip verify. App cũ mở data mới → bỏ qua field lạ. Shard JSON format không đổi.
+
+**Tests:** 982 → 1004 (+22 tests, +1 test file; suite 131 → 132 files)
+
 ---
 
 ## Phần 4 — Metrics tổng hợp
 
-| Metric | Trước Audit | Sau Phase 3 | Delta |
-|--------|-------------|-------------|-------|
-| Tests passing | 929 | 968 | +39 |
-| Test files | 126 | 129 | +3 |
-| Findings total | 10 | 10 | — |
-| Findings fixed | 0 | 7 | +7 |
-| Findings mitigated | 0 | 1 | +1 |
-| Findings unresolved | 10 | 2 | −8 |
-| Phases completed | 0 | 4 | +4 |
-| Commits | 0 | 4 | +4 |
-| Build | Pass | Pass | ✅ |
-| ESLint regressions | — | 0 | ✅ |
+| Metric | Trước Audit | Sau Phase 3 | Sau Phase 4B (Final) | Delta |
+|--------|-------------|-------------|----------------------|-------|
+| Tests passing | 929 | 968 | 1004 | +75 |
+| Test files | 126 | 129 | 132 | +6 |
+| Findings total | 10 | 10 | 10 | — |
+| Findings fixed | 0 | 7 | 9 | +9 |
+| Findings mitigated | 0 | 1 | 1 | +1 |
+| Findings unresolved | 10 | 2 | 0 | −10 |
+| Phases completed | 0 | 4 | 6 | +6 |
+| Commits | 0 | 4 | 6 | +6 |
+| Build | Pass | Pass | Pass | ✅ |
+| ESLint regressions | — | 0 | 0 | ✅ |
 
 ---
 
 ## Phần 5 — Các finding còn lại
 
-### 🔸 F-003 — Shard + Manifest non-atomic write [HIGH — UNRESOLVED]
-
-- **Vấn đề:** `writeShardTree()` ghi từng shard tuần tự → `writeManifest()` ghi sau cùng. Crash giữa chừng → shard mới + manifest cũ → dữ liệu lệch.
-- **Mitigation hiện có:** Retry 5 lần + hash cache detect shard cần ghi lại.
-- **Fix cần:** Journal/WAL pattern hoặc write-then-rename cho manifest.
-- **Lý do defer:** Thuộc persistence core — Web File System Access API không hỗ trợ atomic rename. Cần thiết kế kiến trúc riêng.
-
-### 🔸 F-004 — Không có file lock giữa các tab [HIGH — UNRESOLVED]
-
-- **Vấn đề:** 2 tab mở cùng folder → concurrent write → last-write-wins → mất edit.
-- **Mitigation hiện có:** Không có.
-- **Fix cần:** Web Locks API hoặc BroadcastChannel detect + warn user.
-- **Lý do defer:** Liên quan chặt với F-003 — cần thiết kế persistence core cùng lúc. Web Locks API có browser compatibility concerns.
+> F-003 và F-004 đã được fix trong Phase 4A/4B. Chỉ còn F-010 (mitigated).
 
 ### 🟡 F-010 — Collection list không virtual [MEDIUM — MITIGATED]
 
@@ -174,12 +197,12 @@ Nguyên văn từ mục **Clean bill** trong tổng kết audit lần 2 (read-on
 
 Audit lần 1: `docs/audits/architecture-audit-report.md` (không sửa trong báo cáo này).
 
-| Audit lần 1 | Audit lần 2 | Kết quả sau 3 phases |
+| Audit lần 1 | Audit lần 2 | Kết quả sau 6 phases |
 |-------------|-------------|----------------------|
 | AUD-001 (P1) — dirty set consumed trước khi ghi đĩa xong | F-001 | Confirmed + ✅ FIXED (`67bbf9d`) |
 | AUD-002 (P2) — toast thành công trước khi persistence xong | F-002 | Confirmed + ✅ FIXED (`67bbf9d`, `d85b4e0`) |
-| — | F-003 | Mới — 🔸 UNRESOLVED (non-atomic shard + manifest) |
-| — | F-004 | Mới — 🔸 UNRESOLVED (không file lock đa tab) |
+| — | F-003 | Mới — ✅ FIXED (manifest shardCommit integrity) |
+| — | F-004 | Mới — ✅ FIXED (Web Locks session lock + BroadcastChannel) |
 | — | F-005 | Mới — ✅ FIXED (wiki-link pipe trong bảng) |
 | — | F-006 | Mới — ✅ FIXED (inline-code pipe trong bảng) |
 | — | F-007 | Mới — ✅ FIXED (`markAllShardsDirty` read-only) |
@@ -192,6 +215,8 @@ Audit lần 1: `docs/audits/architecture-audit-report.md` (không sửa trong b�
 ## Phần 8 — Git log
 
 ```
+3ab752f Phase 4B: shard integrity verification — F-003 fix
+bfec68f Phase 4A: multi-tab session lock — F-004 fix
 9d79224 Phase 3: fix F-007, F-008, F-009 — conditional dirty marking, stale closure fix, AI pipeline guards
 07ec224 Phase 2: fix F-005/F-006 — protect pipe in wiki-links and inline code
 d85b4e0 Phase 1B: await sync trước toast lưu + guard đóng tab
@@ -204,14 +229,22 @@ c9dc964 (baseline — audit start)
 ## Phần 9 — Kết luận
 
 Audit lần 2 đã phát hiện 10 findings (1 Critical, 3 High, 6 Medium).
-Qua 4 commits trong 3 phases:
+Qua 6 commits trong 6 phases:
 
-- **7/10** findings đã được **fix** hoàn toàn với test coverage
-- **1/10** đã được xác nhận **mitigated** bởi cơ chế có sẵn
-- **2/10** thuộc persistence core (F-003, F-004) — defer cho redesign riêng
+- **9/10** findings đã được **fix** hoàn toàn với test coverage
+- **1/10** đã được xác nhận **mitigated** bởi cơ chế có sẵn (F-010)
+- **0/10** còn unresolved
 
-Test suite tăng từ 929 → 968 (+39 tests), không regression.
-Build và ESLint ổn định xuyên suốt 4 commits.
+Test suite tăng từ 929 → 1004 (+75 tests, +6 test files), không regression.
+Build và ESLint ổn định xuyên suốt 6 commits.
 
-Đánh giá tổng thể: **B+ → A−** (cải thiện đáng kể từ baseline).
-Remaining risk tập trung vào F-003/F-004 (persistence atomicity + multi-tab locking).
+Tổng hợp fix theo severity:
+
+| Severity | Total | Fixed | Mitigated |
+|----------|-------|-------|-----------|
+| Critical | 1 | 1 | — |
+| High | 3 | 3 | — |
+| Medium | 6 | 5 | 1 |
+| **Total** | **10** | **9** | **1** |
+
+Đánh giá tổng thể: **A** (tất cả Critical và High đã fix, remaining risk chỉ là F-010 MEDIUM đã mitigated).
