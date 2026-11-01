@@ -23,6 +23,7 @@ import {
   tryParseMarkdownTableBlock,
 } from './markdownTable.js';
 import { TtcQueryPreviewBlock } from './ttcQueryRenderer.jsx';
+import { shieldPlainWikiOptOutSpans } from './wikiOptOutRenderShield.js';
 
 const DIVIDER_RE = /^(?:-{3,}|\*{3,}|_{3,})$/;
 const SECTION_HEADING_RE = /^\*\*(\d+)\.\s(.+?)\*\*$/;
@@ -903,8 +904,10 @@ export function buildEntityNotesPreviewModel(
 
   const lookup = buildEntityNameLookup(entityMap);
   const wikiLinkOptOuts = Array.isArray(options.wikiLinkOptOuts) ? options.wikiLinkOptOuts : [];
+  // Che trên toàn văn trước khi cắt list/field/[[link]] — mảnh còn lại làm lệch before/after của opt-out.
+  const shieldedText = shieldPlainWikiOptOutSpans(text, wikiLinkOptOuts);
   return renderBlocksFromLines(
-    text.split('\n'),
+    shieldedText.split('\n'),
     {
       dirHandle,
       lookup,

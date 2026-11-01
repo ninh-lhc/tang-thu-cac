@@ -11,6 +11,17 @@ function safeString(value) {
 }
 
 export function normalizeWikiOptOutContext(value) {
+  return safeString(value)
+    .replace(/\s+/g, ' ')
+    .replace(/ ([,.;:!?])/g, '$1')
+    .trim();
+}
+
+function escapeRegExp(value) {
+  return safeString(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function collapseSpaces(value) {
   return safeString(value).replace(/\s+/g, ' ').trim();
 }
 
@@ -89,29 +100,94 @@ function contextMatches(text, start, end, beforeCtx, afterCtx) {
   return true;
 }
 
-function findPlainAnchorWithContext(current, anchor, beforeCtx, afterCtx) {
+function listPlainAnchorHits(current, anchor) {
   const text = safeString(current);
   const anchorText = safeString(anchor).trim();
-  if (!anchorText) return -1;
+  if (!anchorText) return [];
 
+  const parts = anchorText.split(/\s+/).filter(Boolean).map(escapeRegExp);
+  if (parts.length === 0) return [];
+  const matcher = new RegExp(parts.join('\\s+'), 'giu');
   const protectedRanges = collectProtectedWikiRanges(text);
-  const lower = text.toLowerCase();
-  const anchorLower = anchorText.toLowerCase();
-  let searchFrom = 0;
-
-  while (searchFrom < text.length) {
-    const index = lower.indexOf(anchorLower, searchFrom);
-    if (index < 0) return -1;
-    const end = index + anchorText.length;
-    if (
-      !isInsideProtectedRange(protectedRanges, index, end) &&
-      contextMatches(text, index, end, beforeCtx, afterCtx)
-    ) {
-      return index;
+  const hits = [];
+  let match;
+  while ((match = matcher.exec(text)) !== null) {
+    if (match[0].length === 0) {
+      matcher.lastIndex += 1;
+      continue;
     }
-    searchFrom = index + 1;
+    const start = match.index;
+    const end = start + match[0].length;
+    if (!isInsideProtectedRange(protectedRanges, start, end)) hits.push({ start, end });
   }
-  return -1;
+  return hits;
+}
+
+function findPlainAnchorWithContext(current, anchor, beforeCtx, afterCtx) {
+  const text = safeString(current);
+  for (const hit of listPlainAnchorHits(text, anchor)) {
+    if (contextMatches(text, hit.start, hit.end, beforeCtx, afterCtx)) return hit;
+  }
+  return null;
+}
+
+/**
+ * Opt-out ghi trên text A (editor lúc Ctrl+G) nhưng save so trên text B
+ * (sau cleanup / đánh số lại list). Giữ đúng occurrence theo thứ tự, rồi
+ * ghi lại before/after trên text B — không kéo dài context để né lệch.
+ */
+export function retargetWikiLinkOptOuts(beforeText, afterText, optOuts = []) {
+  const before = safeString(beforeText);
+  const after = safeString(afterText);
+  if (!after) return [];
+  if (before === after) return readWikiLinkOptOuts({ wikiLinkOptOuts: optOuts });
+
+  const next = [];
+  const used = new Set();
+  for (const item of readWikiLinkOptOuts({ wikiLinkOptOuts: optOuts })) {
+    const beforeHits = listPlainAnchorHits(before, item.anchor);
+    const selected = findPlainAnchorWithContext(before, item.anchor, item.before, item.after);
+    if (!selected) continue;
+    const ordinal = beforeHits.findIndex((hit) => hit.start === selected.start && hit.end === selected.end);
+    if (ordinal < 0) continue;
+    const afterHits = listPlainAnchorHits(after, item.anchor);
+    const dest = afterHits[ordinal];
+    if (!dest) continue;
+    const canon = collapseSpaces(after.slice(dest.start, dest.end));
+    const key = `${ordinal}\x1f${canon}`;
+    if (used.has(key)) continue;
+    used.add(key);
+    next.push({
+      anchor: after.slice(dest.start, dest.end),
+      before: after.slice(Math.max(0, dest.start - CONTEXT_LEN), dest.start),
+      after: after.slice(dest.end, Math.min(after.length, dest.end + CONTEXT_LEN)),
+    });
+  }
+  return next;
+}
+
+function resolveSaveOptOutInputs({
+  preparedText = '',
+  sourceText = null,
+  wikiLinkOptOuts = [],
+  preDetectedOptOuts = [],
+}) {
+  const storedBefore = readWikiLinkOptOuts({ wikiLinkOptOuts });
+  const pending = Array.isArray(preDetectedOptOuts) ? preDetectedOptOuts : [];
+  if (sourceText == null || safeString(sourceText) === safeString(preparedText)) {
+    return { storedBefore, stored: storedBefore, pending };
+  }
+  return {
+    storedBefore,
+    stored: retargetWikiLinkOptOuts(sourceText, preparedText, storedBefore),
+    pending: retargetWikiLinkOptOuts(sourceText, preparedText, pending),
+  };
+}
+
+/** Chỉ nối một token tên ngay sau anchor (vd. «Hồng Lâu» + « Mộng»), không nuốt cả đoạn sau. */
+function leadingOptOutContinuation(after) {
+  const match = safeString(after).match(/^[ \t]+[\p{L}\p{N}][\p{L}\p{N}_'’-]*/u);
+  return match ? match[0] : '';
 }
 
 /** Vùng [[...]] sắp được gỡ: chọn cả link, chọn phần trong link, hoặc con trỏ trong link. */
@@ -179,6 +255,19 @@ function plainIndexAtWrappedIndex(prepared, wrapped, wrappedIndex) {
   let wi = 0;
   const target = Math.max(0, Number(wrappedIndex) || 0);
   while (wi < target && wi < wrapped.length && pi <= prepared.length) {
+    if (wrapped.startsWith('[[', wi) && prepared.startsWith('[[', pi)) {
+      const wrappedClose = wrapped.indexOf(']]', wi + 2);
+      const preparedClose = prepared.indexOf(']]', pi + 2);
+      if (wrappedClose >= 0 && preparedClose >= 0) {
+        const wrappedLink = wrapped.slice(wi, wrappedClose + 2);
+        const preparedLink = prepared.slice(pi, preparedClose + 2);
+        if (wrappedLink === preparedLink) {
+          wi = wrappedClose + 2;
+          pi = preparedClose + 2;
+          continue;
+        }
+      }
+    }
     if (wrapped.startsWith('[[', wi)) {
       const close = wrapped.indexOf(']]', wi + 2);
       if (close < 0) return -1;
@@ -244,7 +333,7 @@ export function detectWikiLinkOptOuts(previousText, currentText) {
     const before = previous.slice(Math.max(0, wikiStart - CONTEXT_LEN), wikiStart);
     const after = previous.slice(wikiEnd, Math.min(previous.length, wikiEnd + CONTEXT_LEN));
 
-    if (findPlainAnchorWithContext(current, anchor, before, after) < 0) continue;
+    if (!findPlainAnchorWithContext(current, anchor, before, after)) continue;
 
     found.push({
       anchor,
@@ -260,19 +349,45 @@ export function pruneWikiLinkOptOuts(text, optOuts = []) {
   if (!current) return [];
   return optOuts.filter((item) => {
     if (!item?.anchor) return false;
-    return findPlainAnchorWithContext(current, item.anchor, item.before, item.after) >= 0;
+    return findPlainAnchorWithContext(current, item.anchor, item.before, item.after) != null;
   });
 }
 
 function resolveOptOutPlainRange(text, optOut) {
-  const start = findPlainAnchorWithContext(text, optOut?.anchor, optOut?.before, optOut?.after);
-  if (start < 0) return null;
-  let end = start + safeString(optOut.anchor).trim().length;
-  const afterPlain = safeString(optOut.after).replace(/^\s+/, '');
-  if (afterPlain && safeString(text).slice(end).toLowerCase().startsWith(afterPlain.toLowerCase())) {
-    end += afterPlain.length;
+  const found = findPlainAnchorWithContext(text, optOut?.anchor, optOut?.before, optOut?.after);
+  if (!found) return null;
+  let { start, end } = found;
+  const continuation = leadingOptOutContinuation(optOut?.after);
+  const tail = safeString(text).slice(end);
+  if (continuation && tail.toLowerCase().startsWith(continuation.toLowerCase())) {
+    end += continuation.length;
   }
   return { start, end };
+}
+
+/**
+ * Vị trí chữ thường còn bị opt-out trên đúng bản text gốc.
+ * Renderer phải che các vùng này trước khi cắt dòng / cắt [[link]] lân cận,
+ * vì mảnh còn lại không còn before/after để isWikiWrapOptedOut nhận ra.
+ */
+export function listWikiLinkOptOutRanges(text, optOuts = []) {
+  const ranges = [];
+  for (const item of readWikiLinkOptOuts({ wikiLinkOptOuts: optOuts })) {
+    const range = resolveOptOutPlainRange(text, item);
+    if (!range || range.end <= range.start) continue;
+    ranges.push(range);
+  }
+  ranges.sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged = [];
+  for (const range of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && range.start < last.end) {
+      last.end = Math.max(last.end, range.end);
+    } else {
+      merged.push({ start: range.start, end: range.end });
+    }
+  }
+  return merged;
 }
 
 export function isWikiWrapOptedOut(text, start, end, _anchor, optOuts = []) {
@@ -313,12 +428,12 @@ export function detectWikiLinkOptOutsFromPlainText(
     const wikiEnd = wikiStart + match[0].length;
     const before = wrapped.slice(Math.max(0, wikiStart - CONTEXT_LEN), wikiStart);
     const after = wrapped.slice(wikiEnd, Math.min(wrapped.length, wikiEnd + CONTEXT_LEN));
-    const plainIndex = findPlainAnchorWithContext(prepared, anchor, before, after);
-    if (plainIndex < 0) continue;
-    const plainSlice = prepared.slice(plainIndex, plainIndex + anchor.length);
+    const plainHit = findPlainAnchorWithContext(prepared, anchor, before, after);
+    if (!plainHit) continue;
+    const plainSlice = prepared.slice(plainHit.start, plainHit.end);
     // Chỉ opt-out khi bề mặt chữ plain khác thẻ (vd. chữ thường) — không chặn lần nhắc
     // cùng tên chưa kịp bọc khi đoạn văn đã có chỗ [[...]] khác.
-    if (matchesWikiNameSurface(anchor, plainSlice)) continue;
+    if (matchesWikiNameSurface(collapseSpaces(anchor), collapseSpaces(plainSlice))) continue;
     found.push({
       anchor,
       before: sourceSliceContextBefore(wrapped, wikiStart),
@@ -345,13 +460,17 @@ export function applyMergedOptOutsToAutoWrappedText(preparedText, wrappedText, o
     const wikiStart = match.index;
     const wikiEnd = wikiStart + match[0].length;
     out += wrapped.slice(cursor, wikiStart);
-    const anchor = safeString(match[1]).trim();
+    const inner = safeString(match[1]);
+    const anchor = inner.trim();
     const plainStart = plainIndexAtWrappedIndex(prepared, wrapped, wikiStart);
     const plainEnd = plainIndexAtWrappedIndex(prepared, wrapped, wikiEnd);
     let replacement = match[0];
     if (plainStart >= 0 && plainEnd > plainStart && anchor) {
       if (isWikiWrapOptedOut(prepared, plainStart, plainEnd, anchor, optOuts)) {
-        replacement = prepared.slice(plainStart, plainEnd);
+        const plainSlice = prepared.slice(plainStart, plainEnd);
+        if (collapseSpaces(plainSlice) === collapseSpaces(anchor) || plainSlice === inner) {
+          replacement = plainSlice;
+        }
       }
     }
     out += replacement;
@@ -363,6 +482,7 @@ export function applyMergedOptOutsToAutoWrappedText(preparedText, wrappedText, o
 
 export function applyWikiLinkOptOutsForSave({
   preparedText = '',
+  sourceText = null,
   wikiLinkOptOuts = [],
   entityMap = [],
   autoWrapWikiLinksByEntityMapWithCount,
@@ -370,7 +490,12 @@ export function applyWikiLinkOptOutsForSave({
   preDetectedOptOuts = [],
   tierLabelSet = null,
 }) {
-  const storedBefore = readWikiLinkOptOuts({ wikiLinkOptOuts });
+  const { storedBefore, stored, pending } = resolveSaveOptOutInputs({
+    preparedText,
+    sourceText,
+    wikiLinkOptOuts,
+    preDetectedOptOuts,
+  });
   const wrapOpts = {
     tierLabelSet: tierLabelSet instanceof Set ? tierLabelSet : null,
   };
@@ -390,10 +515,10 @@ export function applyWikiLinkOptOutsForSave({
           );
         })()
       : [];
-  const detected = mergeWikiLinkOptOuts(preDetectedOptOuts, fromPlain);
+  const detected = mergeWikiLinkOptOuts(pending, fromPlain);
   const merged = pruneWikiLinkOptOuts(
     preparedText,
-    mergeWikiLinkOptOuts(wikiLinkOptOuts, detected)
+    mergeWikiLinkOptOuts(stored, detected)
   );
   const detectedCount = countNewWikiLinkOptOuts(storedBefore, merged);
   if (!autoWrapOnSave || typeof autoWrapWikiLinksByEntityMapWithCount !== 'function') {
@@ -417,7 +542,7 @@ export function applyWikiLinkOptOutsForSave({
   }
   return {
     text: finalText,
-    wikiLinkOptOuts: merged,
+    wikiLinkOptOuts: optOutsMatchingSavedText(preparedText, finalText, merged),
     detectedCount,
   };
 }
@@ -435,6 +560,7 @@ function hasKnownWikiLinkOptOutsAtSave(storedBefore, preDetectedOptOuts) {
 /** Save path: auto-wrap có thể chạy async (Web Worker). Chỉ gọi wrap một lần (optOuts: []). */
 export async function applyWikiLinkOptOutsForSaveAsync({
   preparedText = '',
+  sourceText = null,
   wikiLinkOptOuts = [],
   entityMap = [],
   autoWrapWikiLinksByEntityMapWithCount,
@@ -442,7 +568,12 @@ export async function applyWikiLinkOptOutsForSaveAsync({
   preDetectedOptOuts = [],
   tierLabelSet = null,
 }) {
-  const storedBefore = readWikiLinkOptOuts({ wikiLinkOptOuts });
+  const { storedBefore, stored, pending } = resolveSaveOptOutInputs({
+    preparedText,
+    sourceText,
+    wikiLinkOptOuts,
+    preDetectedOptOuts,
+  });
   const wrapOpts = {
     tierLabelSet: tierLabelSet instanceof Set ? tierLabelSet : null,
   };
@@ -454,7 +585,7 @@ export async function applyWikiLinkOptOutsForSaveAsync({
         optOuts: [],
       })
     );
-    if (!hasKnownWikiLinkOptOutsAtSave(storedBefore, preDetectedOptOuts)) {
+    if (!hasKnownWikiLinkOptOutsAtSave(stored, pending)) {
       if (wrapNoOptOuts.text === preparedText) {
         return {
           text: preparedText,
@@ -486,10 +617,10 @@ export async function applyWikiLinkOptOutsForSaveAsync({
       wrapNoOptOuts.text
     );
   }
-  const detected = mergeWikiLinkOptOuts(preDetectedOptOuts, fromPlain);
+  const detected = mergeWikiLinkOptOuts(pending, fromPlain);
   const merged = pruneWikiLinkOptOuts(
     preparedText,
-    mergeWikiLinkOptOuts(wikiLinkOptOuts, detected)
+    mergeWikiLinkOptOuts(stored, detected)
   );
   const detectedCount = countNewWikiLinkOptOuts(storedBefore, merged);
   if (!autoWrapOnSave || !wrapNoOptOuts) {
@@ -505,7 +636,13 @@ export async function applyWikiLinkOptOutsForSaveAsync({
       : wrapNoOptOuts.text;
   return {
     text: finalText,
-    wikiLinkOptOuts: merged,
+    wikiLinkOptOuts: optOutsMatchingSavedText(preparedText, finalText, merged),
     detectedCount,
   };
+}
+
+/** Opt-out lưu kèm bản đã auto-wrap phải khớp chính bản đó, kể cả khi [[ ]] được chèn vào before/after. */
+function optOutsMatchingSavedText(preparedText, finalText, optOuts) {
+  if (safeString(preparedText) === safeString(finalText)) return optOuts;
+  return retargetWikiLinkOptOuts(preparedText, finalText, optOuts);
 }

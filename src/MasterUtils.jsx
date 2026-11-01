@@ -12,6 +12,7 @@ import { FALLBACK_IMG } from './MasterEngines.js';
 import { splitTextByWikiMatcher } from './lib/wikiLinkMatcher.js';
 import { buildEntityNameLookup, resolveEntityLookup } from './lib/entityWikiLookup.js';
 import { buildWikiLinkOptOutFromUnwrap } from './lib/wikiLinkOptOut.js';
+import { splitWikiOptOutShieldPieces } from './lib/wikiOptOutRenderShield.js';
 import { isCaretInsideWikiLink } from './lib/entityNotesWikiCaret.js';
 import {
   buildPendingWikiLinkAriaLabel,
@@ -1166,6 +1167,18 @@ export const processInline = (
   inlineOptions = {},
 ) => {
   if (!text) return null;
+  const shieldedPieces = splitWikiOptOutShieldPieces(text);
+  if (shieldedPieces) {
+    return shieldedPieces.map((piece, index) => {
+      if (!piece.text) return null;
+      if (piece.shield) return <React.Fragment key={`wiki-opt-out-${index}`}>{piece.text}</React.Fragment>;
+      return (
+        <React.Fragment key={`wiki-opt-rest-${index}`}>
+          {processInline(piece.text, dirHandle, entityLookup, linkRegex, onNavigate, selfEntityId, inlineOptions)}
+        </React.Fragment>
+      );
+    });
+  }
   const { addressMeta = false } = inlineOptions || {};
 
   if (addressMeta) {

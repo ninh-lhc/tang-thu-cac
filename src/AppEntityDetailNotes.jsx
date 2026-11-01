@@ -116,6 +116,10 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   const [isAiPipelineRunning, setIsAiPipelineRunning] = useState(false);
   const [aiPipelineStep, setAiPipelineStep] = useState(null);
   const [pendingWikiLinkOptOuts, setPendingWikiLinkOptOuts] = useState([]);
+  const pendingWikiLinkOptOutsRef = useRef([]);
+  const notesEditTextRef = useRef(s0);
+  const storedWikiLinkOptOutsRef = useRef(initialWikiLinkOptOuts);
+  storedWikiLinkOptOutsRef.current = initialWikiLinkOptOuts;
   const [tableEditIndex, setTableEditIndex] = useState(null);
   const notesTypo = useSyncExternalStore(subscribeEntityNotesPrefs, getEntityNotesPrefs, getEntityNotesPrefs);
   const textareaRef = useRef(null);
@@ -206,6 +210,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
   }, [notesEdit.text, isSplitPreview, setLivePreviewText]);
 
   const recordAndSetDraft = useCallback((next) => {
+    notesEditTextRef.current = next;
     setNotesEdit(({ text, history, hIndex }) => {
       if (history[hIndex] === next && text === next) {
         return { text, history, hIndex };
@@ -228,6 +233,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     setNotesEdit((s) => {
       if (s.hIndex <= 0) return s;
       const ni = s.hIndex - 1;
+      notesEditTextRef.current = s.history[ni];
       return { ...s, text: s.history[ni], hIndex: ni };
     });
   }, []);
@@ -236,16 +242,21 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
     setNotesEdit((s) => {
       if (s.hIndex >= s.history.length - 1) return s;
       const ni = s.hIndex + 1;
+      notesEditTextRef.current = s.history[ni];
       return { ...s, text: s.history[ni], hIndex: ni };
     });
   }, []);
 
   const applyWikiToggleMeta = useCallback((nextText, meta) => {
     if (meta?.wikiOptOut) {
-      setPendingWikiLinkOptOuts((prev) => mergeWikiLinkOptOuts(prev, [meta.wikiOptOut]));
+      const next = mergeWikiLinkOptOuts(pendingWikiLinkOptOutsRef.current, [meta.wikiOptOut]);
+      pendingWikiLinkOptOutsRef.current = next;
+      setPendingWikiLinkOptOuts(next);
     } else if (meta?.wikiOptOutClearRange) {
       const { text, start, end } = meta.wikiOptOutClearRange;
-      setPendingWikiLinkOptOuts((prev) => removeWikiLinkOptOutsOverlapping(prev, text, start, end));
+      const next = removeWikiLinkOptOutsOverlapping(pendingWikiLinkOptOutsRef.current, text, start, end);
+      pendingWikiLinkOptOutsRef.current = next;
+      setPendingWikiLinkOptOuts(next);
     }
     recordAndSetDraft(nextText);
   }, [recordAndSetDraft]);
@@ -701,15 +712,18 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
           type="button"
           disabled={isAiPipelineRunning}
           onClick={async () => {
+            const rawDraft = textareaRef.current?.value ?? notesEditTextRef.current;
+            const preDetectedOptOuts = pendingWikiLinkOptOutsRef.current;
+            const storedOptOuts = storedWikiLinkOptOutsRef.current;
+            notesEditTextRef.current = rawDraft;
+
             setIsAiPipelineRunning(true);
             setAiPipelineStep(null);
             await yieldToMain();
             await nextPaint();
 
             const latestNotesPrefs = getEntityNotesPrefs();
-            const rawDraft = notesEdit.text;
             const savedBaseline = safeString(savedInfo ?? initialInfo);
-            const preDetectedOptOuts = pendingWikiLinkOptOuts;
             const savePipelineSteps = [];
             if (latestNotesPrefs.autoCleanOnSave) savePipelineSteps.push('clean');
             // Bọc [[link]] khi lưu: chỉ applyWikiLinkOptOutsForSave (tránh autoWrap trùng với bước link).
@@ -724,7 +738,11 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
                   setIsFormattingStructure(true);
                 }
                 await yieldToMain();
-                const wikiLinkOptOutsAtSave = resolveDraftWikiLinkOptOuts(rawDraft);
+                const wikiLinkOptOutsAtSave = resolveEffectiveWikiLinkOptOuts({
+                  stored: storedOptOuts,
+                  pending: preDetectedOptOuts,
+                  draftText: rawDraft,
+                });
                 const pipelineResult = await runNotesAiPipeline(rawDraft, {
                   steps: savePipelineSteps,
                   entityMap,
@@ -764,7 +782,7 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
                 : pipelineText;
               const formatSync = syncEntityNotesDuplicateWordFormatting(cleanedText);
               const preparedText = formatSync.text;
-              if (preparedText !== notesEdit.text) {
+              if (preparedText !== rawDraft) {
                 syncDraftAndPreview(preparedText);
                 if (cleanedText !== notesEdit.text && formatSync.propagatedCount > 0) {
                   showToast('Đã tự chuẩn hoá ghi chú và đồng bộ định dạng cho các từ/cụm trùng trước khi lưu.');
@@ -779,7 +797,8 @@ const EntityNotesEditSession = memo(function EntityNotesEditSession({
               const saveResult = await applyWikiLinkOptOutsForSaveAsync({
                 savedInfo: savedBaseline,
                 preparedText,
-                wikiLinkOptOuts: initialWikiLinkOptOuts,
+                sourceText: rawDraft,
+                wikiLinkOptOuts: storedOptOuts,
                 entityMap,
                 autoWrapWikiLinksByEntityMapWithCount: autoWrapWikiLinksForSave,
                 autoWrapOnSave: latestNotesPrefs.autoWrapWikiOnSave,

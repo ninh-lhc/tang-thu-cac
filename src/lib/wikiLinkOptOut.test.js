@@ -12,6 +12,7 @@ import {
   resolveEffectiveWikiLinkOptOuts,
 } from './wikiLinkOptOut.js';
 import { autoWrapWikiLinksByEntityMapWithCount } from './autoWrapWikiLinks.js';
+import { prepareEntityNotesForSave } from './entityNotesDiagnostics.js';
 
 describe('wikiLinkOptOut', () => {
   const map = [{ name: 'Hồng Lâu' }, { name: 'Hồng Lâu Mộng' }];
@@ -218,6 +219,72 @@ describe('wikiLinkOptOut', () => {
     const stored = [{ anchor: 'A', before: 'x', after: 'y' }];
     const merged = mergeWikiLinkOptOuts(stored, [{ anchor: 'A', before: 'x', after: 'y' }, { anchor: 'B', before: '1', after: '2' }]);
     expect(countNewWikiLinkOptOuts(stored, merged)).toBe(1);
+  });
+
+  it('keeps a Ctrl+G opt-out when save removes the space before punctuation', () => {
+    const raw = 'Kỹ năng của [[Lâm Mặc Ngữ]] rất mạnh .';
+    const open = raw.indexOf('[[');
+    const optOut = buildWikiLinkOptOutFromUnwrap(raw, open, raw.indexOf(']]') + 2);
+    const { text, wikiLinkOptOuts } = applyWikiLinkOptOutsForSave({
+      preparedText: 'Kỹ năng của Lâm Mặc Ngữ rất mạnh.',
+      preDetectedOptOuts: [optOut],
+      entityMap: [{ name: 'Lâm Mặc Ngữ' }],
+      autoWrapWikiLinksByEntityMapWithCount,
+      autoWrapOnSave: true,
+    });
+    expect(text).toBe('Kỹ năng của Lâm Mặc Ngữ rất mạnh.');
+    expect(wikiLinkOptOuts.some((item) => item.anchor === 'Lâm Mặc Ngữ')).toBe(true);
+  });
+
+  it('does not strip a later wiki link that sits inside the opt-out tail', () => {
+    const raw = '- [[Lâm Mặc Ngữ]]: rất mạnh.\n- [[Khô Lâu]]';
+    const open = raw.indexOf('[[');
+    const optOut = buildWikiLinkOptOutFromUnwrap(raw, open, raw.indexOf(']]') + 2);
+    const plain = '- Lâm Mặc Ngữ: rất mạnh.\n- [[Khô Lâu]]';
+    const { text } = applyWikiLinkOptOutsForSave({
+      preparedText: plain,
+      preDetectedOptOuts: [optOut],
+      entityMap: [{ name: 'Lâm Mặc Ngữ' }, { name: 'Khô Lâu' }],
+      autoWrapWikiLinksByEntityMapWithCount,
+      autoWrapOnSave: true,
+    });
+    expect(text).toBe(plain);
+  });
+
+  it('matches an opt-out after spaces inside the unwrapped name collapse', () => {
+    const raw = 'Kỹ năng của [[Lâm  Mặc Ngữ]] rất mạnh.';
+    const open = raw.indexOf('[[');
+    const optOut = buildWikiLinkOptOutFromUnwrap(raw, open, raw.indexOf(']]') + 2);
+    const { text } = applyWikiLinkOptOutsForSave({
+      preparedText: 'Kỹ năng của Lâm Mặc Ngữ rất mạnh.',
+      preDetectedOptOuts: [optOut],
+      entityMap: [{ name: 'Lâm Mặc Ngữ' }],
+      autoWrapWikiLinksByEntityMapWithCount,
+      autoWrapOnSave: true,
+    });
+    expect(text).toBe('Kỹ năng của Lâm Mặc Ngữ rất mạnh.');
+    expect(optOut.anchor).toBe('Lâm  Mặc Ngữ');
+  });
+
+  it('retargets a Ctrl+G opt-out after save renumbers a repeated list marker', () => {
+    const linked = '1. Mở đầu.\n1. [[Lâm Mặc Ngữ]] rất mạnh.';
+    const nameAt = linked.indexOf('Lâm Mặc Ngữ');
+    const optOut = buildWikiLinkOptOutFromUnwrap(linked, nameAt - 2, nameAt + 'Lâm Mặc Ngữ'.length + 2);
+    const source = '1. Mở đầu.\n1. Lâm Mặc Ngữ rất mạnh.';
+    const prepared = prepareEntityNotesForSave(source);
+    const { text, wikiLinkOptOuts } = applyWikiLinkOptOutsForSave({
+      preparedText: prepared,
+      sourceText: source,
+      preDetectedOptOuts: [optOut],
+      entityMap: [{ name: 'Lâm Mặc Ngữ' }],
+      autoWrapWikiLinksByEntityMapWithCount,
+      autoWrapOnSave: true,
+    });
+    expect(prepared).toBe('1. Mở đầu.\n2. Lâm Mặc Ngữ rất mạnh.');
+    expect(text).toBe('1. Mở đầu.\n2. Lâm Mặc Ngữ rất mạnh.');
+    expect(wikiLinkOptOuts).toEqual([
+      expect.objectContaining({ anchor: 'Lâm Mặc Ngữ', before: '1. Mở đầu.\n2. ' }),
+    ]);
   });
 
   it('isWikiWrapOptedOut blocks the full phrase when after-context extends the span', () => {

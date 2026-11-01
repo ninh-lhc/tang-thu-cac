@@ -418,6 +418,7 @@ describe('AppEntityDetailNotes', () => {
       entityMap: [
         { id: 'lam', name: 'Lâm Mặc Ngữ' },
         { id: 'tu', name: 'Tử Linh Pháp Sư' },
+        { id: 'kho', name: 'Khô Lâu' },
       ],
       selectedEntity: {
         id: 'entity-1',
@@ -515,6 +516,198 @@ describe('AppEntityDetailNotes', () => {
       expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
         info,
         expect.objectContaining({ wikiLinkOptOuts: [] })
+      );
+    });
+  });
+
+  it('keeps a pasted sentence plain after Ctrl+G unlink and save', async () => {
+    const info = 'Kỹ năng của [[Lâm Mặc Ngữ]] rất mạnh .';
+    const props = detailProps(info);
+    render(<AppEntityDetailNotes {...props} />);
+    const textbox = screen.getByRole('textbox');
+    const nameAt = info.indexOf('Lâm Mặc Ngữ');
+    textbox.focus();
+    textbox.setSelectionRange(nameAt, nameAt + 'Lâm Mặc Ngữ'.length);
+    pressCtrlG();
+    expect(textbox.value).toBe('Kỹ năng của Lâm Mặc Ngữ rất mạnh .');
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        'Kỹ năng của Lâm Mặc Ngữ rất mạnh.',
+        expect.objectContaining({
+          wikiLinkOptOuts: [expect.objectContaining({ anchor: 'Lâm Mặc Ngữ' })],
+        })
+      );
+    });
+  });
+
+  it('unwraps only the first occurrence when Ctrl+G targets that one', async () => {
+    const info = '[[Lâm Mặc Ngữ]] gặp [[Lâm Mặc Ngữ]].';
+    const props = detailProps(info);
+    render(<AppEntityDetailNotes {...props} />);
+    const textbox = screen.getByRole('textbox');
+    textbox.focus();
+    textbox.setSelectionRange(2, 2 + 'Lâm Mặc Ngữ'.length);
+    pressCtrlG();
+    expect(textbox.value).toBe('Lâm Mặc Ngữ gặp [[Lâm Mặc Ngữ]].');
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        'Lâm Mặc Ngữ gặp [[Lâm Mặc Ngữ]].',
+        expect.anything()
+      );
+    });
+  });
+
+  it('keeps an unwrapped alias as its inner text after save', async () => {
+    const info = '[[Lâm Mặc Ngữ|hắn]]';
+    const props = detailProps(info);
+    render(<AppEntityDetailNotes {...props} />);
+    const textbox = screen.getByRole('textbox');
+    textbox.focus();
+    textbox.setSelectionRange(2, info.length - 2);
+    pressCtrlG();
+    expect(textbox.value).toBe('Lâm Mặc Ngữ|hắn');
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        'Lâm Mặc Ngữ|hắn',
+        expect.objectContaining({
+          wikiLinkOptOuts: [expect.objectContaining({ anchor: 'Lâm Mặc Ngữ|hắn' })],
+        })
+      );
+    });
+  });
+
+  it('keeps a pasted LM note plain after Ctrl+G unlink and save', async () => {
+    const info = 'Kỹ năng của [[Lâm Mặc Ngữ]] rất mạnh.. \n[[Khô Lâu]] được triệu hoán sau [[Lâm Mặc Ngữ|hắn]].';
+    const props = detailProps(info);
+    render(<AppEntityDetailNotes {...props} />);
+    const textbox = screen.getByRole('textbox');
+    const nameAt = info.indexOf('Lâm Mặc Ngữ');
+    textbox.focus();
+    textbox.setSelectionRange(nameAt, nameAt + 'Lâm Mặc Ngữ'.length);
+    pressCtrlG();
+    expect(textbox.value).toBe('Kỹ năng của Lâm Mặc Ngữ rất mạnh.. \n[[Khô Lâu]] được triệu hoán sau [[Lâm Mặc Ngữ|hắn]].');
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        'Kỹ năng của Lâm Mặc Ngữ rất mạnh.. [[Khô Lâu]] được triệu hoán sau [[Lâm Mặc Ngữ|hắn]].',
+        expect.objectContaining({
+          wikiLinkOptOuts: [expect.objectContaining({ anchor: 'Lâm Mặc Ngữ' })],
+        })
+      );
+    });
+  });
+
+  it('keeps a Ctrl+G unlink plain when save renumbers the list item that held it', async () => {
+    const info = '1. Mở đầu.\n1. [[Lâm Mặc Ngữ]] rất mạnh.';
+    const props = detailProps(info);
+    render(<AppEntityDetailNotes {...props} />);
+    const textbox = screen.getByRole('textbox');
+    const nameAt = info.indexOf('Lâm Mặc Ngữ');
+    textbox.focus();
+    textbox.setSelectionRange(nameAt, nameAt + 'Lâm Mặc Ngữ'.length);
+    pressCtrlG();
+    expect(textbox.value).toBe('1. Mở đầu.\n1. Lâm Mặc Ngữ rất mạnh.');
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        '1. Mở đầu.\n2. Lâm Mặc Ngữ rất mạnh.',
+        expect.objectContaining({
+          wikiLinkOptOuts: [expect.objectContaining({ anchor: 'Lâm Mặc Ngữ' })],
+        })
+      );
+    });
+  });
+
+  it('keeps only the unlinked list item plain when the next marker is renumbered', async () => {
+    const info = '1. [[Lâm Mặc Ngữ]] rất mạnh.\n1. [[Khô Lâu]] đứng cạnh.';
+    const props = detailProps(info);
+    render(<AppEntityDetailNotes {...props} />);
+    const textbox = screen.getByRole('textbox');
+    const nameAt = info.indexOf('Lâm Mặc Ngữ');
+    textbox.focus();
+    textbox.setSelectionRange(nameAt, nameAt + 'Lâm Mặc Ngữ'.length);
+    pressCtrlG();
+    expect(textbox.value).toBe('1. Lâm Mặc Ngữ rất mạnh.\n1. [[Khô Lâu]] đứng cạnh.');
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        '1. Lâm Mặc Ngữ rất mạnh.\n2. [[Khô Lâu]] đứng cạnh.',
+        expect.objectContaining({
+          wikiLinkOptOuts: [expect.objectContaining({ anchor: 'Lâm Mặc Ngữ' })],
+        })
+      );
+    });
+  });
+
+  it('saves a Ctrl+G unlink through the same button Ctrl+S clicks', async () => {
+    const info = '[[Lâm Mặc Ngữ]]';
+    const props = detailProps(info);
+    render(<AppEntityDetailNotes {...props} />);
+    const textbox = screen.getByRole('textbox');
+    textbox.focus();
+    textbox.setSelectionRange(2, 2 + 'Lâm Mặc Ngữ'.length);
+    pressCtrlG();
+    expect(textbox.value).toBe('Lâm Mặc Ngữ');
+
+    const handleSave = () => {
+      document.getElementById('save-entity-btn')?.click();
+    };
+    window.addEventListener('ttc-save', handleSave);
+    window.dispatchEvent(new CustomEvent('ttc-save', { cancelable: true }));
+    window.removeEventListener('ttc-save', handleSave);
+
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        'Lâm Mặc Ngữ',
+        expect.objectContaining({
+          wikiLinkOptOuts: [expect.objectContaining({ anchor: 'Lâm Mặc Ngữ' })],
+        })
+      );
+    });
+  });
+
+  it('still rewraps a list item whose brackets were deleted without Ctrl+G', async () => {
+    const props = detailProps('1. [[Lâm Mặc Ngữ]] rất mạnh.\n1. [[Khô Lâu]] đứng cạnh.');
+    render(<AppEntityDetailNotes {...props} />);
+    const textbox = screen.getByRole('textbox');
+    fireEvent.change(textbox, {
+      target: { value: '1. Lâm Mặc Ngữ rất mạnh.\n1. [[Khô Lâu]] đứng cạnh.' },
+    });
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        '1. [[Lâm Mặc Ngữ]] rất mạnh.\n2. [[Khô Lâu]] đứng cạnh.',
+        expect.objectContaining({ wikiLinkOptOuts: [] })
+      );
+    });
+  });
+
+  it('does not damage a following wiki link when unlinking the one before it', async () => {
+    const info = '- [[Lâm Mặc Ngữ]]: rất mạnh.\n- [[Khô Lâu]]';
+    const props = detailProps(info);
+    render(<AppEntityDetailNotes {...props} />);
+    const textbox = screen.getByRole('textbox');
+    const nameAt = info.indexOf('Lâm Mặc Ngữ');
+    textbox.focus();
+    textbox.setSelectionRange(nameAt, nameAt + 'Lâm Mặc Ngữ'.length);
+    pressCtrlG();
+    expect(textbox.value).toBe('- Lâm Mặc Ngữ: rất mạnh.\n- [[Khô Lâu]]');
+
+    fireEvent.click(document.getElementById('save-entity-btn'));
+    await vi.waitFor(() => {
+      expect(props.handleUpdateEntityInfo).toHaveBeenCalledWith(
+        '- Lâm Mặc Ngữ: rất mạnh.\n- [[Khô Lâu]]',
+        expect.anything()
       );
     });
   });
