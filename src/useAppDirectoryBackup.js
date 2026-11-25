@@ -8,6 +8,11 @@
 import { useCallback, useState } from 'react';
 import { migrateIndex, migrateBackup, migrateNovel } from './dataMigration.js';
 import { clearPersistedDirectoryHandle, savePersistedDirectoryHandle } from './lib/directoryHandleStore.js';
+import { recoverNovelCatalog } from './lib/recoverNovelCatalog.js';
+import {
+  mergeBundledGenreTabsTemplatesInto,
+  mergeGenreTabsTemplatesFromLocalStorage,
+} from './lib/genreTabsTemplateStore.js';
 
 async function readFolderJson(dirHandle, filename) {
   const fileHandle = await dirHandle.getFileHandle(filename);
@@ -40,6 +45,8 @@ export function useAppDirectoryBackup({
   setNovelsMetadata,
   setGlobalTabsConfig,
   setNovelStatsById,
+  setGenreTabsTemplates,
+  genreTabsTemplatesRef,
   novelsMetadataRef,
   novelStatsByIdRef,
   showToast,
@@ -90,13 +97,14 @@ export function useAppDirectoryBackup({
         try {
           const candidate = await readFolderJson(pickedDirHandle, filename);
           if (!Array.isArray(candidate?.metadata)) throw new Error('Invalid catalog');
-          snapshot = candidate;
-          break;
+          if (!snapshot || candidate.metadata.length > 0) snapshot = candidate;
+          if (candidate.metadata.length > 0) break;
         } catch (error) {
           if (error?.name !== 'NotFoundError') indexReadError = error;
         }
       }
 
+      let legacyReadError;
       if (!snapshot) {
         let legacyRead = false;
         try {
@@ -158,24 +166,25 @@ export function useAppDirectoryBackup({
           throw new Error('Invalid legacy catalog');
         } catch (error) {
           if (legacyRead || indexReadError || error?.name !== 'NotFoundError') {
-            showToast('Không đọc được danh mục truyện trong thư mục đã chọn.', 'error');
-            return;
+            legacyReadError = error;
           }
-          setNovelsMetadata([]);
-          novelStatsByIdRef.current = {};
-          setNovelStatsById({});
-          setDirHandle(pickedDirHandle);
-          await savePersistedDirectoryHandle(pickedDirHandle);
-          setShowConnectReminder(true);
-          setActiveNovelData(null);
-          setActiveNovelDirHandle(null);
-          showToast('Thu muc trong. Da ket noi menh ban!');
-          return;
         }
       }
 
       try {
+        if (!snapshot?.metadata.length) {
+          const metadata = await recoverNovelCatalog(pickedDirHandle);
+          if (!snapshot && !metadata.length && legacyReadError) {
+            showToast('Không đọc được danh mục truyện trong thư mục đã chọn.', 'error');
+            return;
+          }
+          snapshot = { ...snapshot, metadata };
+        }
         const index = migrateIndex(snapshot);
+        const localTemplates = mergeGenreTabsTemplatesFromLocalStorage(index.genreTabsTemplates);
+        const { next: templates } = mergeBundledGenreTabsTemplatesInto(localTemplates.next);
+        genreTabsTemplatesRef.current = templates;
+        setGenreTabsTemplates(templates);
         if (index.metadata) setNovelsMetadata(index.metadata);
         const safeConfig = resolveSafeTabsConfig(index.config);
         setGlobalTabsConfig(safeConfig);
@@ -208,11 +217,13 @@ export function useAppDirectoryBackup({
       }
     }
   }, [
+    genreTabsTemplatesRef,
     novelStatsByIdRef,
     resolveSafeTabsConfig,
     setActiveNovelData,
     setActiveNovelDirHandle,
     setDirHandle,
+    setGenreTabsTemplates,
     setGlobalTabsConfig,
     setNovelStatsById,
     setNovelsMetadata,

@@ -2040,6 +2040,8 @@ export default function App() {
     setNovelsMetadata,
     setGlobalTabsConfig,
     setNovelStatsById,
+    setGenreTabsTemplates,
+    genreTabsTemplatesRef,
     novelsMetadataRef,
     novelStatsByIdRef,
     showToast,
