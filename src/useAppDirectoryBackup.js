@@ -9,6 +9,12 @@ import { useCallback, useState } from 'react';
 import { migrateIndex, migrateBackup, migrateNovel } from './dataMigration.js';
 import { clearPersistedDirectoryHandle, savePersistedDirectoryHandle } from './lib/directoryHandleStore.js';
 
+async function readFolderJson(dirHandle, filename) {
+  const fileHandle = await dirHandle.getFileHandle(filename);
+  const file = await fileHandle.getFile();
+  return JSON.parse((await file.text()).replace(/^\uFEFF/, ''));
+}
+
 function downloadJsonFile(filename, payload) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -77,20 +83,27 @@ export function useAppDirectoryBackup({
 
     try {
       const pickedDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      let fileContent = '';
+      let snapshot;
+      let indexReadError;
 
-      try {
-        const fileHandle = await pickedDirHandle.getFileHandle('index.json');
-        const file = await fileHandle.getFile();
-        fileContent = await file.text();
-      } catch {
+      for (const filename of ['index.json', 'index.backup.json']) {
         try {
-          const oldHandle = await pickedDirHandle.getFileHandle('db.json');
-          const oldFile = await oldHandle.getFile();
-          const oldContent = await oldFile.text();
-          const parsedOld = JSON.parse(oldContent);
+          const candidate = await readFolderJson(pickedDirHandle, filename);
+          if (!Array.isArray(candidate?.metadata)) throw new Error('Invalid catalog');
+          snapshot = candidate;
+          break;
+        } catch (error) {
+          if (error?.name !== 'NotFoundError') indexReadError = error;
+        }
+      }
 
-          if (parsedOld.novels) {
+      if (!snapshot) {
+        let legacyRead = false;
+        try {
+          const parsedOld = await readFolderJson(pickedDirHandle, 'db.json');
+          legacyRead = true;
+
+          if (Array.isArray(parsedOld?.novels)) {
             showToast('Dang migrate cau truc thu muc...');
             const newMeta = parsedOld.novels.map((novel) => ({
               id: novel.id,
@@ -131,6 +144,8 @@ export function useAppDirectoryBackup({
             await indexWriter.close();
 
             setNovelsMetadata(newMeta);
+            novelStatsByIdRef.current = {};
+            setNovelStatsById({});
             setGlobalTabsConfig(safeConfig);
             setDirHandle(pickedDirHandle);
             await savePersistedDirectoryHandle(pickedDirHandle);
@@ -140,8 +155,17 @@ export function useAppDirectoryBackup({
             showToast('Migrate thanh cong! Cau truc moi da san sang.');
             return;
           }
-        } catch {
+          throw new Error('Invalid legacy catalog');
+        } catch (error) {
+          if (legacyRead || indexReadError || error?.name !== 'NotFoundError') {
+            showToast('Không đọc được danh mục truyện trong thư mục đã chọn.', 'error');
+            return;
+          }
+          setNovelsMetadata([]);
+          novelStatsByIdRef.current = {};
+          setNovelStatsById({});
           setDirHandle(pickedDirHandle);
+          await savePersistedDirectoryHandle(pickedDirHandle);
           setShowConnectReminder(true);
           setActiveNovelData(null);
           setActiveNovelDirHandle(null);
@@ -150,11 +174,8 @@ export function useAppDirectoryBackup({
         }
       }
 
-      if (!fileContent) return;
-
       try {
-        const parsed = JSON.parse(fileContent);
-        const index = migrateIndex(parsed);
+        const index = migrateIndex(snapshot);
         if (index.metadata) setNovelsMetadata(index.metadata);
         const safeConfig = resolveSafeTabsConfig(index.config);
         setGlobalTabsConfig(safeConfig);
@@ -181,8 +202,10 @@ export function useAppDirectoryBackup({
       } catch {
         showToast('Loi: file index.json bi hong cau truc.', 'error');
       }
-    } catch {
-      void 0;
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        showToast('Không thể kết nối thư mục lưu truyện.', 'error');
+      }
     }
   }, [
     novelStatsByIdRef,

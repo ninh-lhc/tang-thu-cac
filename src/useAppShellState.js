@@ -267,6 +267,7 @@ export function useAppShellState() {
     }
 
     let cancelled = false;
+    let finished = false;
     const forceStopOverlayTimer = setTimeout(() => {
       if (!cancelled) {
         setIsDirectoryConnectionBootstrapping(false);
@@ -329,8 +330,10 @@ export function useAppShellState() {
         try {
           const fileHandle = await handle.getFileHandle(filename);
           const file = await fileHandle.getFile();
-          const snapshot = JSON.parse(await file.text());
+          const snapshot = JSON.parse((await file.text()).replace(/^\uFEFF/, ''));
+          if (!Array.isArray(snapshot?.metadata)) continue;
           const sanitized = await sanitizeSnapshotByDisk(snapshot, handle);
+          if (cancelled) return false;
           if (applySnapshot(sanitized)) return true;
         } catch {
           /* try next source */
@@ -376,10 +379,12 @@ export function useAppShellState() {
           if (usable === null) usable = await usablePromise;
           if (cancelled) return;
           if (usable) {
-            restoredConnection = true;
             hydratedFromDisk = await awaitIndexSnapshotFromHandle(storedHandle);
             if (cancelled) return;
-            setDirHandle(storedHandle);
+            if (hydratedFromDisk) {
+              restoredConnection = true;
+              setDirHandle(storedHandle);
+            }
           } else {
             await clearPersistedDirectoryHandle();
           }
@@ -394,6 +399,7 @@ export function useAppShellState() {
       } finally {
         clearTimeout(forceStopOverlayTimer);
         if (!cancelled) {
+          finished = true;
           setIsDirectoryConnectionBootstrapping(false);
           if (restoredConnection) {
             const restoredLabel = safeString(storedHandle?.name || '').trim();
@@ -412,6 +418,7 @@ export function useAppShellState() {
 
     return () => {
       cancelled = true;
+      if (!finished) directoryRestoreAttemptedRef.current = false;
       clearTimeout(forceStopOverlayTimer);
     };
   }, [
