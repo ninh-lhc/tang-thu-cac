@@ -80,6 +80,22 @@ it('dựng lại danh mục rỗng từ file truyện trong thư mục con', asy
   expect(props.setDirHandle).toHaveBeenCalledWith(folder);
 });
 
+it('bổ sung truyện đã lưu khi danh mục chính vẫn còn dữ liệu cũ', async () => {
+  const existing = { id: 'n1', title: 'Truyện cũ', rating: 5 };
+  const saved = { id: 'n2', title: 'Truyện vừa lưu', storageLayout: 'sharded' };
+  const deleted = { id: 'n3', title: 'Truyện đã xóa' };
+  const { props, connect } = setup({
+    'index.json': JSON.stringify({ metadata: [existing] }),
+    'index.backup.json': JSON.stringify({ metadata: [existing, deleted] }),
+    'Truyện vừa lưu': { 'Truyện vừa lưu.json': JSON.stringify(saved) },
+  });
+  await connect();
+  expect(props.setNovelsMetadata).toHaveBeenCalledWith([
+    expect.objectContaining(existing),
+    expect.objectContaining({ id: saved.id, title: saved.title, folderName: saved.title }),
+  ]);
+});
+
 it('báo lỗi khi danh mục hỏng và không có bản phục hồi', async () => {
   const { props, connect } = setup({ 'index.json': '{}' });
   await connect();

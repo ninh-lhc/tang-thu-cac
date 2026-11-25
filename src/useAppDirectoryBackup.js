@@ -8,7 +8,7 @@
 import { useCallback, useState } from 'react';
 import { migrateIndex, migrateBackup, migrateNovel } from './dataMigration.js';
 import { clearPersistedDirectoryHandle, savePersistedDirectoryHandle } from './lib/directoryHandleStore.js';
-import { recoverNovelCatalog } from './lib/recoverNovelCatalog.js';
+import { readNovelCatalog } from './lib/recoverNovelCatalog.js';
 import {
   mergeBundledGenreTabsTemplatesInto,
   mergeGenreTabsTemplatesFromLocalStorage,
@@ -90,21 +90,8 @@ export function useAppDirectoryBackup({
 
     try {
       const pickedDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      let snapshot;
-      let indexReadError;
+      const { snapshot, readError } = await readNovelCatalog(pickedDirHandle);
 
-      for (const filename of ['index.json', 'index.backup.json']) {
-        try {
-          const candidate = await readFolderJson(pickedDirHandle, filename);
-          if (!Array.isArray(candidate?.metadata)) throw new Error('Invalid catalog');
-          if (!snapshot || candidate.metadata.length > 0) snapshot = candidate;
-          if (candidate.metadata.length > 0) break;
-        } catch (error) {
-          if (error?.name !== 'NotFoundError') indexReadError = error;
-        }
-      }
-
-      let legacyReadError;
       if (!snapshot) {
         let legacyRead = false;
         try {
@@ -165,22 +152,15 @@ export function useAppDirectoryBackup({
           }
           throw new Error('Invalid legacy catalog');
         } catch (error) {
-          if (legacyRead || indexReadError || error?.name !== 'NotFoundError') {
-            legacyReadError = error;
+          if (legacyRead || readError || error?.name !== 'NotFoundError') {
+            showToast('Không đọc được danh mục truyện trong thư mục đã chọn.', 'error');
+            return;
           }
         }
       }
 
       try {
-        if (!snapshot?.metadata.length) {
-          const metadata = await recoverNovelCatalog(pickedDirHandle);
-          if (!snapshot && !metadata.length && legacyReadError) {
-            showToast('Không đọc được danh mục truyện trong thư mục đã chọn.', 'error');
-            return;
-          }
-          snapshot = { ...snapshot, metadata };
-        }
-        const index = migrateIndex(snapshot);
+        const index = migrateIndex(snapshot ?? {});
         const localTemplates = mergeGenreTabsTemplatesFromLocalStorage(index.genreTabsTemplates);
         const { next: templates } = mergeBundledGenreTabsTemplatesInto(localTemplates.next);
         genreTabsTemplatesRef.current = templates;

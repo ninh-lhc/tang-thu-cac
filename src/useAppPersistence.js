@@ -171,6 +171,7 @@ export function useAppPersistence({
   const novelFolderSyncInFlightRef = useRef(0);
   /** Cache JSON cuối cùng để bỏ qua ghi index khi nội dung không đổi. */
   const lastIndexJsonByDirRef = useRef(new WeakMap());
+  const indexDiskWriteChainRef = useRef(Promise.resolve());
   /** Cache JSON manifest cuối cùng theo id truyện để bỏ qua ghi đĩa khi không đổi. */
   const lastNovelManifestJsonByIdRef = useRef(new Map());
   /** Throttle .backup.json theo id truyện (giảm churn OneDrive). */
@@ -298,47 +299,58 @@ export function useAppPersistence({
         persistIndexShadow(payload);
         return { ok: Boolean(writeRes.ok), mode: 'local', error: writeRes.error || null };
       }
-      const indexPerm = await ensureDirectoryWritePermission(dir);
-      if (!indexPerm.ok) {
-        setTimeout(() => {
-          showToast(
-            'Không ghi được danh mục (index): thiếu quyền ghi thư mục — kết nối lại **Lưu Trữ** và chọn cho phép chỉnh sửa.',
-            'warning'
-          );
-        }, 0);
-        persistIndexShadow(payload);
-        return { ok: false, mode: 'directory', reason: 'permission_denied' };
-      }
-      try {
-        const payloadJson = JSON.stringify(payload, null, 2);
-        const lastPayloadJson = lastIndexJsonByDirRef.current.get(dir) || '';
-        if (lastPayloadJson === payloadJson) {
-          return { ok: true, mode: 'directory', skipped: 'unchanged' };
+      const permission = ensureDirectoryWritePermission(dir);
+      // Keep primary and backup writes for each snapshot together.
+      const writeIndex = async () => {
+        const indexPerm = await permission;
+        if (!indexPerm.ok) {
+          setTimeout(() => {
+            showToast(
+              'Không ghi được danh mục (index): thiếu quyền ghi thư mục — kết nối lại **Lưu Trữ** và chọn cho phép chỉnh sửa.',
+              'warning'
+            );
+          }, 0);
+          persistIndexShadow(payload);
+          return { ok: false, mode: 'directory', reason: 'permission_denied' };
         }
-        const f = await dir.getFileHandle('index.json', { create: true });
-        const w = await f.createWritable();
-        await w.write(payloadJson);
-        await w.close();
-        // Lớp an toàn bổ sung: giữ bản dự phòng index gần nhất.
         try {
-          const fb = await dir.getFileHandle('index.backup.json', { create: true });
-          const wb = await fb.createWritable();
-          await wb.write(payloadJson);
-          await wb.close();
+          const payloadJson = JSON.stringify(payload, null, 2);
+          const lastPayloadJson = lastIndexJsonByDirRef.current.get(dir) || '';
+          if (lastPayloadJson === payloadJson) {
+            return { ok: true, mode: 'directory', skipped: 'unchanged' };
+          }
+          const f = await dir.getFileHandle('index.json', { create: true });
+          const w = await f.createWritable();
+          await w.write(payloadJson);
+          await w.close();
+          // Lớp an toàn bổ sung: giữ bản dự phòng index gần nhất.
+          let backupWritten = false;
+          try {
+            const fb = await dir.getFileHandle('index.backup.json', { create: true });
+            const wb = await fb.createWritable();
+            await wb.write(payloadJson);
+            await wb.close();
+            backupWritten = true;
+          } catch {
+            /* backup là best-effort */
+          }
+          await pruneLegacyIndexVariantFiles(dir);
+          if (backupWritten) lastIndexJsonByDirRef.current.set(dir, payloadJson);
+          else lastIndexJsonByDirRef.current.delete(dir);
+          return { ok: true, mode: 'directory' };
         } catch {
-          /* backup là best-effort */
+          lastIndexJsonByDirRef.current.delete(dir);
+          setTimeout(() => {
+            showToast('Lỗi đồng bộ danh mục!', 'error');
+          }, 0);
+          return { ok: false, mode: 'directory', reason: 'write_failed' };
+        } finally {
+          persistIndexShadow(payload);
         }
-        await pruneLegacyIndexVariantFiles(dir);
-        lastIndexJsonByDirRef.current.set(dir, payloadJson);
-        return { ok: true, mode: 'directory' };
-      } catch {
-        setTimeout(() => {
-          showToast('Lỗi đồng bộ danh mục!', 'error');
-        }, 0);
-        return { ok: false, mode: 'directory', reason: 'write_failed' };
-      } finally {
-        persistIndexShadow(payload);
-      }
+      };
+      const pending = indexDiskWriteChainRef.current.then(writeIndex, writeIndex);
+      indexDiskWriteChainRef.current = pending;
+      return pending;
     },
     [novelStatsByIdRef, genreTabsTemplatesRef, showToast]
   );

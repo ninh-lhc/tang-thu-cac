@@ -24,7 +24,7 @@ import {
   mergeBundledGenreTabsTemplatesInto,
   mergeGenreTabsTemplatesFromLocalStorage,
 } from './lib/genreTabsTemplateStore.js';
-import { recoverNovelCatalog } from './lib/recoverNovelCatalog.js';
+import { readNovelCatalog } from './lib/recoverNovelCatalog.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 import { useToast } from './useToast.js';
 
@@ -290,23 +290,8 @@ export function useAppShellState() {
     };
 
     const loadSnapshotFromHandle = async (handle) => {
-      let emptySnapshot;
-      for (const filename of ['index.json', 'index.backup.json']) {
-        try {
-          const fileHandle = await handle.getFileHandle(filename);
-          const file = await fileHandle.getFile();
-          const snapshot = JSON.parse((await file.text()).replace(/^\uFEFF/, ''));
-          if (!Array.isArray(snapshot?.metadata)) continue;
-          if (cancelled) return false;
-          if (snapshot.metadata.length > 0 && applySnapshot(snapshot)) return true;
-          if (snapshot.metadata.length === 0) emptySnapshot ??= snapshot;
-        } catch {
-          /* try next source */
-        }
-      }
-      const metadata = await recoverNovelCatalog(handle);
-      if (cancelled || (!metadata.length && !emptySnapshot)) return false;
-      return applySnapshot({ ...emptySnapshot, metadata });
+      const { snapshot } = await readNovelCatalog(handle);
+      return !cancelled && applySnapshot(snapshot);
     };
 
     /** Đọc index từ đĩa; timeout chỉ “mềm” — luôn chờ promise gốc xong để không ghi đè bằng tangthu_index_shadow cũ khi đĩa chậm. */

@@ -5,7 +5,7 @@
 // Notes: keeps novel form defaults and metadata mutations out of the main shell.
 // ==========================================
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ensureCollectionListCardsForNovel } from './lib/collectionListCardSync.js';
 import { markAllShardsDirty } from './lib/dirtyShardTracker.js';
 import { removeNovelStorageFromRoot } from './lib/novelDiskLayout.js';
@@ -72,6 +72,7 @@ export function useAppNovelCrud({
   novelStatsByIdRef,
   activeNovelDataRef,
 }) {
+  const creatingNovelRef = useRef(false);
   const [isAddNovelOpen, setIsAddNovelOpen] = useState(false);
   const [novelModalMode, setNovelModalMode] = useState('create');
   const [novelForm, setNovelForm] = useState(() => buildEmptyNovelForm(genres));
@@ -110,72 +111,93 @@ export function useAppNovelCrud({
     if (!normalizedTitle) return;
 
     if (novelModalMode === 'create') {
-      const newId = generateId('novel');
-      const safeTitle = safeString(normalizedTitle).replace(/[\\/:*?"<>|]/g, '').trim() || newId;
-      const folderName = safeTitle;
-
-      const newMeta = {
-        id: newId,
-        title: normalizedTitle,
-        author: normalizedAuthor,
-        genres: novelForm.genres || [],
-        theme: novelForm.theme || DEFAULT_THEME,
-        tags: [],
-        chaptersRead: 0,
-        chaptersTotal: novelForm.chaptersTotal || '???',
-        status: novelForm.status,
-        rating: 0,
-        review: '',
-        ratingOpinion: '',
-        cover: novelForm.cover,
-        folderName,
-      };
-
-      const rawTabsForCreate =
-        resolveTabsConfigForGenreSelection(novelForm.genres, novelForm.tabsConfig) ||
-        structuredClone(initialTabsConfig);
-      const tabsToUse = hydrateTabsAutoSyncConfigs(
-        stripSuggestionSeedsFromTabsConfig(structuredClone(rawTabsForCreate))
-      ).tabsConfig;
-      const newFullData = {
-        ...newMeta,
-        data: {},
-        tabsConfig: tabsToUse,
-        chapterCrossRefs: [],
-        readingJournal: [],
-      };
-      ensureCollectionListCardsForNovel(newFullData, { createMissingTabBuckets: true });
-      const newMetaList = [newMeta, ...novelsMetadata];
-      const nextStats = {
-        ...novelStatsByIdRef.current,
-        [newId]: { entities: 0, milestones: 0, byTab: [] },
-      };
-
-      novelStatsByIdRef.current = nextStats;
-      setNovelStatsById(nextStats);
-      setNovelsMetadata(newMetaList);
-      markAllShardsDirty(newFullData?.data);
-      setActiveNovelData(newFullData);
-      novelsMetadataRef.current = newMetaList;
-      setIsAddNovelOpen(false);
-      setMenu1Visible(false);
-      setActiveTabLon('tong-quan');
-      setActiveTabNho(null);
-      setActiveTabCon(null);
-
-      if (dirHandle && dirHandle !== 'LOCAL_STORAGE') {
-        try {
-          const novelDirHandle = await dirHandle.getDirectoryHandle(folderName, { create: true });
-          setActiveNovelDirHandle(novelDirHandle);
-        } catch {
-          void 0;
+      if (creatingNovelRef.current) return;
+      creatingNovelRef.current = true;
+      try {
+        const newId = generateId('novel');
+        const safeTitle = safeString(normalizedTitle).replace(/[\\/:*?"<>|]/g, '').trim() || newId;
+        let folderName = safeTitle;
+        const diskRoot = dirHandle && dirHandle !== 'LOCAL_STORAGE' ? dirHandle : null;
+        if (diskRoot) {
+          try {
+            await diskRoot.getDirectoryHandle(safeTitle);
+            folderName = `${safeTitle} - ${newId}`;
+          } catch (error) {
+            if (error?.name === 'TypeMismatchError') folderName = `${safeTitle} - ${newId}`;
+            else if (error?.name !== 'NotFoundError') throw error;
+          }
         }
-      }
 
-      await syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
-      await syncNovel(newFullData, dirHandle, { immediate: true, forceBackup: true });
-      showToast('Khai sinh thu tich moi thanh cong!');
-      return;
+        const newMeta = {
+          id: newId,
+          title: normalizedTitle,
+          author: normalizedAuthor,
+          genres: novelForm.genres || [],
+          theme: novelForm.theme || DEFAULT_THEME,
+          tags: [],
+          chaptersRead: 0,
+          chaptersTotal: novelForm.chaptersTotal || '???',
+          status: novelForm.status,
+          rating: 0,
+          review: '',
+          ratingOpinion: '',
+          cover: novelForm.cover,
+          folderName,
+        };
+
+        const rawTabsForCreate =
+          resolveTabsConfigForGenreSelection(novelForm.genres, novelForm.tabsConfig) ||
+          structuredClone(initialTabsConfig);
+        const tabsToUse = hydrateTabsAutoSyncConfigs(
+          stripSuggestionSeedsFromTabsConfig(structuredClone(rawTabsForCreate))
+        ).tabsConfig;
+        const newFullData = {
+          ...newMeta,
+          data: {},
+          tabsConfig: tabsToUse,
+          chapterCrossRefs: [],
+          readingJournal: [],
+        };
+        ensureCollectionListCardsForNovel(newFullData, { createMissingTabBuckets: true });
+        markAllShardsDirty(newFullData?.data);
+        const novelResult = await syncNovel(newFullData, dirHandle, { immediate: true, forceBackup: true });
+        if (!novelResult?.ok) {
+          showToast('Chưa lưu được truyện. Hãy kiểm tra quyền ghi và thử lại.', 'error');
+          return;
+        }
+        const novelDir = diskRoot ? await diskRoot.getDirectoryHandle(folderName).catch(() => null) : null;
+        const newMetaList = [newMeta, ...novelsMetadataRef.current];
+        const nextStats = {
+          ...novelStatsByIdRef.current,
+          [newId]: { entities: 0, milestones: 0, byTab: [] },
+        };
+
+        novelStatsByIdRef.current = nextStats;
+        setNovelStatsById(nextStats);
+        setNovelsMetadata(newMetaList);
+        setActiveNovelData(newFullData);
+        setActiveNovelDirHandle(novelDir);
+        novelsMetadataRef.current = newMetaList;
+        setIsAddNovelOpen(false);
+        setMenu1Visible(false);
+        setActiveTabLon('tong-quan');
+        setActiveTabNho(null);
+        setActiveTabCon(null);
+
+        const indexResult = await syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
+        if (!indexResult?.ok) {
+          showToast('Đã lưu truyện nhưng chưa ghi được danh mục.', 'warning');
+          return;
+        }
+        showToast('Khai sinh thu tich moi thanh cong!');
+        return;
+      } catch (error) {
+        console.warn('[TTC] Không thể tạo truyện:', error);
+        showToast('Không thể tạo truyện. Hãy kiểm tra thư mục lưu và thử lại.', 'error');
+        return;
+      } finally {
+        creatingNovelRef.current = false;
+      }
     }
 
     await updateActiveNovelData((novel) => {
@@ -194,7 +216,6 @@ export function useAppNovelCrud({
     novelModalMode,
     generateId,
     initialTabsConfig,
-    novelsMetadata,
     dirHandle,
     globalTabsConfig,
     syncIndex,
@@ -224,7 +245,23 @@ export function useAppNovelCrud({
       await new Promise((r) => setTimeout(r, 0));
     }
 
-    const newMetaList = novelsMetadata.filter((item) => item.id !== id);
+    try {
+      if (dirHandle && dirHandle !== 'LOCAL_STORAGE' && meta) {
+        await awaitNovelDiskIdle?.();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const result = await removeNovelStorageFromRoot(dirHandle, meta);
+        if (!result.ok && result.reason !== 'not_found') {
+          showToast('Ch?a x?a ???c d? li?u truy?n kh?i th? m?c l?u.', 'error');
+          return;
+        }
+      }
+    } catch (error) {
+      console.warn('[TTC] Kh?ng th? x?a truy?n:', error);
+      showToast('Ch?a x?a ???c d? li?u truy?n kh?i th? m?c l?u.', 'error');
+      return;
+    }
+
+    const newMetaList = novelsMetadataRef.current.filter((item) => item.id !== id);
     const nextStats = { ...novelStatsByIdRef.current };
 
     delete nextStats[id];
@@ -239,36 +276,6 @@ export function useAppNovelCrud({
       /* ignore */
     }
     void clearNovelShadow(id);
-
-    try {
-      if (dirHandle === 'LOCAL_STORAGE') {
-        /* local keys cleared above */
-      } else if (dirHandle && meta) {
-        await awaitNovelDiskIdle?.();
-        await new Promise((r) => setTimeout(r, 50));
-        const diskResult = await removeNovelStorageFromRoot(dirHandle, meta);
-        if (!diskResult.ok && diskResult.reason === 'remove_failed') {
-          const label = diskResult.attempted || meta.id;
-          console.warn('[TTC] Khong xoa duoc du lieu truyen tren dia:', label, diskResult.error);
-          const reason = diskResult?.error?.name || String(diskResult?.error?.message || '').slice(0, 80) || 'unknown';
-          setTimeout(() => {
-            showToast(`Da xoa khoi so nhung khong xoa duoc du lieu «${label}» tren o (${reason}).`, 'warning');
-          }, 0);
-        } else if (!diskResult.ok && diskResult.reason === 'permission_denied') {
-          setTimeout(() => {
-            showToast(
-              'Khong xoa duoc tren o: thieu quyen ghi thu muc — mo Cai dat va ket noi lai thu muc, chap nhan quyen chinh sua.',
-              'warning'
-            );
-          }, 0);
-        }
-      }
-    } catch (error) {
-      console.warn('[TTC] Loi bat ngo khi xoa du lieu truyen tren dia:', error);
-      setTimeout(() => {
-        showToast('Xóa dữ liệu trên ổ có lỗi, nhưng vẫn tiếp tục cập nhật danh mục.', 'warning');
-      }, 0);
-    }
 
     const indexResult = await syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);
     if (!indexResult?.ok) {

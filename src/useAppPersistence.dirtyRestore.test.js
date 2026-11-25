@@ -115,6 +115,33 @@ function renderPersistenceHook(extra = {}) {
   return { ...hook, refs };
 }
 
+it('ghi các snapshot danh mục theo thứ tự vào cả index và bản dự phòng', async () => {
+  const { result } = renderPersistenceHook();
+  const writes = [];
+  let finishFirst;
+  const firstWrite = new Promise((resolve) => { finishFirst = resolve; });
+  const root = {
+    getFileHandle: async (name) => ({
+      createWritable: async () => ({
+        async write(text) {
+          writes.push([name, JSON.parse(text).metadata.length]);
+          if (writes.length === 1) await firstWrite;
+        },
+        async close() {},
+      }),
+    }),
+  };
+  const older = result.current.syncIndex([], [], root);
+  await vi.waitFor(() => expect(writes).toEqual([['index.json', 0]]));
+  const newer = result.current.syncIndex([{ id: 'saved' }], [], root);
+  finishFirst();
+  await Promise.all([older, newer]);
+  expect(writes).toEqual([
+    ['index.json', 0], ['index.backup.json', 0],
+    ['index.json', 1], ['index.backup.json', 1],
+  ]);
+});
+
 describe('useAppPersistence dirty restore (AUD-001)', () => {
   beforeEach(() => {
     consumeDirtyShards();
