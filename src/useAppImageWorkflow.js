@@ -6,6 +6,7 @@
 // ==========================================
 
 import { useCallback, useState } from 'react';
+import { saveBrowserImage } from './lib/browserLibraryStore.js';
 import { handleToolbarClick } from './MasterUtils.jsx';
 import {
   buildScopedImageFileName,
@@ -14,13 +15,22 @@ import {
 
 const DEFAULT_IMAGE_FORM = { url: '', alt: '', editorId: 'standard-editor' };
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (event) => resolve(event.target?.result || '');
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsDataURL(file);
+async function pickImageFile(browserMode) {
+  if (browserMode) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    return new Promise(resolve => {
+      input.onchange = () => resolve(input.files?.[0] || null);
+      input.oncancel = () => resolve(null);
+      input.click();
+    });
+  }
+  const [handle] = await window.showOpenFilePicker({
+    types: [{ description: 'Images', accept: { 'image/*': ['.png', '.gif', '.jpeg', '.jpg', '.webp'] } }],
+    multiple: false,
   });
+  return handle.getFile();
 }
 
 async function saveImageToImagesDir(baseHandle, file, fileName) {
@@ -78,14 +88,14 @@ export function useAppImageWorkflow({
     setIsUploading(true);
     try {
       if (dirHandle === 'LOCAL_STORAGE') {
-        const dataUrl = await readFileAsDataUrl(file);
+        const imageRef = await saveBrowserImage(file);
         insertImageMarkdown({
           handleToolbarClick,
           editorId,
           altText: file.name,
-          imageUrl: dataUrl,
+          imageUrl: imageRef,
         });
-        showToast('Da luu anh dang Base64.');
+        showToast('Đã lưu ảnh gốc trong trình duyệt.');
         return;
       }
 
@@ -124,9 +134,9 @@ export function useAppImageWorkflow({
     setIsUploading(true);
     try {
       if (dirHandle === 'LOCAL_STORAGE') {
-        const dataUrl = await readFileAsDataUrl(file);
-        setAvatarCallback(dataUrl);
-        showToast('Da luu avatar dang Base64.');
+        const imageRef = await saveBrowserImage(file);
+        setAvatarCallback(imageRef);
+        showToast('Đã lưu ảnh đại diện trong trình duyệt.');
         return;
       }
 
@@ -143,22 +153,14 @@ export function useAppImageWorkflow({
 
   const handlePickCoverImage = useCallback(async (setAvatarCallback) => {
     try {
-      const [fileHandle] = await window.showOpenFilePicker({
-        types: [
-          {
-            description: 'Images',
-            accept: { 'image/*': ['.png', '.gif', '.jpeg', '.jpg', '.webp'] },
-          },
-        ],
-        multiple: false,
-      });
-      const file = await fileHandle.getFile();
+      const file = await pickImageFile(!dirHandle || dirHandle === 'LOCAL_STORAGE');
+      if (!file) return;
 
       setIsUploading(true);
       try {
         if (!dirHandle || dirHandle === 'LOCAL_STORAGE') {
-          const dataUrl = await readFileAsDataUrl(file);
-          setAvatarCallback(dataUrl);
+          const imageRef = await saveBrowserImage(file);
+          setAvatarCallback(imageRef);
           return;
         }
 
@@ -171,39 +173,31 @@ export function useAppImageWorkflow({
         setIsUploading(false);
       }
     } catch (error) {
-      if (error.name !== 'AbortError') showToast('Huy chon anh.', 'warning');
+      if (error.name !== 'AbortError') showToast('Không thể đọc hoặc lưu ảnh. Kiểm tra quyền lưu và dung lượng còn trống.', 'error');
       setIsUploading(false);
     }
   }, [dirHandle, showToast]);
 
   const handlePickLocalImage = useCallback(async (setAvatarCallback, editorId = null, filePrefixOrOptions = 'img') => {
     try {
-      const [fileHandle] = await window.showOpenFilePicker({
-        types: [
-          {
-            description: 'Images',
-            accept: { 'image/*': ['.png', '.gif', '.jpeg', '.jpg', '.webp'] },
-          },
-        ],
-        multiple: false,
-      });
-      const file = await fileHandle.getFile();
+      const file = await pickImageFile(!dirHandle || dirHandle === 'LOCAL_STORAGE');
+      if (!file) return;
 
       setIsUploading(true);
       try {
         if (!dirHandle || dirHandle === 'LOCAL_STORAGE') {
-          const dataUrl = await readFileAsDataUrl(file);
+          const imageRef = await saveBrowserImage(file);
           if (editorId) {
             insertImageMarkdown({
               handleToolbarClick,
               editorId,
               altText: file.name,
-              imageUrl: dataUrl,
+              imageUrl: imageRef,
             });
           } else if (setAvatarCallback) {
-            setAvatarCallback(dataUrl);
+            setAvatarCallback(imageRef);
           }
-          showToast('Da luu anh dang Base64.');
+          showToast('Đã lưu ảnh gốc trong trình duyệt.');
           return;
         }
 
@@ -229,7 +223,7 @@ export function useAppImageWorkflow({
         setIsUploading(false);
       }
     } catch (error) {
-      if (error.name !== 'AbortError') showToast('Huy chon anh.', 'warning');
+      if (error.name !== 'AbortError') showToast('Không thể đọc hoặc lưu ảnh. Kiểm tra quyền lưu và dung lượng còn trống.', 'error');
       setIsUploading(false);
     }
   }, [currentContextDirHandle, dirHandle, showToast]);

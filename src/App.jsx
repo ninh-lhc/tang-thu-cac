@@ -586,7 +586,7 @@ export default function App() {
   }, [activeNovelData?.tabsConfig, globalTabsConfig]);
   const sortedTabs = useMemo(() => sortTabsAlphabetically(activeTabs), [activeTabs]);
 
-  const dirName = typeof dirHandle === 'string' ? 'Bộ nhớ đệm' : (dirHandle?.name || '');
+  const dirName = typeof dirHandle === 'string' ? 'Thư viện trình duyệt (IndexedDB)' : (dirHandle?.name || '');
   
   const currentTabConfig = useMemo(() => {
     if (!activeTabLon) return null;

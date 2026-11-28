@@ -48,7 +48,7 @@ export function AppMainPane({
     <div className={`flex-1 flex bg-slate-950 transition-opacity duration-300 ${menu1Visible ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
       {!activeNovelData ? (
         <>
-          {showConnectReminder && !!dirHandle && (
+          {showConnectReminder && !!dirHandle && dirHandle !== 'LOCAL_STORAGE' && (
             <div className="mx-10 mt-6 mb-0 rounded-2xl border border-amber-700/40 bg-amber-900/20 px-5 py-4 text-sm text-amber-100 flex items-start justify-between gap-4">
               <div>
                 <p className="font-bold uppercase tracking-widest text-[11px] text-amber-300 mb-1">Nhắc nhở vận hành</p>

@@ -120,6 +120,9 @@ export const AppShellOverlays = React.memo(function AppShellOverlays({
           className="fixed z-[var(--z-lightbox)] w-60 bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-3 pointer-events-none animate-fade-fast"
           style={{ left: `${tooltipPos.x}px`, top: `${tooltipPos.y}px` }}
         >
+          {hoveredNovelData.cover?.startsWith('local_image:idb/') && (
+            <AsyncLocalImage filename={hoveredNovelData.cover.slice('local_image:'.length)} alt="" className="w-full h-28 object-cover rounded-lg mb-2" />
+          )}
           {hoveredNovelData.cover && !hoveredNovelData.cover.startsWith('local_image:') && (
             <img
               src={hoveredNovelData.cover}

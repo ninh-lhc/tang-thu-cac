@@ -8,11 +8,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { migrateNovel } from './dataMigration.js';
 import { countEntitiesInNovel } from './deepSearchCore.js';
-import {
-  isQuotaExceededError,
-  readLocalJsonWithBackup,
-  writeLocalJsonWithBackup,
-} from './storageSafe.js';
+import { readBrowserRecord, writeBrowserRecord } from './lib/browserLibraryStore.js';
 import {
   NOVEL_STORAGE_SHARDED,
   buildDiskManifest,
@@ -49,16 +45,12 @@ function restoreShardedLayoutIfNeeded(parsedBeforeMigrate, migrated) {
 }
 
 const INDEX_STORAGE_KEY = 'tangthu_index';
-const INDEX_STORAGE_BACKUP_KEY = 'tangthu_index_backup';
 const NOVEL_STORAGE_PREFIX = 'tangthu_novel_';
 
 function novelStorageKey(id) {
   return `${NOVEL_STORAGE_PREFIX}${id}`;
 }
 
-function novelStorageBackupKey(id) {
-  return `${NOVEL_STORAGE_PREFIX}${id}_backup`;
-}
 
 /** Gợi ý ngắn cho toast khi ghi đĩa / JSON thất bại (File System Access API). */
 function describeNovelSyncFailure(err) {
@@ -290,14 +282,13 @@ export function useAppPersistence({
           : {};
       const payload = { metadata: newMetadata, config: newConfig, novelStats, genreTabsTemplates };
       if (!dir || dir === 'LOCAL_STORAGE') {
-        const writeRes = writeLocalJsonWithBackup(INDEX_STORAGE_KEY, INDEX_STORAGE_BACKUP_KEY, payload);
-        if (!writeRes.ok && isQuotaExceededError(writeRes.error)) {
-          setTimeout(() => {
-            showToast('CẢNH BÁO: Bộ nhớ đệm đã đầy!', 'warning');
-          }, 500);
+        try {
+          await writeBrowserRecord(INDEX_STORAGE_KEY, payload);
+          return { ok: true, mode: 'local' };
+        } catch (error) {
+          showToast('Không thể lưu danh mục vào bộ nhớ trình duyệt.', 'error');
+          return { ok: false, mode: 'local', error };
         }
-        persistIndexShadow(payload);
-        return { ok: Boolean(writeRes.ok), mode: 'local', error: writeRes.error || null };
       }
       const permission = ensureDirectoryWritePermission(dir);
       // Keep primary and backup writes for each snapshot together.
@@ -384,18 +375,13 @@ export function useAppPersistence({
   const syncNovel = useCallback(
     (novelData, rootDir, options = {}) => {
       if (!rootDir || rootDir === 'LOCAL_STORAGE') {
-        const writeRes = writeLocalJsonWithBackup(
-          novelStorageKey(novelData.id),
-          novelStorageBackupKey(novelData.id),
-          novelData
-        );
-        if (writeRes.ok) bumpNovelStatsAfterWrite(novelData);
-        if (!writeRes.ok && isQuotaExceededError(writeRes.error)) {
-          setTimeout(() => {
-            showToast('CẢNH BÁO: Tràn bộ nhớ! Hãy dùng Thư Mục Máy Tính!', 'warning');
-          }, 500);
-        }
-        return Promise.resolve({ ok: Boolean(writeRes.ok), mode: 'local', error: writeRes.error || null });
+        return writeBrowserRecord(novelStorageKey(novelData.id), novelData).then(() => {
+          bumpNovelStatsAfterWrite(novelData);
+          return { ok: true, mode: 'local' };
+        }).catch(error => {
+          showToast('Không thể lưu truyện. Kiểm tra dung lượng và quyền lưu của trình duyệt.', 'error');
+          return { ok: false, mode: 'local', error };
+        });
       }
 
       const immediate = Boolean(options?.immediate || options?.flush);
@@ -847,11 +833,7 @@ export function useAppPersistence({
     };
 
     if (!rootDir || rootDir === 'LOCAL_STORAGE') {
-      const { value: parsed, source } = readLocalJsonWithBackup(
-        novelStorageKey(meta.id),
-        novelStorageBackupKey(meta.id),
-        null
-      );
+      const { value: parsed, source } = await readBrowserRecord(novelStorageKey(meta.id));
       if (!parsed) return null;
       const novel = finalizeParsed(parsed, `LS:${meta.id}:${source}`);
       if (!novel) return null;

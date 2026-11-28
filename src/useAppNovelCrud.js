@@ -9,6 +9,7 @@ import { useCallback, useRef, useState } from 'react';
 import { ensureCollectionListCardsForNovel } from './lib/collectionListCardSync.js';
 import { markAllShardsDirty } from './lib/dirtyShardTracker.js';
 import { removeNovelStorageFromRoot } from './lib/novelDiskLayout.js';
+import { deleteBrowserRecord } from './lib/browserLibraryStore.js';
 import { clearNovelShadow } from './lib/novelShadowStore.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 import { resolveTabsConfigForGenreSelection } from './lib/resolveTabsConfigForGenreSelection.js';
@@ -246,6 +247,7 @@ export function useAppNovelCrud({
     }
 
     try {
+      if (!dirHandle || dirHandle === 'LOCAL_STORAGE') await deleteBrowserRecord(`tangthu_novel_${id}`);
       if (dirHandle && dirHandle !== 'LOCAL_STORAGE' && meta) {
         await awaitNovelDiskIdle?.();
         await new Promise((resolve) => setTimeout(resolve, 50));
@@ -270,11 +272,6 @@ export function useAppNovelCrud({
     setNovelsMetadata(newMetaList);
     novelsMetadataRef.current = newMetaList;
 
-    try {
-      localStorage.removeItem(`tangthu_novel_${id}`);
-    } catch {
-      /* ignore */
-    }
     void clearNovelShadow(id);
 
     const indexResult = await syncIndex(newMetaList, globalTabsConfig, dirHandle, nextStats);

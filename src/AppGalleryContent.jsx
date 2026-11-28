@@ -85,7 +85,7 @@ export const AppGalleryContent = memo(function AppGalleryContent({
                 title="Xem ảnh đầy đủ"
               >
                 {safeString(img).startsWith('local_image:') ? (
-                  <AsyncLocalImage filename={safeString(img).replace('local_image:', '')} alt="" dirHandle={currentContextDirHandle} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  <AsyncLocalImage thumbnail filename={safeString(img).replace('local_image:', '')} alt="" dirHandle={currentContextDirHandle} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                 ) : (
                   <img src={img} loading="lazy" alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMG; }} />
                 )}

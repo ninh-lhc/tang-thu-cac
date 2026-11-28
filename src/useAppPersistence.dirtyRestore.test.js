@@ -9,6 +9,10 @@ import {
   markShardDirty,
 } from './lib/dirtyShardTracker.js';
 
+import { writeBrowserRecord } from './lib/browserLibraryStore.js';
+
+vi.mock('./lib/browserLibraryStore.js', () => ({ writeBrowserRecord: vi.fn().mockResolvedValue(undefined), readBrowserRecord: vi.fn() }));
+
 vi.mock('./lib/novelShadowStore.js', () => ({
   saveNovelShadow: vi.fn().mockResolvedValue(undefined),
   clearNovelShadow: vi.fn().mockResolvedValue(undefined),
@@ -390,11 +394,12 @@ describe('useAppPersistence dirty restore (AUD-001)', () => {
     readSpy.mockRestore();
   });
 
-  it('syncNovel localStorage mode resolves ok without shard dirty tracker', async () => {
+  it('syncNovel writes browser novels to IndexedDB without shard dirty tracker', async () => {
     const { result } = renderPersistenceHook();
     const novel = makeNovel('local');
     const syncResult = await result.current.syncNovel(novel, 'LOCAL_STORAGE');
     expect(syncResult.ok).toBe(true);
     expect(syncResult.mode).toBe('local');
+    expect(writeBrowserRecord).toHaveBeenCalledWith(`tangthu_novel_${novel.id}`, novel);
   });
 });

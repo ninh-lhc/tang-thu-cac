@@ -8,6 +8,8 @@
 import { useCallback, useState } from 'react';
 import { migrateIndex, migrateBackup, migrateNovel } from './dataMigration.js';
 import { clearPersistedDirectoryHandle, savePersistedDirectoryHandle } from './lib/directoryHandleStore.js';
+import { writeLocalStringSafe } from './storageSafe.js';
+import { importBrowserImages, portableBrowserSnapshot, readBrowserRecord } from './lib/browserLibraryStore.js';
 import { readNovelCatalog } from './lib/recoverNovelCatalog.js';
 import {
   mergeBundledGenreTabsTemplatesInto,
@@ -58,32 +60,35 @@ export function useAppDirectoryBackup({
     setShowConnectReminder(false);
   }, []);
 
-  const handleConnectFolder = useCallback(async () => {
-    if (window.self !== window.top) {
-      await clearPersistedDirectoryHandle();
-      setDirHandle('LOCAL_STORAGE');
-      setShowConnectReminder(true);
-      showToast('Preview: da chuyen sang Local Storage.');
-
-      const local = localStorage.getItem('tangthu_index');
-      if (local) {
-        try {
-          const parsed = migrateIndex(JSON.parse(local));
-          if (parsed.metadata) setNovelsMetadata(parsed.metadata);
-          const safeConfig = resolveSafeTabsConfig(parsed.config);
-          setGlobalTabsConfig(safeConfig);
-          const stats =
-            parsed.novelStats && typeof parsed.novelStats === 'object' ? parsed.novelStats : {};
-          if (parsed.novelStats && typeof parsed.novelStats === 'object') {
-            novelStatsByIdRef.current = parsed.novelStats;
-            setNovelStatsById(parsed.novelStats);
-          }
-          if (!Array.isArray(parsed.config) || parsed.config.length === 0) {
-            void syncIndex(parsed.metadata || [], safeConfig, 'LOCAL_STORAGE', stats);
-          }
-        } catch {
-          void 0;
+  const handleConnectFolder = useCallback(async (storageMode) => {
+    if (storageMode === 'browser' || window.self !== window.top || typeof window.showDirectoryPicker !== 'function') {
+      try {
+        const { value } = await readBrowserRecord('tangthu_index');
+        const index = migrateIndex(value || { metadata: [], config: [] });
+        const config = resolveSafeTabsConfig(index.config);
+        if (!value) {
+          const saved = await syncIndex([], config, 'LOCAL_STORAGE', {});
+          if (!saved?.ok) return;
         }
+        await clearPersistedDirectoryHandle();
+        writeLocalStringSafe('tangthu_storage_mode', 'browser');
+        setActiveNovelData(null);
+        setActiveNovelDirHandle(null);
+        setNovelsMetadata(index.metadata);
+        novelsMetadataRef.current = index.metadata;
+        setGlobalTabsConfig(config);
+        const { next: templates } = mergeBundledGenreTabsTemplatesInto(
+          mergeGenreTabsTemplatesFromLocalStorage(index.genreTabsTemplates).next
+        );
+        genreTabsTemplatesRef.current = templates;
+        setGenreTabsTemplates(templates);
+        novelStatsByIdRef.current = index.novelStats || {};
+        setNovelStatsById(novelStatsByIdRef.current);
+        setDirHandle('LOCAL_STORAGE');
+        setShowConnectReminder(true);
+        showToast('Đã kết nối thư viện IndexedDB trong trình duyệt.');
+      } catch {
+        showToast('Không thể mở thư viện IndexedDB trong trình duyệt.', 'error');
       }
       return;
     }
@@ -144,6 +149,7 @@ export function useAppDirectoryBackup({
             setGlobalTabsConfig(safeConfig);
             setDirHandle(pickedDirHandle);
             await savePersistedDirectoryHandle(pickedDirHandle);
+        writeLocalStringSafe('tangthu_storage_mode', 'folder');
             setShowConnectReminder(true);
             setActiveNovelData(null);
             setActiveNovelDirHandle(null);
@@ -184,6 +190,7 @@ export function useAppDirectoryBackup({
 
         setDirHandle(pickedDirHandle);
         await savePersistedDirectoryHandle(pickedDirHandle);
+        writeLocalStringSafe('tangthu_storage_mode', 'folder');
         setShowConnectReminder(true);
         setActiveNovelData(null);
         setActiveNovelDirHandle(null);
@@ -198,6 +205,7 @@ export function useAppDirectoryBackup({
     }
   }, [
     genreTabsTemplatesRef,
+    novelsMetadataRef,
     novelStatsByIdRef,
     resolveSafeTabsConfig,
     setActiveNovelData,
@@ -225,12 +233,13 @@ export function useAppDirectoryBackup({
 
       for (const meta of novelsMetadata) {
         const loaded = await loadNovelData(meta, dirHandle);
-        if (loaded?.novel) allData.novels[meta.id] = loaded.novel;
+        if (!loaded?.novel) throw new Error('Không đọc được truyện để sao lưu.');
+        allData.novels[meta.id] = loaded.novel;
       }
 
       downloadJsonFile(
         `TangThuCac_Backup_${new Date().toISOString().slice(0, 10)}.json`,
-        allData
+        await portableBrowserSnapshot(allData)
       );
       showToast('Da xuat backup day du.');
     } catch {
@@ -238,16 +247,16 @@ export function useAppDirectoryBackup({
     }
   }, [dirHandle, globalTabsConfig, loadNovelData, novelStatsById, novelsMetadata, showToast]);
 
-  const handleExportIndexOnly = useCallback(() => {
+  const handleExportIndexOnly = useCallback(async () => {
     try {
-      downloadJsonFile(`TangThuCac_Index_${new Date().toISOString().slice(0, 10)}.json`, {
+      downloadJsonFile(`TangThuCac_Index_${new Date().toISOString().slice(0, 10)}.json`, await portableBrowserSnapshot({
         backupVersion: 2,
         indexOnly: true,
         exportedAt: new Date().toISOString(),
         config: globalTabsConfig,
         metadata: novelsMetadata,
         novelStats: { ...novelStatsById },
-      });
+      }));
       showToast('Da xuat file index.');
     } catch {
       showToast('Loi xuat index!', 'error');
@@ -265,7 +274,7 @@ export function useAppDirectoryBackup({
       try {
         setImportProgress({ stage: 'Dang chuan hoa du lieu...', current: 0, total: 1 });
         const parsed = JSON.parse(loadEvent.target.result);
-        const backup = migrateBackup(parsed);
+        let backup = migrateBackup(parsed);
 
         if (!(backup.metadata && backup.config)) {
           setImportProgress(null);
@@ -273,6 +282,9 @@ export function useAppDirectoryBackup({
           return;
         }
 
+        if (!dirHandle || dirHandle === 'LOCAL_STORAGE') {
+          backup = await importBrowserImages(backup);
+        }
         const safeConfig = resolveSafeTabsConfig(backup.config);
         const stats = backup.novelStats && typeof backup.novelStats === 'object' ? backup.novelStats : {};
 

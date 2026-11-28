@@ -967,7 +967,7 @@ export const DashboardScreen = memo(({ novelsMetadata, stats, isLoading, onSelec
                   className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors group ${statsFocusNovel?.id === novel.id ? 'border-amber-600/50 bg-amber-950/20' : 'border-slate-800/80 bg-slate-950/40 hover:border-slate-700'}`}
                 >
                   <div className="w-9 h-12 rounded-lg bg-slate-800 overflow-hidden flex-shrink-0 border border-slate-700">
-                    {novel.cover && !novel.cover.startsWith('local_image:') ? <img src={novel.cover} className="w-full h-full object-cover" alt="" onError={e=>{e.target.onerror=null;}}/> : <div className="w-full h-full flex items-center justify-center"><BookOpen size={14} className="text-slate-600"/></div>}
+                    {novel.cover?.startsWith('local_image:idb/') ? <AsyncLocalImage filename={novel.cover.slice('local_image:'.length)} alt="" className="w-full h-full object-cover" /> : novel.cover && !novel.cover.startsWith('local_image:') ? <img src={novel.cover} className="w-full h-full object-cover" alt="" onError={e=>{e.target.onerror=null;}}/> : <div className="w-full h-full flex items-center justify-center"><BookOpen size={14} className="text-slate-600"/></div>}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -4811,6 +4811,10 @@ export const ModalSettings = ({
                <button onClick={() => { handleConnectFolder(); onClose(); }} className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold flex items-center justify-center gap-3">
                   <FolderOpen size={18} /> {dirHandle && dirHandle !== 'LOCAL_STORAGE' ? "Chọn Thư Mục Khác" : "Kết Nối Thư Mục"}
                </button>
+               <button type="button" onClick={() => { handleConnectFolder('browser'); onClose(); }} disabled={dirHandle === 'LOCAL_STORAGE'} className="tt-kbd-focus mt-2 w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold disabled:opacity-60">
+                 Dùng thư viện trong trình duyệt
+               </button>
+               <p className="mt-2 text-xs text-slate-400">Thư viện IndexedDB lưu truyện và ảnh gốc trong hồ sơ trình duyệt này. Xóa dữ liệu trang cũng sẽ xóa thư viện.</p>
                {dirHandle && <div className="mt-3 text-center text-xs text-emerald-500 font-serif italic flex items-center justify-center gap-1.5"><Check size={14}/> Đang đồng bộ: {safeString(dirName)}</div>}
              </div>
 

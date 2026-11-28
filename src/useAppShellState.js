@@ -4,7 +4,7 @@
  * and the refs that other hooks need to share.
  * Keeps App.jsx focused on orchestration instead of state wiring.
  */
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from 'react';
 import { INITIAL_TABS_CONFIG, MOCK_METADATA } from './MasterEngines.js';
 import { migrateIndex } from './dataMigration.js';
 import { safeString } from './MasterUtils.jsx';
@@ -24,6 +24,7 @@ import {
   mergeBundledGenreTabsTemplatesInto,
   mergeGenreTabsTemplatesFromLocalStorage,
 } from './lib/genreTabsTemplateStore.js';
+import { readBrowserRecord } from './lib/browserLibraryStore.js';
 import { readNovelCatalog } from './lib/recoverNovelCatalog.js';
 import { hydrateTabsAutoSyncConfigs } from './lib/tabAutoSyncFieldMap.js';
 import { useToast } from './useToast.js';
@@ -53,32 +54,9 @@ function isEmbeddedPreview() {
 }
 
 export function useAppShellState() {
-  const embeddedPreviewBootstrap = useMemo(() => {
-    if (!isEmbeddedPreview()) return null;
-    const { value: parsed } = readLocalJsonWithBackup('tangthu_index', 'tangthu_index_backup', null);
-    if (!parsed) return null;
-    try {
-      return migrateIndex(parsed);
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const embeddedPreviewMetadata =
-    Array.isArray(embeddedPreviewBootstrap?.metadata) && embeddedPreviewBootstrap.metadata.length > 0
-      ? embeddedPreviewBootstrap.metadata
-      : MOCK_METADATA;
-  const embeddedPreviewConfig = Array.isArray(embeddedPreviewBootstrap?.config)
-    ? embeddedPreviewBootstrap.config
-    : hydrateTabsAutoSyncConfigs(INITIAL_TABS_CONFIG).tabsConfig;
-  const embeddedPreviewStats =
-    embeddedPreviewBootstrap?.novelStats && typeof embeddedPreviewBootstrap.novelStats === 'object'
-      ? embeddedPreviewBootstrap.novelStats
-      : {};
-
-  const [novelsMetadata, setNovelsMetadata] = useState(embeddedPreviewMetadata);
+  const [novelsMetadata, setNovelsMetadata] = useState(MOCK_METADATA);
   const [activeNovelData, setActiveNovelData] = useState(null);
-  const [globalTabsConfig, setGlobalTabsConfig] = useState(embeddedPreviewConfig);
+  const [globalTabsConfig, setGlobalTabsConfig] = useState(() => hydrateTabsAutoSyncConfigs(INITIAL_TABS_CONFIG).tabsConfig);
 
   const [menu1Visible, setMenu1Visible] = useState(false);
   const [activeTabLon, setActiveTabLon] = useState('tong-quan');
@@ -150,12 +128,9 @@ export function useAppShellState() {
   const [overviewStatsOpen, setOverviewStatsOpen] = useState(false);
   const commandPaletteOpenRef = useRef(false);
 
-  const [dirHandle, setDirHandle] = useState(embeddedPreviewBootstrap ? 'LOCAL_STORAGE' : null);
+  const [dirHandle, setDirHandle] = useState(null);
   const [activeNovelDirHandle, setActiveNovelDirHandle] = useState(null);
-  const [isDirectoryConnectionBootstrapping, setIsDirectoryConnectionBootstrapping] = useState(
-    () => !embeddedPreviewBootstrap && !isEmbeddedPreview()
-  );
-  const shouldAutoRestoreDirectory = !embeddedPreviewBootstrap && !isEmbeddedPreview();
+  const [isDirectoryConnectionBootstrapping, setIsDirectoryConnectionBootstrapping] = useState(true);
 
   const { toastMessage, setToastMessage, toastTimerRef, showToast } = useToast();
 
@@ -179,7 +154,7 @@ export function useAppShellState() {
     return saved !== '0';
   });
 
-  const [novelStatsById, setNovelStatsById] = useState(embeddedPreviewStats);
+  const [novelStatsById, setNovelStatsById] = useState({});
   const [genreTabsTemplates, setGenreTabsTemplates] = useState({});
   const [isStatsBackfilling, setIsStatsBackfilling] = useState(false);
   const novelStatsByIdRef = useRef({});
@@ -217,14 +192,6 @@ export function useAppShellState() {
   useEffect(() => {
     if (directoryRestoreAttemptedRef.current) return;
     directoryRestoreAttemptedRef.current = true;
-    if (!shouldAutoRestoreDirectory) {
-      setIsDirectoryConnectionBootstrapping(false);
-      return;
-    }
-    if (isEmbeddedPreview()) {
-      setIsDirectoryConnectionBootstrapping(false);
-      return;
-    }
     if (dirHandle) {
       setIsDirectoryConnectionBootstrapping(false);
       return;
@@ -244,7 +211,7 @@ export function useAppShellState() {
         new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
       ]);
 
-    const applySnapshot = (snapshot) => {
+    const applySnapshot = (snapshot, cacheFolderSnapshot = true) => {
       if (!snapshot || typeof snapshot !== 'object') return false;
       try {
         const parsed = migrateIndex(snapshot);
@@ -270,6 +237,7 @@ export function useAppShellState() {
         globalTabsConfigRef.current = nextConfig;
         novelStatsByIdRef.current = nextStats;
         genreTabsTemplatesRef.current = nextGenreTemplates;
+        if (!cacheFolderSnapshot) return true;
         try {
           localStorage.setItem(
             'tangthu_index_shadow',
@@ -313,12 +281,18 @@ export function useAppShellState() {
       }
     };
 
+    const useBrowserLibrary = isEmbeddedPreview() || readLocalString('tangthu_storage_mode', '') === 'browser' || typeof window.showDirectoryPicker !== 'function';
     const run = async () => {
       let storedHandle = null;
       let restoredConnection = false;
       let hydratedFromDisk = false;
 
       try {
+        if (useBrowserLibrary) {
+          const { value } = await readBrowserRecord('tangthu_index');
+          if (!cancelled && value && applySnapshot(value, false)) setDirHandle('LOCAL_STORAGE');
+          return;
+        }
         const handleLoadPromise = loadPersistedDirectoryHandle();
         let handleMaybe = await withTimeout(handleLoadPromise, 2500);
         if (handleMaybe === null) handleMaybe = await handleLoadPromise;
@@ -347,7 +321,8 @@ export function useAppShellState() {
         }
       } catch (error) {
         console.warn('[TTC] Failed to restore directory connection:', error);
-        if (!cancelled) loadShadowSnapshot();
+        if (!cancelled && !useBrowserLibrary) loadShadowSnapshot();
+        if (!cancelled && useBrowserLibrary) showToast('Không thể mở thư viện trình duyệt.', 'error');
       } finally {
         clearTimeout(forceStopOverlayTimer);
         if (!cancelled) {
@@ -379,7 +354,6 @@ export function useAppShellState() {
     novelStatsByIdRef,
     genreTabsTemplatesRef,
     novelsMetadataRef,
-    shouldAutoRestoreDirectory,
     showToast,
     setDirHandle,
     setGlobalTabsConfig,

@@ -4,6 +4,8 @@
 // ==========================================
 /* eslint-disable react-refresh/only-export-components */
 
+import { folderGalleryThumbnail } from './lib/galleryThumbnail.js';
+import { browserGalleryThumbnail, readBrowserImage } from './lib/browserLibraryStore.js';
 import React, { useState, useEffect, memo } from 'react';
 import {
   BookOpen, Swords, User, Map as MapIcon, Hexagon, Flame, Globe, ScrollText, Link2, Plus
@@ -672,7 +674,6 @@ export const sortTabsAlphabetically = (tabs) => {
   })];
 };
 
-const localImageUrlCache = new WeakMap();
 const localImageLookupCache = new WeakMap();
 
 const getLocalImageLookupMap = (handle) => {
@@ -704,7 +705,7 @@ async function resolveImageFileHandle(dirHandle, filename) {
   try {
     const imagesDir = await dirHandle.getDirectoryHandle('images');
     const fileHandle = await imagesDir.getFileHandle(key);
-    return cacheResolved(fileHandle);
+    return cacheResolved({ fileHandle, imagesDir });
   } catch {
     // fallback below
   }
@@ -719,7 +720,7 @@ async function resolveImageFileHandle(dirHandle, filename) {
       try {
         const childImagesDir = await childHandle.getDirectoryHandle('images');
         const fileHandle = await childImagesDir.getFileHandle(key);
-        return cacheResolved(fileHandle);
+        return cacheResolved({ fileHandle, imagesDir: childImagesDir });
       } catch {
         // no image in this child dir
       }
@@ -731,49 +732,38 @@ async function resolveImageFileHandle(dirHandle, filename) {
   return cacheResolved(null);
 }
 
-export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className, style }) => {
-  const [src, setSrc] = useState(null);
-  const [err, setErr] = useState(false);
-
+export const AsyncLocalImage = memo(({ filename, alt, dirHandle, className, style, thumbnail = false }) => {
+  const [image, setImage] = useState(null);
   useEffect(() => {
-    let objectUrl = null;
-    let isMounted = true;
-    const queueState = (fn) => {
-      Promise.resolve().then(() => {
-        if (isMounted) fn();
-      });
+    let mounted = true;
+    let url;
+    const active = () => mounted;
+    const load = async () => {
+      if (filename.startsWith('idb/')) {
+        const key = filename.slice(4);
+        return thumbnail ? browserGalleryThumbnail(key, active) : readBrowserImage(key);
+      }
+      const source = await resolveImageFileHandle(dirHandle, filename);
+      if (!source) throw new Error('Không tìm thấy ảnh.');
+      const file = await source.fileHandle.getFile();
+      return thumbnail ? folderGalleryThumbnail(source.imagesDir, file, active) : file;
     };
-    if (dirHandle && dirHandle !== 'LOCAL_STORAGE') {
-      let byName = localImageUrlCache.get(dirHandle);
-      if (!byName) {
-        byName = new Map();
-        localImageUrlCache.set(dirHandle, byName);
-      }
-      const cached = byName.get(filename);
-      if (cached) {
-        queueState(() => {
-          setSrc(cached);
-          setErr(false);
-        });
-        return;
-      }
-      const fetchImage = async () => {
-        try {
-          const fileH = await resolveImageFileHandle(dirHandle, filename);
-          if (!fileH) throw new Error('File not found');
-          const file = await fileH.getFile();
-          objectUrl = URL.createObjectURL(file);
-          byName.set(filename, objectUrl);
-          if (isMounted) { setSrc(objectUrl); setErr(false); }
-        } catch { if (isMounted) setErr(true); }
-      };
-      fetchImage();
-    } else {
-      queueState(() => setErr(true));
-    }
-    return () => { isMounted = false; };
-  }, [filename, dirHandle]);
+    load().then(blob => {
+      if (!mounted || !blob) return;
+      url = URL.createObjectURL(blob);
+      setImage({ filename, dirHandle, thumbnail, url });
+    }).catch(() => {
+      if (mounted) setImage({ filename, dirHandle, thumbnail, error: true });
+    });
+    return () => {
+      mounted = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [filename, dirHandle, thumbnail]);
 
+  const current = image?.filename === filename && image.dirHandle === dirHandle && image.thumbnail === thumbnail ? image : null;
+  const src = current?.url;
+  const err = current?.error;
   const imgClass = className || "max-w-full rounded-xl my-4 shadow-lg border border-slate-700 object-cover";
   if (err) return <img src={FALLBACK_IMG} alt="Lỗi truy xuất ảnh" className={imgClass} style={style} />;
   if (!src) return <div className={`p-4 bg-slate-900 animate-pulse flex items-center justify-center text-slate-500 text-sm shadow-inner ${imgClass}`}>Đang tải...</div>;
